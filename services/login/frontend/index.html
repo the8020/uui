@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>80|20 sign in</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="login-card" aria-labelledby="login-title">
+      <h1 class="group-title" id="login-title">Sign in</h1>
+      <div class="brand" aria-label="80|20 platform">
+        <span class="brand-gold" aria-hidden="true">80</span><span
+          class="brand-pipe"
+          aria-hidden="true"
+        >|</span><span aria-hidden="true">20</span>
+      </div>
+      <!--__the8020_login_error__-->
+      <form method="post" autocomplete="on">
+        <label class="field">
+          <span>Username</span>
+          <input name="username" autocomplete="username" required autofocus>
+        </label>
+        <label class="field">
+          <span>Password</span>
+          <input
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            required
+          >
+        </label>
+        <button type="submit">Sign in</button>
+      </form>
+      <p class="hint">
+        No administrator yet? Run
+        <code>auth bootstrap-admin add &lt;username&gt;</code> in the local
+        administrative console.
+      </p>
+    </main>
+  </body>
+</html>

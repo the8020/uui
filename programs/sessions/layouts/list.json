@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "id": "uui-session-list",
+  "root": {
+    "id": "sessions",
+    "type": "list",
+    "bind": "sessions",
+    "key": "navigation",
+    "display": [
+      "sessionId",
+      "user",
+      "state",
+      "screen",
+      "nodeId",
+      "updatedAt"
+    ]
+  }
+}

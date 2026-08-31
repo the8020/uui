@@ -1,0 +1,29 @@
+schema = 1
+description = "Unified User Interface WebSocket sessions"
+entrypoint = "service.ts"
+
+[execution]
+mode = "persistent"
+concurrency_per_worker = 1
+keep_alive = "2m"
+
+[access]
+mode = "authenticated"
+
+[access.unauthenticated]
+action = "reject"
+status = 401
+message = "Authentication is required."
+
+[lifecycle]
+default_enabled = true
+
+[scaling]
+replicas_min = 1
+replicas_max = 100
+workers_per_replica_min = 1
+workers_per_replica_max = 50
+target_utilization = 0.70
+
+[placement]
+sandbox_group = "uui"

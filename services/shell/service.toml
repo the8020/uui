@@ -1,0 +1,28 @@
+schema = 1
+description = "Unified User Interface shell"
+entrypoint = "service.ts"
+
+[execution]
+mode = "stateless"
+concurrency_per_worker = 32
+
+[access]
+mode = "authenticated"
+
+[access.unauthenticated]
+action = "redirect"
+redirect_url = "/the8020/uui/login/"
+status = 302
+
+[lifecycle]
+default_enabled = true
+
+[scaling]
+replicas_min = 1
+replicas_max = 4
+workers_per_replica_min = 1
+workers_per_replica_max = 2
+target_utilization = 0.70
+
+[placement]
+sandbox_group = "uui-shell"

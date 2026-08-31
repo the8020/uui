@@ -1,0 +1,4 @@
+schema = 1
+description = "80|20 Unified User Interface services and standard programs"
+documentation_url = "https://github.com/the8020/uui"
+license = "Apache-2.0"

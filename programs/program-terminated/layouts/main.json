@@ -1,0 +1,75 @@
+{
+  "schema": 1,
+  "id": "main",
+  "root": {
+    "id": "dump",
+    "type": "stack",
+    "children": [
+      {
+        "id": "summary-section",
+        "type": "section",
+        "title": "Summary",
+        "children": [
+          {
+            "id": "summary",
+            "type": "grid",
+            "columns": 2,
+            "responsive": "stack",
+            "children": [
+              {
+                "id": "exception-summary",
+                "type": "field-group",
+                "title": "Exception",
+                "controls": ["exception-type", "message", "properties"]
+              },
+              {
+                "id": "execution-summary",
+                "type": "field-group",
+                "title": "Execution",
+                "controls": [
+                  "program-id",
+                  "entrypoint",
+                  "location",
+                  "occurred-at",
+                  "copy-status"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "technical-details-section",
+        "type": "section",
+        "title": "Technical details",
+        "children": [
+          {
+            "id": "technical-details",
+            "type": "tabs",
+            "selectedTab": "call-stack",
+            "children": [
+              {
+                "id": "call-stack",
+                "type": "field-group",
+                "title": "Call stack",
+                "controls": ["stack"]
+              },
+              {
+                "id": "source-code",
+                "type": "field-group",
+                "title": "Source code",
+                "controls": ["source"]
+              },
+              {
+                "id": "complete-dump",
+                "type": "field-group",
+                "title": "Complete short dump",
+                "controls": ["dump-text"]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,2871 @@
+interface Options {
+  sourceRoot: string;
+  packageWorkspace: string;
+  runtimeRoot: string;
+  kernel: string;
+  admin: string;
+  browser: string;
+}
+
+interface KernelProcess {
+  root: string;
+  child: Deno.ChildProcess;
+}
+
+interface UISession {
+  session_id: string;
+  node_id: string;
+  runtime_group_id: string;
+  worker_id: string;
+  sandbox_id: string;
+  state: string;
+}
+
+interface CDPTarget {
+  webSocketDebuggerUrl: string;
+}
+
+interface CDPResponse {
+  id?: number;
+  method?: string;
+  params?: Record<string, unknown>;
+  result?: unknown;
+  error?: { message?: string };
+}
+
+interface WebSocketFrame {
+  opcode: number;
+  payloadData: string;
+}
+
+class BrowserPage {
+  readonly exceptions: string[] = [];
+  readonly websocketFrames: WebSocketFrame[] = [];
+  readonly #socket: WebSocket;
+  readonly #pending = new Map<
+    number,
+    { resolve(value: unknown): void; reject(error: Error): void }
+  >();
+  #sequence = 0;
+
+  private constructor(socket: WebSocket) {
+    this.#socket = socket;
+    socket.onmessage = (event) => {
+      const message = JSON.parse(String(event.data)) as CDPResponse;
+      if (message.method === "Runtime.exceptionThrown") {
+        this.exceptions.push(JSON.stringify(message.params ?? {}));
+      }
+      if (message.method === "Network.webSocketFrameReceived") {
+        const response = message.params?.response as
+          | { opcode?: unknown; payloadData?: unknown }
+          | undefined;
+        if (
+          typeof response?.opcode === "number" &&
+          typeof response.payloadData === "string"
+        ) {
+          this.websocketFrames.push({
+            opcode: response.opcode,
+            payloadData: response.payloadData,
+          });
+        }
+      }
+      if (message.id === undefined) return;
+      const pending = this.#pending.get(message.id);
+      if (pending === undefined) return;
+      this.#pending.delete(message.id);
+      if (message.error !== undefined) {
+        pending.reject(
+          new Error(message.error.message ?? "CDP command failed"),
+        );
+      } else pending.resolve(message.result);
+    };
+    socket.onclose = () => {
+      for (const pending of this.#pending.values()) {
+        pending.reject(new Error("browser debugging connection closed"));
+      }
+      this.#pending.clear();
+    };
+  }
+
+  static async connect(webSocketURL: string): Promise<BrowserPage> {
+    const socket = new WebSocket(webSocketURL);
+    await new Promise<void>((resolve, reject) => {
+      socket.onopen = () => resolve();
+      socket.onerror = () => reject(new Error("connect to browser debugger"));
+    });
+    const page = new BrowserPage(socket);
+    await page.command("Runtime.enable");
+    await page.command("Page.enable");
+    await page.command("Network.enable");
+    return page;
+  }
+
+  command<Result = Record<string, unknown>>(
+    method: string,
+    params: Record<string, unknown> = {},
+  ): Promise<Result> {
+    if (this.#socket.readyState !== WebSocket.OPEN) {
+      return Promise.reject(
+        new Error(`browser debugging connection is closed before ${method}`),
+      );
+    }
+    const id = ++this.#sequence;
+    return new Promise<Result>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.#pending.delete(id);
+        reject(new Error(`browser debugging command ${method} timed out`));
+      }, 10_000);
+      this.#pending.set(id, {
+        resolve: (value) => {
+          clearTimeout(timeout);
+          resolve(value as Result);
+        },
+        reject: (error) => {
+          clearTimeout(timeout);
+          reject(error);
+        },
+      });
+      try {
+        this.#socket.send(JSON.stringify({ id, method, params }));
+      } catch (error) {
+        clearTimeout(timeout);
+        this.#pending.delete(id);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+  }
+
+  async evaluate<Result>(expression: string): Promise<Result> {
+    const response = await this.command<{
+      result?: { value?: Result; description?: string };
+      exceptionDetails?: { text?: string };
+    }>("Runtime.evaluate", {
+      expression,
+      awaitPromise: true,
+      returnByValue: true,
+      userGesture: true,
+    });
+    if (response.exceptionDetails !== undefined) {
+      throw new Error(
+        response.result?.description ?? response.exceptionDetails.text ??
+          "browser evaluation failed",
+      );
+    }
+    return response.result?.value as Result;
+  }
+
+  close(): void {
+    this.#socket.close();
+  }
+}
+
+const options = parseOptions(Deno.args);
+const temporaryRoot = await Deno.makeTempDir({ prefix: "the8020-phase1d-" });
+const primaryRoot = `${temporaryRoot}/node-primary`;
+const secondaryRoot = `${temporaryRoot}/node-secondary`;
+const browserData = `${temporaryRoot}/chromium`;
+const primaryPort = await freePort();
+const secondaryPort = await freePort();
+const primarySSHPort = await freePort();
+const secondarySSHPort = await freePort();
+const debugPort = await freePort();
+const kernels: KernelProcess[] = [];
+let browser: Deno.ChildProcess | undefined;
+const pages: BrowserPage[] = [];
+
+try {
+  await prepareWorkspaces(options, primaryRoot, secondaryRoot);
+  kernels.push(startKernel(primaryRoot, primaryPort, primarySSHPort));
+  await waitForHTTP(`http://127.0.0.1:${primaryPort}/`);
+  await waitForAdmin(primaryRoot);
+  await admin(primaryRoot, [
+    "auth",
+    "bootstrap-admin",
+    "add",
+    "admin",
+    "--password-stdin",
+  ], "phase1d-password\n");
+  await waitForServices(primaryRoot, [
+    "the8020/uui/login",
+    "the8020/uui/session",
+    "the8020/uui/shell",
+  ]);
+
+  kernels.push(startKernel(secondaryRoot, secondaryPort, secondarySSHPort));
+  await waitForHTTP(`http://127.0.0.1:${secondaryPort}/`);
+  await waitForAdmin(secondaryRoot);
+  await waitForServices(secondaryRoot, ["the8020/uui/shell"]);
+
+  browser = new Deno.Command(options.browser, {
+    args: [
+      "--headless=new",
+      "--no-sandbox",
+      "--no-zygote",
+      "--single-process",
+      "--disable-gpu",
+      "--disable-dev-shm-usage",
+      `--remote-debugging-port=${debugPort}`,
+      `--user-data-dir=${browserData}`,
+      "about:blank",
+    ],
+    stdout: "null",
+    stderr: "inherit",
+  }).spawn();
+  await waitForHTTP(`http://127.0.0.1:${debugPort}/json/version`);
+
+  const primaryBase = `http://127.0.0.1:${primaryPort}`;
+  const first = await openPage(
+    debugPort,
+    `${primaryBase}/the8020/uui/shell/`,
+  );
+  pages.push(first);
+  await waitForPage(
+    first,
+    `location.pathname === "/the8020/uui/login/" && document.querySelector("h1")?.textContent === "Sign in"`,
+    "login redirect and form",
+  );
+  await setValue(first, 'input[name="username"]', "admin");
+  await setValue(first, 'input[name="password"]', "phase1d-password");
+  await click(first, 'button[type="submit"]');
+  try {
+    await waitForScreen(first, "Welcome to 80|20");
+  } catch (error) {
+    const state = await first.evaluate(`({
+      path: location.pathname,
+      title: document.querySelector('h1')?.textContent,
+      app: document.querySelector('#app')?.textContent,
+      connection: document.querySelector('#connection-state')?.textContent
+    })`);
+    const sessions = await uiSessions(primaryRoot).catch(() => []);
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}; state: ${
+        JSON.stringify(state)
+      }; session metadata: ${JSON.stringify(sessions)}; exceptions: ${
+        JSON.stringify(first.exceptions)
+      }`,
+    );
+  }
+
+  const materialAssets = await first.evaluate<
+    Array<{
+      path: string;
+      status: number;
+      contentType: string;
+      length: number;
+    }>
+  >(`Promise.all([
+    "/the8020/uui/shell/assets/material-arrow-back-24-e083cc60.svg",
+    "/the8020/uui/shell/assets/material-arrow-drop-down-24-e083cc60.svg",
+    "/the8020/uui/shell/assets/material-more-vert-24-e083cc60.svg",
+    "/the8020/uui/shell/assets/material-refresh-24-e083cc60.svg",
+    "/the8020/uui/shell/assets/material-save-24-e083cc60.svg",
+    "/the8020/uui/shell/assets/material-edit-24-a4b3c9f6.svg",
+    "/the8020/uui/shell/assets/material-light-mode-24-e5b6e132.svg",
+    "/the8020/uui/shell/assets/material-dark-mode-24-bab57d17.svg",
+  ].map(async (path) => {
+    const response = await fetch(path);
+    return {
+      path,
+      status: response.status,
+      contentType: response.headers.get("content-type") ?? "",
+      length: (await response.text()).length,
+    };
+  }))`);
+  assert(
+    materialAssets.every((asset) =>
+      asset.status === 200 && asset.contentType === "image/svg+xml" &&
+      asset.length > 0 && asset.length < 1_000
+    ),
+    `vendored Material assets are unavailable: ${
+      JSON.stringify(materialAssets)
+    }`,
+  );
+
+  const initialTheme = await first.evaluate<string>(
+    `document.documentElement.dataset.theme ?? ""`,
+  );
+  assert(
+    initialTheme === "light" || initialTheme === "dark",
+    `shell selected invalid initial theme ${initialTheme}`,
+  );
+  await click(first, "#theme-toggle");
+  const toggledTheme = initialTheme === "dark" ? "light" : "dark";
+  await waitForPage(
+    first,
+    `document.documentElement.dataset.theme === ${
+      JSON.stringify(toggledTheme)
+    }`,
+    "session shell theme toggle",
+  );
+  if (toggledTheme !== "dark") await click(first, "#theme-toggle");
+  await waitForPage(
+    first,
+    `document.documentElement.dataset.theme === "dark" &&
+      document.querySelector("#theme-toggle")?.textContent?.trim() === "" &&
+      document.querySelector("#theme-toggle")?.getAttribute("aria-pressed") === "true" &&
+      document.querySelector("#theme-toggle")?.getAttribute("aria-label") === "Switch to light mode" &&
+      document.querySelector('#theme-toggle [data-material-icon="dark_mode"]') === null &&
+      getComputedStyle(document.querySelector('#theme-toggle [data-material-icon="light_mode"]')).maskImage !== "none" &&
+      getComputedStyle(document.documentElement).getPropertyValue("--primary").trim() === "#8c8cff" &&
+      getComputedStyle(document.querySelector(".navbar")).position === "sticky" &&
+      getComputedStyle(document.querySelector(".screen")).borderTopWidth === "0px" &&
+      getComputedStyle(document.querySelector(".screen")).paddingTop === "0px" &&
+      getComputedStyle(document.querySelector(".screen")).backgroundColor === "rgba(0, 0, 0, 0)" &&
+      getComputedStyle(document.querySelector(".screen")).boxShadow === "none" &&
+      getComputedStyle(document.querySelector(".layout-list")).borderTopWidth === "1px" &&
+      getComputedStyle(document.querySelector(".layout-list")).borderTopLeftRadius === "14px" &&
+      getComputedStyle(document.querySelector(".layout-list")).borderTopRightRadius === "14px" &&
+      getComputedStyle(document.querySelector(".layout-list")).paddingTop === "22px" &&
+      getComputedStyle(document.querySelector(".layout-list")).backgroundColor === "rgb(25, 29, 42)" &&
+      getComputedStyle(document.querySelector(".layout-list")).boxShadow.includes("rgba(0, 0, 0, 0.28)") &&
+      document.querySelector(".brand")?.textContent?.trim() === "80|20" &&
+      document.querySelector(".brand-mark") === null &&
+      getComputedStyle(document.querySelector(".brand")).height === "30px" &&
+      getComputedStyle(document.querySelector(".brand")).fontSize === "30px" &&
+      getComputedStyle(document.querySelector(".brand")).fontWeight === "600" &&
+      getComputedStyle(document.querySelector(".brand")).backgroundColor === "rgba(0, 0, 0, 0)" &&
+      getComputedStyle(document.querySelector(".brand")).borderTopWidth === "0px" &&
+      getComputedStyle(document.querySelector(".brand")).boxShadow === "none" &&
+      getComputedStyle(document.querySelector(".brand-gold")).color === "rgb(242, 193, 78)" &&
+      getComputedStyle(document.querySelector(".brand-pipe"), "::before").height === "24px" &&
+      getComputedStyle(document.querySelector(".brand-pipe"), "::before").borderLeftWidth === "3px" &&
+      getComputedStyle(document.querySelector(".brand-pipe"), "::before").borderLeftColor === getComputedStyle(document.body).color &&
+      getComputedStyle(document.querySelector(".brand-pipe").nextElementSibling).color === getComputedStyle(document.body).color &&
+      localStorage.getItem("the8020.uui.theme") === "dark" &&
+      Object.entries(sessionStorage).some(([key, value]) => key.startsWith("the8020.uui.theme:session:") && value === "dark")`,
+    "dark theme persistence in browser storage",
+  );
+  await first.command("Emulation.setDeviceMetricsOverride", {
+    width: 1280,
+    height: 800,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await waitForPage(
+    first,
+    `(() => {
+      const inner = document.querySelector('.navbar-inner');
+      const leading = document.querySelector('.navbar-leading');
+      const program = document.querySelector('#program-header');
+      const actions = document.querySelector('.navbar-actions');
+      if (!(inner instanceof HTMLElement) || !(leading instanceof HTMLElement) ||
+        !(program instanceof HTMLElement) || !(actions instanceof HTMLElement)) return false;
+      const innerBounds = inner.getBoundingClientRect();
+      const leadingBounds = leading.getBoundingClientRect();
+      const actionsBounds = actions.getBoundingClientRect();
+      const programStyle = getComputedStyle(program);
+      const actionsStyle = getComputedStyle(actions);
+      return Math.abs(actionsBounds.right - innerBounds.right) < 2 &&
+        actionsBounds.left > leadingBounds.right &&
+        programStyle.gridColumnStart === '2' && programStyle.gridRowStart === '1' &&
+        actionsStyle.gridColumnStart === '3' && actionsStyle.gridRowStart === '1' &&
+        actionsStyle.justifySelf === 'end';
+    })()`,
+    "wide navbar fixed-edge alignment",
+  );
+
+  await first.command("Page.addScriptToEvaluateOnNewDocument", {
+    source: `(() => {
+      const NativeWebSocket = window.WebSocket;
+      window.WebSocket = class extends NativeWebSocket {
+        constructor(...arguments_) {
+          super(...arguments_);
+          const protocols = arguments_[1];
+          if (
+            protocols === "the8020.uui.v1" ||
+            (Array.isArray(protocols) && protocols.includes("the8020.uui.v1"))
+          ) window.__the8020LastWebSocket = this;
+        }
+      };
+      window.__the8020ThemeTransitions = [];
+      window.__the8020FirstAnimationFrame = null;
+      requestAnimationFrame((at) => {
+        window.__the8020FirstAnimationFrame = at;
+      });
+      let previous = "";
+      const record = () => {
+        const theme = document.documentElement?.dataset.theme ?? "";
+        if (theme === "" || theme === previous) return;
+        previous = theme;
+        window.__the8020ThemeTransitions.push({
+          theme,
+          at: performance.now(),
+        });
+      };
+      new MutationObserver(record).observe(document, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ["data-theme"],
+      });
+      record();
+    })();`,
+  });
+  await click(first, "#theme-toggle");
+  await waitForPage(
+    first,
+    `document.documentElement.dataset.theme === "light" &&
+      sessionStorage.getItem("the8020.uui.theme:initial") === "light" &&
+      localStorage.getItem("the8020.uui.theme") === "light"`,
+    "light theme ready for reload",
+  );
+  await first.command("Page.reload", { ignoreCache: true });
+  await waitForScreen(first, "Welcome to 80|20");
+  const websocketHook = await first.evaluate<{
+    present: boolean;
+    readyState?: number;
+    closeType?: string;
+    constructorName?: string;
+    webSocketName?: string;
+  }>(`(() => {
+    const socket = window.__the8020LastWebSocket;
+    return {
+      present: socket !== undefined,
+      readyState: socket?.readyState,
+      closeType: typeof socket?.close,
+      constructorName: socket?.constructor?.name,
+      webSocketName: window.WebSocket?.name,
+    };
+  })()`);
+  assert(
+    websocketHook.present && websocketHook.readyState === 1 &&
+      websocketHook.closeType === "function",
+    `browser WebSocket reconnect hook is unavailable: ${
+      JSON.stringify(websocketHook)
+    }`,
+  );
+  await assertThemeInitializedBeforePaint(first, "light", "light reload");
+  await waitForPage(
+    first,
+    `document.querySelector(".brand")?.textContent?.trim() === "80|20" &&
+      getComputedStyle(document.querySelector(".brand-gold")).color === "rgb(205, 157, 0)" &&
+      getComputedStyle(document.querySelector(".brand-pipe"), "::before").height === "24px" &&
+      getComputedStyle(document.querySelector(".brand-pipe"), "::before").borderLeftWidth === "3px" &&
+      getComputedStyle(document.querySelector(".brand-pipe"), "::before").borderLeftColor === getComputedStyle(document.body).color &&
+      getComputedStyle(document.querySelector(".brand-pipe").nextElementSibling).color === getComputedStyle(document.body).color &&
+      document.querySelector("#theme-toggle")?.textContent?.trim() === "" &&
+      document.querySelector("#theme-toggle")?.getAttribute("aria-label") === "Switch to dark mode" &&
+      document.querySelector('#theme-toggle [data-material-icon="light_mode"]') === null &&
+      getComputedStyle(document.querySelector('#theme-toggle [data-material-icon="dark_mode"]')).maskImage !== "none"`,
+    "light theme gold brand and centered divider",
+  );
+  await click(first, "#theme-toggle");
+  await waitForPage(
+    first,
+    `document.documentElement.dataset.theme === "dark" &&
+      sessionStorage.getItem("the8020.uui.theme:initial") === "dark" &&
+      localStorage.getItem("the8020.uui.theme") === "dark"`,
+    "dark theme restored after light reload proof",
+  );
+
+  const cookie = await authenticationCookie(first);
+  assert(cookie.httpOnly === true, "authentication cookie is not HttpOnly");
+  assert(
+    cookie.value.length >= 64 && !cookie.value.includes("admin"),
+    "authentication cookie is not opaque",
+  );
+  const shared = await fetch(
+    `http://127.0.0.1:${secondaryPort}/the8020/uui/shell/`,
+    {
+      headers: { cookie: `${cookie.name}=${cookie.value}` },
+      redirect: "manual",
+    },
+  );
+  assert(
+    shared.status === 200,
+    `shared authentication state returned ${shared.status} on node two`,
+  );
+  await shared.body?.cancel();
+
+  await waitForPage(
+    first,
+    `document.querySelectorAll(".data-list tbody tr").length >= 2`,
+    "home program discovery",
+  );
+
+  const beforeKernelRestart = await waitForUISessions(primaryRoot, 1);
+  const priorSessionID = beforeKernelRestart[0]!.session_id;
+  const framesBeforeKernelRestart = first.websocketFrames.length;
+  await stopKernel(kernels[0]!);
+  kernels[0] = startKernel(primaryRoot, primaryPort, primarySSHPort);
+  await waitForHTTP(`http://127.0.0.1:${primaryPort}/`);
+  await waitForAdmin(primaryRoot);
+  await waitForServices(primaryRoot, [
+    "the8020/uui/login",
+    "the8020/uui/session",
+    "the8020/uui/shell",
+  ]);
+  await waitForPage(
+    first,
+    `document.querySelector("#connection-state")?.textContent === "Connected" &&
+      document.querySelector("h1")?.textContent?.trim() === "Welcome to 80|20" &&
+      !(document.querySelector("#app")?.textContent?.includes("Opening your session") ?? false)`,
+    "automatic stale-route replacement after kernel restart",
+    120_000,
+  );
+  let afterKernelRestart: UISession[] = [];
+  await waitFor(
+    async () => {
+      afterKernelRestart = await uiSessions(primaryRoot);
+      return afterKernelRestart.some((item) =>
+        item.session_id !== priorSessionID
+      );
+    },
+    "replacement UUI session metadata after kernel restart",
+    15_000,
+  );
+  const firstSession = afterKernelRestart.find((item) =>
+    item.session_id !== priorSessionID
+  );
+  assert(
+    firstSession !== undefined,
+    "kernel restart reused a lost logical UUI session",
+  );
+  await waitFor(
+    () => first.websocketFrames.length > framesBeforeKernelRestart,
+    "replacement session frame after kernel restart",
+    15_000,
+  );
+
+  if (afterKernelRestart.some((item) => item.session_id === priorSessionID)) {
+    await clickRow(first, "the8020/uui/sessions");
+    await waitForScreen(first, "UUI sessions");
+    await clickRow(first, priorSessionID);
+    await waitForScreen(first, `UUI session ${priorSessionID}`);
+    await waitForPage(
+      first,
+      `document.querySelector('[data-bind="liveState"]')?.value?.startsWith("STALE:") === true`,
+      "kernel-restart session metadata represented as stale",
+    );
+    await clickButton(first, "Clean stale metadata");
+    await waitForScreen(first, "UUI sessions");
+    const cleaned = await waitForUISessions(primaryRoot, 1);
+    assert(
+      cleaned[0]?.session_id === firstSession.session_id,
+      "kernel-restart stale metadata cleanup removed the live session",
+    );
+    await clickButton(first, "Back");
+    await waitForScreen(first, "Welcome to 80|20");
+  }
+
+  await clickRow(first, "the8020/dev-core/development-test");
+  await waitForScreen(first, "Development test");
+  await first.command("Emulation.setDeviceMetricsOverride", {
+    width: 1280,
+    height: 800,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await waitForPage(
+    first,
+    `(() => {
+      const leading = document.querySelector('.navbar-leading');
+      const program = document.querySelector('#program-header');
+      const visible = document.querySelector('#program-header-visible');
+      const overflow = document.querySelector('#program-header-overflow');
+      const overflowItems = document.querySelector('#program-header-overflow-items');
+      const session = document.querySelector('.navbar-actions');
+      const itemKey = (item) => item.querySelector('[data-bind="target"]') !== null
+        ? 'target'
+        : item.textContent?.trim();
+      if (!(leading instanceof HTMLElement) || !(program instanceof HTMLElement) ||
+        !(visible instanceof HTMLElement) || !(overflow instanceof HTMLDetailsElement) ||
+        !(overflowItems instanceof HTMLElement) || !(session instanceof HTMLElement)) return false;
+      const combined = [...visible.children, ...overflowItems.children].map(itemKey);
+      return Math.abs(leading.getBoundingClientRect().top - program.getBoundingClientRect().top) < 8 &&
+        visible.children.length > 0 &&
+        overflowItems.children.length === 6 - visible.children.length &&
+        overflow.hidden === (overflowItems.children.length === 0) &&
+        JSON.stringify(combined) === JSON.stringify([
+          'target', 'Stop sandbox', 'Restart sandbox', 'Reset source', 'Factory reset', 'Refresh'
+        ]) &&
+        document.querySelector('#app [data-bind="target"]') === null &&
+        document.querySelector('#app .screen-actions, #app .layout-actions') === null;
+    })()`,
+    "wide program header shows all controls on one row",
+  );
+  await first.command("Emulation.setDeviceMetricsOverride", {
+    width: 700,
+    height: 800,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  try {
+    await waitForPage(
+      first,
+      `(() => {
+        const leading = document.querySelector('.navbar-leading');
+        const program = document.querySelector('#program-header');
+        const visible = document.querySelector('#program-header-visible');
+        const overflow = document.querySelector('#program-header-overflow');
+        const overflowItems = document.querySelector('#program-header-overflow-items');
+        const overflowToggle = overflow?.querySelector(':scope > summary');
+        const itemKey = (item) => item.querySelector('[data-bind="target"]') !== null
+          ? 'target'
+          : item.textContent?.trim();
+        if (!(leading instanceof HTMLElement) || !(program instanceof HTMLElement) ||
+          !(visible instanceof HTMLElement) || !(overflow instanceof HTMLDetailsElement) ||
+          !(overflowItems instanceof HTMLElement) || !(overflowToggle instanceof HTMLElement) ||
+          !(visible.lastElementChild instanceof HTMLElement)) return false;
+        const combined = [...visible.children, ...overflowItems.children].map(itemKey);
+        const lastVisibleBounds = visible.lastElementChild.getBoundingClientRect();
+        const toggleBounds = overflowToggle.getBoundingClientRect();
+        const gap = parseFloat(getComputedStyle(program).columnGap);
+        return Math.abs(leading.getBoundingClientRect().top - program.getBoundingClientRect().top) < 8 &&
+          visible.children.length > 0 && visible.children.length < 6 &&
+          !overflow.hidden && overflowItems.children.length === 6 - visible.children.length &&
+          Math.abs(toggleBounds.left - lastVisibleBounds.right - gap) < 1 &&
+          JSON.stringify(combined) === JSON.stringify([
+            'target', 'Stop sandbox', 'Restart sandbox', 'Reset source', 'Factory reset', 'Refresh'
+          ]);
+      })()`,
+      "header hides a right-hand suffix at intermediate width",
+    );
+  } catch (error) {
+    const state = await first.evaluate(`(() => {
+      const bounds = (selector) => {
+        const item = document.querySelector(selector);
+        if (!(item instanceof HTMLElement)) return undefined;
+        const rect = item.getBoundingClientRect();
+        return { top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left, width: rect.width, height: rect.height };
+      };
+      const visible = document.querySelector('#program-header-visible');
+      const overflow = document.querySelector('#program-header-overflow');
+      const overflowItems = document.querySelector('#program-header-overflow-items');
+      const overflowToggle = overflow?.querySelector(':scope > summary');
+      const itemKey = (item) => item.querySelector('[data-bind="target"]') !== null
+        ? 'target'
+        : item.textContent?.trim();
+      return {
+        viewport: innerWidth,
+        leading: bounds('.navbar-leading'),
+        program: bounds('#program-header'),
+        session: bounds('.navbar-actions'),
+        visible: [...(visible?.children ?? [])].map(itemKey),
+        overflow: [...(overflowItems?.children ?? [])].map(itemKey),
+        overflowHidden: overflow?.hidden,
+      };
+    })()`);
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}; state: ${
+        JSON.stringify(state)
+      }`,
+    );
+  }
+  await first.command("Emulation.setDeviceMetricsOverride", {
+    width: 390,
+    height: 800,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  try {
+    await waitForPage(
+      first,
+      `(() => {
+      const brand = document.querySelector('.brand');
+      const back = document.querySelector('#screen-back');
+      const leading = document.querySelector('.navbar-leading');
+      const program = document.querySelector('#program-header');
+      const visible = document.querySelector('#program-header-visible');
+      const overflow = document.querySelector('#program-header-overflow');
+      const overflowItems = document.querySelector('#program-header-overflow-items');
+      const overflowToggle = overflow?.querySelector(':scope > summary');
+      const session = document.querySelector('.navbar-actions');
+      const connection = document.querySelector('#connection-indicator');
+      const theme = document.querySelector('#theme-toggle');
+      const target = program?.querySelector('[data-bind="target"]');
+      if (!(brand instanceof HTMLElement) || !(back instanceof HTMLButtonElement) ||
+        !(leading instanceof HTMLElement) || !(program instanceof HTMLElement) ||
+        !(visible instanceof HTMLElement) || !(overflow instanceof HTMLDetailsElement) ||
+        !(overflowItems instanceof HTMLElement) || !(session instanceof HTMLElement) ||
+        !(connection instanceof HTMLElement) || !(theme instanceof HTMLElement) ||
+        !(target instanceof HTMLSelectElement) || !(overflowToggle instanceof HTMLElement)) return false;
+      const brandBounds = brand.getBoundingClientRect();
+      const backBounds = back.getBoundingClientRect();
+      const leadingBounds = leading.getBoundingClientRect();
+      const programBounds = program.getBoundingClientRect();
+      const sessionBounds = session.getBoundingClientRect();
+      const navbarBounds = session.closest('.navbar-inner')?.getBoundingClientRect();
+      const toggleBounds = overflowToggle.getBoundingClientRect();
+      const backIcon = back.querySelector('[data-material-icon="arrow_back"]');
+      const overflowIcon = overflow.querySelector('[data-material-icon="more_vert"]');
+      return !back.disabled && back.textContent?.trim() === '' &&
+        back.getAttribute('aria-label') === 'Back' &&
+        backIcon instanceof HTMLElement && getComputedStyle(backIcon).maskImage !== 'none' &&
+        backBounds.left >= brandBounds.right &&
+        getComputedStyle(connection).display !== 'none' &&
+        getComputedStyle(theme).display !== 'none' &&
+        navbarBounds !== undefined && navbarBounds.height <= 60 &&
+        Math.abs(sessionBounds.right - navbarBounds.right) < 2 &&
+        sessionBounds.left >= programBounds.right &&
+        Math.abs(leadingBounds.top - programBounds.top) < 8 &&
+        visible.children.length === 0 && !overflow.hidden &&
+        getComputedStyle(visible).display === 'none' &&
+        Math.abs(toggleBounds.left - programBounds.left) < 1 &&
+        overflowIcon instanceof HTMLElement && getComputedStyle(overflowIcon).maskImage !== 'none' &&
+        overflowItems.children.length === 6 &&
+        document.querySelector('#app [data-bind="target"]') === null &&
+        document.querySelector('#app .screen-actions, #app .layout-actions') === null;
+      })()`,
+      "narrow program header keeps one row and overflows every item",
+    );
+  } catch (error) {
+    const state = await first.evaluate(`(() => {
+      const bounds = (selector) => {
+        const item = document.querySelector(selector);
+        if (!(item instanceof HTMLElement)) return undefined;
+        const rect = item.getBoundingClientRect();
+        return { top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left, width: rect.width, height: rect.height };
+      };
+      const visible = document.querySelector('#program-header-visible');
+      const overflow = document.querySelector('#program-header-overflow');
+      const toggle = overflow?.querySelector(':scope > summary');
+      return {
+        viewport: innerWidth,
+        navbar: bounds('.navbar-inner'),
+        leading: bounds('.navbar-leading'),
+        program: bounds('#program-header'),
+        visible: bounds('#program-header-visible'),
+        visibleDisplay: visible instanceof HTMLElement ? getComputedStyle(visible).display : undefined,
+        visibleItems: visible?.children.length,
+        toggle: toggle instanceof HTMLElement ? (() => {
+          const rect = toggle.getBoundingClientRect();
+          return { top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left, width: rect.width, height: rect.height };
+        })() : undefined,
+        overflowItems: document.querySelector('#program-header-overflow-items')?.children.length,
+        overflowHidden: overflow?.hidden,
+        session: bounds('.navbar-actions'),
+      };
+    })()`);
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}; state: ${
+        JSON.stringify(state)
+      }`,
+    );
+  }
+  await first.evaluate(
+    `document.querySelector('#program-header-overflow > summary')?.click()`,
+  );
+  await waitForPage(
+    first,
+    `(() => {
+      const overflow = document.querySelector('#program-header-overflow');
+      const container = document.querySelector('#program-header-overflow-items');
+      if (!(overflow instanceof HTMLDetailsElement) || !(container instanceof HTMLElement) ||
+        !overflow.open || container.children.length !== 6) return false;
+      const containerBounds = container.getBoundingClientRect();
+      const items = [...container.children].map((item) => item.getBoundingClientRect());
+      return containerBounds.height > 0 &&
+        containerBounds.left >= 9.5 && containerBounds.right <= innerWidth - 9.5 &&
+        getComputedStyle(container).gridAutoFlow === 'row' &&
+        items.slice(1).every((item, index) => item.top >= items[index].bottom + 9) &&
+        items.every((item) => Math.abs(item.width - items[0].width) < 1);
+    })()`,
+    "program header overflow expands controls vertically",
+  );
+  await first.evaluate(
+    `document.querySelector('#program-header-overflow > summary')?.click()`,
+  );
+  await first.command("Emulation.setDeviceMetricsOverride", {
+    width: 1280,
+    height: 800,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await waitForPage(
+    first,
+    `(() => {
+      const leading = document.querySelector('.navbar-leading');
+      const program = document.querySelector('#program-header');
+      const visible = document.querySelector('#program-header-visible');
+      const overflow = document.querySelector('#program-header-overflow');
+      const overflowItems = document.querySelector('#program-header-overflow-items');
+      const actions = document.querySelector('.navbar-actions');
+      const inner = document.querySelector('.navbar-inner');
+      const itemKey = (item) => item.querySelector('[data-bind="target"]') !== null
+        ? 'target'
+        : item.textContent?.trim();
+      if (!(leading instanceof HTMLElement) || !(program instanceof HTMLElement) ||
+        !(visible instanceof HTMLElement) || !(overflow instanceof HTMLDetailsElement) ||
+        !(overflowItems instanceof HTMLElement) ||
+        !(actions instanceof HTMLElement) || !(inner instanceof HTMLElement)) return false;
+      const combined = [...visible.children, ...overflowItems.children].map(itemKey);
+      return Math.abs(leading.getBoundingClientRect().top - program.getBoundingClientRect().top) < 8 &&
+        Math.abs(actions.getBoundingClientRect().right - inner.getBoundingClientRect().right) < 2 &&
+        visible.children.length > 0 &&
+        overflowItems.children.length === 6 - visible.children.length &&
+        overflow.hidden === (overflowItems.children.length === 0) &&
+        JSON.stringify(combined) === JSON.stringify([
+          'target', 'Stop sandbox', 'Restart sandbox', 'Reset source', 'Factory reset', 'Refresh'
+        ]);
+    })()`,
+    "wide program header restores its largest ordered prefix",
+  );
+  await waitForPage(
+    first,
+    `getComputedStyle(document.querySelector('[data-bind="state"]')).borderLeftWidth === "0px" &&
+      getComputedStyle(document.querySelector('[data-bind="state"]')).borderBottomWidth === "1px" &&
+      getComputedStyle(document.querySelector('[data-bind="state"]')).paddingLeft === "0px" &&
+      getComputedStyle(document.querySelector('[data-bind="state"]')).paddingTop === "0px" &&
+      getComputedStyle(document.querySelector('[data-bind="state"]')).paddingBottom === "0px" &&
+      getComputedStyle(document.querySelector('[data-bind="state"]')).backgroundColor === "rgba(0, 0, 0, 0)"`,
+    "flat read-only UUI field",
+  );
+  await waitForPage(
+    first,
+    `document.querySelector('[data-bind="state"]')?.value === "READY" &&
+      document.querySelector('[data-bind="status"]')?.value === "Development sandbox created and started" &&
+      document.querySelector('[data-bind="target"]')?.value?.startsWith("development:") === true`,
+    "automatic development sandbox creation",
+    60_000,
+  );
+  await waitForPage(
+    first,
+    `(() => {
+      const status = document.querySelector(".sandbox-console-status");
+      const viewport = document.querySelector(".sandbox-console-viewport");
+      const screen = document.querySelector(".xterm-screen");
+      const canvas = document.querySelector(".xterm-text-layer");
+      if (!(viewport instanceof HTMLElement) || !(screen instanceof HTMLElement)) return false;
+      return status?.textContent === "Terminal connected" &&
+        canvas instanceof HTMLCanvasElement &&
+        screen.getBoundingClientRect().bottom <= viewport.getBoundingClientRect().bottom + 0.5;
+    })()`,
+    "development sandbox browser console",
+    60_000,
+  );
+  const consoleFrameStart = first.websocketFrames.length;
+  await enterTerminal(
+    first,
+    `clear && printf '\\036BROWSER_CONSOLE:%s:%s\\037\\n' "$BASH_VERSION" "$TERM"`,
+  );
+  try {
+    await waitFor(
+      () =>
+        websocketOutput(first, consoleFrameStart).includes(
+          "\x1eBROWSER_CONSOLE:",
+        ) && websocketOutput(first, consoleFrameStart).includes(
+          ":xterm-256color\x1f",
+        ),
+      "Bash output through the browser console WebSocket",
+      15_000,
+    );
+  } catch (error) {
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}; frames: ${
+        JSON.stringify(first.websocketFrames.slice(consoleFrameStart))
+      }`,
+    );
+  }
+  await dragTerminalSelection(first);
+  await waitForPage(
+    first,
+    `document.querySelector(".sandbox-console")?.dataset.hasSelection === "true"`,
+    "terminal mouse selection",
+  );
+  const visibleSelection = await first.evaluate<boolean>(`(() => {
+    const canvas = document.querySelector(".xterm-selection-layer");
+    if (!(canvas instanceof HTMLCanvasElement)) return false;
+    const context = canvas.getContext("2d");
+    if (context === null) return false;
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    for (let index = 3; index < pixels.length; index += 4) {
+      if (pixels[index] !== 0) return true;
+    }
+    return false;
+  })()`);
+  assert(visibleSelection, "terminal selection was not visibly rendered");
+  await first.evaluate(
+    `window.__the8020ConsoleMarker = document.querySelector(".sandbox-console")`,
+  );
+  const refreshFrameStart = first.websocketFrames.length;
+  await clickButton(first, "Refresh");
+  try {
+    await waitForPage(
+      first,
+      `document.querySelector('[data-bind="status"]')?.value === "Refreshed" &&
+        window.__the8020ConsoleMarker === document.querySelector(".sandbox-console") &&
+        document.querySelector(".sandbox-console-status")?.textContent === "Terminal connected" &&
+        document.documentElement.dataset.theme === "dark"`,
+      "preserved browser console across screen refresh",
+    );
+  } catch (error) {
+    const state = await first.evaluate(`({
+      status: document.querySelector('[data-bind="status"]')?.value,
+      same: window.__the8020ConsoleMarker === document.querySelector(".sandbox-console"),
+      consoleStatus: document.querySelector(".sandbox-console-status")?.textContent,
+      title: document.querySelector("h1")?.textContent
+    })`);
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}; state: ${
+        JSON.stringify(state)
+      }; frames: ${
+        JSON.stringify(first.websocketFrames.slice(refreshFrameStart))
+      }`,
+    );
+  }
+  const runtimeTarget = await first.evaluate<string>(`(() => {
+    const select = document.querySelector('[data-bind="target"]');
+    if (!(select instanceof HTMLSelectElement)) return "";
+    return [...select.options].find((option) => option.value.startsWith("runtime:"))?.value ?? "";
+  })()`);
+  assert(
+    runtimeTarget !== "",
+    "development test did not list a runtime sandbox",
+  );
+  await setValue(first, '[data-bind="target"]', runtimeTarget);
+  await waitForPage(
+    first,
+    `document.querySelector(".sandbox-console")?.dataset.consoleTarget === ${
+      JSON.stringify(runtimeTarget)
+    } && document.querySelector(".sandbox-console-status")?.textContent === "Terminal connected"`,
+    "runtime sandbox browser console",
+  );
+  const runtimeConsoleFrameStart = first.websocketFrames.length;
+  await enterTerminal(
+    first,
+    `clear && printf '\\036RUNTIME_CONSOLE:%s:%s\\037\\n' "$BASH_VERSION" "$TERM"`,
+  );
+  await waitFor(
+    () =>
+      websocketOutput(first, runtimeConsoleFrameStart).includes(
+        "\x1eRUNTIME_CONSOLE:",
+      ) && websocketOutput(first, runtimeConsoleFrameStart).includes(
+        ":xterm-256color\x1f",
+      ),
+    "Bash output from an ordinary runtime sandbox",
+    15_000,
+  );
+  const beforeSourceReset = await first.evaluate<string>(
+    `document.querySelector('[data-bind="activeSandboxId"]')?.value ?? ""`,
+  );
+  await clickButton(first, "Reset source");
+  await waitForPage(
+    first,
+    `document.querySelector('[data-bind="status"]')?.value === "Select Confirm destructive reset before resetting the workspace" &&
+      document.querySelector('[data-bind="activeSandboxId"]')?.value === ${
+      JSON.stringify(beforeSourceReset)
+    }`,
+    "rejected unconfirmed development reset",
+  );
+  await setChecked(
+    first,
+    '[data-bind="confirmDestructive"]',
+    true,
+  );
+  await clickButton(first, "Reset source");
+  await waitForPage(
+    first,
+    `document.querySelector('[data-bind="state"]')?.value === "READY" &&
+      document.querySelector('[data-bind="status"]')?.value === "Development source reset" &&
+      document.querySelector('[data-bind="activeSandboxId"]')?.value !== ${
+      JSON.stringify(beforeSourceReset)
+    } && document.querySelector('[data-bind="confirmDestructive"]')?.checked === false`,
+    "confirmed development source reset",
+    60_000,
+  );
+  const beforeFactoryReset = await first.evaluate<string>(
+    `document.querySelector('[data-bind="activeSandboxId"]')?.value ?? ""`,
+  );
+  await setChecked(
+    first,
+    '[data-bind="confirmDestructive"]',
+    true,
+  );
+  await clickButton(first, "Factory reset");
+  await waitForPage(
+    first,
+    `document.querySelector('[data-bind="state"]')?.value === "READY" &&
+      document.querySelector('[data-bind="status"]')?.value === "Development workspace factory reset" &&
+      document.querySelector('[data-bind="activeSandboxId"]')?.value !== ${
+      JSON.stringify(beforeFactoryReset)
+    } && document.querySelector('[data-bind="confirmDestructive"]')?.checked === false`,
+    "confirmed development factory reset",
+    60_000,
+  );
+  const beforeRestart = await first.evaluate<string>(
+    `document.querySelector('[data-bind="activeSandboxId"]')?.value ?? ""`,
+  );
+  await clickButton(first, "Restart sandbox");
+  await waitForPage(
+    first,
+    `document.querySelector('[data-bind="state"]')?.value === "READY" &&
+      document.querySelector('[data-bind="status"]')?.value === "Development sandbox restarted" &&
+      document.querySelector('[data-bind="activeSandboxId"]')?.value !== ${
+      JSON.stringify(beforeRestart)
+    }`,
+    "development sandbox restart",
+    60_000,
+  );
+  await clickButton(first, "Stop sandbox");
+  await waitForPage(
+    first,
+    `document.querySelector('[data-bind="state"]')?.value === "STOPPED" &&
+      document.querySelector('[data-bind="status"]')?.value === "Development sandbox stopped" &&
+      document.querySelector('[data-bind="activeSandboxId"]')?.value === ""`,
+    "development sandbox stop",
+    60_000,
+  );
+  await clickButton(first, "Start sandbox");
+  try {
+    await waitForPage(
+      first,
+      `document.querySelector('[data-bind="state"]')?.value === "READY" &&
+        document.querySelector('[data-bind="status"]')?.value === "Development sandbox started" &&
+        document.querySelector('[data-bind="activeSandboxId"]')?.value?.startsWith("sbx-") === true &&
+        document.querySelector(".sandbox-console-status")?.textContent === "Terminal connected"`,
+      "development sandbox restart after stop",
+      60_000,
+    );
+  } catch (error) {
+    const state = await first.evaluate(`({
+      workspace: document.querySelector('[data-bind="workspaceId"]')?.value,
+      state: document.querySelector('[data-bind="state"]')?.value,
+      status: document.querySelector('[data-bind="status"]')?.value,
+      activeSandboxId: document.querySelector('[data-bind="activeSandboxId"]')?.value,
+      target: document.querySelector('[data-bind="target"]')?.value,
+      consoleStatus: document.querySelector('.sandbox-console-status')?.textContent,
+      buttons: [...document.querySelectorAll('#program-header button')].map((item) => item.textContent?.trim()),
+    })`);
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}; state: ${
+        JSON.stringify(state)
+      }`,
+    );
+  }
+  await clickButton(first, "Back");
+  await waitForScreen(first, "Welcome to 80|20");
+
+  await clickRow(first, "the8020/admin-core/packages");
+  await waitForScreen(first, "Packages");
+  await clickRow(first, "the8020/demo");
+  await waitForScreen(first, "Package the8020/demo");
+  await waitForPage(
+    first,
+    `document.querySelector('[data-bind="packageId"]')?.value === "the8020/demo" &&
+      document.querySelector('[data-bind="repositoryStatus"]')?.value?.length > 0 &&
+      [...document.querySelectorAll('[data-layout-id="services"] tbody tr')].some((item) => item.textContent?.includes("the8020/demo/variables")) &&
+      [...document.querySelectorAll('[data-layout-id="programs"] tbody tr')].some((item) => item.textContent?.includes("the8020/demo/demo-form")) &&
+      [...document.querySelectorAll('[data-layout-id="files"] tbody tr')].some((item) => item.textContent?.includes("package.toml")) &&
+      (() => {
+        const section = document.querySelector('[data-layout-id="contents-section"]');
+        const title = section?.querySelector(':scope > .section-title');
+        const cards = [...document.querySelectorAll('[data-layout-id="contents"] > :is(.layout-field-group, .layout-detail, .layout-list)')];
+        if (!(title instanceof HTMLElement) || cards.length < 2 ||
+          !(cards[0] instanceof HTMLElement) || !(cards[1] instanceof HTMLElement)) return false;
+        const titleBounds = title.getBoundingClientRect();
+        const firstBounds = cards[0].getBoundingClientRect();
+        const secondBounds = cards[1].getBoundingClientRect();
+        const titleToFirst = firstBounds.top - titleBounds.bottom;
+        const firstToSecond = secondBounds.top - firstBounds.bottom;
+        return Math.abs(titleToFirst - 24) < 0.5 &&
+          Math.abs(firstToSecond - 24) < 0.5 &&
+          Math.abs(titleToFirst - firstToSecond) < 0.5;
+      })()`,
+    "selected package manifest, repository, services, programs, and files",
+  );
+  await clickRow(first, "the8020/demo/variables");
+  await waitForScreen(first, "Service the8020/demo/variables");
+  await clickButton(first, "Back");
+  await waitForScreen(first, "Package the8020/demo");
+  await clickButton(first, "Back");
+  await waitForScreen(first, "Packages");
+  await clickButton(first, "Back");
+  await waitForScreen(first, "Welcome to 80|20");
+
+  await clickRow(first, "the8020/uui/sessions");
+  await waitForScreen(first, "UUI sessions");
+  await waitForPage(
+    first,
+    `[...document.querySelectorAll(".data-list tbody tr")].some((item) => item.textContent?.includes(${
+      JSON.stringify(firstSession.session_id)
+    }))`,
+    "UUI session in package-owned session list",
+  );
+  await clickRow(first, firstSession.session_id);
+  await waitForScreen(first, `UUI session ${firstSession.session_id}`);
+  await waitForPage(
+    first,
+    `document.querySelector('[data-bind="sessionId"]')?.value === ${
+      JSON.stringify(firstSession.session_id)
+    } &&
+      document.querySelector('[data-bind="sandboxId"]')?.value === ${
+      JSON.stringify(firstSession.sandbox_id)
+    } &&
+      document.querySelector('[data-bind="workerId"]')?.value === ${
+      JSON.stringify(firstSession.worker_id)
+    } &&
+      document.querySelector('[data-bind="liveState"]')?.value === "LIVE" &&
+      document.querySelector('[data-bind="messageLog"]')?.value?.includes('"messages"') === true`,
+    "UUI package session metadata and registered Worker inspection",
+  );
+  await clickButton(first, "Back");
+  await waitForScreen(first, "UUI sessions");
+  await clickButton(first, "Back");
+  await waitForScreen(first, "Welcome to 80|20");
+
+  await clickRow(first, "the8020/admin-core/services");
+  await waitForScreen(first, "Services");
+  await clickRow(first, "the8020/uui/session");
+  await waitForScreen(first, "Service the8020/uui/session");
+  await clickButton(first, "Back");
+  await waitForScreen(first, "Services");
+  await clickRow(first, "the8020/demo/variables");
+  await waitForScreen(first, "Service the8020/demo/variables");
+  await first.command("Emulation.setDeviceMetricsOverride", {
+    width: 1280,
+    height: 800,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await waitForPage(
+    first,
+    `(() => {
+      const grid = document.querySelector('[data-layout-id="configuration"]');
+      const cards = ['instances', 'workers', 'runtime']
+        .map((id) => document.querySelector('[data-layout-id="' + id + '"]'));
+      if (!(grid instanceof HTMLElement) ||
+        cards.some((card) => !(card instanceof HTMLElement))) return false;
+      const cardElements = cards;
+      const equalHeightOnEachRow = cardElements.every((card, index) => {
+        const bounds = card.getBoundingClientRect();
+        return cardElements.every((peer, peerIndex) => {
+          if (peerIndex === index) return true;
+          const peerBounds = peer.getBoundingClientRect();
+          return Math.abs(bounds.top - peerBounds.top) >= 2 ||
+            Math.abs(bounds.height - peerBounds.height) < 2;
+        });
+      });
+      const insetBorderTitles = cardElements.every((card) => {
+        const title = card.querySelector(':scope > .group-title');
+        const contents = card.querySelector(':scope > .field-group-fields');
+        if (!(title instanceof HTMLElement) || !(contents instanceof HTMLElement)) return false;
+        const bounds = card.getBoundingClientRect();
+        const titleBounds = title.getBoundingClientRect();
+        const contentsBounds = contents.getBoundingClientRect();
+        const cardStyle = getComputedStyle(card);
+        const titleStyle = getComputedStyle(title);
+        const titleOutline = getComputedStyle(title, '::before');
+        const titleLeftContinuation = getComputedStyle(title, '::after');
+        return Math.abs(titleBounds.top + titleBounds.height / 2 - bounds.top) < 2 &&
+          Math.abs(titleBounds.left - bounds.left) < 2 &&
+          titleStyle.fontSize === '16px' && titleStyle.fontWeight === '600' &&
+          titleStyle.borderTopLeftRadius === '10px' &&
+          titleStyle.borderTopRightRadius === '20px' &&
+          titleStyle.paddingLeft === '12.48px' &&
+          titleStyle.paddingRight === '24px' &&
+          cardStyle.paddingLeft === titleStyle.paddingLeft &&
+          cardStyle.paddingRight === titleStyle.paddingRight &&
+          Math.abs(contentsBounds.left - bounds.left - 1 - parseFloat(titleStyle.paddingLeft)) < 1 &&
+          Math.abs(bounds.right - contentsBounds.right - 1 - parseFloat(titleStyle.paddingRight)) < 1 &&
+          titleStyle.textAlign === 'left' &&
+          titleOutline.borderLeftWidth === '1px' &&
+          titleOutline.borderBottomWidth === '0px' &&
+          titleOutline.clipPath !== 'none' &&
+          titleLeftContinuation.borderLeftWidth === '1px' &&
+          titleLeftContinuation.borderRightWidth === '0px';
+      });
+      const section = document.querySelector('[data-layout-id="configuration-section"]');
+      const sectionTitle = section?.querySelector(':scope > .section-title');
+      const screenTitle = document.querySelector('.screen > .screen-title');
+      const screenLayout = document.querySelector('.screen > .layout-stack');
+      const readOnly = document.querySelector('[data-bind="serviceId"]');
+      const readOnlyCheckbox = document.querySelector('[data-bind="enabled"]');
+      const editable = document.querySelector('[data-bind="workersMinimum"]');
+      const slider = document.querySelector('[data-bind="targetUtilization"]');
+      const sliderValue = slider?.closest('.field-input-shell')?.querySelector('.field-range-value');
+      const fieldLabel = editable?.closest('.field')?.querySelector(':scope > label');
+      if (!(readOnly instanceof HTMLElement) ||
+        !(readOnlyCheckbox instanceof HTMLInputElement) ||
+        !(editable instanceof HTMLElement) ||
+        !(slider instanceof HTMLInputElement) ||
+        !(sliderValue instanceof HTMLOutputElement) ||
+        !(fieldLabel instanceof HTMLLabelElement)) return false;
+      const fieldLabelStyle = getComputedStyle(fieldLabel);
+      const flat = [readOnly, editable].every((control) => {
+        const style = getComputedStyle(control);
+        return style.backgroundColor === 'rgba(0, 0, 0, 0)' &&
+          style.borderTopWidth === '0px' && style.borderInlineStartWidth === '0px' &&
+          style.borderInlineEndWidth === '0px' && style.borderBottomWidth === '1px';
+      });
+      const readOnlyIcon = readOnly.closest('.field')?.querySelector('.field-edit-icon');
+      const readOnlyCheckboxShell = readOnlyCheckbox.closest('.field-input-shell');
+      const readOnlyCheckboxIcon = readOnlyCheckbox.closest('.field')?.querySelector('.field-edit-icon');
+      const editableIcon = editable.closest('.field')?.querySelector('.field-edit-icon');
+      const sliderIcon = slider.closest('.field')?.querySelector('.field-edit-icon');
+      const editableShell = editable.closest('.field-input-shell');
+      const sliderShell = slider.closest('.field-input-shell');
+      const iconStyle = editableIcon instanceof HTMLElement
+        ? getComputedStyle(editableIcon)
+        : undefined;
+      const readOnlyCheckboxStyle = getComputedStyle(readOnlyCheckbox);
+      const readOnlyCheckboxShellStyle = readOnlyCheckboxShell instanceof HTMLElement
+        ? getComputedStyle(readOnlyCheckboxShell)
+        : undefined;
+      const sliderStyle = getComputedStyle(slider);
+      const pencilAtEnd = editableIcon instanceof HTMLElement &&
+        editableShell instanceof HTMLElement &&
+        Math.abs(editableShell.getBoundingClientRect().right - editableIcon.getBoundingClientRect().right) < 1;
+      const sliderPencilAtEnd = sliderIcon instanceof HTMLElement &&
+        sliderShell instanceof HTMLElement &&
+        Math.abs(sliderShell.getBoundingClientRect().right - sliderIcon.getBoundingClientRect().right) < 1;
+      const sliderValueOnLeft = sliderValue.getBoundingClientRect().right <
+        slider.getBoundingClientRect().left && sliderValue.nextElementSibling === slider;
+      return grid.children.length === 3 &&
+        cardElements.every((card) => card.parentElement === grid) &&
+        equalHeightOnEachRow && insetBorderTitles && flat &&
+        screenTitle?.textContent === 'Service the8020/demo/variables' &&
+        screenLayout instanceof HTMLElement &&
+        getComputedStyle(screenLayout).marginTop === '32px' &&
+        sectionTitle?.textContent === 'Configuration' &&
+        sectionTitle instanceof HTMLElement &&
+        getComputedStyle(sectionTitle).marginBottom === '0px' &&
+        document.querySelector('[data-layout-id="identity"] > .group-title')?.textContent === 'Status' &&
+        document.querySelector('[data-layout-id="sandboxes"] > .group-title')?.textContent === 'Sandboxes' &&
+        document.querySelector('.field-group-title, .region-title') === null &&
+        fieldLabelStyle.color === 'rgb(166, 174, 194)' &&
+        fieldLabelStyle.fontSize === '11.2px' &&
+        fieldLabelStyle.fontWeight === '800' &&
+        fieldLabelStyle.letterSpacing === '0.672px' &&
+        fieldLabelStyle.textTransform === 'uppercase' &&
+        readOnlyIcon === null && editableIcon instanceof HTMLElement &&
+        readOnlyCheckbox.type === 'checkbox' && readOnlyCheckbox.disabled &&
+        readOnlyCheckboxIcon === null && readOnlyCheckboxStyle.appearance === 'none' &&
+        readOnlyCheckboxStyle.opacity === '1' &&
+        readOnlyCheckboxShellStyle?.borderBottomWidth === '1px' &&
+        pencilAtEnd &&
+        editableIcon.dataset.materialIcon === 'edit' &&
+        iconStyle?.opacity === '0.78' &&
+        (iconStyle.maskImage !== 'none' || iconStyle.webkitMaskImage !== 'none') &&
+        editable instanceof HTMLInputElement && editable.type === 'number' &&
+        slider.type === 'range' && slider.min === '1' && slider.max === '100' &&
+        slider.step === '1' && slider.value === '70' &&
+        slider.getAttribute('aria-valuetext') === '70%' &&
+        sliderValue.value === '70%' &&
+        sliderStyle.appearance === 'none' && sliderStyle.opacity === '1' &&
+        sliderStyle.paddingInlineEnd === '0px' &&
+        sliderStyle.backgroundImage.includes('linear-gradient') &&
+        sliderStyle.backgroundSize.includes('calc(100% - 14px)') &&
+        slider.style.getPropertyValue('--range-progress').endsWith('%') &&
+        sliderValueOnLeft && sliderIcon instanceof HTMLElement &&
+        sliderPencilAtEnd && sliderIcon.dataset.materialIcon === 'edit' &&
+        iconStyle.maskSize.includes('19.2px');
+    })()`,
+    "unified field groups and editable field affordances",
+  );
+  await clickButton(first, "Enable");
+  await waitForPage(
+    first,
+    `[...document.querySelectorAll("button")].some((item) => item.textContent?.trim() === "Disable")`,
+    "service enable through Deno admin bus",
+    30_000,
+  );
+  await setValue(first, '[data-bind="targetUtilization"]', "100");
+  await waitForPage(
+    first,
+    `(() => {
+      const slider = document.querySelector('[data-bind="targetUtilization"]');
+      const output = slider?.closest('.field-input-shell')?.querySelector('.field-range-value');
+      return slider instanceof HTMLInputElement &&
+        output instanceof HTMLOutputElement && slider.value === '100' &&
+        slider.style.getPropertyValue('--range-progress') === '100%' &&
+        slider.getAttribute('aria-valuetext') === '100%' && output.value === '100%';
+    })()`,
+    "range endpoint value, fill, and label synchronization",
+  );
+  await setValue(first, '[data-bind="workersMinimum"]', "2");
+  await setValue(first, '[data-bind="targetUtilization"]', "65");
+  await clickButton(first, "Save");
+  let managedSandbox = "";
+  await waitFor(
+    async () => {
+      const inspected = await admin(primaryRoot, [
+        "service",
+        "inspect",
+        "the8020/demo/variables",
+      ]);
+      const service = inspected.service as {
+        worker_count?: number;
+        instances?: Array<{ sandbox_id?: string }>;
+        effective_configuration?: {
+          scaling?: {
+            workers_per_replica_min?: number;
+            target_utilization?: number;
+          };
+        };
+      };
+      managedSandbox = service.instances?.[0]?.sandbox_id ?? "";
+      return service.worker_count === 2 &&
+        service.effective_configuration?.scaling?.workers_per_replica_min ===
+          2 &&
+        service.effective_configuration?.scaling?.target_utilization ===
+          0.65 &&
+        managedSandbox.length > 0;
+    },
+    "service capacity mutation through Deno admin bus",
+    30_000,
+    250,
+  );
+  await waitForPage(
+    first,
+    `[...document.querySelectorAll(".data-list tbody tr")].some((item) => item.textContent?.includes(${
+      JSON.stringify(managedSandbox)
+    }))`,
+    "scaled service sandbox in refreshed detail screen",
+    30_000,
+  );
+  await clickRow(first, managedSandbox);
+  await waitForScreen(first, `Sandbox ${managedSandbox}`);
+  await waitForPage(
+    first,
+    `(() => {
+      const fields = document.querySelector('[data-layout-id="identity"] .field-group-fields');
+      const failure = document.querySelector('[data-bind="failure"]')?.closest('.field');
+      if (!(fields instanceof HTMLElement) || !(failure instanceof HTMLElement)) return false;
+      const container = fields.getBoundingClientRect();
+      const failureBounds = failure.getBoundingClientRect();
+      const startsOnHalf = (field) => {
+        const ratio = (field.getBoundingClientRect().left - container.left) / container.width;
+        return Math.abs(ratio) < 0.02 || Math.abs(ratio - 0.5) < 0.02;
+      };
+      const longFields = [...fields.querySelectorAll('[data-field-length="long"]')];
+      const label = failure.querySelector('label');
+      const value = failure.querySelector('.field-input-shell');
+      return Math.abs((failureBounds.left - container.left) / container.width - 0.5) < 0.02 &&
+        longFields.every((field) => field instanceof HTMLElement && startsOnHalf(field)) &&
+        getComputedStyle(failure).rowGap === '0px' &&
+        label instanceof HTMLElement && value instanceof HTMLElement &&
+        Math.abs(value.getBoundingClientRect().top - label.getBoundingClientRect().bottom) < 1;
+    })()`,
+    "sandbox field grid half-boundary alignment",
+  );
+  await clickButton(first, "Back");
+  await waitForScreen(first, "Service the8020/demo/variables");
+  await clickButton(first, "Back");
+  await waitForScreen(first, "Services");
+  await clickButton(first, "Back");
+  await waitForScreen(first, "Welcome to 80|20");
+
+  await clickRow(first, "the8020/admin-core/sandboxes");
+  await waitForScreen(first, "Sandboxes");
+  const rapidInteractionState = await first.evaluate<Record<string, unknown>>(
+    `(() => {
+    const row = [...document.querySelectorAll(".data-list tbody tr")].find((item) =>
+      item.textContent?.includes(${JSON.stringify(managedSandbox)}));
+    const app = document.querySelector("#app");
+    const header = document.querySelector("#program-header");
+    const back = document.querySelector("#screen-back");
+    const shield = document.querySelector("#interaction-shield");
+    const indicator = document.querySelector(".interaction-indicator");
+    if (!(row instanceof HTMLTableRowElement) || !(app instanceof HTMLElement) ||
+      !(header instanceof HTMLElement) || !(back instanceof HTMLButtonElement) ||
+      !(shield instanceof HTMLElement) || !(indicator instanceof HTMLElement)) return { found: false };
+    row.click();
+    row.click();
+    row.click();
+    const shieldStyle = getComputedStyle(shield);
+    const indicatorStyle = getComputedStyle(indicator);
+    return {
+      found: true,
+      pending: document.documentElement.hasAttribute("data-interaction-pending"),
+      appInert: app.inert,
+      headerInert: header.inert,
+      backDisabled: back.disabled,
+      pointerEvents: shieldStyle.pointerEvents,
+      backgroundColor: shieldStyle.backgroundColor,
+      backdropFilter: shieldStyle.backdropFilter,
+      shieldDelay: shieldStyle.transitionDelay,
+      indicatorOpacity: indicatorStyle.opacity,
+      indicatorDelay: indicatorStyle.transitionDelay,
+    };
+  })()`,
+  );
+  assert(
+    rapidInteractionState.found === true &&
+      rapidInteractionState.pending === true &&
+      rapidInteractionState.appInert === true &&
+      rapidInteractionState.headerInert === true &&
+      rapidInteractionState.backDisabled === true &&
+      rapidInteractionState.pointerEvents === "auto" &&
+      (rapidInteractionState.backgroundColor === "rgba(0, 0, 0, 0)" ||
+        String(rapidInteractionState.backgroundColor).endsWith("/ 0)")) &&
+      rapidInteractionState.backdropFilter === "blur(0px)" &&
+      String(rapidInteractionState.shieldDelay).includes("0.5s") &&
+      rapidInteractionState.indicatorOpacity === "0" &&
+      String(rapidInteractionState.indicatorDelay).includes("0.5s"),
+    `rapid screen events were not immediately and invisibly blocked: ${
+      JSON.stringify(rapidInteractionState)
+    }`,
+  );
+  await waitForScreen(first, `Sandbox ${managedSandbox}`);
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  assert(
+    await first.evaluate<boolean>(`(() => {
+      const notice = document.querySelector("#notice");
+      const app = document.querySelector("#app");
+      return !document.documentElement.hasAttribute("data-interaction-pending") &&
+        app instanceof HTMLElement && !app.inert &&
+        !notice?.textContent?.includes("screen identity or revision mismatch");
+    })()`),
+    "rapid screen events escaped the interaction lock",
+  );
+  await first.evaluate(
+    `document.documentElement.toggleAttribute("data-interaction-pending", true)`,
+  );
+  await waitForPage(
+    first,
+    `(() => {
+      const shield = document.querySelector("#interaction-shield");
+      const indicator = document.querySelector(".interaction-indicator");
+      if (!(shield instanceof HTMLElement) || !(indicator instanceof HTMLElement)) return false;
+      const shieldStyle = getComputedStyle(shield);
+      return shieldStyle.backgroundColor !== "rgba(0, 0, 0, 0)" &&
+        shieldStyle.backdropFilter === "blur(3px)" &&
+        getComputedStyle(indicator).opacity === "1";
+    })()`,
+    "delayed interaction loading feedback",
+  );
+  await first.evaluate(
+    `document.documentElement.removeAttribute("data-interaction-pending")`,
+  );
+  await clickRow(first, "the8020/demo/variables");
+  await waitForScreen(first, "Service the8020/demo/variables");
+  await clickButton(first, "Back");
+  await waitForScreen(first, `Sandbox ${managedSandbox}`);
+  await clickButton(first, "Back");
+  await waitForScreen(first, "Sandboxes");
+  await clickButton(first, "Back");
+  await waitForScreen(first, "Welcome to 80|20");
+
+  await clickRow(first, "the8020/admin-core/services");
+  await waitForScreen(first, "Services");
+  await clickRow(first, "the8020/demo/variables");
+  await waitForScreen(first, "Service the8020/demo/variables");
+  await clickButton(first, "Disable");
+  await waitForPage(
+    first,
+    `[...document.querySelectorAll("button")].some((item) => item.textContent?.trim() === "Enable")`,
+    "service disable through Deno admin bus",
+    30_000,
+  );
+  await clickButton(first, "Back");
+  await waitForScreen(first, "Services");
+  await clickButton(first, "Back");
+  await waitForScreen(first, "Welcome to 80|20");
+
+  await clickRow(first, "the8020/demo/demo-form");
+  await waitForScreen(first, "Form and binding demonstration");
+  await waitForPage(
+    first,
+    `(() => {
+      const titleIcon = document.querySelector('.screen-title [data-material-icon="edit"]');
+      const save = [...document.querySelectorAll('button')].find((item) => item.textContent?.trim() === 'Save');
+      const saveIcon = save?.querySelector('[data-material-icon="save"]');
+      if (!(titleIcon instanceof HTMLElement) || !(save instanceof HTMLButtonElement) ||
+        !(saveIcon instanceof HTMLElement)) return false;
+      const titleStyle = getComputedStyle(titleIcon);
+      const saveButtonStyle = getComputedStyle(save);
+      const saveStyle = getComputedStyle(saveIcon);
+      const titleBounds = titleIcon.getBoundingClientRect();
+      const saveBounds = save.getBoundingClientRect();
+      const saveIconBounds = saveIcon.getBoundingClientRect();
+      return titleIcon.classList.contains('material-icon-color-primary') &&
+        saveStyle.color === 'rgb(255, 255, 255)' &&
+        titleStyle.maskImage !== 'none' && saveStyle.maskImage !== 'none' &&
+        titleStyle.verticalAlign === 'middle' &&
+        Math.abs(titleBounds.width / parseFloat(titleStyle.fontSize) - 1.2) < 0.05 &&
+        Math.abs(saveIconBounds.width / parseFloat(saveStyle.fontSize) - 1.5) < 0.05 &&
+        Math.abs(parseFloat(saveButtonStyle.columnGap) /
+          parseFloat(saveButtonStyle.fontSize) - 0.45) < 0.01 &&
+        Math.abs((saveIconBounds.top + saveIconBounds.bottom) / 2 -
+          (saveBounds.top + saveBounds.bottom) / 2) < 1;
+    })()`,
+    "properly sized, centered, and spaced icon placeholders",
+  );
+  try {
+    await waitForPage(
+      first,
+      `(() => {
+      const primaryEmail = document.querySelector('#control-primary-email');
+      const confirmationEmail = document.querySelector('#control-confirmation-email');
+      const biography = document.querySelector('#control-biography');
+      const enabled = document.querySelector('#control-enabled');
+      const role = document.querySelector('#control-role');
+      const accountGrid = primaryEmail?.closest('.field-group-fields');
+      const profileGrid = biography?.closest('.field-group-fields');
+      const primaryPencil = primaryEmail?.closest('.field')?.querySelector('.field-edit-icon');
+      const biographyPencil = biography?.closest('.field')?.querySelector('.field-edit-icon');
+      const enabledShell = enabled?.closest('.field-input-shell');
+      const enabledPencil = enabledShell?.querySelector('.field-edit-icon');
+      const roleShell = role?.closest('.field-input-shell');
+      const rolePencil = roleShell?.querySelector('.field-edit-icon');
+      const roleArrow = roleShell?.querySelector('.field-select-icon');
+      if (!(primaryEmail instanceof HTMLInputElement) ||
+          !(confirmationEmail instanceof HTMLInputElement) ||
+          !(biography instanceof HTMLTextAreaElement) ||
+          !(enabled instanceof HTMLInputElement) ||
+          !(role instanceof HTMLSelectElement) ||
+          !(accountGrid instanceof HTMLElement) ||
+          !(profileGrid instanceof HTMLElement) ||
+          !(primaryPencil instanceof HTMLElement) ||
+          !(biographyPencil instanceof HTMLElement) ||
+          !(enabledShell instanceof HTMLElement) ||
+          !(enabledPencil instanceof HTMLElement) ||
+          !(roleShell instanceof HTMLElement) ||
+          !(rolePencil instanceof HTMLElement) ||
+          !(roleArrow instanceof HTMLElement)) return false;
+      const aligned = (left, right) => Math.abs(left - right) < 0.5;
+      const enabledStyle = getComputedStyle(enabled);
+      const enabledShellStyle = getComputedStyle(enabledShell);
+      return biography.closest('.field')?.dataset.fieldRowSpan === '2' &&
+        accountGrid.classList.contains('field-group-fields-exact-rows') &&
+        profileGrid.classList.contains('field-group-fields-exact-rows') &&
+        aligned(accountGrid.getBoundingClientRect().top, profileGrid.getBoundingClientRect().top) &&
+        aligned(biography.getBoundingClientRect().bottom, primaryEmail.getBoundingClientRect().bottom) &&
+        aligned(biographyPencil.getBoundingClientRect().bottom, primaryPencil.getBoundingClientRect().bottom) &&
+        aligned(biographyPencil.getBoundingClientRect().right, biography.getBoundingClientRect().right) &&
+        aligned(enabledShell.getBoundingClientRect().bottom, confirmationEmail.getBoundingClientRect().bottom) &&
+        enabled.type === 'checkbox' && !enabled.disabled &&
+        enabledStyle.appearance === 'none' && enabledStyle.opacity === '1' &&
+        enabledShellStyle.borderBottomWidth === '1px' &&
+        aligned(enabledShell.getBoundingClientRect().right, enabledPencil.getBoundingClientRect().right) &&
+        enabledPencil.dataset.materialIcon === 'edit' &&
+        aligned(roleShell.getBoundingClientRect().right, rolePencil.getBoundingClientRect().right) &&
+        roleArrow.getBoundingClientRect().right < rolePencil.getBoundingClientRect().left &&
+        roleArrow.dataset.materialIcon === 'arrow_drop_down' &&
+        getComputedStyle(roleArrow).pointerEvents === 'none' &&
+        getComputedStyle(role).appearance === 'none';
+      })()`,
+      "exact textarea row-span alignment across sibling field groups",
+    );
+  } catch (error) {
+    const geometry = await first.evaluate(`(() => {
+      const bounds = (selector) => {
+        const control = document.querySelector(selector);
+        const field = control?.closest('.field');
+        const grid = control?.closest('.field-group-fields');
+        const rectangle = (item) => item instanceof HTMLElement
+          ? Object.fromEntries(['top', 'right', 'bottom', 'left', 'width', 'height']
+            .map((key) => [key, item.getBoundingClientRect()[key]]))
+          : undefined;
+        return {
+          control: rectangle(control),
+          pencil: rectangle(field?.querySelector('.field-edit-icon')),
+          field: rectangle(field),
+          grid: rectangle(grid),
+          rowSpan: field?.dataset.fieldRowSpan,
+          gridRow: field instanceof HTMLElement ? getComputedStyle(field).gridRow : undefined,
+          gridClasses: grid?.className,
+          autoRows: grid instanceof HTMLElement ? getComputedStyle(grid).gridAutoRows : undefined,
+          rowGap: grid instanceof HTMLElement ? getComputedStyle(grid).rowGap : undefined,
+        };
+      };
+      return {
+        viewport: [innerWidth, innerHeight, devicePixelRatio],
+        primaryEmail: bounds('#control-primary-email'),
+        confirmationEmail: bounds('#control-confirmation-email'),
+        biography: bounds('#control-biography'),
+        enabled: bounds('#control-enabled'),
+      };
+    })()`);
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}; geometry: ${
+        JSON.stringify(geometry)
+      }`,
+    );
+  }
+  await setValue(first, '[data-bind="email"]', "changed@example.test");
+  assert(
+    await first.evaluate<boolean>(
+      `[...document.querySelectorAll('[data-bind="email"]')].every((item) => item.value === "changed@example.test")`,
+    ),
+    "controls sharing one binding did not synchronize",
+  );
+
+  await first.evaluate(`(() => {
+    window.__the8020ScreenMarker = document.querySelector(".screen");
+    window.__the8020ConnectionTransitions = [];
+    const state = document.querySelector("#connection-state");
+    new MutationObserver(() => window.__the8020ConnectionTransitions.push(state?.textContent ?? ""))
+      .observe(state, { childList: true, subtree: true, characterData: true });
+  })()`);
+  const closedForReconnect = await first.evaluate<boolean>(`(() => {
+    const socket = window.__the8020LastWebSocket;
+    if (socket === undefined || typeof socket.close !== "function" || socket.readyState !== 1) return false;
+    socket.close(4000, "browser E2E reconnect proof");
+    return true;
+  })()`);
+  assert(
+    closedForReconnect,
+    "active UUI WebSocket was unavailable for reconnect proof",
+  );
+  await waitForPage(
+    first,
+    `document.querySelector("#connection-state")?.textContent === "Connected" &&
+      window.__the8020ConnectionTransitions?.includes("Reconnecting…")`,
+    "brief WebSocket reconnect",
+    15_000,
+  );
+  assert(
+    await first.evaluate<boolean>(
+      `window.__the8020ScreenMarker === document.querySelector(".screen") &&
+       document.querySelector('[data-bind="email"]')?.value === "changed@example.test"`,
+    ),
+    "brief reconnect redrew the screen or lost a dirty edit",
+  );
+
+  await clickButton(first, "Save");
+  await waitForPage(
+    first,
+    `document.querySelector('[data-bind="status"]')?.value === "Saved 1 time."`,
+    "form action and model mutation",
+  );
+  await first.command("Page.reload", { ignoreCache: true });
+  await waitForScreen(first, "Form and binding demonstration");
+  await waitForPage(
+    first,
+    `document.querySelector('[data-bind="status"]')?.value === "Saved 1 time." &&
+      document.querySelector('[data-bind="email"]')?.value === "changed@example.test" &&
+      document.documentElement.dataset.theme === "dark" &&
+      Object.entries(sessionStorage).some(([key, value]) => key.startsWith("the8020.uui.theme:session:") && value === "dark")`,
+    "page-reload snapshot",
+  );
+  await assertThemeInitializedBeforePaint(first, "dark", "dark reload");
+  const afterReload = await waitForUISessions(primaryRoot, 1);
+  assert(
+    afterReload[0]?.worker_id === firstSession.worker_id,
+    "page reload did not resume the original Worker",
+  );
+  await clickButton(first, "Throw TypeError");
+  await waitForScreen(first, "Program terminated");
+  assert(
+    await first.evaluate<boolean>(`(() => {
+      const text = document.querySelector(".screen")?.textContent ?? "";
+      const message = document.querySelector('[data-bind="message"]')?.value ?? "";
+      const stack = document.querySelector('[data-bind="stack"]')?.value ?? "";
+      const source = document.querySelector('[data-bind="source"]')?.value ?? "";
+      return text.includes("TypeError") &&
+        message.includes("intentionally raised an uncaught TypeError") &&
+        stack.includes("demo-form/program.ts") &&
+        source.includes("raiseDemoTypeError");
+    })()`),
+    "TypeError short dump is missing exception, stack, or source details",
+  );
+  await first.command("Browser.grantPermissions", {
+    origin: primaryBase,
+    permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"],
+  });
+  await clickButton(first, "Copy short dump");
+  await waitForPage(
+    first,
+    `document.querySelector('[data-bind="copyStatus"]')?.value?.startsWith("Copied ") === true`,
+    "short dump clipboard action",
+  );
+  assert(
+    await first.evaluate<boolean>(
+      `(async () => (await navigator.clipboard.readText()).includes("PROGRAM TERMINATED"))()`,
+    ),
+    "copied short dump is unavailable from the browser clipboard",
+  );
+  await clickButton(first, "Home");
+  await waitForScreen(first, "Welcome to 80|20");
+
+  await clickRow(first, "the8020/demo/demo-responsive-fields");
+  await waitForScreen(first, "Responsive field layout demonstration");
+  await waitForPage(
+    first,
+    `(() => {
+      const reset = [...document.querySelectorAll('button')].find((item) => item.textContent?.trim() === 'Reset');
+      const icon = reset?.querySelector('[data-material-icon="refresh"]');
+      return icon instanceof HTMLElement &&
+        icon.classList.contains('material-icon-color-warning') &&
+        getComputedStyle(icon).maskImage !== 'none';
+    })()`,
+    "semantic icon color in a UUI action",
+  );
+  await first.command("Emulation.setDeviceMetricsOverride", {
+    width: 1440,
+    height: 900,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await waitForResponsiveFieldLayout(first, "desktop");
+  await first.command("Emulation.setDeviceMetricsOverride", {
+    width: 800,
+    height: 900,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await waitForResponsiveFieldLayout(first, "tablet");
+  await first.command("Emulation.setDeviceMetricsOverride", {
+    width: 420,
+    height: 900,
+    deviceScaleFactor: 1,
+    mobile: true,
+  });
+  await waitForResponsiveFieldLayout(first, "mobile");
+  await first.command("Emulation.setDeviceMetricsOverride", {
+    width: 1280,
+    height: 800,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await clickButton(first, "Back");
+  await waitForScreen(first, "Welcome to 80|20");
+
+  await clickRow(first, "the8020/demo/demo-master-detail");
+  await waitForScreen(first, "Master-detail demonstration");
+  assert(
+    await first.evaluate<boolean>(`(() => {
+      const split = document.querySelector(".layout-split");
+      return split?.dataset.responsive === "stack" &&
+        split?.style.getPropertyValue("--split-ratio") === "50fr 50fr";
+    })()`),
+    "master-detail split layout is not responsive 50/50 data",
+  );
+  await clickRow(first, "ORD-1002");
+  await waitForPage(
+    first,
+    `document.querySelector('[data-bind="selectedOrder.customer"]')?.value === "Another Corp"`,
+    "master-detail selection",
+  );
+  await clickButton(first, "Open form demo");
+  await waitForScreen(first, "Form and binding demonstration");
+  await clickButton(first, "Back");
+  await waitForScreen(first, "Master-detail demonstration");
+  await clickButton(first, "Throw ValueError");
+  await waitForScreen(first, "Program terminated");
+  assert(
+    await first.evaluate<boolean>(`(() => {
+      const text = document.querySelector(".screen")?.textContent ?? "";
+      const properties = document.querySelector('[data-bind="properties"]')?.value ?? "";
+      return text.includes("ValueError") && properties.includes("orderNumber") &&
+        properties.includes("ORD-0");
+    })()`),
+    "custom ValueError short dump is missing custom exception properties",
+  );
+  await clickButton(first, "Home");
+  await waitForScreen(first, "Welcome to 80|20");
+
+  const second = await openPage(
+    debugPort,
+    `${primaryBase}/the8020/uui/shell/`,
+  );
+  pages.push(second);
+  await waitForScreen(second, "Welcome to 80|20");
+  await waitForPage(
+    second,
+    `document.documentElement.dataset.theme === "dark" &&
+      localStorage.getItem("the8020.uui.theme") === "dark" &&
+      Object.entries(sessionStorage).some(([key, value]) => key.startsWith("the8020.uui.theme:session:") && value === "dark")`,
+    "future tab inherited shared dark theme",
+  );
+  const isolated = await waitForUISessions(primaryRoot, 2);
+  const secondSession = isolated.find((item) =>
+    item.session_id !== firstSession.session_id
+  );
+  assert(
+    secondSession !== undefined,
+    "second browser tab reused a UUI session",
+  );
+  assert(
+    secondSession.worker_id !== firstSession.worker_id,
+    "two logical UUI sessions shared one Worker",
+  );
+  assert(
+    secondSession.sandbox_id === firstSession.sandbox_id,
+    "two sessions did not share the configured service-instance sandbox",
+  );
+  await click(second, "#theme-toggle");
+  await waitForPage(
+    second,
+    `document.documentElement.dataset.theme === "light" &&
+      getComputedStyle(document.documentElement).getPropertyValue("--primary").trim() === "#5b5bd6" &&
+      getComputedStyle(document.body).backgroundColor === "rgb(247, 248, 252)" &&
+      getComputedStyle(document.querySelector(".screen")).backgroundColor === "rgba(0, 0, 0, 0)" &&
+      getComputedStyle(document.querySelector(".layout-list")).backgroundColor === "rgb(255, 255, 255)" &&
+      getComputedStyle(document.querySelector(".layout-list")).boxShadow !== "none" &&
+      localStorage.getItem("the8020.uui.theme") === "light" &&
+      Object.entries(sessionStorage).some(([key, value]) => key.startsWith("the8020.uui.theme:session:") && value === "light")`,
+    "second session stored its light theme",
+  );
+  assert(
+    await first.evaluate<boolean>(
+      `document.documentElement.dataset.theme === "dark"`,
+    ),
+    "second session theme change replaced the first session theme",
+  );
+  await admin(primaryRoot, ["worker", "kill", firstSession.worker_id]);
+  await waitFor(
+    async () => {
+      try {
+        await admin(primaryRoot, ["worker", "inspect", firstSession.worker_id]);
+        return false;
+      } catch {
+        return true;
+      }
+    },
+    "single-Worker failure isolation",
+    15_000,
+  );
+  await first.command("Page.navigate", { url: "about:blank" });
+  await delay(250);
+  await clickRow(second, "the8020/uui/sessions");
+  await waitForScreen(second, "UUI sessions");
+  await clickRow(second, firstSession.session_id);
+  await waitForScreen(second, `UUI session ${firstSession.session_id}`);
+  await waitForPage(
+    second,
+    `document.querySelector('[data-bind="liveState"]')?.value?.startsWith("STALE:") === true`,
+    "failed Worker represented as stale package metadata",
+  );
+  await clickButton(second, "Clean stale metadata");
+  await waitForScreen(second, "UUI sessions");
+  await waitFor(
+    async () => {
+      const sessions = await uiSessions(primaryRoot);
+      return sessions.length === 1 &&
+        sessions[0]?.session_id === secondSession.session_id;
+    },
+    "package-owned stale-session cleanup",
+    15_000,
+  );
+  const third = await openPage(
+    debugPort,
+    `${primaryBase}/the8020/uui/shell/`,
+  );
+  pages.push(third);
+  await waitForScreen(third, "Welcome to 80|20");
+  const terminable = await waitForUISessions(primaryRoot, 2);
+  const thirdSession = terminable.find((item) =>
+    item.session_id !== secondSession.session_id
+  );
+  assert(thirdSession !== undefined, "third browser session was not recorded");
+  await clickButton(second, "Refresh");
+  await waitForPage(
+    second,
+    `[...document.querySelectorAll(".data-list tbody tr")].some((item) => item.textContent?.includes(${
+      JSON.stringify(thirdSession.session_id)
+    }))`,
+    "refreshed UUI session metadata",
+  );
+  await clickRow(second, thirdSession.session_id);
+  await waitForScreen(second, `UUI session ${thirdSession.session_id}`);
+  await clickButton(second, "Terminate");
+  await waitForScreen(second, "UUI sessions");
+  await waitForUISessions(primaryRoot, 1);
+  await clickButton(second, "Back");
+  await waitForScreen(second, "Welcome to 80|20");
+  await clickRow(second, "the8020/demo/demo-form");
+  await waitForScreen(second, "Form and binding demonstration");
+  await clickButton(second, "Back");
+  await waitForScreen(second, "Welcome to 80|20");
+
+  await clickButton(second, "Logout");
+  await waitForPage(
+    second,
+    `location.pathname === "/the8020/uui/login/" && document.querySelector("h1")?.textContent === "Sign in"`,
+    "logout redirect",
+  );
+  const remainingCookies = await browserCookies(second);
+  assert(
+    !remainingCookies.some((item) => item.name === "the8020_auth"),
+    "logout did not clear the authentication cookie",
+  );
+  await waitForUISessions(primaryRoot, 0);
+  assert(
+    pages.every((page) => page.exceptions.length === 0),
+    `browser exceptions: ${
+      pages.flatMap((page) => page.exceptions).join("; ")
+    }`,
+  );
+  console.log(
+    "Phase 1D browser E2E passed: login, browser-only persistent themes, responsive semantic field layouts, kernel-restart stale-route recovery, generic development/runtime Bash consoles, development start/stop/restart/reset controls, package manifest/Git/content inspection, package-owned UUI session administration, service control, shared-node auth, programs, short dumps, recovery, reconnect, reload, isolation, and logout",
+  );
+} finally {
+  for (const page of pages) page.close();
+  if (browser !== undefined) await stopProcess(browser);
+  for (const kernel of kernels.toReversed()) {
+    await stopKernel(kernel);
+  }
+  await removeTemporaryRoot(temporaryRoot);
+}
+
+function parseOptions(arguments_: string[]): Options {
+  const values = new Map<string, string>();
+  for (const argument of arguments_) {
+    const separator = argument.indexOf("=");
+    if (!argument.startsWith("--") || separator < 3) {
+      throw new Error(`invalid option ${argument}`);
+    }
+    values.set(argument.slice(2, separator), argument.slice(separator + 1));
+  }
+  const required = (name: string): string => {
+    const value = values.get(name);
+    if (value === undefined || value.length === 0) {
+      throw new Error(`--${name}=... is required`);
+    }
+    return value;
+  };
+  return {
+    sourceRoot: required("source-root"),
+    packageWorkspace: required("package-workspace"),
+    runtimeRoot: values.has("runtime-root")
+      ? required("runtime-root")
+      : required("source-root"),
+    kernel: required("kernel"),
+    admin: required("admin"),
+    browser: required("browser"),
+  };
+}
+
+async function prepareWorkspaces(
+  options: Options,
+  primary: string,
+  secondary: string,
+): Promise<void> {
+  for (const root of [primary, secondary]) {
+    await initializeInstance(options.kernel, root);
+    await copyTree(`${options.sourceRoot}/defaults/config`, `${root}/config`);
+    await copyTree(`${options.sourceRoot}/defaults/node`, `${root}/node`);
+    await linkTree(
+      `${options.runtimeRoot}/node/kernel/runtime/images/rootless`,
+      `${root}/node/kernel/runtime/images/rootless`,
+    );
+    await linkTree(
+      `${options.runtimeRoot}/node/kernel/runtime/images/development`,
+      `${root}/node/kernel/runtime/images/development`,
+    );
+    await Deno.mkdir(`${root}/node/kernel/bin`, { recursive: true });
+    await linkFile(
+      `${options.runtimeRoot}/node/kernel/bin/runsc`,
+      `${root}/node/kernel/bin/runsc`,
+    );
+  }
+  await copyTree(
+    `${options.packageWorkspace}/uui`,
+    `${primary}/packages/the8020/uui`,
+  );
+  await copyTree(
+    `${options.packageWorkspace}/uui`,
+    `${secondary}/packages/the8020/uui`,
+  );
+  await copyTree(
+    `${options.packageWorkspace}/admin-core`,
+    `${primary}/packages/the8020/admin-core`,
+  );
+  await copyTree(
+    `${options.packageWorkspace}/demo`,
+    `${primary}/packages/the8020/demo`,
+  );
+  await copyTree(
+    `${options.packageWorkspace}/dev-core`,
+    `${primary}/packages/the8020/dev-core`,
+  );
+  await Deno.remove(`${secondary}/packages/the8020/uui/services/login`, {
+    recursive: true,
+  });
+  await Deno.remove(`${secondary}/packages/the8020/uui/services/session`, {
+    recursive: true,
+  });
+
+  // Nodes share externally synchronized application configuration, state, and
+  // user data through the ordinary mapped-root contract. Their package roots
+  // remain independent here so the secondary node can prove shell-only
+  // placement without private authentication-path settings.
+  await Deno.writeTextFile(
+    `${secondary}/node/kernel/paths.toml`,
+    `version = 1
+packages = '${secondary}/packages'
+config = '${primary}/config'
+state = '${primary}/state'
+users = '${primary}/users'
+`,
+  );
+  await Deno.mkdir(`${primary}/config/auth`, { recursive: true });
+  await Deno.mkdir(`${primary}/state/auth/bootstrap-sessions`, {
+    recursive: true,
+  });
+  await Deno.chmod(`${primary}/state/auth/bootstrap-sessions`, 0o700);
+  await writeDesiredState(primary, "login", "stateless");
+  await writeDesiredState(primary, "shell", "stateless");
+  await writeDesiredState(primary, "session", "persistent");
+}
+
+async function initializeInstance(kernel: string, root: string): Promise<void> {
+  await Deno.mkdir(root, { recursive: true });
+  const output = await new Deno.Command(kernel, {
+    args: ["--root", root, "--init-defaults", "--init-only"],
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  if (!output.success) {
+    throw new Error(
+      `initialize browser-E2E instance: ${
+        new TextDecoder().decode(output.stderr).trim()
+      }`,
+    );
+  }
+}
+
+async function copyTree(source: string, destination: string): Promise<void> {
+  await Deno.mkdir(destination, { recursive: true });
+  for await (const entry of Deno.readDir(source)) {
+    const from = `${source}/${entry.name}`;
+    const to = `${destination}/${entry.name}`;
+    if (entry.isDirectory) await copyTree(from, to);
+    else if (entry.isFile) await Deno.copyFile(from, to);
+    else if (entry.isSymlink) {
+      await Deno.symlink(await Deno.readLink(from), to);
+    }
+  }
+}
+
+async function linkTree(
+  source: string,
+  destination: string,
+  root = source,
+): Promise<void> {
+  await Deno.mkdir(destination, { recursive: true });
+  for await (const entry of Deno.readDir(source)) {
+    const from = `${source}/${entry.name}`;
+    const to = `${destination}/${entry.name}`;
+    if (entry.isDirectory) {
+      await linkTree(from, to, root);
+      continue;
+    }
+    if (entry.isFile) {
+      await linkFile(from, to);
+      continue;
+    }
+    if (entry.isSymlink) {
+      const resolved = await resolveRootfsLink(root, from);
+      if (resolved === undefined) continue;
+      if (resolved.info.isDirectory) {
+        if (resolved.path === root || source.startsWith(`${resolved.path}/`)) {
+          continue;
+        }
+        await linkTree(resolved.path, to, root);
+      } else if (resolved.info.isFile) {
+        await linkFile(resolved.path, to);
+      }
+    }
+  }
+}
+
+async function resolveRootfsLink(
+  root: string,
+  link: string,
+): Promise<{ path: string; info: Deno.FileInfo } | undefined> {
+  const rootPrefix = `${root}/`;
+  if (!link.startsWith(rootPrefix)) {
+    throw new Error(`rootfs link escaped source root: ${link}`);
+  }
+  const parent = link.slice(rootPrefix.length).split("/");
+  parent.pop();
+  const initialTarget = await Deno.readLink(link);
+  const resolved = initialTarget.startsWith("/") ? [] : parent;
+  const pending = initialTarget.split("/");
+  let traversals = 0;
+  while (pending.length > 0) {
+    const component = pending.shift();
+    if (component === undefined || component === "" || component === ".") {
+      continue;
+    }
+    if (component === "..") {
+      if (resolved.length === 0) {
+        throw new Error(`rootfs link escaped source root: ${link}`);
+      }
+      resolved.pop();
+      continue;
+    }
+    const candidate = `${root}/${[...resolved, component].join("/")}`;
+    let info: Deno.FileInfo;
+    try {
+      info = await Deno.lstat(candidate);
+    } catch (error) {
+      if (error instanceof Deno.errors.NotFound) return undefined;
+      throw error;
+    }
+    if (!info.isSymlink) {
+      resolved.push(component);
+      continue;
+    }
+    traversals++;
+    if (traversals > 64) throw new Error(`rootfs symlink cycle: ${link}`);
+    const target = await Deno.readLink(candidate);
+    if (target.startsWith("/")) resolved.length = 0;
+    pending.unshift(...target.split("/"));
+  }
+  const path = resolved.length === 0 ? root : `${root}/${resolved.join("/")}`;
+  try {
+    return { path, info: await Deno.lstat(path) };
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) return undefined;
+    throw error;
+  }
+}
+
+async function linkFile(source: string, destination: string): Promise<void> {
+  try {
+    await Deno.link(source, destination);
+  } catch {
+    await Deno.copyFile(source, destination);
+  }
+}
+
+async function writeDesiredState(
+  root: string,
+  service: string,
+  mode: "stateless" | "persistent",
+): Promise<void> {
+  const directory = `${root}/state/services/the8020/uui/${service}`;
+  await Deno.mkdir(directory, { recursive: true });
+  const concurrency = mode === "persistent" ? 1 : 32;
+  const maximumWorkers = mode === "persistent" ? 1000 : 2;
+  await Deno.writeTextFile(
+    `${directory}/state.toml`,
+    `schema = 1
+enabled = true
+generation = 0
+
+[execution]
+concurrency_per_worker = ${concurrency}
+${mode === "persistent" ? 'keep_alive = "2m"' : ""}
+
+[scaling]
+replicas_min = 1
+replicas_max = 2
+workers_per_replica_min = 1
+workers_per_replica_max = ${maximumWorkers}
+target_utilization = 0.7
+
+[placement]
+sandbox_group = "the8020/uui/${service}"
+`,
+  );
+}
+
+function startKernel(
+  root: string,
+  port: number,
+  sshPort: number,
+): KernelProcess {
+  const child = new Deno.Command(options.kernel, {
+    args: [
+      "--root",
+      root,
+      "--set",
+      `network.main_port=${port}`,
+      "--set",
+      `network.ssh_port=${sshPort}`,
+      "--set",
+      "sandbox.runtime.mode=rootless",
+      "--set",
+      "sandbox.warm_pool.size=0",
+    ],
+    cwd: options.sourceRoot,
+    stdout: "null",
+    stderr: "inherit",
+  }).spawn();
+  return { root, child };
+}
+
+async function admin(
+  root: string,
+  arguments_: string[],
+  input?: string,
+): Promise<Record<string, unknown>> {
+  const child = new Deno.Command(options.admin, {
+    args: ["--root", root, "--json", ...arguments_],
+    stdin: input === undefined ? "null" : "piped",
+    stdout: "piped",
+    stderr: "piped",
+  }).spawn();
+  if (input !== undefined) {
+    const writer = child.stdin.getWriter();
+    await writer.write(new TextEncoder().encode(input));
+    await writer.close();
+  }
+  const output = await child.output();
+  const text = new TextDecoder().decode(output.stdout).trim();
+  if (!output.success) {
+    const error = new TextDecoder().decode(output.stderr).trim();
+    throw new Error(error || text || `${arguments_.join(" ")} failed`);
+  }
+  const envelope = JSON.parse(text) as {
+    success?: boolean;
+    result?: Record<string, unknown>;
+    error?: { message?: string };
+  };
+  if (envelope.success !== true || envelope.result === undefined) {
+    throw new Error(envelope.error?.message ?? "administrative command failed");
+  }
+  return envelope.result;
+}
+
+async function waitForServices(
+  root: string,
+  expected: string[],
+): Promise<void> {
+  let lastObservation = "service list was not available";
+  try {
+    await waitFor(
+      async () => {
+        try {
+          const result = await admin(root, ["service", "list"]);
+          const services = result.services as
+            | Array<{
+              service_id?: string;
+              state?: string;
+              enabled?: boolean;
+            }>
+            | undefined;
+          lastObservation = JSON.stringify(services ?? result);
+          return services !== undefined &&
+            expected.every((serviceId) =>
+              services.some((service) =>
+                service.service_id === serviceId && service.enabled === true &&
+                (service.state === "IDLE" || service.state === "READY")
+              )
+            );
+        } catch (error) {
+          lastObservation = error instanceof Error
+            ? error.message
+            : String(error);
+          return false;
+        }
+      },
+      `enabled services in ${root}`,
+      180_000,
+      1_000,
+    );
+  } catch (error) {
+    const inspections = await Promise.all(expected.map(async (serviceId) => {
+      try {
+        return await admin(root, ["service", "inspect", serviceId]);
+      } catch (inspectError) {
+        return {
+          service_id: serviceId,
+          inspect_error: inspectError instanceof Error
+            ? inspectError.message
+            : String(inspectError),
+        };
+      }
+    }));
+    const log = await latestKernelLog(root);
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}\n` +
+        `last service observation: ${lastObservation}\n` +
+        `service inspections: ${JSON.stringify(inspections)}\n${log}`,
+    );
+  }
+}
+
+async function latestKernelLog(root: string): Promise<string> {
+  const directory = `${root}/node/kernel/logs`;
+  try {
+    const candidates: Array<{ path: string; modified: number }> = [];
+    for await (const entry of Deno.readDir(directory)) {
+      if (!entry.isFile || !entry.name.endsWith(".log")) continue;
+      const path = `${directory}/${entry.name}`;
+      const info = await Deno.stat(path);
+      candidates.push({ path, modified: info.mtime?.getTime() ?? 0 });
+    }
+    candidates.sort((left, right) => right.modified - left.modified);
+    if (candidates.length === 0) return "kernel log: unavailable";
+    const source = await Deno.readTextFile(candidates[0]!.path);
+    return `kernel log tail:\n${source.slice(-8_000)}`;
+  } catch (error) {
+    return `kernel log: ${error instanceof Error ? error.message : error}`;
+  }
+}
+
+async function waitForAdmin(root: string): Promise<void> {
+  await waitFor(
+    async () => {
+      try {
+        await admin(root, ["system", "status"]);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    `kernel command bus in ${root}`,
+    120_000,
+    250,
+  );
+}
+
+async function uiSessions(root: string): Promise<UISession[]> {
+  const directory = `${root}/state/package-data/the8020/uui/sessions`;
+  const sessions: UISession[] = [];
+  let visited = 0;
+  try {
+    for await (const entry of Deno.readDir(directory)) {
+      if (++visited > 1_000) break;
+      if (sessions.length >= 200) break;
+      if (!entry.isFile || !/^uis-[a-z0-9]{8}\.json$/.test(entry.name)) {
+        continue;
+      }
+      try {
+        const data = await readBoundedSessionMetadata(
+          `${directory}/${entry.name}`,
+        );
+        if (data === undefined) continue;
+        const value = JSON.parse(new TextDecoder().decode(data)) as Partial<
+          UISession
+        >;
+        if (
+          typeof value.session_id === "string" &&
+          typeof value.node_id === "string" &&
+          typeof value.runtime_group_id === "string" &&
+          typeof value.worker_id === "string" &&
+          typeof value.sandbox_id === "string" &&
+          typeof value.state === "string"
+        ) sessions.push(value as UISession);
+      } catch {
+        // One malformed package-owned record cannot hide valid sessions.
+      }
+    }
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) return [];
+    throw error;
+  }
+  return sessions.sort((left, right) =>
+    left.session_id.localeCompare(right.session_id)
+  );
+}
+
+async function readBoundedSessionMetadata(
+  path: string,
+): Promise<Uint8Array | undefined> {
+  const maximumBytes = 64 * 1024;
+  const file = await Deno.open(path, { read: true });
+  try {
+    const buffer = new Uint8Array(maximumBytes + 1);
+    let length = 0;
+    while (length < buffer.byteLength) {
+      const count = await file.read(buffer.subarray(length));
+      if (count === null || count === 0) break;
+      length += count;
+    }
+    return length > maximumBytes ? undefined : buffer.subarray(0, length);
+  } finally {
+    file.close();
+  }
+}
+
+async function waitForUISessions(
+  root: string,
+  count: number,
+): Promise<UISession[]> {
+  let sessions: UISession[] = [];
+  await waitFor(
+    async () => {
+      sessions = await uiSessions(root);
+      return sessions.length === count;
+    },
+    `${count} UUI sessions`,
+    15_000,
+  );
+  return sessions;
+}
+
+async function openPage(port: number, url: string): Promise<BrowserPage> {
+  const response = await fetch(
+    `http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`,
+    { method: "PUT" },
+  );
+  if (!response.ok) throw new Error(`create browser page: ${response.status}`);
+  const target = await response.json() as CDPTarget;
+  return await BrowserPage.connect(target.webSocketDebuggerUrl);
+}
+
+async function browserCookies(
+  page: BrowserPage,
+): Promise<Array<{ name: string; value: string; httpOnly?: boolean }>> {
+  const response = await page.command<{
+    cookies: Array<{ name: string; value: string; httpOnly?: boolean }>;
+  }>("Network.getAllCookies");
+  return response.cookies;
+}
+
+async function authenticationCookie(
+  page: BrowserPage,
+): Promise<{ name: string; value: string; httpOnly?: boolean }> {
+  const cookie = (await browserCookies(page)).find((item) =>
+    item.name === "the8020_auth"
+  );
+  if (cookie === undefined) throw new Error("authentication cookie is missing");
+  return cookie;
+}
+
+function websocketOutput(page: BrowserPage, start: number): string {
+  const decoder = new TextDecoder();
+  return page.websocketFrames.slice(start).map((frame) => {
+    if (frame.opcode !== 2) return frame.payloadData;
+    const binary = atob(frame.payloadData);
+    return decoder.decode(
+      Uint8Array.from(binary, (character) => character.charCodeAt(0)),
+      { stream: true },
+    );
+  }).join("");
+}
+
+async function setValue(
+  page: BrowserPage,
+  selector: string,
+  value: string,
+): Promise<void> {
+  const changed = await page.evaluate<boolean>(`(() => {
+    const input = document.querySelector(${JSON.stringify(selector)});
+    if (!(input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement || input instanceof HTMLSelectElement)) return false;
+    input.value = ${JSON.stringify(value)};
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
+  })()`);
+  assert(changed, `missing input ${selector}`);
+}
+
+async function setChecked(
+  page: BrowserPage,
+  selector: string,
+  checked: boolean,
+): Promise<void> {
+  const changed = await page.evaluate<boolean>(`(() => {
+    const input = document.querySelector(${JSON.stringify(selector)});
+    if (!(input instanceof HTMLInputElement) || input.type !== "checkbox") return false;
+    input.checked = ${JSON.stringify(checked)};
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
+  })()`);
+  assert(changed, `missing checkbox ${selector}`);
+}
+
+async function click(page: BrowserPage, selector: string): Promise<void> {
+  const clicked = await page.evaluate<boolean>(`(() => {
+    const target = document.querySelector(${JSON.stringify(selector)});
+    if (!(target instanceof HTMLElement)) return false;
+    target.click();
+    return true;
+  })()`);
+  assert(clicked, `missing clickable ${selector}`);
+}
+
+async function enterTerminal(
+  page: BrowserPage,
+  command: string,
+): Promise<void> {
+  await click(page, ".xterm-helper-textarea");
+  await page.command("Input.insertText", { text: command });
+  await page.command("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: "Enter",
+    code: "Enter",
+    text: "\r",
+    unmodifiedText: "\r",
+    windowsVirtualKeyCode: 13,
+    nativeVirtualKeyCode: 13,
+  });
+  await page.command("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: "Enter",
+    code: "Enter",
+    windowsVirtualKeyCode: 13,
+    nativeVirtualKeyCode: 13,
+  });
+}
+
+async function dragTerminalSelection(page: BrowserPage): Promise<void> {
+  const points = await page.evaluate<{
+    startX: number;
+    startY: number;
+    endX: number;
+  }>(`(() => {
+    const screen = document.querySelector(".xterm-screen");
+    if (!(screen instanceof HTMLElement)) throw new Error("terminal screen is missing");
+    const rect = screen.getBoundingClientRect();
+    return {
+      startX: rect.left + 8,
+      startY: rect.top + 8,
+      endX: Math.min(rect.right - 8, rect.left + 160),
+    };
+  })()`);
+  await page.command("Input.dispatchMouseEvent", {
+    type: "mousePressed",
+    x: points.startX,
+    y: points.startY,
+    button: "left",
+    buttons: 1,
+    clickCount: 1,
+  });
+  await page.command("Input.dispatchMouseEvent", {
+    type: "mouseMoved",
+    x: points.endX,
+    y: points.startY,
+    button: "left",
+    buttons: 1,
+  });
+  await page.command("Input.dispatchMouseEvent", {
+    type: "mouseReleased",
+    x: points.endX,
+    y: points.startY,
+    button: "left",
+    buttons: 0,
+    clickCount: 1,
+  });
+}
+
+async function clickButton(page: BrowserPage, label: string): Promise<void> {
+  const clicked = await page.evaluate<boolean>(`(() => {
+    const target = [...document.querySelectorAll("button")].find((item) =>
+      item.textContent?.trim() === ${
+    JSON.stringify(label)
+  } || item.getAttribute("aria-label") === ${JSON.stringify(label)});
+    if (!(target instanceof HTMLButtonElement)) return false;
+    target.click();
+    return true;
+  })()`);
+  assert(clicked, `missing ${label} button`);
+}
+
+async function clickRow(page: BrowserPage, text: string): Promise<void> {
+  const clicked = await page.evaluate<boolean>(`(() => {
+    const target = [...document.querySelectorAll(".data-list tbody tr")].find((item) => item.textContent?.includes(${
+    JSON.stringify(text)
+  }));
+    if (!(target instanceof HTMLTableRowElement)) return false;
+    target.click();
+    return true;
+  })()`);
+  assert(clicked, `missing row containing ${text}`);
+}
+
+async function waitForScreen(
+  page: BrowserPage,
+  title: string,
+): Promise<void> {
+  await waitForPage(
+    page,
+    `document.querySelector("#connection-state")?.textContent === "Connected" && document.querySelector("h1")?.textContent?.trim() === ${
+      JSON.stringify(title)
+    } && document.title === ${JSON.stringify(`80|20 ${title}`)}`,
+    title,
+  );
+}
+
+function responsiveFieldLayoutExpression(
+  mode: "desktop" | "tablet" | "mobile",
+): string {
+  return `(() => {
+    const ratio = (bind) => {
+      const input = document.querySelector('[data-bind="' + bind + '"]');
+      const field = input?.closest('.field');
+      const fields = field?.closest('.field-group-fields');
+      if (!(field instanceof HTMLElement) || !(fields instanceof HTMLElement)) return 0;
+      return field.getBoundingClientRect().width / fields.getBoundingClientRect().width;
+    };
+    const sameRow = (left, right) => Math.abs(left - right) < 2;
+    const twoCards = [...document.querySelectorAll('[data-layout-id="two-group-grid"] > .layout-field-group')]
+      .map((item) => item.getBoundingClientRect());
+    const fourCards = [...document.querySelectorAll('[data-layout-id="four-group-grid"] > .layout-field-group')]
+      .map((item) => item.getBoundingClientRect());
+    const two = twoCards.map((item) => item.top);
+    const four = fourCards.map((item) => item.top);
+    const verticallySpaced = (items) => items.slice(1).every((item, index) =>
+      Math.abs(item.top - items[index].bottom - 24) < 0.5
+    );
+    const section = document.querySelector('[data-layout-id="lengths-section"]');
+    const card = document.querySelector('[data-layout-id="lengths-group"]');
+    const sectionStyle = section instanceof HTMLElement ? getComputedStyle(section) : undefined;
+    const cardStyle = card instanceof HTMLElement ? getComputedStyle(card) : undefined;
+    const hierarchy = section?.querySelector(':scope > .section-title')?.tagName === 'H1' &&
+      sectionStyle?.backgroundColor === 'rgba(0, 0, 0, 0)' &&
+      cardStyle?.backgroundColor === 'rgb(25, 29, 42)' &&
+      cardStyle?.boxShadow !== 'none' &&
+      document.querySelector('[data-bind="shortOne"]')?.closest('.field')?.dataset.fieldLength === 'short' &&
+      document.querySelector('[data-bind="mediumOne"]')?.closest('.field')?.dataset.fieldLength === 'medium' &&
+      document.querySelector('[data-bind="longOne"]')?.closest('.field')?.dataset.fieldLength === 'long';
+    const short = ratio('shortOne');
+    const medium = ratio('mediumOne');
+    const long = ratio('longOne');
+    const spanningNote = document.querySelector('[data-bind="spanningNote"]');
+    const spanningTextarea = spanningNote instanceof HTMLTextAreaElement ? spanningNote : undefined;
+    const spanningField = spanningTextarea?.closest('.field');
+    const spanningShortOne = document.querySelector('[data-bind="spanningShortOne"]')?.closest('.field');
+    const spanningShortTwo = document.querySelector('[data-bind="spanningShortTwo"]')?.closest('.field');
+    const spanningLong = document.querySelector('[data-bind="spanningLong"]')?.closest('.field');
+    const spanningBounds = spanningField?.getBoundingClientRect();
+    const spanningShortOneBounds = spanningShortOne?.getBoundingClientRect();
+    const spanningShortTwoBounds = spanningShortTwo?.getBoundingClientRect();
+    const spanningLongBounds = spanningLong?.getBoundingClientRect();
+    const rowSpans = spanningField instanceof HTMLElement &&
+      spanningShortOne instanceof HTMLElement && spanningShortTwo instanceof HTMLElement &&
+      spanningLong instanceof HTMLElement && spanningTextarea !== undefined &&
+      spanningField.dataset.fieldRowSpan === '2' && getComputedStyle(spanningTextarea).resize === 'none' &&
+      Math.abs(spanningTextarea.getBoundingClientRect().bottom - spanningBounds.bottom) < 2 &&
+      (${JSON.stringify(mode)} === 'desktop'
+        ? sameRow(spanningBounds.top, spanningShortOneBounds.top) &&
+          sameRow(spanningBounds.top, spanningShortTwoBounds.top) &&
+          spanningLongBounds.top > spanningShortOneBounds.bottom + 10 &&
+          sameRow(spanningBounds.bottom, spanningLongBounds.bottom)
+        : spanningShortOneBounds.top > spanningBounds.bottom + 10 &&
+          sameRow(spanningShortOneBounds.top, spanningShortTwoBounds.top) &&
+          spanningLongBounds.top > spanningShortOneBounds.bottom + 10);
+    const layout = ${JSON.stringify(mode)} === 'desktop'
+      ? short > 0.10 && short < 0.14 && medium > 0.22 && medium < 0.28 && long > 0.47 && long < 0.52 &&
+        two.length === 2 && sameRow(two[0], two[1]) && four.length === 4 && four.every((top) => sameRow(top, four[0]))
+      : ${JSON.stringify(mode)} === 'tablet'
+      ? short > 0.22 && short < 0.27 && medium > 0.47 && medium < 0.52 && long > 0.95 &&
+        two.length === 2 && sameRow(two[0], two[1]) && four.length === 4 &&
+        sameRow(four[0], four[1]) && sameRow(four[2], four[3]) && four[2] > four[0] + 10
+      : short > 0.46 && short < 0.51 && medium > 0.95 && long > 0.95 &&
+        two.length === 2 && two[1] > two[0] + 10 && four.length === 4 &&
+        four[1] > four[0] + 10 && four[2] > four[1] + 10 && four[3] > four[2] + 10 &&
+        verticallySpaced(twoCards) && verticallySpaced(fourCards);
+    return hierarchy && layout && rowSpans;
+  })()`;
+}
+
+async function waitForResponsiveFieldLayout(
+  page: BrowserPage,
+  mode: "desktop" | "tablet" | "mobile",
+): Promise<void> {
+  try {
+    await waitForPage(
+      page,
+      responsiveFieldLayoutExpression(mode),
+      `${mode} semantic field layout`,
+    );
+  } catch (error) {
+    const state = await page.evaluate(
+      responsiveFieldLayoutDiagnosticsExpression(),
+    );
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}; state: ${
+        JSON.stringify(state)
+      }`,
+    );
+  }
+}
+
+function responsiveFieldLayoutDiagnosticsExpression(): string {
+  return `(() => {
+    const ratio = (bind) => {
+      const input = document.querySelector('[data-bind="' + bind + '"]');
+      const field = input?.closest('.field');
+      const fields = field?.closest('.field-group-fields');
+      return {
+        length: field?.dataset.fieldLength,
+        field: field?.getBoundingClientRect().width,
+        container: fields?.getBoundingClientRect().width,
+      };
+    };
+    const tops = (id) => [...document.querySelectorAll('[data-layout-id="' + id + '"] > .layout-field-group')]
+      .map((item) => item.getBoundingClientRect().top);
+    const bounds = (bind) => {
+      const input = document.querySelector('[data-bind="' + bind + '"]');
+      const field = input?.closest('.field');
+      if (!(field instanceof HTMLElement)) return undefined;
+      const rect = field.getBoundingClientRect();
+      const inputRect = input?.getBoundingClientRect();
+      return {
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height,
+        inputBottom: inputRect?.bottom,
+        rowSpan: field.dataset.fieldRowSpan,
+        gridColumn: getComputedStyle(field).gridColumn,
+        gridRow: getComputedStyle(field).gridRow,
+        resize: input instanceof HTMLTextAreaElement ? getComputedStyle(input).resize : undefined,
+      };
+    };
+    const section = document.querySelector('[data-layout-id="lengths-section"]');
+    const card = document.querySelector('[data-layout-id="lengths-group"]');
+    return {
+      viewport: [innerWidth, innerHeight, devicePixelRatio],
+      short: ratio('shortOne'),
+      medium: ratio('mediumOne'),
+      long: ratio('longOne'),
+      spanningNote: bounds('spanningNote'),
+      spanningShortOne: bounds('spanningShortOne'),
+      spanningShortTwo: bounds('spanningShortTwo'),
+      spanningLong: bounds('spanningLong'),
+      two: tops('two-group-grid'),
+      four: tops('four-group-grid'),
+      sectionTitle: section?.querySelector(':scope > .section-title')?.tagName,
+      sectionBackground: section instanceof HTMLElement ? getComputedStyle(section).backgroundColor : '',
+      cardBackground: card instanceof HTMLElement ? getComputedStyle(card).backgroundColor : '',
+      cardShadow: card instanceof HTMLElement ? getComputedStyle(card).boxShadow : '',
+    };
+  })()`;
+}
+
+async function waitForPage(
+  page: BrowserPage,
+  expression: string,
+  description: string,
+  timeout = 10_000,
+): Promise<void> {
+  await waitFor(
+    async () => {
+      try {
+        return await page.evaluate<boolean>(expression || "false");
+      } catch {
+        return false;
+      }
+    },
+    description,
+    timeout,
+  );
+}
+
+async function assertThemeInitializedBeforePaint(
+  page: BrowserPage,
+  expected: "light" | "dark",
+  description: string,
+): Promise<void> {
+  const observation = await page.evaluate<{
+    theme: string;
+    initializerTheme: string;
+    initializerAt: number | null;
+    firstPaint: number | null;
+    firstAnimationFrame: number | null;
+    transitions: Array<{ theme: string; at: number }>;
+  }>(`(() => {
+    const initializer = window.__the8020InitialThemeApplied;
+    const paints = performance.getEntriesByType("paint");
+    return {
+      theme: document.documentElement.dataset.theme ?? "",
+      initializerTheme: initializer?.theme ?? "",
+      initializerAt: initializer?.at ?? null,
+      firstPaint: paints.length > 0
+        ? Math.min(...paints.map((entry) => entry.startTime))
+        : null,
+      firstAnimationFrame: window.__the8020FirstAnimationFrame ?? null,
+      transitions: window.__the8020ThemeTransitions ?? [],
+    };
+  })()`);
+  assert(
+    observation.theme === expected && observation.initializerTheme === expected,
+    `${description} initialized the wrong theme: ${
+      JSON.stringify(observation)
+    }`,
+  );
+  const firstRenderBoundary = observation.firstPaint ??
+    observation.firstAnimationFrame;
+  assert(
+    observation.initializerAt !== null && firstRenderBoundary !== null &&
+      observation.initializerAt <= firstRenderBoundary,
+    `${description} theme initializer ran after first paint: ${
+      JSON.stringify(observation)
+    }`,
+  );
+  assert(
+    observation.transitions.length > 0 &&
+      observation.transitions.at(-1)?.theme === expected &&
+      observation.transitions.every((transition) =>
+        transition.theme === expected ||
+        transition.at <= (firstRenderBoundary ?? -1)
+      ),
+    `${description} changed away from ${expected} after first paint: ${
+      JSON.stringify(observation)
+    }`,
+  );
+}
+
+async function waitForHTTP(url: string): Promise<void> {
+  await waitFor(
+    async () => {
+      try {
+        const response = await fetch(url, { redirect: "manual" });
+        await response.body?.cancel();
+        return response.status > 0;
+      } catch {
+        return false;
+      }
+    },
+    url,
+    30_000,
+  );
+}
+
+async function waitFor(
+  predicate: () => boolean | Promise<boolean>,
+  description: string,
+  timeout: number,
+  interval = 50,
+): Promise<void> {
+  const deadline = Date.now() + timeout;
+  while (!(await predicate())) {
+    if (Date.now() >= deadline) {
+      throw new Error(`timed out waiting for ${description}`);
+    }
+    await delay(interval);
+  }
+}
+
+function freePort(): number {
+  const listener = Deno.listen({ hostname: "127.0.0.1", port: 0 });
+  const port = (listener.addr as Deno.NetAddr).port;
+  listener.close();
+  return port;
+}
+
+function stopChild(child: Deno.ChildProcess): void {
+  try {
+    child.kill("SIGKILL");
+  } catch {
+    // The process already exited.
+  }
+}
+
+async function stopProcess(child: Deno.ChildProcess): Promise<void> {
+  stopChild(child);
+  await child.status.catch(() => {});
+}
+
+async function stopKernel(kernel: KernelProcess): Promise<void> {
+  try {
+    await admin(kernel.root, ["system", "shutdown"]);
+  } catch {
+    await stopProcess(kernel.child);
+    return;
+  }
+  const exited = await Promise.race([
+    kernel.child.status.then(() => true, () => true),
+    delay(15_000).then(() => false),
+  ]);
+  if (!exited) await stopProcess(kernel.child);
+}
+
+async function removeTemporaryRoot(root: string): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      await Deno.remove(root, { recursive: true });
+      return;
+    } catch (error) {
+      if (error instanceof Deno.errors.NotFound) return;
+      lastError = error;
+      await delay(100 * (attempt + 1));
+    }
+  }
+  console.error(
+    `Phase 1D E2E cleanup could not remove ${root}: ${
+      lastError instanceof Error ? lastError.message : String(lastError)
+    }`,
+  );
+}
+
+function assert(condition: boolean, message: string): asserts condition {
+  if (!condition) throw new Error(message);
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}

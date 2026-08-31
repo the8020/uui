@@ -1,0 +1,23 @@
+schema = 1
+description = "Bootstrap administrator login"
+entrypoint = "service.ts"
+
+[execution]
+mode = "stateless"
+concurrency_per_worker = 1
+
+[access]
+mode = "public"
+
+[lifecycle]
+default_enabled = true
+
+[scaling]
+replicas_min = 1
+replicas_max = 2
+workers_per_replica_min = 1
+workers_per_replica_max = 2
+target_utilization = 0.70
+
+[placement]
+sandbox_group = "uui-login"

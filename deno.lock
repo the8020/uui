@@ -1,0 +1,56 @@
+{
+  "version": "5",
+  "specifiers": {
+    "jsr:@hono/hono@4.9.8": "4.9.8",
+    "jsr:@std/assert@1.0.14": "1.0.14",
+    "jsr:@std/internal@^1.0.10": "1.0.14",
+    "npm:@xterm/addon-canvas@0.7.0": "0.7.0_@xterm+xterm@5.5.0",
+    "npm:@xterm/addon-fit@0.10.0": "0.10.0_@xterm+xterm@5.5.0",
+    "npm:@xterm/xterm@5.5.0": "5.5.0",
+    "npm:zod@4.1.5": "4.1.5"
+  },
+  "jsr": {
+    "@hono/hono@4.9.8": {
+      "integrity": "908150f13e90181a051a3af3bf15203aff00190682afedfd38824d0cb9299a95"
+    },
+    "@std/assert@1.0.14": {
+      "integrity": "68d0d4a43b365abc927f45a9b85c639ea18a9fab96ad92281e493e4ed84abaa4",
+      "dependencies": [
+        "jsr:@std/internal"
+      ]
+    },
+    "@std/internal@1.0.14": {
+      "integrity": "291516b3d4c35024d6ffbc0a9df5bf4c64116e05b50012cf846710152d2ffdf7"
+    }
+  },
+  "npm": {
+    "@xterm/addon-canvas@0.7.0_@xterm+xterm@5.5.0": {
+      "integrity": "sha512-LF5LYcfvefJuJ7QotNRdRSPc9YASAVDeoT5uyXS/nZshZXjYplGXRECBGiznwvhNL2I8bq1Lf5MzRwstsYQ2Iw==",
+      "dependencies": [
+        "@xterm/xterm"
+      ]
+    },
+    "@xterm/addon-fit@0.10.0_@xterm+xterm@5.5.0": {
+      "integrity": "sha512-UFYkDm4HUahf2lnEyHvio51TNGiLK66mqP2JoATy7hRZeXaGMRDr00JiSF7m63vR5WKATF605yEggJKsw0JpMQ==",
+      "dependencies": [
+        "@xterm/xterm"
+      ]
+    },
+    "@xterm/xterm@5.5.0": {
+      "integrity": "sha512-hqJHYaQb5OptNunnyAnkHyM8aCjZ1MEIDTQu1iIbbTD/xops91NB5yq1ZK/dC2JDbVWtF23zUtl9JE2NqwT87A=="
+    },
+    "zod@4.1.5": {
+      "integrity": "sha512-rcUUZqlLJgBC33IT3PNMgsCq6TzLQEG/Ei/KTCU0PedSWRMAXoOUN+4t/0H+Q8bdnLPdqUYnvboJT0bn/229qg=="
+    }
+  },
+  "workspace": {
+    "dependencies": [
+      "jsr:@hono/hono@4.9.8",
+      "jsr:@std/assert@1.0.14",
+      "npm:@xterm/addon-canvas@0.7.0",
+      "npm:@xterm/addon-fit@0.10.0",
+      "npm:@xterm/xterm@5.5.0",
+      "npm:zod@4.1.5"
+    ]
+  }
+}

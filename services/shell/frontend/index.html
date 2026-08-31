@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>80|20</title>
+    <script nonce="__the8020_theme_nonce__">
+    (() => {
+      const readTheme = (storage, key) => {
+        try {
+          const value = storage.getItem(key);
+          return value === "light" || value === "dark" ? value : null;
+        } catch {
+          return null;
+        }
+      };
+      const theme = readTheme(
+        sessionStorage,
+        "the8020.uui.theme:initial",
+      ) ?? readTheme(localStorage, "the8020.uui.theme") ??
+        (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      document.documentElement.dataset.theme = theme;
+      window.__the8020InitialThemeApplied = {
+        theme,
+        at: performance.now(),
+      };
+    })();
+    </script>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header class="navbar">
+      <div class="container navbar-inner">
+        <div class="navbar-leading">
+          <div class="brand" aria-label="80|20 platform session">
+            <span class="brand-gold" aria-hidden="true">80</span><span
+              class="brand-pipe"
+              aria-hidden="true"
+            >|</span><span aria-hidden="true">20</span>
+          </div>
+          <button
+            class="btn btn-ghost btn-sm screen-back"
+            id="screen-back"
+            type="button"
+            aria-label="Back"
+            title="Back"
+            disabled
+          >
+          </button>
+        </div>
+        <div class="program-header" id="program-header" hidden>
+          <div
+            class="program-header-visible"
+            id="program-header-visible"
+          ></div>
+          <details
+            class="program-header-overflow"
+            id="program-header-overflow"
+            hidden
+          >
+            <summary
+              class="btn btn-ghost btn-sm program-header-overflow-toggle"
+              id="program-header-overflow-toggle"
+              aria-label="More program controls"
+              title="More program controls"
+            ></summary>
+            <div
+              class="program-header-overflow-items"
+              id="program-header-overflow-items"
+              aria-label="Additional program controls"
+            ></div>
+          </details>
+        </div>
+        <nav class="navbar-actions" aria-label="Session controls">
+          <span
+            class="badge badge-warning"
+            id="connection-indicator"
+            data-state="connecting"
+          >
+            <span class="status-dot" aria-hidden="true"></span>
+            <span id="connection-state" role="status">Connecting…</span>
+          </span>
+          <button
+            class="btn btn-ghost btn-sm theme-toggle"
+            id="theme-toggle"
+            type="button"
+            aria-pressed="true"
+            aria-label="Switch to light mode"
+          >
+          </button>
+        </nav>
+      </div>
+    </header>
+    <div id="notice" class="notice" role="alert" hidden></div>
+    <div id="interaction-shield" class="interaction-shield" aria-hidden="true">
+      <div class="interaction-indicator">
+        <span class="interaction-spinner"></span>
+        <span>Loading…</span>
+      </div>
+    </div>
+    <main class="shell-main">
+      <div class="container">
+        <div id="app" aria-live="polite">
+          <p class="loading">Opening your session…</p>
+        </div>
+      </div>
+    </main>
+    <script id="the8020-boot" type="application/json">
+    { "__the8020_boot_placeholder__": true }
+    </script>
+    <script type="module" src="main.js"></script>
+  </body>
+</html>

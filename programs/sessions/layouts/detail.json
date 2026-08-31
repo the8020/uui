@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "id": "uui-session-detail",
+  "root": {
+    "id": "session",
+    "type": "detail",
+    "controls": [
+      "sessionId",
+      "state",
+      "authenticatedUser",
+      "authenticatedUserId",
+      "serviceId",
+      "persistentExecutionId",
+      "nodeId",
+      "runtimeGroupId",
+      "sandboxId",
+      "workerId",
+      "currentScreen",
+      "createdAt",
+      "updatedAt",
+      "lastConnectionAt",
+      "liveState",
+      "messageLog"
+    ]
+  }
+}

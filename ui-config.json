@@ -1,0 +1,16 @@
+{
+  "loginUrl": "/the8020/uui/login/",
+  "postLoginUrl": "/the8020/uui/shell/",
+  "sessionWebSocketPath": "/the8020/uui/session/connect",
+  "protocolVersion": 1,
+  "disconnectGraceMilliseconds": 120000,
+  "heartbeatIntervalMilliseconds": 30000,
+  "heartbeatTimeoutMilliseconds": 60000,
+  "reconnectInitialDelayMilliseconds": 250,
+  "reconnectMaximumDelayMilliseconds": 10000,
+  "replayMessageLimit": 1000,
+  "replayByteLimit": 10000000,
+  "maximumMessageBytes": 1000000,
+  "homeProgram": "the8020/uui/home",
+  "terminatedProgram": "the8020/uui/program-terminated"
+}
