@@ -13,16 +13,16 @@ message = "Authentication is required."
 [lifecycle]
 default_enabled = true
 service_type = "session"
-session_keep_alive = "2m"
+session_keep_alive = "10m"
 
 [scaling]
-minimum_workers = 1
-maximum_workers = 5000
+minimum_workers = 0
+maximum_workers = 0
 concurrency_per_worker = 1
-target_utilization = 0.70
+target_utilization = 1.00
 worker_keep_alive = "2m"
 
 [placement]
 sandbox_group = "uui"
-minimum_sandboxes = 1
-workers_per_sandbox = 50
+minimum_sandboxes = 0
+workers_per_sandbox = 64

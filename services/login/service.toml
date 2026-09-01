@@ -11,13 +11,13 @@ service_type = "stateless"
 session_keep_alive = "10m"
 
 [scaling]
-minimum_workers = 1
-maximum_workers = 4
-concurrency_per_worker = 1
+minimum_workers = 0
+maximum_workers = 128
+concurrency_per_worker = 16
 target_utilization = 0.70
 worker_keep_alive = "2m"
 
 [placement]
-sandbox_group = "uui-login"
-minimum_sandboxes = 1
-workers_per_sandbox = 2
+sandbox_group = "uui"
+minimum_sandboxes = 0
+workers_per_sandbox = 64

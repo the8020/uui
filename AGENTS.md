@@ -63,13 +63,14 @@
   message-log, or terminate functions. Missing targets are stale and may be
   cleaned by the program; no kernel Worker scan or UUI administration command
   exists.
-- Login, shell, and session each declare one minimum Worker and one minimum
-  sandbox so all three UUI entry services stay warm. Login permits four Workers
-  at two per sandbox, shell permits eight at two per sandbox, and the session
-  service permits 5,000 at 50 per sandbox. Session uses canonical `session`
-  lifecycle, concurrency one, and a two-minute session keepalive; login and
-  shell are stateless. These are worker/sandbox policies, not legacy instance
-  reservations.
+- Login, shell, and session declare zero minimum sandboxes and Workers. Login
+  and shell share sandbox group `uui`, permit 128 Workers at 64 per sandbox, use
+  concurrency 16, target 70% utilization, and retain idle Workers for two
+  minutes. The session service also uses group `uui`, has an unbounded zero
+  maximum, keeps 64 Workers per sandbox, uses canonical `session` lifecycle with
+  concurrency one and 100% target utilization, and retains an inactive session
+  environment for ten minutes. These are worker/sandbox policies, not legacy
+  instance reservations.
 - Initial program output may precede the physical WebSocket. The service replays
   that retained output in server-sequence order before `session.ready`, so the
   shell always receives the first screen instead of remaining on its opening
