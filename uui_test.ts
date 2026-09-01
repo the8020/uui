@@ -152,7 +152,13 @@ Deno.test("layout validates data nodes and applies future overrides", () => {
       ratio: [50, 50],
       responsive: "stack",
       children: [
-        { id: "left", type: "list", bind: "orders" },
+        {
+          id: "left",
+          type: "list",
+          bind: "orders",
+          display: ["addedRows"],
+          headings: { addedRows: "+" },
+        },
         { id: "right", type: "section", controls: ["email"] },
       ],
     },
@@ -171,6 +177,7 @@ Deno.test("layout validates data nodes and applies future overrides", () => {
   ]);
   assertEquals(changed.root.children?.[0]?.controls, []);
   assertEquals(changed.root.children?.[0]?.collapsed, true);
+  assertEquals(changed.root.children?.[1]?.headings, { addedRows: "+" });
   assertThrows(
     () =>
       validateLayout({

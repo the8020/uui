@@ -9,6 +9,7 @@ import type {
   ScreenListPage,
   ScreenSnapshot,
 } from "@packages/the8020/uui/mod.ts";
+import { humanize } from "../../../humanize.ts";
 import { fieldGridPositions } from "./field_grid.ts";
 import {
   fieldMessageIsOverflowing,
@@ -452,7 +453,7 @@ function renderList(
   for (const column of columns) {
     const cell = document.createElement("th");
     cell.scope = "col";
-    renderIconText(cell, column);
+    renderIconText(cell, node.headings?.[column] ?? humanize(column));
     headRow.append(cell);
   }
   head.append(headRow);
@@ -908,16 +909,6 @@ function displayValue(value: unknown): string {
   if (value === null || value === undefined) return "";
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
-}
-
-function humanize(value: string): string {
-  const spaced = value.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(
-    /[-_]+/g,
-    " ",
-  );
-  return spaced.length === 0
-    ? value
-    : spaced[0]!.toUpperCase() + spaced.slice(1);
 }
 
 function element<K extends keyof HTMLElementTagNameMap>(

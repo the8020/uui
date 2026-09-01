@@ -17,6 +17,7 @@ export interface LayoutNode {
   bind?: string;
   key?: string;
   display?: string[];
+  headings?: Record<string, string>;
   controls?: string[];
   actions?: string[];
   children?: LayoutNode[];
@@ -67,6 +68,7 @@ const nodeKeys = new Set([
   "bind",
   "key",
   "display",
+  "headings",
   "controls",
   "actions",
   "children",
@@ -165,6 +167,13 @@ function validateNode(
         !list.every((item) => typeof item === "string" && item.length > 0))
     ) throw new TypeError(`layout node ${value.id} has invalid ${name}`);
   }
+  if (
+    value.headings !== undefined &&
+    (!isRecord(value.headings) ||
+      !Object.entries(value.headings).every(([column, heading]) =>
+        column.length > 0 && typeof heading === "string" && heading.length > 0
+      ))
+  ) throw new TypeError(`layout node ${value.id} has invalid headings`);
   const declaredActions = value.actions as string[] | undefined;
   for (const id of declaredActions ?? []) {
     if (actions.size > 0 && !actions.has(id)) {

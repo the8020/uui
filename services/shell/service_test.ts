@@ -217,6 +217,10 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   assertEquals(cssBody.includes(".brand-mark"), false);
   assertMatch(
     cssBody,
+    /\*\s*\{[^}]*overscroll-behavior:\s*contain;/s,
+  );
+  assertMatch(
+    cssBody,
     /\.screen\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;[^}]*border:\s*0;[^}]*padding:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/s,
   );
   assertMatch(

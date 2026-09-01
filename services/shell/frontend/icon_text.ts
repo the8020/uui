@@ -1,3 +1,5 @@
+import { humanize } from "../../../humanize.ts";
+
 const MATERIAL_ICON_ASSETS = {
   arrow_back: "./assets/material-arrow-back-24-e083cc60.svg",
   arrow_drop_down: "./assets/material-arrow-drop-down-24-e083cc60.svg",
@@ -113,11 +115,4 @@ function pushText(tokens: IconTextToken[], text: string): void {
   const previous = tokens.at(-1);
   if (previous?.type === "text") previous.text += text;
   else tokens.push({ type: "text", text });
-}
-
-function humanize(value: string): string {
-  return value.replaceAll("_", " ").replace(
-    /^./,
-    (character) => character.toUpperCase(),
-  );
 }

@@ -57,6 +57,7 @@ html[data-theme="dark"] {
 
 * {
   box-sizing: border-box;
+  overscroll-behavior: contain;
 }
 
 html {
