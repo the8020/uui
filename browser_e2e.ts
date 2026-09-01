@@ -1193,12 +1193,14 @@ try {
       const readOnly = document.querySelector('[data-bind="serviceId"]');
       const readOnlyCheckbox = document.querySelector('[data-bind="enabled"]');
       const editable = document.querySelector('[data-bind="minimumWorkers"]');
+      const maximumWorkers = document.querySelector('[data-bind="maximumWorkers"]');
       const slider = document.querySelector('[data-bind="targetUtilization"]');
       const sliderValue = slider?.closest('.field-input-shell')?.querySelector('.field-range-value');
       const fieldLabel = editable?.closest('.field')?.querySelector(':scope > label');
       if (!(readOnly instanceof HTMLElement) ||
         !(readOnlyCheckbox instanceof HTMLInputElement) ||
         !(editable instanceof HTMLElement) ||
+        !(maximumWorkers instanceof HTMLInputElement) ||
         !(slider instanceof HTMLInputElement) ||
         !(sliderValue instanceof HTMLOutputElement) ||
         !(fieldLabel instanceof HTMLLabelElement)) return false;
@@ -1216,6 +1218,11 @@ try {
       const sliderIcon = slider.closest('.field')?.querySelector('.field-edit-icon');
       const editableShell = editable.closest('.field-input-shell');
       const sliderShell = slider.closest('.field-input-shell');
+      const maximumField = maximumWorkers.closest('.field');
+      const sliderField = slider.closest('.field');
+      const maximumMessage = maximumField?.querySelector(':scope > .field-message');
+      const sliderMessage = sliderField?.querySelector(':scope > .field-message');
+      const maximumHint = maximumMessage?.querySelector('.field-message-trigger');
       const iconStyle = editableIcon instanceof HTMLElement
         ? getComputedStyle(editableIcon)
         : undefined;
@@ -1232,9 +1239,26 @@ try {
         Math.abs(sliderShell.getBoundingClientRect().right - sliderIcon.getBoundingClientRect().right) < 1;
       const sliderValueOnLeft = sliderValue.getBoundingClientRect().right <
         slider.getBoundingClientRect().left && sliderValue.nextElementSibling === slider;
+      const reservedMessageRows = maximumField instanceof HTMLElement &&
+        sliderField instanceof HTMLElement && maximumMessage instanceof HTMLElement &&
+        sliderMessage instanceof HTMLElement && maximumHint instanceof HTMLButtonElement &&
+        sliderShell instanceof HTMLElement &&
+        maximumMessage.dataset.messageKind === 'hint' &&
+        sliderMessage.dataset.messageKind === 'none' &&
+        sliderMessage.querySelector('.field-message-trigger') === null &&
+        Math.abs(maximumField.getBoundingClientRect().height -
+          sliderField.getBoundingClientRect().height) < 0.5 &&
+        Math.abs(maximumMessage.getBoundingClientRect().height -
+          sliderMessage.getBoundingClientRect().height) < 0.5 &&
+        Math.abs(maximumWorkers.getBoundingClientRect().bottom -
+          sliderShell.getBoundingClientRect().bottom) < 0.5 &&
+        getComputedStyle(maximumHint).whiteSpace === 'nowrap' &&
+        getComputedStyle(maximumHint).textOverflow === 'ellipsis' &&
+        maximumHint.scrollHeight <= maximumHint.clientHeight + 1 &&
+        maximumHint.scrollWidth > maximumHint.clientWidth;
       return grid.children.length === 3 &&
         cardElements.every((card) => card.parentElement === grid) &&
-        equalHeightOnEachRow && insetBorderTitles && flat &&
+        equalHeightOnEachRow && insetBorderTitles && flat && reservedMessageRows &&
         screenTitle?.textContent === 'Service the8020/demo/variables' &&
         screenLayout instanceof HTMLElement &&
         getComputedStyle(screenLayout).marginTop === '32px' &&
@@ -1279,6 +1303,33 @@ try {
     })()`,
     "unified field groups and editable field affordances",
   );
+  const openedServiceHint = await first.evaluate<boolean>(`(() => {
+    const field = document.querySelector('[data-bind="maximumWorkers"]')?.closest('.field');
+    const trigger = field?.querySelector('.field-message-trigger');
+    const popover = field?.querySelector('.field-message-popover');
+    if (!(trigger instanceof HTMLButtonElement) || !(popover instanceof HTMLElement)) return false;
+    trigger.click();
+    return popover.matches(':popover-open') &&
+      popover.textContent?.trim() ===
+        'Zero is unlimited at the service level; kernel sandbox and resource limits still apply.';
+  })()`);
+  assert(
+    openedServiceHint,
+    "clicking a service field hint did not open its full text",
+  );
+  await waitForPage(
+    first,
+    `(() => {
+      const field = document.querySelector('[data-bind="maximumWorkers"]')?.closest('.field');
+      const trigger = field?.querySelector('.field-message-trigger');
+      const popover = field?.querySelector('.field-message-popover');
+      return trigger?.getAttribute('aria-expanded') === 'true' &&
+        popover?.matches(':popover-open') === true;
+    })()`,
+    "accessible service field hint popover",
+  );
+  await first.evaluate(`document.querySelector('[data-bind="maximumWorkers"]')
+    ?.closest('.field')?.querySelector('.field-message-trigger')?.click()`);
   await setValue(first, '[data-bind="serviceType"]', "session");
   await waitForPage(
     first,
@@ -1731,6 +1782,28 @@ try {
     mobile: false,
   });
   await waitForResponsiveFieldLayout(first, "desktop");
+  const openedResponsiveHint = await first.evaluate<boolean>(`(() => {
+    const field = document.querySelector('[data-bind="username"]')?.closest('.field');
+    const trigger = field?.querySelector('.field-message-trigger');
+    const popover = field?.querySelector('.field-message-popover');
+    if (!(trigger instanceof HTMLButtonElement) || !(popover instanceof HTMLElement)) return false;
+    trigger.click();
+    return popover.matches(':popover-open') &&
+      popover.textContent?.trim() ===
+        'This deliberately long hint proves that supporting field messages stay on one reserved line across neighboring cards.';
+  })()`);
+  assert(
+    openedResponsiveHint,
+    "responsive field hint did not open its complete text",
+  );
+  await waitForPage(
+    first,
+    `document.querySelector('[data-bind="username"]')?.closest('.field')
+      ?.querySelector('.field-message-trigger')?.getAttribute('aria-expanded') === 'true'`,
+    "responsive field hint accessibility state",
+  );
+  await first.evaluate(`document.querySelector('[data-bind="username"]')
+    ?.closest('.field')?.querySelector('.field-message-trigger')?.click()`);
   await first.command("Emulation.setDeviceMetricsOverride", {
     width: 800,
     height: 900,
@@ -2610,6 +2683,7 @@ function responsiveFieldLayoutExpression(
       return field.getBoundingClientRect().width / fields.getBoundingClientRect().width;
     };
     const sameRow = (left, right) => Math.abs(left - right) < 2;
+    const fieldFor = (bind) => document.querySelector('[data-bind="' + bind + '"]')?.closest('.field');
     const twoCards = [...document.querySelectorAll('[data-layout-id="two-group-grid"] > .layout-field-group')]
       .map((item) => item.getBoundingClientRect());
     const fourCards = [...document.querySelectorAll('[data-layout-id="four-group-grid"] > .layout-field-group')]
@@ -2633,26 +2707,81 @@ function responsiveFieldLayoutExpression(
     const short = ratio('shortOne');
     const medium = ratio('mediumOne');
     const long = ratio('longOne');
+    const usernameField = fieldFor('username');
+    const languageField = fieldFor('language');
+    const roleField = fieldFor('role');
+    const localeField = fieldFor('locale');
+    const usernameMessage = usernameField?.querySelector(':scope > .field-message');
+    const languageMessage = languageField?.querySelector(':scope > .field-message');
+    const usernameTrigger = usernameMessage?.querySelector('.field-message-trigger');
+    const usernamePopover = usernameMessage?.querySelector('.field-message-popover');
+    const hintStyle = usernameTrigger instanceof HTMLElement
+      ? getComputedStyle(usernameTrigger)
+      : undefined;
+    const alignedSiblingMessageRows = ${JSON.stringify(mode)} === 'mobile' ||
+      (usernameField instanceof HTMLElement && languageField instanceof HTMLElement &&
+        roleField instanceof HTMLElement && localeField instanceof HTMLElement &&
+        sameRow(usernameField.getBoundingClientRect().top, languageField.getBoundingClientRect().top) &&
+        sameRow(roleField.getBoundingClientRect().top, localeField.getBoundingClientRect().top));
+    const fieldMessages = usernameMessage instanceof HTMLElement &&
+      languageMessage instanceof HTMLElement && usernameTrigger instanceof HTMLButtonElement &&
+      usernamePopover instanceof HTMLElement && alignedSiblingMessageRows &&
+      usernameMessage.dataset.messageKind === 'hint' &&
+      languageMessage.dataset.messageKind === 'none' &&
+      languageMessage.querySelector('.field-message-trigger') === null &&
+      Math.abs(usernameMessage.getBoundingClientRect().height -
+        languageMessage.getBoundingClientRect().height) < 0.5 &&
+      hintStyle?.whiteSpace === 'nowrap' && hintStyle.overflowX === 'hidden' &&
+      hintStyle.textOverflow === 'ellipsis' &&
+      usernameTrigger.scrollHeight <= usernameTrigger.clientHeight + 1 &&
+      usernameTrigger.scrollWidth > usernameTrigger.clientWidth &&
+      usernameTrigger.getAttribute('popovertarget') === usernamePopover.id &&
+      usernamePopover.getAttribute('popover') === 'auto' &&
+      usernamePopover.getAttribute('role') === 'tooltip';
     const spanningNote = document.querySelector('[data-bind="spanningNote"]');
     const spanningTextarea = spanningNote instanceof HTMLTextAreaElement ? spanningNote : undefined;
     const spanningField = spanningTextarea?.closest('.field');
     const spanningShortOne = document.querySelector('[data-bind="spanningShortOne"]')?.closest('.field');
     const spanningShortTwo = document.querySelector('[data-bind="spanningShortTwo"]')?.closest('.field');
     const spanningLong = document.querySelector('[data-bind="spanningLong"]')?.closest('.field');
+    const spanningShortOneLabel = spanningShortOne?.querySelector(':scope > label');
+    const spanningShortOneLabelStyle = spanningShortOneLabel instanceof HTMLElement
+      ? getComputedStyle(spanningShortOneLabel)
+      : undefined;
     const spanningBounds = spanningField?.getBoundingClientRect();
     const spanningShortOneBounds = spanningShortOne?.getBoundingClientRect();
     const spanningShortTwoBounds = spanningShortTwo?.getBoundingClientRect();
     const spanningLongBounds = spanningLong?.getBoundingClientRect();
+    const spanningMessage = spanningField?.querySelector(':scope > .field-message');
+    const spanningLongMessage = spanningLong?.querySelector(':scope > .field-message');
+    const spanningMessageBounds = spanningMessage?.getBoundingClientRect();
+    const spanningLongMessageBounds = spanningLongMessage?.getBoundingClientRect();
+    const spanningGrid = spanningField?.closest('.field-group-fields');
+    const spanningGridStyle = spanningGrid instanceof HTMLElement
+      ? getComputedStyle(spanningGrid)
+      : undefined;
+    const exactSpanHeight = spanningGridStyle === undefined ? 0 :
+      parseFloat(spanningGridStyle.gridAutoRows) * 2 + parseFloat(spanningGridStyle.rowGap);
     const rowSpans = spanningField instanceof HTMLElement &&
       spanningShortOne instanceof HTMLElement && spanningShortTwo instanceof HTMLElement &&
       spanningLong instanceof HTMLElement && spanningTextarea !== undefined &&
+      spanningShortOneLabel instanceof HTMLLabelElement &&
+      spanningMessage instanceof HTMLElement && spanningLongMessage instanceof HTMLElement &&
       spanningField.dataset.fieldRowSpan === '2' && getComputedStyle(spanningTextarea).resize === 'none' &&
-      Math.abs(spanningTextarea.getBoundingClientRect().bottom - spanningBounds.bottom) < 2 &&
+      spanningShortOneLabelStyle?.whiteSpace === 'nowrap' &&
+      spanningShortOneLabelStyle.overflowX === 'hidden' &&
+      spanningShortOneLabelStyle.textOverflow === 'ellipsis' &&
+      spanningShortOneLabel.scrollHeight <= spanningShortOneLabel.clientHeight + 1 &&
+      spanningShortOneLabel.scrollWidth > spanningShortOneLabel.clientWidth &&
+      Math.abs(spanningBounds.height - exactSpanHeight) < 2 &&
+      Math.abs(spanningTextarea.getBoundingClientRect().bottom - spanningMessageBounds.top) < 2 &&
+      spanningMessageBounds.height > 0 && spanningLongMessageBounds.height > 0 &&
       (${JSON.stringify(mode)} === 'desktop'
         ? sameRow(spanningBounds.top, spanningShortOneBounds.top) &&
           sameRow(spanningBounds.top, spanningShortTwoBounds.top) &&
           spanningLongBounds.top > spanningShortOneBounds.bottom + 10 &&
-          sameRow(spanningBounds.bottom, spanningLongBounds.bottom)
+          sameRow(spanningBounds.bottom, spanningLongBounds.bottom) &&
+          sameRow(spanningMessageBounds.bottom, spanningLongMessageBounds.bottom)
         : spanningShortOneBounds.top > spanningBounds.bottom + 10 &&
           sameRow(spanningShortOneBounds.top, spanningShortTwoBounds.top) &&
           spanningLongBounds.top > spanningShortOneBounds.bottom + 10);
@@ -2667,7 +2796,7 @@ function responsiveFieldLayoutExpression(
         two.length === 2 && two[1] > two[0] + 10 && four.length === 4 &&
         four[1] > four[0] + 10 && four[2] > four[1] + 10 && four[3] > four[2] + 10 &&
         verticallySpaced(twoCards) && verticallySpaced(fourCards);
-    return hierarchy && layout && rowSpans;
+    return hierarchy && layout && fieldMessages && rowSpans;
   })()`;
 }
 
@@ -2713,6 +2842,11 @@ function responsiveFieldLayoutDiagnosticsExpression(): string {
       if (!(field instanceof HTMLElement)) return undefined;
       const rect = field.getBoundingClientRect();
       const inputRect = input?.getBoundingClientRect();
+      const message = field.querySelector(':scope > .field-message');
+      const messageRect = message?.getBoundingClientRect();
+      const trigger = message?.querySelector('.field-message-trigger');
+      const grid = field.closest('.field-group-fields');
+      const label = field.querySelector(':scope > :is(label, legend)');
       return {
         top: rect.top,
         right: rect.right,
@@ -2721,9 +2855,34 @@ function responsiveFieldLayoutDiagnosticsExpression(): string {
         width: rect.width,
         height: rect.height,
         inputBottom: inputRect?.bottom,
+        label: label instanceof HTMLElement ? {
+          width: label.clientWidth,
+          scrollWidth: label.scrollWidth,
+          height: label.clientHeight,
+          scrollHeight: label.scrollHeight,
+          whiteSpace: getComputedStyle(label).whiteSpace,
+          textOverflow: getComputedStyle(label).textOverflow,
+          overflowX: getComputedStyle(label).overflowX,
+        } : undefined,
+        message: messageRect === undefined ? undefined : {
+          top: messageRect.top,
+          bottom: messageRect.bottom,
+          width: messageRect.width,
+          height: messageRect.height,
+          kind: message?.dataset.messageKind,
+          triggerWidth: trigger?.clientWidth,
+          triggerScrollWidth: trigger?.scrollWidth,
+          triggerHeight: trigger?.clientHeight,
+          triggerScrollHeight: trigger?.scrollHeight,
+          whiteSpace: trigger instanceof HTMLElement ? getComputedStyle(trigger).whiteSpace : undefined,
+          textOverflow: trigger instanceof HTMLElement ? getComputedStyle(trigger).textOverflow : undefined,
+          overflowX: trigger instanceof HTMLElement ? getComputedStyle(trigger).overflowX : undefined,
+        },
         rowSpan: field.dataset.fieldRowSpan,
         gridColumn: getComputedStyle(field).gridColumn,
         gridRow: getComputedStyle(field).gridRow,
+        gridAutoRows: grid instanceof HTMLElement ? getComputedStyle(grid).gridAutoRows : undefined,
+        gridRowGap: grid instanceof HTMLElement ? getComputedStyle(grid).rowGap : undefined,
         resize: input instanceof HTMLTextAreaElement ? getComputedStyle(input).resize : undefined,
       };
     };
@@ -2734,6 +2893,10 @@ function responsiveFieldLayoutDiagnosticsExpression(): string {
       short: ratio('shortOne'),
       medium: ratio('mediumOne'),
       long: ratio('longOne'),
+      username: bounds('username'),
+      language: bounds('language'),
+      role: bounds('role'),
+      locale: bounds('locale'),
       spanningNote: bounds('spanningNote'),
       spanningShortOne: bounds('spanningShortOne'),
       spanningShortTwo: bounds('spanningShortTwo'),

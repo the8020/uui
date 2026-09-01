@@ -225,7 +225,7 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   );
   assertMatch(
     cssBody,
-    /\.field > label,\s*\.field > legend\s*\{[^}]*color:\s*var\(--muted\);[^}]*font-size:\s*0\.7em;[^}]*font-weight:\s*800;[^}]*letter-spacing:\s*0\.06em;[^}]*text-transform:\s*uppercase;/s,
+    /\.field > label,\s*\.field > legend\s*\{[^}]*overflow:\s*hidden;[^}]*width:\s*100%;[^}]*min-width:\s*0;[^}]*max-width:\s*100%;[^}]*height:\s*var\(--field-grid-label-height, 1\.085rem\);[^}]*color:\s*var\(--muted\);[^}]*font-size:\s*0\.7em;[^}]*font-weight:\s*800;[^}]*letter-spacing:\s*0\.06em;[^}]*line-height:\s*var\(--field-grid-label-height, 1\.085rem\);[^}]*text-overflow:\s*ellipsis;[^}]*text-transform:\s*uppercase;[^}]*white-space:\s*nowrap;/s,
   );
   assertMatch(
     cssBody,
@@ -377,7 +377,7 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   );
   assertMatch(
     cssBody,
-    /\.field-group-fields\s*\{[^}]*--field-grid-label-height:\s*1\.085rem;[^}]*--field-grid-control-height:\s*38px;[^}]*--field-grid-row-height:\s*calc\([^}]*--field-grid-gap:\s*20px;[^}]*align-items:\s*stretch;[^}]*gap:\s*var\(--field-grid-gap\);/s,
+    /\.field-group-fields\s*\{[^}]*--field-grid-label-height:\s*1\.085rem;[^}]*--field-grid-control-height:\s*38px;[^}]*--field-grid-message-line-height:\s*0\.9rem;[^}]*--field-grid-message-gap:\s*4px;[^}]*--field-grid-message-slot-height:\s*calc\([^}]*--field-grid-row-height:\s*calc\([^}]*--field-grid-gap:\s*20px;[^}]*align-items:\s*stretch;[^}]*gap:\s*var\(--field-grid-gap\);/s,
   );
   assertMatch(
     cssBody,
@@ -389,7 +389,23 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   );
   assertMatch(
     cssBody,
-    /\.field-group-fields-exact-rows\s*>\s*\.field:not\(\.field-radio\)\s*\{[^}]*grid-template-rows:\s*var\(--field-grid-label-height\) minmax\(0, 1fr\) auto;/s,
+    /\.field-group-fields-exact-rows\s*>\s*\.field:not\(\.field-radio\)\s*\{[^}]*grid-template-rows:\s*var\(--field-grid-label-height\) minmax\(0, 1fr\)\s*var\(--field-grid-message-slot-height\);/s,
+  );
+  assertMatch(
+    cssBody,
+    /\.field-message\s*\{[^}]*height:\s*var\(--field-grid-message-slot-height, 1\.15rem\);[^}]*padding-block-start:\s*var\(--field-grid-message-gap, 4px\);[^}]*line-height:\s*var\(--field-grid-message-line-height, 0\.9rem\);/s,
+  );
+  assertMatch(
+    cssBody,
+    /\.field-message-trigger\s*\{[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s,
+  );
+  assertMatch(
+    cssBody,
+    /\.field-message-popover\s*\{[^}]*position:\s*fixed;[^}]*max-width:\s*min\(28rem, calc\(100vw - 20px\)\);[^}]*overflow-wrap:\s*anywhere;/s,
+  );
+  assertMatch(
+    cssBody,
+    /\.program-header \.field\s*\{[^}]*--field-grid-label-height:\s*0\.85rem;[^}]*width:\s*12rem;/s,
   );
   assertMatch(
     cssBody,

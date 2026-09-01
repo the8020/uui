@@ -47,6 +47,15 @@ export interface CustomElementCallbacks {
   render(descriptor: CustomElementDescriptor): HTMLElement;
 }
 
+type FieldMessageKind = "hint" | "error";
+
+interface FieldMessage {
+  kind: FieldMessageKind;
+  text: string;
+}
+
+let fieldMessageSequence = 0;
+
 export function renderScreen(
   root: HTMLElement,
   snapshot: ScreenSnapshot,
@@ -580,12 +589,11 @@ export function renderControl(
     icon.classList.add("field-edit-icon");
     inputShell.append(icon);
   }
-  wrapper.append(label, inputShell);
-  if (control.description) {
-    const description = element("small", "field-description");
-    renderIconText(description, control.description);
-    wrapper.append(description);
-  }
+  wrapper.append(
+    label,
+    inputShell,
+    renderFieldMessage(control.label ?? control.id, hintFor(control)),
+  );
   return wrapper;
 }
 
@@ -634,13 +642,56 @@ function renderRadioControl(
     icon.classList.add("field-edit-icon");
     inputShell.append(icon);
   }
-  group.append(legend, inputShell);
-  if (control.description) {
-    const description = element("small", "field-description");
-    renderIconText(description, control.description);
-    group.append(description);
-  }
+  group.append(
+    legend,
+    inputShell,
+    renderFieldMessage(control.label ?? control.id, hintFor(control)),
+  );
   return group;
+}
+
+function hintFor(control: ControlDescriptor): FieldMessage | undefined {
+  return control.description
+    ? { kind: "hint", text: control.description }
+    : undefined;
+}
+
+function renderFieldMessage(
+  fieldLabel: string,
+  message: FieldMessage | undefined,
+): HTMLElement {
+  const slot = element("div", "field-message");
+  slot.dataset.messageKind = message?.kind ?? "none";
+  if (message === undefined) {
+    slot.classList.add("field-message-empty");
+    slot.setAttribute("aria-hidden", "true");
+    return slot;
+  }
+
+  const trigger = element("button", "field-message-trigger");
+  trigger.type = "button";
+  trigger.setAttribute("aria-label", `Show full hint for ${fieldLabel}`);
+  trigger.setAttribute("aria-expanded", "false");
+  renderIconText(trigger, message.text);
+
+  const popover = element("div", "field-message-popover");
+  popover.id = `field-message-popover-${++fieldMessageSequence}`;
+  popover.setAttribute("popover", "auto");
+  popover.setAttribute("role", "tooltip");
+  popover.setAttribute("aria-label", `${fieldLabel} hint`);
+  renderIconText(popover, message.text);
+
+  trigger.setAttribute("popovertarget", popover.id);
+  trigger.setAttribute("aria-controls", popover.id);
+  trigger.setAttribute("aria-describedby", popover.id);
+  popover.addEventListener("toggle", () => {
+    trigger.setAttribute(
+      "aria-expanded",
+      String(popover.matches(":popover-open")),
+    );
+  });
+  slot.append(trigger, popover);
+  return slot;
 }
 
 function synchronizeBinding(

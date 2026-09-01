@@ -169,36 +169,44 @@
   rectangle at every breakpoint; later fields use only legal space at or after
   their source-order position, leaving holes instead of backfilling. Spanning
   controls stretch to one exact row metric shared by sibling groups: an `N`-row
-  field consumes `N` standard label-and-control row heights plus `N - 1` 20px
-  row gaps, aligning its underline with the `N`th ordinary field. Textarea
-  resizing is disabled so it cannot escape the planned grid. Field items have
-  zero outer padding and field-group grids use a 20px row and column gap. Direct
-  field labels and legends reuse list-column-header typography: muted,
-  uppercase, `0.7em`, weight `800`, and `0.06em` tracking; radio option labels
-  retain ordinary body typography. Numeric range controls render a native slider
-  with its synchronized bounded value suffix on the left and, when editable, the
-  same exact-right-edge pencil used by other editable fields. The painted track
-  is centered over the thumb's actual center-travel width, so its fill endpoint
-  and thumb center coincide at minimum, midpoint, and maximum. Pencil clearance
-  belongs to the surrounding field shell and never pads or shortens the native
-  range input's travel area; values use the ordinary numeric binding path. Every
-  field control, including checkboxes, switches, radios, and ranges, uses the
-  shared flat underline treatment. Read-only and editable controls retain
-  identical color, opacity, and value styling; the pencil is the steady-state
-  visual indicator of editability. Editable controls alone receive the muted
-  vendored Material `edit` SVG aligned visually and geometrically to the exact
-  field end; textarea and radio pencils keep the same underline-relative bottom
-  offset, while select chevrons and native input affordances remain immediately
-  before the pencil. Interactive hover feedback changes paint-only properties
-  such as color, border, background, and shadow; it never transforms or
-  repositions a pointer hitbox. Neutral elevation shadows are dark-tinted in
-  light mode and black in dark mode; dark-mode surfaces never use text-derived
-  light shadows. Theme state is browser-only: `sessionStorage` keeps the current
-  UUI session override through redraw/reconnect/reload, while `localStorage`
-  supplies the default for future tabs. Shell markup defaults to dark, and a
-  CSP-nonced initializer in the head resolves the browser-only stored or
-  operating-system preference before CSS and first paint; theme state never
-  enters UUI messages, service requests, kernel APIs, or backend storage.
+  field consumes `N` standard label, control, and supporting-message row heights
+  plus `N - 1` 20px row gaps, aligning its underline and reserved message slot
+  with the `N`th ordinary field. Every field reserves the same
+  supporting-message slot even when empty. Hints occupy exactly one ellipsized
+  line in that slot; their button opens the complete text in a
+  keyboard-accessible, light-dismiss popover. The renderer and semantic
+  message-kind styling form the shared field message concept so later validation
+  errors can use the same slot without changing geometry. Textarea resizing is
+  disabled so it cannot escape the planned grid. Field items have zero outer
+  padding and field-group grids use a 20px row and column gap. Direct field
+  labels and legends reuse list-column-header typography: muted, uppercase,
+  `0.7em`, weight `800`, and `0.06em` tracking. They always occupy exactly one
+  fixed-height line and ellipsize overflow, including in groups without row
+  spans; radio option labels retain ordinary body typography. Numeric range
+  controls render a native slider with its synchronized bounded value suffix on
+  the left and, when editable, the same exact-right-edge pencil used by other
+  editable fields. The painted track is centered over the thumb's actual
+  center-travel width, so its fill endpoint and thumb center coincide at
+  minimum, midpoint, and maximum. Pencil clearance belongs to the surrounding
+  field shell and never pads or shortens the native range input's travel area;
+  values use the ordinary numeric binding path. Every field control, including
+  checkboxes, switches, radios, and ranges, uses the shared flat underline
+  treatment. Read-only and editable controls retain identical color, opacity,
+  and value styling; the pencil is the steady-state visual indicator of
+  editability. Editable controls alone receive the muted vendored Material
+  `edit` SVG aligned visually and geometrically to the exact field end; textarea
+  and radio pencils keep the same underline-relative bottom offset, while select
+  chevrons and native input affordances remain immediately before the pencil.
+  Interactive hover feedback changes paint-only properties such as color,
+  border, background, and shadow; it never transforms or repositions a pointer
+  hitbox. Neutral elevation shadows are dark-tinted in light mode and black in
+  dark mode; dark-mode surfaces never use text-derived light shadows. Theme
+  state is browser-only: `sessionStorage` keeps the current UUI session override
+  through redraw/reconnect/reload, while `localStorage` supplies the default for
+  future tabs. Shell markup defaults to dark, and a CSP-nonced initializer in
+  the head resolves the browser-only stored or operating-system preference
+  before CSS and first paint; theme state never enters UUI messages, service
+  requests, kernel APIs, or backend storage.
 - Browser source executes bounded framework clipboard-write commands using the
   standard Clipboard API with a compatibility fallback.
 - Browser custom elements are selected only by framework-validated initializer
@@ -252,25 +260,27 @@
   visibly rendered mouse selection, confirmed source and factory reset controls,
   per-session theme persistence and future-tab theme inheritance, dark and light
   reload initialization before first paint, responsive two/four-group layouts,
-  semantic field lengths, and source-ordered multi-row field placement at
-  desktop/tablet/mobile widths, persistent standard Back navigation, header
-  action/control rendering, one-row right-to-left responsive hiding,
-  synchronized browser titles, vertical overflow disclosure, and mobile
-  viewport-edge clamping; an open disclosure remains open across responsive
-  refits while overflow is still required. It also covers immediate rapid-event
-  suppression and delayed loading feedback, direct home-list invocation, the
-  summary-only core-admin package list and selected package manifest/Git/content
-  detail with vertically spaced content cards and service clickthrough, the
-  core-admin service/sandbox lists and linked details, the package-owned UUI
-  session list/detail with exact-Worker inspection, bounded log, stale cleanup,
-  termination, and session-service clickthrough, authorized service
-  enable/disable and capacity changes including percentage sliders, nested
-  demos, dirty reconnect, reload resume, TypeError/ValueError short dumps,
-  source context, clipboard copy, Home recovery, per-tab Worker isolation,
-  single-Worker failure, and logout; administrative polling is throttled,
-  startup failures include service/log diagnostics, enabled `IDLE` services are
-  accepted before first-request lazy provisioning, staged rootfs fixtures
-  dereference symlinks only through a component-wise resolver contained by the
-  source root, and process cleanup is time-bounded.
+  semantic field lengths, reserved hinted/unhinted supporting-message alignment,
+  accessible full-hint popovers, and source-ordered multi-row field placement
+  including its message slot at desktop/tablet/mobile widths, persistent
+  standard Back navigation, header action/control rendering, one-row
+  right-to-left responsive hiding, synchronized browser titles, vertical
+  overflow disclosure, and mobile viewport-edge clamping; an open disclosure
+  remains open across responsive refits while overflow is still required. It
+  also covers immediate rapid-event suppression and delayed loading feedback,
+  direct home-list invocation, the summary-only core-admin package list and
+  selected package manifest/Git/content detail with vertically spaced content
+  cards and service clickthrough, the core-admin service/sandbox lists and
+  linked details, the package-owned UUI session list/detail with exact-Worker
+  inspection, bounded log, stale cleanup, termination, and session-service
+  clickthrough, authorized service enable/disable and capacity changes including
+  percentage sliders, nested demos, dirty reconnect, reload resume,
+  TypeError/ValueError short dumps, source context, clipboard copy, Home
+  recovery, per-tab Worker isolation, single-Worker failure, and logout;
+  administrative polling is throttled, startup failures include service/log
+  diagnostics, enabled `IDLE` services are accepted before first-request lazy
+  provisioning, staged rootfs fixtures dereference symlinks only through a
+  component-wise resolver contained by the source root, and process cleanup is
+  time-bounded.
 
 # Child DOX Index

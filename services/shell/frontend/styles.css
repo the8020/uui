@@ -408,7 +408,7 @@ textarea {
 }
 
 .screen-description,
-.field-description {
+.field-message {
   color: var(--muted);
 }
 
@@ -566,8 +566,14 @@ textarea {
 .field-group-fields {
   --field-grid-label-height: 1.085rem;
   --field-grid-control-height: 38px;
+  --field-grid-message-line-height: 0.9rem;
+  --field-grid-message-gap: 4px;
+  --field-grid-message-slot-height: calc(
+    var(--field-grid-message-line-height) + var(--field-grid-message-gap)
+  );
   --field-grid-row-height: calc(
-    var(--field-grid-label-height) + var(--field-grid-control-height)
+    var(--field-grid-label-height) + var(--field-grid-control-height) +
+      var(--field-grid-message-slot-height)
   );
   --field-grid-gap: 20px;
 
@@ -591,7 +597,9 @@ textarea {
 }
 
 .field-group-fields-exact-rows > .field:not(.field-radio) {
-  grid-template-rows: var(--field-grid-label-height) minmax(0, 1fr) auto;
+  grid-template-rows:
+    var(--field-grid-label-height) minmax(0, 1fr)
+    var(--field-grid-message-slot-height);
 }
 
 .field-group-fields-exact-rows > .field:not(.field-radio) .field-input-shell {
@@ -608,21 +616,21 @@ textarea {
   min-height: 0;
 }
 
-.field-group-fields-exact-rows > .field > :is(label, legend) {
-  overflow: hidden;
-  height: var(--field-grid-label-height);
-  line-height: var(--field-grid-label-height);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .field > label,
 .field > legend {
+  overflow: hidden;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  height: var(--field-grid-label-height, 1.085rem);
   color: var(--muted);
   font-size: 0.7em;
   font-weight: 800;
   letter-spacing: 0.06em;
+  line-height: var(--field-grid-label-height, 1.085rem);
+  text-overflow: ellipsis;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .field-input-shell {
@@ -921,8 +929,75 @@ textarea {
   resize: none;
 }
 
-.field-description {
+.field-message {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: var(--field-grid-message-slot-height, 1.15rem);
+  min-height: var(--field-grid-message-slot-height, 1.15rem);
+  padding-block-start: var(--field-grid-message-gap, 4px);
   font-size: 0.75rem;
+  line-height: var(--field-grid-message-line-height, 0.9rem);
+}
+
+.field-message[data-message-kind="error"] {
+  color: var(--danger);
+}
+
+.field-message-trigger {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: var(--field-grid-message-line-height, 0.9rem);
+  overflow: hidden;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  text-align: start;
+  text-decoration: underline dotted;
+  text-overflow: ellipsis;
+  text-underline-offset: 0.15em;
+  white-space: nowrap;
+  cursor: help;
+}
+
+.field-message-trigger:hover {
+  color: var(--primary);
+}
+
+.field-message-trigger:focus-visible {
+  border-radius: 2px;
+  outline: 2px solid color-mix(in srgb, var(--primary), transparent 55%);
+  outline-offset: 1px;
+}
+
+.field-message-trigger .material-icon {
+  --material-icon-size: 1.2em;
+}
+
+.field-message-popover {
+  position: fixed;
+  inset: 0;
+  width: max-content;
+  max-width: min(28rem, calc(100vw - 20px));
+  margin: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.65rem 0.75rem;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-size: 0.82rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.field-message-popover::backdrop {
+  background: transparent;
 }
 
 @container field-group (min-width: 480px) {
@@ -1044,6 +1119,8 @@ textarea {
 }
 
 .program-header .field {
+  --field-grid-label-height: 0.85rem;
+
   width: 12rem;
 }
 
@@ -1072,7 +1149,7 @@ textarea {
   resize: none;
 }
 
-.program-header-visible .field-description {
+.program-header-visible .field-message {
   display: none;
 }
 
