@@ -35,15 +35,18 @@
 - The public login page is fixed to the shell's dark palette and uses the same
   elevated field-group card, title tab, underline fields, and primary action
   treatment. Its unboxed `80|20` wordmark sits opposite `Sign in` on the card's
-  top edge; login does not read or persist authenticated-shell theme state. The
-  Worker reads its `services/login/frontend/index.html` template for every page
-  response and serves supported frontend assets through one constrained `/*`
-  handler; unhashed assets use `no-cache`, so frontend edits need only a browser
-  reload during development.
+  top edge with a subtle `6px` background radius; login does not read or persist
+  authenticated-shell theme state. The Worker reads its
+  `services/login/frontend/index.html` template for every page response and
+  serves supported frontend assets through one constrained `/*` handler;
+  unhashed assets use `no-cache`, so frontend edits need only a browser reload
+  during development.
+- Login errors and authenticated-shell notifications use their semantic soft
+  background and text colors without a left accent border.
 - One session service Worker delegates startup and uncaught-program recovery to
   its package-local UUI framework, which validates and reads `ui-config.json`.
-- The session service is an ordinary persistent service with concurrency one;
-  its handler owns UUI establishment, messages, replay, heartbeat, reconnect,
+- The session service is an ordinary session service with concurrency one; its
+  handler owns UUI establishment, messages, replay, heartbeat, reconnect,
   program lifecycle, metadata, and registered Worker administration functions.
   The supervisor provides only generic persistent execution binding/completion,
   exact registered-function invocation, and physical WebSocket relay.
@@ -60,9 +63,12 @@
   message-log, or terminate functions. Missing targets are stale and may be
   cleaned by the program; no kernel Worker scan or UUI administration command
   exists.
-- Login, shell, and session each default to one minimum replica so all three UUI
-  entry services fit together; their higher replica and Worker maxima provide
-  demand-driven capacity without turning former desired counts into hard
+- Login, shell, and session each declare one minimum Worker and one minimum
+  sandbox so all three UUI entry services stay warm. Login permits four Workers
+  at two per sandbox, shell permits eight at two per sandbox, and the session
+  service permits 5,000 at 50 per sandbox. Session uses canonical `session`
+  lifecycle, concurrency one, and a two-minute session keepalive; login and
+  shell are stateless. These are worker/sandbox policies, not legacy instance
   reservations.
 - Initial program output may precede the physical WebSocket. The service replays
   that retained output in server-sequence order before `session.ready`, so the

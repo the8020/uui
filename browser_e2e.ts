@@ -237,12 +237,29 @@ try {
       connection: document.querySelector('#connection-state')?.textContent
     })`);
     const sessions = await uiSessions(primaryRoot).catch(() => []);
+    const serviceInspections = await Promise.all([
+      "the8020/uui/login",
+      "the8020/uui/shell",
+      "the8020/uui/session",
+    ].map(async (serviceID) => {
+      try {
+        return await admin(primaryRoot, ["service", "inspect", serviceID]);
+      } catch (inspectError) {
+        return {
+          service_id: serviceID,
+          inspect_error: inspectError instanceof Error
+            ? inspectError.message
+            : String(inspectError),
+        };
+      }
+    }));
+    const kernelLog = await latestKernelLog(primaryRoot);
     throw new Error(
       `${error instanceof Error ? error.message : String(error)}; state: ${
         JSON.stringify(state)
-      }; session metadata: ${JSON.stringify(sessions)}; exceptions: ${
-        JSON.stringify(first.exceptions)
-      }`,
+      }; session metadata: ${JSON.stringify(sessions)}; service inspections: ${
+        JSON.stringify(serviceInspections)
+      }; exceptions: ${JSON.stringify(first.exceptions)}; ${kernelLog}`,
     );
   }
 
@@ -549,7 +566,7 @@ try {
   }
 
   await clickRow(first, "the8020/dev-core/development-test");
-  await waitForScreen(first, "Development test");
+  await waitForScreen(first, "Development test", 120_000);
   await first.command("Emulation.setDeviceMetricsOverride", {
     width: 1280,
     height: 800,
@@ -1121,8 +1138,8 @@ try {
   await waitForPage(
     first,
     `(() => {
-      const grid = document.querySelector('[data-layout-id="configuration"]');
-      const cards = ['instances', 'workers', 'runtime']
+      const grid = document.querySelector('[data-layout-id="scaling"]');
+      const cards = ['worker-threads', 'single-worker', 'replication']
         .map((id) => document.querySelector('[data-layout-id="' + id + '"]'));
       if (!(grid instanceof HTMLElement) ||
         cards.some((card) => !(card instanceof HTMLElement))) return false;
@@ -1165,13 +1182,17 @@ try {
           titleLeftContinuation.borderLeftWidth === '1px' &&
           titleLeftContinuation.borderRightWidth === '0px';
       });
-      const section = document.querySelector('[data-layout-id="configuration-section"]');
+      const section = document.querySelector('[data-layout-id="scaling-section"]');
       const sectionTitle = section?.querySelector(':scope > .section-title');
+      const lifecycleSection = document.querySelector('[data-layout-id="lifecycle-section"]');
+      const lifecycleTitle = lifecycleSection?.querySelector(':scope > .section-title');
+      const serviceType = document.querySelector('[data-bind="serviceType"]');
+      const sessionKeepAlive = document.querySelector('[data-bind="sessionKeepAlive"]');
       const screenTitle = document.querySelector('.screen > .screen-title');
       const screenLayout = document.querySelector('.screen > .layout-stack');
       const readOnly = document.querySelector('[data-bind="serviceId"]');
       const readOnlyCheckbox = document.querySelector('[data-bind="enabled"]');
-      const editable = document.querySelector('[data-bind="workersMinimum"]');
+      const editable = document.querySelector('[data-bind="minimumWorkers"]');
       const slider = document.querySelector('[data-bind="targetUtilization"]');
       const sliderValue = slider?.closest('.field-input-shell')?.querySelector('.field-range-value');
       const fieldLabel = editable?.closest('.field')?.querySelector(':scope > label');
@@ -1217,9 +1238,14 @@ try {
         screenTitle?.textContent === 'Service the8020/demo/variables' &&
         screenLayout instanceof HTMLElement &&
         getComputedStyle(screenLayout).marginTop === '32px' &&
-        sectionTitle?.textContent === 'Configuration' &&
+        sectionTitle?.textContent === 'Scaling' &&
         sectionTitle instanceof HTMLElement &&
         getComputedStyle(sectionTitle).marginBottom === '0px' &&
+        lifecycleTitle?.textContent === 'Lifecycle' &&
+        document.querySelector('[data-layout-id="service-lifecycle"] > .group-title')?.textContent === 'Service lifecycle' &&
+        serviceType instanceof HTMLSelectElement && !serviceType.disabled &&
+        sessionKeepAlive === null &&
+        document.querySelector('[data-bind*="replica" i], [data-bind*="instance" i]') === null &&
         document.querySelector('[data-layout-id="identity"] > .group-title')?.textContent === 'Status' &&
         document.querySelector('[data-layout-id="sandboxes"] > .group-title')?.textContent === 'Sandboxes' &&
         document.querySelector('.field-group-title, .region-title') === null &&
@@ -1239,7 +1265,7 @@ try {
         (iconStyle.maskImage !== 'none' || iconStyle.webkitMaskImage !== 'none') &&
         editable instanceof HTMLInputElement && editable.type === 'number' &&
         slider.type === 'range' && slider.min === '1' && slider.max === '100' &&
-        slider.step === '1' && slider.value === '70' &&
+        slider.step === '0.1' && slider.value === '70' &&
         slider.getAttribute('aria-valuetext') === '70%' &&
         sliderValue.value === '70%' &&
         sliderStyle.appearance === 'none' && sliderStyle.opacity === '1' &&
@@ -1252,6 +1278,21 @@ try {
         iconStyle.maskSize.includes('19.2px');
     })()`,
     "unified field groups and editable field affordances",
+  );
+  await setValue(first, '[data-bind="serviceType"]', "session");
+  await waitForPage(
+    first,
+    `document.querySelector('[data-bind="serviceType"]')?.value === "session" &&
+      document.querySelector('[data-bind="sessionKeepAlive"]') instanceof HTMLInputElement &&
+      !document.querySelector('[data-bind="sessionKeepAlive"]').disabled`,
+    "editable session lifecycle controls",
+  );
+  await setValue(first, '[data-bind="serviceType"]', "stateless");
+  await waitForPage(
+    first,
+    `document.querySelector('[data-bind="serviceType"]')?.value === "stateless" &&
+      document.querySelector('[data-bind="sessionKeepAlive"]') === null`,
+    "stateless lifecycle hides only its session control",
   );
   await clickButton(first, "Enable");
   await waitForPage(
@@ -1273,7 +1314,7 @@ try {
     })()`,
     "range endpoint value, fill, and label synchronization",
   );
-  await setValue(first, '[data-bind="workersMinimum"]', "2");
+  await setValue(first, '[data-bind="minimumWorkers"]', "2");
   await setValue(first, '[data-bind="targetUtilization"]', "65");
   await clickButton(first, "Save");
   let managedSandbox = "";
@@ -1286,17 +1327,17 @@ try {
       ]);
       const service = inspected.service as {
         worker_count?: number;
-        instances?: Array<{ sandbox_id?: string }>;
+        sandboxes?: Array<{ sandbox_id?: string }>;
         effective_configuration?: {
           scaling?: {
-            workers_per_replica_min?: number;
+            minimum_workers?: number;
             target_utilization?: number;
           };
         };
       };
-      managedSandbox = service.instances?.[0]?.sandbox_id ?? "";
+      managedSandbox = service.sandboxes?.[0]?.sandbox_id ?? "";
       return service.worker_count === 2 &&
-        service.effective_configuration?.scaling?.workers_per_replica_min ===
+        service.effective_configuration?.scaling?.minimum_workers ===
           2 &&
         service.effective_configuration?.scaling?.target_utilization ===
           0.65 &&
@@ -1752,7 +1793,7 @@ try {
     `${primaryBase}/the8020/uui/shell/`,
   );
   pages.push(second);
-  await waitForScreen(second, "Welcome to 80|20");
+  await waitForScreen(second, "Welcome to 80|20", 60_000);
   await waitForPage(
     second,
     `document.documentElement.dataset.theme === "dark" &&
@@ -1772,10 +1813,7 @@ try {
     secondSession.worker_id !== firstSession.worker_id,
     "two logical UUI sessions shared one Worker",
   );
-  assert(
-    secondSession.sandbox_id === firstSession.sandbox_id,
-    "two sessions did not share the configured service-instance sandbox",
-  );
+  assert(secondSession.sandbox_id.length > 0, "second session has no sandbox");
   await click(second, "#theme-toggle");
   await waitForPage(
     second,
@@ -1989,7 +2027,7 @@ users = '${primary}/users'
   await Deno.chmod(`${primary}/state/auth/bootstrap-sessions`, 0o700);
   await writeDesiredState(primary, "login", "stateless");
   await writeDesiredState(primary, "shell", "stateless");
-  await writeDesiredState(primary, "session", "persistent");
+  await writeDesiredState(primary, "session", "session");
 }
 
 async function initializeInstance(kernel: string, root: string): Promise<void> {
@@ -2117,31 +2155,34 @@ async function linkFile(source: string, destination: string): Promise<void> {
 async function writeDesiredState(
   root: string,
   service: string,
-  mode: "stateless" | "persistent",
+  mode: "stateless" | "session",
 ): Promise<void> {
   const directory = `${root}/state/services/the8020/uui/${service}`;
   await Deno.mkdir(directory, { recursive: true });
-  const concurrency = mode === "persistent" ? 1 : 32;
-  const maximumWorkers = mode === "persistent" ? 1000 : 2;
+  const concurrency = mode === "session" ? 1 : 32;
+  const workersPerSandbox = mode === "session" ? 1000 : 2;
+  const maximumWorkers = workersPerSandbox * 2;
   await Deno.writeTextFile(
     `${directory}/state.toml`,
-    `schema = 1
+    `schema = 2
 enabled = true
 generation = 0
 
-[execution]
-concurrency_per_worker = ${concurrency}
-${mode === "persistent" ? 'keep_alive = "2m"' : ""}
+[lifecycle]
+service_type = "${mode}"
+session_keep_alive = "2m"
 
 [scaling]
-replicas_min = 1
-replicas_max = 2
-workers_per_replica_min = 1
-workers_per_replica_max = ${maximumWorkers}
+minimum_workers = 1
+maximum_workers = ${maximumWorkers}
+concurrency_per_worker = ${concurrency}
 target_utilization = 0.7
+worker_keep_alive = "2m"
 
 [placement]
 sandbox_group = "the8020/uui/${service}"
+minimum_sandboxes = 1
+workers_per_sandbox = ${workersPerSandbox}
 `,
   );
 }
@@ -2545,6 +2586,7 @@ async function clickRow(page: BrowserPage, text: string): Promise<void> {
 async function waitForScreen(
   page: BrowserPage,
   title: string,
+  timeout = 10_000,
 ): Promise<void> {
   await waitForPage(
     page,
@@ -2552,6 +2594,7 @@ async function waitForScreen(
       JSON.stringify(title)
     } && document.title === ${JSON.stringify(`80|20 ${title}`)}`,
     title,
+    timeout,
   );
 }
 

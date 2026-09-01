@@ -108,6 +108,7 @@ input {
   gap: 0;
   padding-inline: 0.25rem;
   background: var(--surface);
+  border-radius: 6px;
   color: var(--text);
   font-size: 30px;
   font-weight: 600;
@@ -217,7 +218,6 @@ button:focus-visible {
 
 .error {
   margin: 0 0 20px;
-  border-left: 3px solid var(--danger);
   border-radius: 4px;
   padding: 0.55rem 0.7rem;
   background: var(--danger-soft);

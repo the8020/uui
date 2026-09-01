@@ -112,11 +112,11 @@ Deno.test("ordinary persistent UUI service owns metadata and exact Worker admini
     assertEquals((await Array.fromAsync(Deno.readDir(metadataRoot))).length, 0);
     finish();
 
-    const legacyAdmin = await service.fetch(
+    const removedAdminEndpoint = await service.fetch(
       new Request("https://example.test/_admin/sessions"),
       context({ ...metadata, persistentExecutionId: undefined }),
     );
-    assertEquals(legacyAdmin.status, 404);
+    assertEquals(removedAdminEndpoint.status, 404);
   } finally {
     await Deno.remove(metadataRoot, { recursive: true });
   }

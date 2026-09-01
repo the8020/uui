@@ -1,11 +1,6 @@
-schema = 1
+schema = 2
 description = "Unified User Interface WebSocket sessions"
 entrypoint = "service.ts"
-
-[execution]
-mode = "persistent"
-concurrency_per_worker = 1
-keep_alive = "2m"
 
 [access]
 mode = "authenticated"
@@ -17,13 +12,17 @@ message = "Authentication is required."
 
 [lifecycle]
 default_enabled = true
+service_type = "session"
+session_keep_alive = "2m"
 
 [scaling]
-replicas_min = 1
-replicas_max = 100
-workers_per_replica_min = 1
-workers_per_replica_max = 50
+minimum_workers = 1
+maximum_workers = 5000
+concurrency_per_worker = 1
 target_utilization = 0.70
+worker_keep_alive = "2m"
 
 [placement]
 sandbox_group = "uui"
+minimum_sandboxes = 1
+workers_per_sandbox = 50

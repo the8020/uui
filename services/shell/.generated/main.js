@@ -24,9 +24,9 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// ../../root/.cache/deno/npm/registry.npmjs.org/@xterm/addon-canvas/0.7.0/lib/addon-canvas.js
+// ../kernel/.development/deno-cache/npm/registry.npmjs.org/@xterm/addon-canvas/0.7.0/lib/addon-canvas.js
 var require_addon_canvas = __commonJS({
-  "../../root/.cache/deno/npm/registry.npmjs.org/@xterm/addon-canvas/0.7.0/lib/addon-canvas.js"(exports, module) {
+  "../kernel/.development/deno-cache/npm/registry.npmjs.org/@xterm/addon-canvas/0.7.0/lib/addon-canvas.js"(exports, module) {
     !function(e, t) {
       "object" == typeof exports && "object" == typeof module ? module.exports = t() : "function" == typeof define && define.amd ? define([], t) : "object" == typeof exports ? exports.CanvasAddon = t() : e.CanvasAddon = t();
     }(self, () => (() => {
@@ -3606,9 +3606,9 @@ var require_addon_canvas = __commonJS({
   }
 });
 
-// ../../root/.cache/deno/npm/registry.npmjs.org/@xterm/addon-fit/0.10.0/lib/addon-fit.js
+// ../kernel/.development/deno-cache/npm/registry.npmjs.org/@xterm/addon-fit/0.10.0/lib/addon-fit.js
 var require_addon_fit = __commonJS({
-  "../../root/.cache/deno/npm/registry.npmjs.org/@xterm/addon-fit/0.10.0/lib/addon-fit.js"(exports, module) {
+  "../kernel/.development/deno-cache/npm/registry.npmjs.org/@xterm/addon-fit/0.10.0/lib/addon-fit.js"(exports, module) {
     !function(e, t) {
       "object" == typeof exports && "object" == typeof module ? module.exports = t() : "function" == typeof define && define.amd ? define([], t) : "object" == typeof exports ? exports.FitAddon = t() : e.FitAddon = t();
     }(self, () => (() => {
@@ -3647,9 +3647,9 @@ var require_addon_fit = __commonJS({
   }
 });
 
-// ../../root/.cache/deno/npm/registry.npmjs.org/@xterm/xterm/5.5.0/lib/xterm.js
+// ../kernel/.development/deno-cache/npm/registry.npmjs.org/@xterm/xterm/5.5.0/lib/xterm.js
 var require_xterm = __commonJS({
-  "../../root/.cache/deno/npm/registry.npmjs.org/@xterm/xterm/5.5.0/lib/xterm.js"(exports, module) {
+  "../kernel/.development/deno-cache/npm/registry.npmjs.org/@xterm/xterm/5.5.0/lib/xterm.js"(exports, module) {
     !function(e, t) {
       if ("object" == typeof exports && "object" == typeof module) module.exports = t();
       else if ("function" == typeof define && define.amd) define([], t);
@@ -12338,7 +12338,7 @@ var HonoRequest = class {
 var PATH_ERROR = Symbol();
 var regExpMetaChars = new Set(".\\+*[^]$()");
 
-// kernel/defaults/config/runtime/deno/http/mod.ts
+// ../kernel/defaults/config/runtime/deno/http/mod.ts
 var HTTPError = class extends Error {
   status;
   body;
@@ -12357,7 +12357,7 @@ var HTTPError = class extends Error {
   }
 };
 
-// uui/ui-config.json
+// ui-config.json
 var ui_config_default = {
   loginUrl: "/the8020/uui/login/",
   postLoginUrl: "/the8020/uui/shell/",
@@ -12375,12 +12375,12 @@ var ui_config_default = {
   terminatedProgram: "the8020/uui/program-terminated"
 };
 
-// uui/protocol.ts
+// protocol.ts
 var UUI_PROTOCOL_VERSION = ui_config_default.protocolVersion;
 var BACK_EVENT = "back";
 var MAX_FIELD_ROW_SPAN = 8;
 
-// kernel/defaults/config/runtime/deno/kernel/mod.ts
+// ../kernel/defaults/config/runtime/deno/kernel/mod.ts
 var AdminCommandError = class extends Error {
   code;
   details;
@@ -12526,7 +12526,7 @@ function assertWorkerInvokeInput(input) {
   if (input === null || typeof input !== "object" || typeof input.nodeId !== "string" || input.nodeId.length === 0 || typeof input.sandboxId !== "string" || input.sandboxId.length === 0 || typeof input.workerId !== "string" || input.workerId.length === 0 || typeof input.function !== "string" || input.function.length === 0 || input.function.length > 128) throw new TypeError("exact Worker target and function are required");
 }
 
-// uui/session_service.ts
+// session_service.ts
 var sessions = /* @__PURE__ */ new Map();
 function emit(record, value, retain = true) {
   const message = {
@@ -12704,7 +12704,7 @@ function errorMessage(error) {
   return error instanceof Error ? error.message : "UUI session failed";
 }
 
-// uui/services/shell/frontend/model.ts
+// services/shell/frontend/model.ts
 function getPath2(model2, path) {
   let current = model2;
   for (const segment of path.split(".")) {
@@ -12798,12 +12798,12 @@ var DirtyBindings = class {
   }
 };
 
-// uui/services/shell/frontend/custom_elements.ts
+// services/shell/frontend/custom_elements.ts
 var import_addon_canvas = __toESM(require_addon_canvas());
 var import_addon_fit = __toESM(require_addon_fit());
 var import_xterm = __toESM(require_xterm());
 
-// uui/services/shell/frontend/icon_text.ts
+// services/shell/frontend/icon_text.ts
 var MATERIAL_ICON_ASSETS = {
   arrow_back: "./assets/material-arrow-back-24-e083cc60.svg",
   arrow_drop_down: "./assets/material-arrow-drop-down-24-e083cc60.svg",
@@ -12892,7 +12892,7 @@ function humanize(value) {
   return value.replaceAll("_", " ").replace(/^./, (character) => character.toUpperCase());
 }
 
-// uui/services/shell/frontend/custom_elements.ts
+// services/shell/frontend/custom_elements.ts
 var CustomElementRenderer = class {
   #entries = /* @__PURE__ */ new Map();
   begin() {
@@ -13153,7 +13153,7 @@ function parseConsoleConfiguration(value) {
   };
 }
 
-// uui/services/shell/frontend/field_grid.ts
+// services/shell/frontend/field_grid.ts
 var profiles = {
   mobile: {
     columns: 2,
@@ -13324,7 +13324,7 @@ function preferLaterExpansion(candidate, current) {
   return false;
 }
 
-// uui/services/shell/frontend/renderer.ts
+// services/shell/frontend/renderer.ts
 function renderScreenHeader(snapshot, model2, callbacks) {
   const items = [];
   for (const control of snapshot.header?.controls ?? []) {
@@ -13876,7 +13876,7 @@ function isLayout(value) {
   return value !== null && typeof value === "object" && value.schema === 1 && value.root !== void 0;
 }
 
-// uui/services/shell/frontend/responsive_header.ts
+// services/shell/frontend/responsive_header.ts
 var POPOVER_EDGE_PADDING = 10;
 function fittingHeaderItemCount(itemWidths, availableWidth, overflowToggleWidth, gap) {
   if (itemWidths.length === 0 || availableWidth <= 0) return 0;
@@ -13985,7 +13985,7 @@ var ResponsiveProgramHeader = class {
   }
 };
 
-// uui/services/shell/frontend/theme.ts
+// services/shell/frontend/theme.ts
 var sharedThemeKey = "the8020.uui.theme";
 var initialThemeKey = "the8020.uui.theme:initial";
 var connectionThemePrefix = "the8020.uui.theme:connection:";
@@ -14058,14 +14058,14 @@ function removeTheme(storage, key) {
   }
 }
 
-// uui/services/shell/frontend/window_title.ts
+// services/shell/frontend/window_title.ts
 var GENERIC_WINDOW_TITLE = "80|20";
 function windowTitleForHeading(heading) {
   const title = heading?.replace(/\s+/g, " ").trim() ?? "";
   return title === "" ? GENERIC_WINDOW_TITLE : `${GENERIC_WINDOW_TITLE} ${title}`;
 }
 
-// uui/services/shell/frontend/main.ts
+// services/shell/frontend/main.ts
 var app = requiredElement("app");
 var connectionState = requiredElement("connection-state");
 var connectionIndicator = requiredElement("connection-indicator");

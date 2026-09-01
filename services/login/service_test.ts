@@ -77,6 +77,11 @@ Deno.test("login page and kernel-issued authentication cookie", async () => {
     assertEquals(styles.includes("--bg: #10131d"), true);
     assertEquals(styles.includes("--surface: #191d2a"), true);
     assertEquals(
+      /\.brand\s*\{[^}]*border-radius:\s*6px;/s.test(styles),
+      true,
+    );
+    assertEquals(/\.error\s*\{[^}]*border-left:/s.test(styles), false);
+    assertEquals(
       styles.includes("inset-inline-end: var(--group-padding-inline-end)"),
       true,
     );

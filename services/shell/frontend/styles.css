@@ -1098,7 +1098,6 @@ textarea {
   width: min(1180px, calc(100% - 32px));
   margin: 12px auto -6px;
   border: 0;
-  border-left: 3px solid var(--warning);
   border-radius: 4px;
   padding: 0.55rem 0.7rem;
   background: var(--warning-soft);

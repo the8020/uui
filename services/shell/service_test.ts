@@ -118,6 +118,7 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   assertEquals(cssBody.includes("--primary: #5b5bd6"), true);
   assertEquals(cssBody.includes("--brand-gold: #cd9d00"), true);
   assertEquals(cssBody.includes("--interaction-feedback-delay: 500ms"), true);
+  assertEquals(/\.notice\s*\{[^}]*border-left:/s.test(cssBody), false);
   assertMatch(
     cssBody,
     /html\[data-interaction-pending\] \.interaction-shield\s*\{[^}]*pointer-events:\s*auto;[^}]*backdrop-filter:\s*blur\(3px\);[^}]*transition-delay:\s*var\(--interaction-feedback-delay\);/s,
