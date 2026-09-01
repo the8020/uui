@@ -262,9 +262,11 @@
   Canvas-rendered xterm Bash consoles in both a real development sandbox and an
   ordinary runtime sandbox, `xterm-256color`/`clear`, exact bottom-row fitting,
   visibly rendered mouse selection, confirmed source and factory reset controls,
-  per-session theme persistence and future-tab theme inheritance, dark and light
-  reload initialization before first paint, responsive two/four-group layouts,
-  semantic field lengths, reserved hinted/unhinted supporting-message alignment,
+  development activation preview statistics, required-message validation,
+  independent package commits, and clean overlay reset, per-session theme
+  persistence and future-tab theme inheritance, dark and light reload
+  initialization before first paint, responsive two/four-group layouts, semantic
+  field lengths, reserved hinted/unhinted supporting-message alignment,
   accessible full-hint popovers, and source-ordered multi-row field placement
   including its message slot at desktop/tablet/mobile widths, persistent
   standard Back navigation, header action/control rendering, one-row

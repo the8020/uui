@@ -582,9 +582,7 @@ try {
       const overflow = document.querySelector('#program-header-overflow');
       const overflowItems = document.querySelector('#program-header-overflow-items');
       const session = document.querySelector('.navbar-actions');
-      const itemKey = (item) => item.querySelector('[data-bind="target"]') !== null
-        ? 'target'
-        : item.textContent?.trim();
+      const itemKey = (item) => item.textContent?.trim();
       if (!(leading instanceof HTMLElement) || !(program instanceof HTMLElement) ||
         !(visible instanceof HTMLElement) || !(overflow instanceof HTMLDetailsElement) ||
         !(overflowItems instanceof HTMLElement) || !(session instanceof HTMLElement)) return false;
@@ -594,9 +592,8 @@ try {
         overflowItems.children.length === 6 - visible.children.length &&
         overflow.hidden === (overflowItems.children.length === 0) &&
         JSON.stringify(combined) === JSON.stringify([
-          'target', 'Stop sandbox', 'Restart sandbox', 'Reset source', 'Factory reset', 'Refresh'
+          'Activate changes', 'Stop sandbox', 'Restart sandbox', 'Reset source', 'Factory reset', 'Refresh'
         ]) &&
-        document.querySelector('#app [data-bind="target"]') === null &&
         document.querySelector('#app .screen-actions, #app .layout-actions') === null;
     })()`,
     "wide program header shows all controls on one row",
@@ -617,9 +614,7 @@ try {
         const overflow = document.querySelector('#program-header-overflow');
         const overflowItems = document.querySelector('#program-header-overflow-items');
         const overflowToggle = overflow?.querySelector(':scope > summary');
-        const itemKey = (item) => item.querySelector('[data-bind="target"]') !== null
-          ? 'target'
-          : item.textContent?.trim();
+        const itemKey = (item) => item.textContent?.trim();
         if (!(leading instanceof HTMLElement) || !(program instanceof HTMLElement) ||
           !(visible instanceof HTMLElement) || !(overflow instanceof HTMLDetailsElement) ||
           !(overflowItems instanceof HTMLElement) || !(overflowToggle instanceof HTMLElement) ||
@@ -633,7 +628,7 @@ try {
           !overflow.hidden && overflowItems.children.length === 6 - visible.children.length &&
           Math.abs(toggleBounds.left - lastVisibleBounds.right - gap) < 1 &&
           JSON.stringify(combined) === JSON.stringify([
-            'target', 'Stop sandbox', 'Restart sandbox', 'Reset source', 'Factory reset', 'Refresh'
+            'Activate changes', 'Stop sandbox', 'Restart sandbox', 'Reset source', 'Factory reset', 'Refresh'
           ]);
       })()`,
       "header hides a right-hand suffix at intermediate width",
@@ -650,9 +645,7 @@ try {
       const overflow = document.querySelector('#program-header-overflow');
       const overflowItems = document.querySelector('#program-header-overflow-items');
       const overflowToggle = overflow?.querySelector(':scope > summary');
-      const itemKey = (item) => item.querySelector('[data-bind="target"]') !== null
-        ? 'target'
-        : item.textContent?.trim();
+      const itemKey = (item) => item.textContent?.trim();
       return {
         viewport: innerWidth,
         leading: bounds('.navbar-leading'),
@@ -690,13 +683,12 @@ try {
       const session = document.querySelector('.navbar-actions');
       const connection = document.querySelector('#connection-indicator');
       const theme = document.querySelector('#theme-toggle');
-      const target = program?.querySelector('[data-bind="target"]');
       if (!(brand instanceof HTMLElement) || !(back instanceof HTMLButtonElement) ||
         !(leading instanceof HTMLElement) || !(program instanceof HTMLElement) ||
         !(visible instanceof HTMLElement) || !(overflow instanceof HTMLDetailsElement) ||
         !(overflowItems instanceof HTMLElement) || !(session instanceof HTMLElement) ||
         !(connection instanceof HTMLElement) || !(theme instanceof HTMLElement) ||
-        !(target instanceof HTMLSelectElement) || !(overflowToggle instanceof HTMLElement)) return false;
+        !(overflowToggle instanceof HTMLElement)) return false;
       const brandBounds = brand.getBoundingClientRect();
       const backBounds = back.getBoundingClientRect();
       const leadingBounds = leading.getBoundingClientRect();
@@ -721,7 +713,6 @@ try {
         Math.abs(toggleBounds.left - programBounds.left) < 1 &&
         overflowIcon instanceof HTMLElement && getComputedStyle(overflowIcon).maskImage !== 'none' &&
         overflowItems.children.length === 6 &&
-        document.querySelector('#app [data-bind="target"]') === null &&
         document.querySelector('#app .screen-actions, #app .layout-actions') === null;
       })()`,
       "narrow program header keeps one row and overflows every item",
@@ -799,9 +790,7 @@ try {
       const overflowItems = document.querySelector('#program-header-overflow-items');
       const actions = document.querySelector('.navbar-actions');
       const inner = document.querySelector('.navbar-inner');
-      const itemKey = (item) => item.querySelector('[data-bind="target"]') !== null
-        ? 'target'
-        : item.textContent?.trim();
+      const itemKey = (item) => item.textContent?.trim();
       if (!(leading instanceof HTMLElement) || !(program instanceof HTMLElement) ||
         !(visible instanceof HTMLElement) || !(overflow instanceof HTMLDetailsElement) ||
         !(overflowItems instanceof HTMLElement) ||
@@ -813,7 +802,7 @@ try {
         overflowItems.children.length === 6 - visible.children.length &&
         overflow.hidden === (overflowItems.children.length === 0) &&
         JSON.stringify(combined) === JSON.stringify([
-          'target', 'Stop sandbox', 'Restart sandbox', 'Reset source', 'Factory reset', 'Refresh'
+          'Activate changes', 'Stop sandbox', 'Restart sandbox', 'Reset source', 'Factory reset', 'Refresh'
         ]);
     })()`,
     "wide program header restores its largest ordered prefix",
@@ -831,8 +820,7 @@ try {
   await waitForPage(
     first,
     `document.querySelector('[data-bind="state"]')?.value === "READY" &&
-      document.querySelector('[data-bind="status"]')?.value === "Development sandbox created and started" &&
-      document.querySelector('[data-bind="target"]')?.value?.startsWith("development:") === true`,
+      document.querySelector('[data-bind="status"]')?.value === "Development sandbox created and started"`,
     "automatic development sandbox creation",
     60_000,
   );
@@ -921,46 +909,147 @@ try {
       }`,
     );
   }
-  const runtimeTarget = await first.evaluate<string>(`(() => {
-    const select = document.querySelector('[data-bind="target"]');
-    if (!(select instanceof HTMLSelectElement)) return "";
-    return [...select.options].find((option) => option.value.startsWith("runtime:"))?.value ?? "";
-  })()`);
-  assert(
-    runtimeTarget !== "",
-    "development test did not list a runtime sandbox",
-  );
-  await setValue(first, '[data-bind="target"]', runtimeTarget);
-  await waitForPage(
-    first,
-    `document.querySelector(".sandbox-console")?.dataset.consoleTarget === ${
-      JSON.stringify(runtimeTarget)
-    } && document.querySelector(".sandbox-console-status")?.textContent === "Terminal connected"`,
-    "runtime sandbox browser console",
-  );
-  const runtimeConsoleFrameStart = first.websocketFrames.length;
+  const activationFrameStart = first.websocketFrames.length;
   await enterTerminal(
     first,
-    `clear && printf '\\036RUNTIME_CONSOLE:%s:%s\\037\\n' "$BASH_VERSION" "$TERM"`,
+    `printf 'private admin-core change\\n' > /workspace/packages/the8020/admin-core/uui-activation-proof.txt && printf 'private demo change\\n' > /workspace/packages/the8020/demo/uui-activation-proof.txt && printf '\\036ACTIVATION_CHANGES_READY\\037\\n'`,
   );
   await waitFor(
     () =>
-      websocketOutput(first, runtimeConsoleFrameStart).includes(
-        "\x1eRUNTIME_CONSOLE:",
-      ) && websocketOutput(first, runtimeConsoleFrameStart).includes(
-        ":xterm-256color\x1f",
+      websocketOutput(first, activationFrameStart).includes(
+        "\x1eACTIVATION_CHANGES_READY\x1f",
       ),
-    "Bash output from an ordinary runtime sandbox",
+    "private development changes from the browser terminal",
     15_000,
   );
+  assert(
+    !(await fileExists(
+      `${primaryRoot}/packages/the8020/admin-core/uui-activation-proof.txt`,
+    )),
+    "development overlay leaked a private file into the shared admin-core repository",
+  );
+  assert(
+    !(await fileExists(
+      `${primaryRoot}/packages/the8020/demo/uui-activation-proof.txt`,
+    )),
+    "development overlay leaked a private file into the shared demo repository",
+  );
+
+  await clickButton(first, "Activate changes");
+  await waitForScreen(first, "Activate development changes", 60_000);
+  await waitForPage(
+    first,
+    `(() => {
+      const rows = [...document.querySelectorAll('[data-layout-id="changed-packages"] tbody tr')];
+      return rows.length === 2 &&
+        rows.some((row) => row.textContent?.includes('the8020/admin-core') && row.textContent?.includes('1')) &&
+        rows.some((row) => row.textContent?.includes('the8020/demo') && row.textContent?.includes('1')) &&
+        document.querySelector('[data-bind="status"]')?.value === 'Review all private package changes before activation';
+    })()`,
+    "development activation preview with per-package statistics",
+    60_000,
+  );
+  await clickButton(first, "Sync all changes");
+  await waitForPage(
+    first,
+    `document.querySelector('[data-bind="status"]')?.value === "A commit message is required"`,
+    "activation commit-message validation",
+  );
+  await setValue(
+    first,
+    '[data-bind="message"]',
+    "Activate browser development changes",
+  );
+  await clickButton(first, "Sync all changes");
+  try {
+    await waitForPage(
+      first,
+      `document.querySelector('[data-bind="status"]')?.value === "No private changes" &&
+        document.querySelectorAll('[data-layout-id="changed-packages"] tbody tr').length === 0 &&
+        ![...document.querySelectorAll('button')].some((button) => button.textContent?.trim() === "Sync all changes")`,
+      "UUI activation publishes every package and clears the overlay",
+      120_000,
+    );
+  } catch (error) {
+    const state = await first.evaluate(`({
+      title: document.querySelector('h1')?.textContent,
+      status: document.querySelector('[data-bind="status"]')?.value,
+      exceptionType: document.querySelector('[data-bind="exceptionType"]')?.value,
+      exceptionMessage: document.querySelector('[data-bind="message"]')?.value,
+      exceptionLocation: document.querySelector('[data-bind="location"]')?.value,
+      exceptionDump: document.querySelector('[data-bind="dumpText"]')?.value,
+      notice: document.querySelector('#notice')?.textContent,
+      noticeHidden: document.querySelector('#notice')?.hidden,
+      rows: [...document.querySelectorAll('[data-layout-id="changed-packages"] tbody tr')].map((row) => row.textContent),
+      caption: document.querySelector('[data-layout-id="changed-packages"] caption')?.textContent,
+      buttons: [...document.querySelectorAll('button')].map((button) => button.textContent?.trim()),
+      connection: document.querySelector('#connection-state')?.textContent,
+    })`);
+    const repositories = await Promise.all(
+      ["admin-core", "demo"].map(async (packageID) => ({
+        packageID,
+        status: await gitOutput(
+          `${primaryRoot}/packages/the8020/${packageID}`,
+          ["status", "--short"],
+        ).catch((gitError) => String(gitError)),
+        commit: await gitOutput(
+          `${primaryRoot}/packages/the8020/${packageID}`,
+          ["log", "-1", "--format=%an%n%B"],
+        ).catch((gitError) => String(gitError)),
+      })),
+    );
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}; state: ${
+        JSON.stringify(state)
+      }; repositories: ${
+        JSON.stringify(repositories)
+      }; kernel log: ${await latestKernelLog(primaryRoot)}`,
+    );
+  }
+  assert(
+    await fileText(
+      `${primaryRoot}/packages/the8020/admin-core/uui-activation-proof.txt`,
+    ) === "private admin-core change\n",
+    "UUI activation did not publish the admin-core private file",
+  );
+  assert(
+    await fileText(
+      `${primaryRoot}/packages/the8020/demo/uui-activation-proof.txt`,
+    ) ===
+      "private demo change\n",
+    "UUI activation did not publish the demo private file",
+  );
+  for (const packageID of ["admin-core", "demo"]) {
+    const commit = await gitOutput(
+      `${primaryRoot}/packages/the8020/${packageID}`,
+      ["log", "-1", "--format=%an%n%B"],
+    );
+    assert(
+      commit.startsWith("admin\nActivate browser development changes\n"),
+      `UUI activation did not use the username as ${packageID} commit author`,
+    );
+    assert(
+      commit.includes("[the8020.activation]") &&
+        commit.includes('"metadata_client" = "uui"'),
+      `UUI activation did not append TOML metadata to ${packageID}`,
+    );
+  }
+  await clickButton(first, "Back");
+  await waitForScreen(first, "Development test", 60_000);
+  await waitForPage(
+    first,
+    `document.querySelector(".sandbox-console-status")?.textContent === "Terminal connected"`,
+    "development console reconnect after UUI activation",
+    60_000,
+  );
   const beforeSourceReset = await first.evaluate<string>(
-    `document.querySelector('[data-bind="activeSandboxId"]')?.value ?? ""`,
+    `document.querySelector('[data-bind="sandboxId"]')?.value ?? ""`,
   );
   await clickButton(first, "Reset source");
   await waitForPage(
     first,
-    `document.querySelector('[data-bind="status"]')?.value === "Select Confirm destructive reset before resetting the workspace" &&
-      document.querySelector('[data-bind="activeSandboxId"]')?.value === ${
+    `document.querySelector('[data-bind="status"]')?.value === "Select Confirm destructive reset before resetting the sandbox" &&
+      document.querySelector('[data-bind="sandboxId"]')?.value === ${
       JSON.stringify(beforeSourceReset)
     }`,
     "rejected unconfirmed development reset",
@@ -975,14 +1064,14 @@ try {
     first,
     `document.querySelector('[data-bind="state"]')?.value === "READY" &&
       document.querySelector('[data-bind="status"]')?.value === "Development source reset" &&
-      document.querySelector('[data-bind="activeSandboxId"]')?.value !== ${
+      document.querySelector('[data-bind="sandboxId"]')?.value === ${
       JSON.stringify(beforeSourceReset)
     } && document.querySelector('[data-bind="confirmDestructive"]')?.checked === false`,
     "confirmed development source reset",
     60_000,
   );
   const beforeFactoryReset = await first.evaluate<string>(
-    `document.querySelector('[data-bind="activeSandboxId"]')?.value ?? ""`,
+    `document.querySelector('[data-bind="sandboxId"]')?.value ?? ""`,
   );
   await setChecked(
     first,
@@ -993,22 +1082,22 @@ try {
   await waitForPage(
     first,
     `document.querySelector('[data-bind="state"]')?.value === "READY" &&
-      document.querySelector('[data-bind="status"]')?.value === "Development workspace factory reset" &&
-      document.querySelector('[data-bind="activeSandboxId"]')?.value !== ${
+      document.querySelector('[data-bind="status"]')?.value === "Development sandbox factory reset" &&
+      document.querySelector('[data-bind="sandboxId"]')?.value === ${
       JSON.stringify(beforeFactoryReset)
     } && document.querySelector('[data-bind="confirmDestructive"]')?.checked === false`,
     "confirmed development factory reset",
     60_000,
   );
   const beforeRestart = await first.evaluate<string>(
-    `document.querySelector('[data-bind="activeSandboxId"]')?.value ?? ""`,
+    `document.querySelector('[data-bind="sandboxId"]')?.value ?? ""`,
   );
   await clickButton(first, "Restart sandbox");
   await waitForPage(
     first,
     `document.querySelector('[data-bind="state"]')?.value === "READY" &&
       document.querySelector('[data-bind="status"]')?.value === "Development sandbox restarted" &&
-      document.querySelector('[data-bind="activeSandboxId"]')?.value !== ${
+      document.querySelector('[data-bind="sandboxId"]')?.value === ${
       JSON.stringify(beforeRestart)
     }`,
     "development sandbox restart",
@@ -1019,7 +1108,9 @@ try {
     first,
     `document.querySelector('[data-bind="state"]')?.value === "STOPPED" &&
       document.querySelector('[data-bind="status"]')?.value === "Development sandbox stopped" &&
-      document.querySelector('[data-bind="activeSandboxId"]')?.value === ""`,
+      document.querySelector('[data-bind="sandboxId"]')?.value === ${
+      JSON.stringify(beforeRestart)
+    }`,
     "development sandbox stop",
     60_000,
   );
@@ -1029,18 +1120,16 @@ try {
       first,
       `document.querySelector('[data-bind="state"]')?.value === "READY" &&
         document.querySelector('[data-bind="status"]')?.value === "Development sandbox started" &&
-        document.querySelector('[data-bind="activeSandboxId"]')?.value?.startsWith("sbx-") === true &&
+        document.querySelector('[data-bind="sandboxId"]')?.value?.startsWith("dev-") === true &&
         document.querySelector(".sandbox-console-status")?.textContent === "Terminal connected"`,
       "development sandbox restart after stop",
       60_000,
     );
   } catch (error) {
     const state = await first.evaluate(`({
-      workspace: document.querySelector('[data-bind="workspaceId"]')?.value,
+      sandbox: document.querySelector('[data-bind="sandboxId"]')?.value,
       state: document.querySelector('[data-bind="state"]')?.value,
       status: document.querySelector('[data-bind="status"]')?.value,
-      activeSandboxId: document.querySelector('[data-bind="activeSandboxId"]')?.value,
-      target: document.querySelector('[data-bind="target"]')?.value,
       consoleStatus: document.querySelector('.sandbox-console-status')?.textContent,
       buttons: [...document.querySelectorAll('#program-header button')].map((item) => item.textContent?.trim()),
     })`);
@@ -1793,23 +1882,38 @@ try {
   await first.evaluate(`document.querySelector('[data-bind="username"]')
     ?.closest('.field')?.querySelector('.field-message')
     ?.scrollIntoView({ block: 'center' })`);
-  const openedResponsiveHint = await first.evaluate<boolean>(`(() => {
+  const responsiveHintState = await first.evaluate<{
+    opened: boolean;
+    text: string;
+    trigger?: { top: number; right: number; bottom: number; left: number };
+    popover?: { top: number; right: number; bottom: number; left: number };
+  }>(`(() => {
     const field = document.querySelector('[data-bind="username"]')?.closest('.field');
     const trigger = field?.querySelector('.field-message-trigger');
     const popover = field?.querySelector('.field-message-popover');
-    if (!(trigger instanceof HTMLElement) || !(popover instanceof HTMLElement)) return false;
+    if (!(trigger instanceof HTMLElement) || !(popover instanceof HTMLElement)) {
+      return { opened: false, text: '' };
+    }
     trigger.click();
     const triggerBounds = trigger.getBoundingClientRect();
     const popoverBounds = popover.getBoundingClientRect();
-    return popover.matches(':popover-open') &&
-      Math.abs(popoverBounds.left - triggerBounds.left) < 2 &&
-      Math.abs(popoverBounds.top - triggerBounds.bottom - 6) < 2 &&
-      popover.textContent?.trim() ===
-        'This deliberately long hint proves that supporting field messages stay on one reserved line across neighboring cards.';
+    const text = popover.textContent?.trim() ?? '';
+    const besideHint = Math.abs(popoverBounds.left - triggerBounds.left) < 2 &&
+      (Math.abs(popoverBounds.top - triggerBounds.bottom - 6) < 2 ||
+        Math.abs(popoverBounds.bottom - triggerBounds.top + 6) < 2);
+    return {
+      opened: popover.matches(':popover-open') && besideHint &&
+      text === 'This deliberately long hint proves that supporting field messages stay on one reserved line across neighboring cards.',
+      text,
+      trigger: { top: triggerBounds.top, right: triggerBounds.right, bottom: triggerBounds.bottom, left: triggerBounds.left },
+      popover: { top: popoverBounds.top, right: popoverBounds.right, bottom: popoverBounds.bottom, left: popoverBounds.left },
+    };
   })()`);
   assert(
-    openedResponsiveHint,
-    "responsive field hint did not open its complete text",
+    responsiveHintState.opened,
+    `responsive field hint did not open its complete text: ${
+      JSON.stringify(responsiveHintState)
+    }`,
   );
   await waitForPage(
     first,
@@ -2006,7 +2110,7 @@ try {
     }`,
   );
   console.log(
-    "Phase 1D browser E2E passed: login, browser-only persistent themes, responsive semantic field layouts, kernel-restart stale-route recovery, generic development/runtime Bash consoles, development start/stop/restart/reset controls, package manifest/Git/content inspection, package-owned UUI session administration, service control, shared-node auth, programs, short dumps, recovery, reconnect, reload, isolation, and logout",
+    "Phase 1D browser E2E passed: login, browser-only persistent themes, responsive semantic field layouts, kernel-restart stale-route recovery, development Bash console, development activation and start/stop/restart/reset controls, package manifest/Git/content inspection, package-owned UUI session administration, service control, shared-node auth, programs, short dumps, recovery, reconnect, reload, isolation, and logout",
   );
 } finally {
   for (const page of pages) page.close();
@@ -2054,6 +2158,7 @@ async function prepareWorkspaces(
     await initializeInstance(options.kernel, root);
     await copyTree(`${options.sourceRoot}/defaults/config`, `${root}/config`);
     await copyTree(`${options.sourceRoot}/defaults/node`, `${root}/node`);
+    await copyTree(`${options.sourceRoot}/defaults/scripts`, `${root}/scripts`);
     await linkTree(
       `${options.runtimeRoot}/node/kernel/runtime/images/rootless`,
       `${root}/node/kernel/runtime/images/rootless`,
@@ -2094,6 +2199,28 @@ async function prepareWorkspaces(
   await Deno.remove(`${secondary}/packages/the8020/uui/services/session`, {
     recursive: true,
   });
+  for (
+    const repository of [
+      `${primary}/packages/the8020/uui`,
+      `${primary}/packages/the8020/admin-core`,
+      `${primary}/packages/the8020/demo`,
+      `${primary}/packages/the8020/dev-core`,
+      `${secondary}/packages/the8020/uui`,
+    ]
+  ) {
+    await gitOutput(repository, ["add", "--all"]);
+    await gitOutput(repository, [
+      "-c",
+      "user.name=Browser E2E",
+      "-c",
+      "user.email=browser-e2e@the8020.local",
+      "-c",
+      "commit.gpgsign=false",
+      "commit",
+      "--allow-empty",
+      "--message=Browser E2E package snapshot",
+    ]);
+  }
 
   // Nodes share externally synchronized application configuration, state, and
   // user data through the ordinary mapped-root contract. Their package roots
@@ -2145,6 +2272,39 @@ async function copyTree(source: string, destination: string): Promise<void> {
       await Deno.symlink(await Deno.readLink(from), to);
     }
   }
+}
+
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await Deno.stat(path);
+    return true;
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) return false;
+    throw error;
+  }
+}
+
+async function fileText(path: string): Promise<string> {
+  return await Deno.readTextFile(path);
+}
+
+async function gitOutput(
+  repository: string,
+  arguments_: string[],
+): Promise<string> {
+  const output = await new Deno.Command("git", {
+    args: ["-C", repository, ...arguments_],
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  if (!output.success) {
+    throw new Error(
+      `git ${arguments_.join(" ")} failed in ${repository}: ${
+        new TextDecoder().decode(output.stderr).trim()
+      }`,
+    );
+  }
+  return new TextDecoder().decode(output.stdout);
 }
 
 async function linkTree(
