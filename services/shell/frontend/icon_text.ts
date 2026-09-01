@@ -6,6 +6,7 @@ const MATERIAL_ICON_ASSETS = {
   dark_mode: "./assets/material-dark-mode-24-bab57d17.svg",
   edit: "./assets/material-edit-24-a4b3c9f6.svg",
   light_mode: "./assets/material-light-mode-24-e5b6e132.svg",
+  menu: "./assets/material-menu-24-e083cc60.svg",
   more_vert: "./assets/material-more-vert-24-e083cc60.svg",
   refresh: "./assets/material-refresh-24-e083cc60.svg",
   save: "./assets/material-save-24-e083cc60.svg",

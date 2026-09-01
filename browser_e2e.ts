@@ -273,6 +273,7 @@ try {
   >(`Promise.all([
     "/the8020/uui/shell/assets/material-arrow-back-24-e083cc60.svg",
     "/the8020/uui/shell/assets/material-arrow-drop-down-24-e083cc60.svg",
+    "/the8020/uui/shell/assets/material-menu-24-e083cc60.svg",
     "/the8020/uui/shell/assets/material-more-vert-24-e083cc60.svg",
     "/the8020/uui/shell/assets/material-refresh-24-e083cc60.svg",
     "/the8020/uui/shell/assets/material-save-24-e083cc60.svg",
@@ -305,7 +306,64 @@ try {
     initialTheme === "light" || initialTheme === "dark",
     `shell selected invalid initial theme ${initialTheme}`,
   );
-  await click(first, "#theme-toggle");
+  await waitForPage(
+    first,
+    `(() => {
+      const menu = document.querySelector("#session-menu");
+      const toggle = document.querySelector("#session-menu-toggle");
+      const username = document.querySelector("#session-username");
+      const status = document.querySelector("#connection-state");
+      const indicator = document.querySelector("#connection-indicator");
+      const icon = document.querySelector('#session-menu-icon [data-material-icon="menu"]');
+      if (!(menu instanceof HTMLDetailsElement) || !(toggle instanceof HTMLElement) ||
+        !(username instanceof HTMLElement) || !(status instanceof HTMLElement) ||
+        !(indicator instanceof HTMLElement) || !(icon instanceof HTMLElement)) return false;
+      const indicatorStyle = getComputedStyle(indicator);
+      const statusStyle = getComputedStyle(status);
+      return !menu.open && username.textContent === "admin" && username.title === "admin" &&
+        indicator.dataset.state === "connected" && indicatorStyle.width === "8px" &&
+        indicatorStyle.height === "8px" &&
+        ["rgb(20, 128, 94)", "rgb(95, 208, 170)"].includes(indicatorStyle.color) &&
+        status.textContent === "Connected" && statusStyle.position === "absolute" &&
+        statusStyle.width === "1px" && toggle.getAttribute("aria-expanded") === "false" &&
+        toggle.getAttribute("aria-label") === "admin, Connected Open session menu" &&
+        getComputedStyle(icon).maskImage !== "none";
+    })()`,
+    "connected username session control",
+  );
+  await click(first, "#session-menu-toggle");
+  await waitForPage(
+    first,
+    `(() => {
+      const menu = document.querySelector("#session-menu");
+      const toggle = document.querySelector("#session-menu-toggle");
+      const panel = document.querySelector("#session-menu-panel");
+      const theme = document.querySelector("#theme-toggle");
+      const logout = document.querySelector("#session-logout");
+      if (!(menu instanceof HTMLDetailsElement) || !(toggle instanceof HTMLElement) ||
+        !(panel instanceof HTMLElement) || !(theme instanceof HTMLButtonElement) ||
+        !(logout instanceof HTMLButtonElement)) return false;
+      const toggleBounds = toggle.getBoundingClientRect();
+      const panelBounds = panel.getBoundingClientRect();
+      return menu.open && toggle.getAttribute("aria-expanded") === "true" &&
+        toggle.getAttribute("aria-label") === "admin, Connected Close session menu" &&
+        getComputedStyle(panel).display === "grid" && panelBounds.top >= toggleBounds.bottom &&
+        Math.abs(panelBounds.right - toggleBounds.right) < 2 &&
+        ["Light mode", "Dark mode"].includes(theme.textContent?.trim() ?? "") &&
+        logout.textContent?.trim() === "Logout";
+    })()`,
+    "anchored session menu",
+  );
+  await first.evaluate(
+    `document.querySelector(".brand")?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }))`,
+  );
+  await waitForPage(
+    first,
+    `document.querySelector("#session-menu")?.open === false &&
+      document.querySelector("#session-menu-toggle")?.getAttribute("aria-expanded") === "false"`,
+    "session menu light dismiss",
+  );
+  await clickSessionMenuAction(first, "#theme-toggle");
   const toggledTheme = initialTheme === "dark" ? "light" : "dark";
   await waitForPage(
     first,
@@ -314,11 +372,13 @@ try {
     }`,
     "session shell theme toggle",
   );
-  if (toggledTheme !== "dark") await click(first, "#theme-toggle");
+  if (toggledTheme !== "dark") {
+    await clickSessionMenuAction(first, "#theme-toggle");
+  }
   await waitForPage(
     first,
     `document.documentElement.dataset.theme === "dark" &&
-      document.querySelector("#theme-toggle")?.textContent?.trim() === "" &&
+      document.querySelector("#theme-toggle")?.textContent?.trim() === "Light mode" &&
       document.querySelector("#theme-toggle")?.getAttribute("aria-pressed") === "true" &&
       document.querySelector("#theme-toggle")?.getAttribute("aria-label") === "Switch to light mode" &&
       document.querySelector('#theme-toggle [data-material-icon="dark_mode"]') === null &&
@@ -418,7 +478,7 @@ try {
       record();
     })();`,
   });
-  await click(first, "#theme-toggle");
+  await clickSessionMenuAction(first, "#theme-toggle");
   await waitForPage(
     first,
     `document.documentElement.dataset.theme === "light" &&
@@ -460,13 +520,13 @@ try {
       getComputedStyle(document.querySelector(".brand-pipe"), "::before").borderLeftWidth === "3px" &&
       getComputedStyle(document.querySelector(".brand-pipe"), "::before").borderLeftColor === getComputedStyle(document.body).color &&
       getComputedStyle(document.querySelector(".brand-pipe").nextElementSibling).color === getComputedStyle(document.body).color &&
-      document.querySelector("#theme-toggle")?.textContent?.trim() === "" &&
+      document.querySelector("#theme-toggle")?.textContent?.trim() === "Dark mode" &&
       document.querySelector("#theme-toggle")?.getAttribute("aria-label") === "Switch to dark mode" &&
       document.querySelector('#theme-toggle [data-material-icon="light_mode"]') === null &&
       getComputedStyle(document.querySelector('#theme-toggle [data-material-icon="dark_mode"]')).maskImage !== "none"`,
     "light theme gold brand and centered divider",
   );
-  await click(first, "#theme-toggle");
+  await clickSessionMenuAction(first, "#theme-toggle");
   await waitForPage(
     first,
     `document.documentElement.dataset.theme === "dark" &&
@@ -681,19 +741,26 @@ try {
       const overflowItems = document.querySelector('#program-header-overflow-items');
       const overflowToggle = overflow?.querySelector(':scope > summary');
       const session = document.querySelector('.navbar-actions');
+      const sessionMenu = document.querySelector('#session-menu');
+      const sessionToggle = document.querySelector('#session-menu-toggle');
       const connection = document.querySelector('#connection-indicator');
-      const theme = document.querySelector('#theme-toggle');
+      const username = document.querySelector('#session-username');
+      const sessionIcon = document.querySelector('#session-menu-icon [data-material-icon="menu"]');
       if (!(brand instanceof HTMLElement) || !(back instanceof HTMLButtonElement) ||
         !(leading instanceof HTMLElement) || !(program instanceof HTMLElement) ||
         !(visible instanceof HTMLElement) || !(overflow instanceof HTMLDetailsElement) ||
         !(overflowItems instanceof HTMLElement) || !(session instanceof HTMLElement) ||
-        !(connection instanceof HTMLElement) || !(theme instanceof HTMLElement) ||
+        !(sessionMenu instanceof HTMLDetailsElement) || !(sessionToggle instanceof HTMLElement) ||
+        !(connection instanceof HTMLElement) || !(username instanceof HTMLElement) ||
+        !(sessionIcon instanceof HTMLElement) ||
         !(overflowToggle instanceof HTMLElement)) return false;
       const brandBounds = brand.getBoundingClientRect();
       const backBounds = back.getBoundingClientRect();
       const leadingBounds = leading.getBoundingClientRect();
       const programBounds = program.getBoundingClientRect();
       const sessionBounds = session.getBoundingClientRect();
+      const sessionToggleBounds = sessionToggle.getBoundingClientRect();
+      const connectionBounds = connection.getBoundingClientRect();
       const navbarBounds = session.closest('.navbar-inner')?.getBoundingClientRect();
       const toggleBounds = overflowToggle.getBoundingClientRect();
       const backIcon = back.querySelector('[data-material-icon="arrow_back"]');
@@ -702,10 +769,15 @@ try {
         back.getAttribute('aria-label') === 'Back' &&
         backIcon instanceof HTMLElement && getComputedStyle(backIcon).maskImage !== 'none' &&
         backBounds.left >= brandBounds.right &&
-        getComputedStyle(connection).display !== 'none' &&
-        getComputedStyle(theme).display !== 'none' &&
+        !sessionMenu.open && getComputedStyle(sessionToggle).display !== 'none' &&
+        connection.dataset.state === 'connected' && Math.abs(connectionBounds.width - 8) < 1 &&
+        Math.abs(connectionBounds.height - 8) < 1 && username.textContent === 'admin' &&
+        getComputedStyle(username).whiteSpace === 'nowrap' &&
+        getComputedStyle(username).textOverflow === 'ellipsis' &&
+        getComputedStyle(sessionIcon).maskImage !== 'none' &&
         navbarBounds !== undefined && navbarBounds.height <= 60 &&
         Math.abs(sessionBounds.right - navbarBounds.right) < 2 &&
+        Math.abs(sessionToggleBounds.right - navbarBounds.right) < 2 &&
         sessionBounds.left >= programBounds.right &&
         Math.abs(leadingBounds.top - programBounds.top) < 8 &&
         visible.children.length === 0 && !overflow.hidden &&
@@ -1775,8 +1847,22 @@ try {
     window.__the8020ScreenMarker = document.querySelector(".screen");
     window.__the8020ConnectionTransitions = [];
     const state = document.querySelector("#connection-state");
-    new MutationObserver(() => window.__the8020ConnectionTransitions.push(state?.textContent ?? ""))
-      .observe(state, { childList: true, subtree: true, characterData: true });
+    const indicator = document.querySelector("#connection-indicator");
+    const record = () => window.__the8020ConnectionTransitions.push({
+      text: state?.textContent ?? "",
+      state: indicator?.dataset.state ?? "",
+      color: indicator instanceof HTMLElement ? getComputedStyle(indicator).color : "",
+    });
+    new MutationObserver(record).observe(state, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+    new MutationObserver(record).observe(indicator, {
+      attributes: true,
+      attributeFilter: ["data-state"],
+    });
+    record();
   })()`);
   const closedForReconnect = await first.evaluate<boolean>(`(() => {
     const socket = window.__the8020LastWebSocket;
@@ -1791,7 +1877,10 @@ try {
   await waitForPage(
     first,
     `document.querySelector("#connection-state")?.textContent === "Connected" &&
-      window.__the8020ConnectionTransitions?.includes("Reconnecting…")`,
+      document.querySelector("#connection-indicator")?.dataset.state === "connected" &&
+      window.__the8020ConnectionTransitions?.some((item) =>
+        item.text === "Reconnecting…" && item.state === "reconnecting" &&
+        ["rgb(196, 61, 75)", "rgb(255, 125, 139)"].includes(item.color))`,
     "brief WebSocket reconnect",
     15_000,
   );
@@ -2006,7 +2095,7 @@ try {
     "two logical UUI sessions shared one Worker",
   );
   assert(secondSession.sandbox_id.length > 0, "second session has no sandbox");
-  await click(second, "#theme-toggle");
+  await clickSessionMenuAction(second, "#theme-toggle");
   await waitForPage(
     second,
     `document.documentElement.dataset.theme === "light" &&
@@ -2091,7 +2180,7 @@ try {
   await clickButton(second, "Back");
   await waitForScreen(second, "Welcome to 80|20");
 
-  await clickButton(second, "Logout");
+  await clickSessionMenuAction(second, "#session-logout");
   await waitForPage(
     second,
     `location.pathname === "/the8020/uui/login/" && document.querySelector("h1")?.textContent === "Sign in"`,
@@ -2740,6 +2829,24 @@ async function click(page: BrowserPage, selector: string): Promise<void> {
     return true;
   })()`);
   assert(clicked, `missing clickable ${selector}`);
+}
+
+async function clickSessionMenuAction(
+  page: BrowserPage,
+  selector: string,
+): Promise<void> {
+  const clicked = await page.evaluate<boolean>(`(() => {
+    const menu = document.querySelector("#session-menu");
+    const toggle = document.querySelector("#session-menu-toggle");
+    const action = document.querySelector(${JSON.stringify(selector)});
+    if (!(menu instanceof HTMLDetailsElement) || !(toggle instanceof HTMLElement) ||
+      !(action instanceof HTMLButtonElement)) return false;
+    if (!menu.open) toggle.click();
+    if (!menu.open) return false;
+    action.click();
+    return true;
+  })()`);
+  assert(clicked, `missing session-menu action ${selector}`);
 }
 
 async function enterTerminal(

@@ -33,8 +33,12 @@ Deno.test("icon text supports icon-only and adjacent placeholders", () => {
   assertEquals(parseIconText("[[icon=arrow_back]]"), [
     { type: "icon", name: "arrow_back" },
   ]);
-  assertEquals(parseIconText("[[icon=light_mode]][[icon=dark_mode]]"), [
-    { type: "icon", name: "light_mode" },
-    { type: "icon", name: "dark_mode" },
-  ]);
+  assertEquals(
+    parseIconText("[[icon=light_mode]][[icon=dark_mode]][[icon=menu]]"),
+    [
+      { type: "icon", name: "light_mode" },
+      { type: "icon", name: "dark_mode" },
+      { type: "icon", name: "menu" },
+    ],
+  );
 });

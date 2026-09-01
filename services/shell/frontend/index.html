@@ -73,22 +73,48 @@
           </details>
         </div>
         <nav class="navbar-actions" aria-label="Session controls">
-          <span
-            class="badge badge-warning"
-            id="connection-indicator"
-            data-state="connecting"
-          >
-            <span class="status-dot" aria-hidden="true"></span>
-            <span id="connection-state" role="status">Connecting…</span>
-          </span>
-          <button
-            class="btn btn-ghost btn-sm theme-toggle"
-            id="theme-toggle"
-            type="button"
-            aria-pressed="true"
-            aria-label="Switch to light mode"
-          >
-          </button>
+          <details class="session-menu" id="session-menu">
+            <summary
+              class="btn btn-ghost btn-sm session-menu-toggle"
+              id="session-menu-toggle"
+              aria-controls="session-menu-panel"
+              aria-expanded="false"
+              aria-haspopup="true"
+            >
+              <span
+                class="status-dot"
+                id="connection-indicator"
+                data-state="connecting"
+                aria-hidden="true"
+              ></span>
+              <span class="session-username" id="session-username">User</span>
+              <span class="session-menu-icon" id="session-menu-icon"></span>
+              <span
+                class="visually-hidden"
+                id="connection-state"
+                role="status"
+                aria-live="polite"
+              >Connecting…</span>
+            </summary>
+            <div
+              class="session-menu-panel"
+              id="session-menu-panel"
+              aria-label="Session menu"
+            >
+              <button
+                class="btn btn-ghost btn-sm session-menu-action theme-toggle"
+                id="theme-toggle"
+                type="button"
+                aria-pressed="true"
+                aria-label="Switch to light mode"
+              ></button>
+              <button
+                class="btn btn-ghost btn-sm session-menu-action session-logout"
+                id="session-logout"
+                type="button"
+              >Logout</button>
+            </div>
+          </details>
         </nav>
       </div>
     </header>

@@ -559,6 +559,7 @@ export function renderControl(
   } else {
     input = document.createElement("input");
     input.type = inputType(control.control);
+    if (control.control === "password") input.autocomplete = "new-password";
     if (control.control === "checkbox" || control.control === "switch") {
       input.checked = Boolean(value);
       if (control.control === "switch") input.setAttribute("role", "switch");
@@ -878,6 +879,8 @@ function inputValue(
 
 function inputType(kind: ControlDescriptor["control"]): string {
   switch (kind) {
+    case "password":
+      return "password";
     case "email":
       return "email";
     case "number":

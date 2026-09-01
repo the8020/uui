@@ -46,6 +46,7 @@ Deno.test("field catalog infers controls and keeps id separate from shared bind"
     role: z.enum(["administrator", "viewer"]),
     biography: field(z.string().optional(), { semanticType: "long-string" }),
     notes: field(z.string(), { control: "textarea", rowSpan: 3 }),
+    token: field(z.string(), { control: "password" }),
     utilization: field(z.number().min(1).max(100), {
       control: "range",
       minimum: 1,
@@ -69,6 +70,7 @@ Deno.test("field catalog infers controls and keeps id separate from shared bind"
       ["enabled", "checkbox", true, "medium", 1],
       ["notes", "textarea", true, "medium", 3],
       ["role", "select", true, "medium", 1],
+      ["token", "password", true, "medium", 1],
       ["utilization", "range", true, "medium", 1],
     ],
   );
@@ -421,6 +423,13 @@ Deno.test("client protocol rejects malformed event metadata", () => {
     changes: [{ bind: "orders", value: [] }],
   });
   assertEquals(parseClientMessage(validPage), validPage);
+  const validLogout = {
+    type: "session.logout",
+    protocol: UUI_PROTOCOL_VERSION,
+    sessionId: "session-test",
+    clientSequence: 2,
+  } as const;
+  assertEquals(parseClientMessage(validLogout), validLogout);
   for (
     const invalid of [
       { ...valid, eventType: "execute-code" },
@@ -432,6 +441,7 @@ Deno.test("client protocol rejects malformed event metadata", () => {
       { ...validPage, currentPage: 0 },
       { ...validPage, page: 1.5 },
       { ...validPage, changes: [{ bind: "" }] },
+      { ...validLogout, sessionId: "" },
       {
         type: "client.ack",
         protocol: UUI_PROTOCOL_VERSION,

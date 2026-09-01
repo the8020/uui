@@ -171,6 +171,77 @@ Deno.test("initial UUI connection replays its generated screen in sequence", asy
   }
 });
 
+Deno.test("session logout ends the persistent execution and redirects", async () => {
+  const metadataRoot = await Deno.makeTempDir();
+  let completions = 0;
+  let handlerAborted = false;
+  let sessionId = "";
+  const logoutMetadata = {
+    ...metadata,
+    requestId: "request-logout-establish",
+    persistentExecutionId: "persistent-logout",
+  };
+  const service = defineSessionService(
+    async ({ signal }) => {
+      await new Promise<void>((resolve) => {
+        signal.addEventListener("abort", () => {
+          handlerAborted = true;
+          resolve();
+        }, { once: true });
+      });
+    },
+    {
+      metadataRoot,
+      completePersistent: () => {
+        completions++;
+        return Promise.resolve();
+      },
+    },
+  );
+  try {
+    assertEquals(
+      (await service.fetch(
+        new Request("https://example.test/connect", { method: "POST" }),
+        context(logoutMetadata),
+      )).status,
+      204,
+    );
+    const socket = new TestSocket();
+    socket.message(connectMessage(0));
+    await service.connectWebSocket(
+      new Request("https://example.test/connect"),
+      context({ ...logoutMetadata, requestId: "request-logout-socket" }),
+      socket,
+    );
+    await until(() => socket.sent.length > 0);
+    const ready = socket.sent.map((item) => JSON.parse(String(item))).find(
+      (item) => item.type === "session.ready",
+    );
+    sessionId = ready.sessionId;
+    socket.message({
+      type: "session.logout",
+      protocol: UUI_PROTOCOL_VERSION,
+      sessionId,
+      clientSequence: 1,
+    });
+    await until(() => socket.signal.aborted && completions === 1);
+    const ended = socket.sent.map((item) => JSON.parse(String(item))).find(
+      (item) => item.type === "session.end",
+    );
+    assertEquals(ended.message, "Signing out…");
+    assertEquals(ended.redirectUrl, "/the8020/uui/login/logout");
+    assertEquals(handlerAborted, true);
+    assertEquals((await Array.fromAsync(Deno.readDir(metadataRoot))).length, 0);
+  } finally {
+    if (sessionId !== "") {
+      await workerFunctions["uui.session.terminate"]({ sessionId }).catch(
+        () => undefined,
+      );
+    }
+    await Deno.remove(metadataRoot, { recursive: true });
+  }
+});
+
 Deno.test("UUI service enforces its one-execution Worker contract", async () => {
   const metadataRoot = await Deno.makeTempDir();
   let finish!: () => void;

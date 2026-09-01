@@ -24,6 +24,8 @@ import { renderIconText } from "./icon_text.ts";
 import { windowTitleForHeading } from "./window_title.ts";
 
 interface BootData {
+  username?: string;
+  logoutUrl?: string;
   websocketUrl: string;
   protocol: number;
   heartbeatInterval?: number;
@@ -38,6 +40,11 @@ const connectionIndicator = requiredElement<HTMLElement>(
   "connection-indicator",
 );
 const notice = requiredElement<HTMLElement>("notice");
+const sessionMenu = requiredElement<HTMLDetailsElement>("session-menu");
+const sessionMenuToggle = requiredElement<HTMLElement>("session-menu-toggle");
+const sessionMenuIcon = requiredElement<HTMLElement>("session-menu-icon");
+const sessionUsername = requiredElement<HTMLElement>("session-username");
+const sessionLogout = requiredElement<HTMLButtonElement>("session-logout");
 const themeToggle = requiredElement<HTMLButtonElement>("theme-toggle");
 const screenBack = requiredElement<HTMLButtonElement>("screen-back");
 const programHeaderOverflowToggle = requiredElement<HTMLElement>(
@@ -53,6 +60,14 @@ const programHeader = new ResponsiveProgramHeader(
 const boot = JSON.parse(
   requiredElement<HTMLScriptElement>("the8020-boot").textContent ?? "",
 ) as BootData;
+const username =
+  typeof boot.username === "string" && boot.username.trim() !== ""
+    ? boot.username.trim()
+    : "User";
+const logoutUrl = typeof boot.logoutUrl === "string" &&
+    boot.logoutUrl.startsWith("/") && !boot.logoutUrl.startsWith("//")
+  ? boot.logoutUrl
+  : "/the8020/uui/login/logout";
 const routeKey = `the8020.route:${boot.websocketUrl}`;
 const themePreferences = new ThemePreferences(
   sessionStorage,
@@ -70,6 +85,9 @@ let currentSessionID = "";
 let screen: ScreenSnapshot | undefined;
 let model: Record<string, unknown> = {};
 let interactionSequence: number | undefined;
+let connectionText = "Connecting…";
+let logoutFallback: number | undefined;
+let logoutRequested = false;
 const dirty = new DirtyBindings();
 const pending = new Map<
   number,
@@ -81,6 +99,10 @@ renderIconText(screenBack, "[[icon=arrow_back]]", { decorativeIcons: true });
 renderIconText(programHeaderOverflowToggle, "[[icon=more_vert]]", {
   decorativeIcons: true,
 });
+renderIconText(sessionMenuIcon, "[[icon=menu]]", { decorativeIcons: true });
+sessionUsername.textContent = username;
+sessionUsername.title = username;
+updateSessionMenuLabel();
 applyTheme(themePreferences.current());
 themeToggle.addEventListener("click", () => {
   applyTheme(
@@ -88,6 +110,23 @@ themeToggle.addEventListener("click", () => {
       themePreferences.current() === "dark" ? "light" : "dark",
     ),
   );
+  sessionMenu.open = false;
+});
+sessionLogout.addEventListener("click", requestLogout);
+sessionMenu.addEventListener("toggle", () => {
+  sessionMenuToggle.setAttribute("aria-expanded", String(sessionMenu.open));
+  updateSessionMenuLabel();
+});
+document.addEventListener("pointerdown", (event) => {
+  if (
+    sessionMenu.open && event.target instanceof Node &&
+    !sessionMenu.contains(event.target)
+  ) sessionMenu.open = false;
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || !sessionMenu.open) return;
+  sessionMenu.open = false;
+  sessionMenuToggle.focus();
 });
 screenBack.addEventListener("click", () => dispatch(BACK_EVENT, BACK_EVENT));
 synchronizeWindowTitle();
@@ -287,6 +326,7 @@ function receive(raw: unknown): void {
       showNotice(message.message ?? message.code ?? "Session error");
       break;
     case "session.end":
+      if (logoutFallback !== undefined) clearTimeout(logoutFallback);
       setInteractionPending(undefined);
       ended = true;
       customElements.dispose();
@@ -312,7 +352,7 @@ function applyTheme(theme: Theme): void {
   );
   renderIconText(
     themeToggle,
-    dark ? "[[icon=light_mode]]" : "[[icon=dark_mode]]",
+    dark ? "[[icon=light_mode]] Light mode" : "[[icon=dark_mode]] Dark mode",
     { decorativeIcons: true },
   );
 }
@@ -323,6 +363,33 @@ function setConnectionState(
 ): void {
   renderIconText(connectionState, text);
   connectionIndicator.dataset.state = state;
+  connectionText = text;
+  updateSessionMenuLabel();
+}
+
+function updateSessionMenuLabel(): void {
+  sessionMenuToggle.setAttribute(
+    "aria-label",
+    `${username}, ${connectionText} ${
+      sessionMenu.open ? "Close" : "Open"
+    } session menu`,
+  );
+}
+
+function requestLogout(): void {
+  if (logoutRequested) return;
+  logoutRequested = true;
+  sessionMenu.open = false;
+  sessionLogout.disabled = true;
+  themeToggle.disabled = true;
+  const connected = socket?.readyState === WebSocket.OPEN &&
+    currentSessionID !== "";
+  if (connected) {
+    sendClient({ type: "session.logout" });
+    logoutFallback = setTimeout(() => location.assign(logoutUrl), 1_500);
+    return;
+  }
+  location.assign(logoutUrl);
 }
 
 async function writeClipboard(text: string): Promise<void> {

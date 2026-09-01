@@ -17,6 +17,7 @@ export type UUIMessageType =
   | "session.resync_required"
   | "session.error"
   | "session.end"
+  | "session.logout"
   | "session.ping"
   | "session.pong"
   | "screen.show"
@@ -74,6 +75,10 @@ export interface SessionPongMessage extends ClientMessageBase {
   type: "session.pong";
 }
 
+export interface SessionLogoutMessage extends ClientMessageBase {
+  type: "session.logout";
+}
+
 export interface ResyncConfirmMessage extends ClientMessageBase {
   type: "client.ack";
   resync?: boolean;
@@ -84,12 +89,13 @@ export type UUIClientMessage =
   | ScreenEventMessage
   | ScreenPageMessage
   | SessionPongMessage
+  | SessionLogoutMessage
   | ResyncConfirmMessage;
 
 export interface ServerMessageBase {
   type: Exclude<
     UUIMessageType,
-    "session.connect" | "screen.event" | "screen.page"
+    "session.connect" | "session.logout" | "screen.event" | "screen.page"
   >;
   protocol: number;
   serverSequence: number;
@@ -180,6 +186,7 @@ export interface FieldOption {
 
 export type ControlKind =
   | "text"
+  | "password"
   | "email"
   | "number"
   | "range"
@@ -301,8 +308,8 @@ export function parseClientMessage(value: unknown): UUIClientMessage {
     !isSequence(value.clientSequence) || typeof value.sessionId !== "string" ||
     value.sessionId.length === 0
   ) throw new TypeError("invalid client message identity");
-  if (value.type === "session.pong") {
-    return value as unknown as SessionPongMessage;
+  if (value.type === "session.pong" || value.type === "session.logout") {
+    return value as unknown as SessionPongMessage | SessionLogoutMessage;
   }
   if (value.type === "client.ack") {
     if (value.resync !== undefined && typeof value.resync !== "boolean") {

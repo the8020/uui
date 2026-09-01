@@ -122,16 +122,24 @@
   immediately after the brand, retains the accessible `Back` label, and emits
   the reserved `BACK_EVENT` as both action and event type. Program header
   controls and actions render from the screen snapshot between Back and the
-  always-visible connection/theme controls. The left brand/Back cluster and
-  right connection/theme cluster use explicit grid positions, so hiding or
-  emptying the dynamic middle never moves the right cluster away from the
-  navbar's right edge. The navbar remains one row at every width. As the dynamic
-  area shrinks, a measured stable prefix remains visible while items move from
-  right to left into an accessible More disclosure without recreating their DOM
-  controls. More sits immediately after the last visible dynamic control, or at
-  the dynamic area's start when none remain; opening it stacks every hidden
-  control vertically in original order and clamps the popover to a `10px`
-  viewport edge gutter.
+  always-visible session disclosure. That disclosure combines one `8px` status
+  circle, the authenticated username, and a Material `menu` icon in one button.
+  Connected is green; connecting and reconnecting are red, while a visually
+  hidden live label preserves the complete textual state. The username remains
+  one line and ellipsizes at constrained widths. Its locally anchored,
+  light-dismiss menu currently owns labeled light/dark theme switching and clean
+  logout. Logout ends the persistent UUI session through the typed client
+  protocol before redirecting through the configured logout route, with direct
+  navigation as a disconnected-client fallback. The left brand/Back cluster and
+  right session cluster use explicit grid positions, so hiding or emptying the
+  dynamic middle never moves the right cluster away from the navbar's right
+  edge. The navbar remains one row at every width. As the dynamic area shrinks,
+  a measured stable prefix remains visible while items move from right to left
+  into an accessible More disclosure without recreating their DOM controls. More
+  sits immediately after the last visible dynamic control, or at the dynamic
+  area's start when none remain; opening it stacks every hidden control
+  vertically in original order and clamps the popover to a `10px` viewport edge
+  gutter.
 - The shell's one constrained `/*` static handler serves supported browser
   assets from the generated and frontend roots, deriving MIME and cache policy
   from file type and hashed names; never register one service route or table
@@ -143,8 +151,8 @@
   only through the fixed registry of individually vendored hashed SVGs. Inline
   text icons are `1.2em` and vertically centered; button icons are `1.5em`,
   flex-based buttons keep `0.45em` between every rendered child, and explicitly
-  sized icon-only shell controls remain `20px`. Unregistered names and invalid
-  colors remain literal text. Shell-owned Back, overflow, theme, edit, and
+  sized shell icons remain `20px`. Unregistered names and invalid colors remain
+  literal text. Shell-owned Back, overflow, session menu, theme, edit, and
   select affordances use the same registry and ship no icon font or unused
   collection.
 - The authenticated shell uses the static demo's light/dark visual tokens and
@@ -198,16 +206,18 @@
   `edit` SVG aligned visually and geometrically to the exact field end; textarea
   and radio pencils keep the same underline-relative bottom offset, while select
   chevrons and native input affordances remain immediately before the pencil.
-  Interactive hover feedback changes paint-only properties such as color,
-  border, background, and shadow; it never transforms or repositions a pointer
-  hitbox. Neutral elevation shadows are dark-tinted in light mode and black in
-  dark mode; dark-mode surfaces never use text-derived light shadows. Theme
-  state is browser-only: `sessionStorage` keeps the current UUI session override
-  through redraw/reconnect/reload, while `localStorage` supplies the default for
-  future tabs. Shell markup defaults to dark, and a CSP-nonced initializer in
-  the head resolves the browser-only stored or operating-system preference
-  before CSS and first paint; theme state never enters UUI messages, service
-  requests, kernel APIs, or backend storage.
+  Password controls retain this shared layout while masking their current
+  browser value; programs must start sensitive edit models empty and never
+  redisplay stored values. Interactive hover feedback changes paint-only
+  properties such as color, border, background, and shadow; it never transforms
+  or repositions a pointer hitbox. Neutral elevation shadows are dark-tinted in
+  light mode and black in dark mode; dark-mode surfaces never use text-derived
+  light shadows. Theme state is browser-only: `sessionStorage` keeps the current
+  UUI session override through redraw/reconnect/reload, while `localStorage`
+  supplies the default for future tabs. Shell markup defaults to dark, and a
+  CSP-nonced initializer in the head resolves the browser-only stored or
+  operating-system preference before CSS and first paint; theme state never
+  enters UUI messages, service requests, kernel APIs, or backend storage.
 - Untruncated field messages remain ordinary selectable text. Only genuine
   overflow adds the underline, help cursor, button semantics, and locally
   anchored full-message popover; responsive width changes update that state.
@@ -223,9 +233,9 @@
 - `THIRD_PARTY_NOTICES.md` records the MIT notices for the bundled xterm core,
   Canvas and fit addons, and copied essential xterm styles plus the Apache-2.0
   license for the individually vendored Google Material `arrow_back`,
-  `arrow_drop_down`, `dark_mode`, `edit`, `light_mode`, `more_vert`, `refresh`,
-  and `save` SVGs. The theme toggle shows only the icon for the action it will
-  perform and retains an accessible text label.
+  `arrow_drop_down`, `dark_mode`, `edit`, `light_mode`, `menu`, `more_vert`,
+  `refresh`, and `save` SVGs. The theme menu action shows the icon and visible
+  label for the theme it will switch to and retains its accessible label.
 - Reload resume synchronizes the Worker-acknowledged client sequence before a
   new event is emitted, preventing post-reload actions from being mistaken for
   duplicates.

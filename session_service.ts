@@ -343,6 +343,11 @@ function clientMessage(
     });
     return;
   }
+  if (message.type === "session.logout") {
+    record.lastClientSequence = message.clientSequence;
+    void end(record, "Signing out…", uiConfig.logoutUrl);
+    return;
+  }
   if (message.type === "client.ack" && message.resync === true) {
     record.lastClientSequence = message.clientSequence;
     if (record.currentScreen !== undefined) {

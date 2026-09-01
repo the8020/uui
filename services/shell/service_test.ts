@@ -42,8 +42,20 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   assertEquals(body.includes('"heartbeatInterval":30000'), true);
   assertEquals(body.includes('"reconnectInitialDelay":250'), true);
   assertEquals(body.includes('"reconnectMaximumDelay":10000'), true);
+  assertEquals(body.includes('"username":"Admin"'), true);
+  assertEquals(
+    body.includes('"logoutUrl":"/the8020/uui/login/logout"'),
+    true,
+  );
   assertEquals(body.includes('<html lang="en" data-theme="dark">'), true);
   assertEquals(body.includes("<title>80|20</title>"), true);
+  assertEquals(body.includes('id="session-menu"'), true);
+  assertEquals(body.includes('id="session-menu-toggle"'), true);
+  assertEquals(body.includes('id="session-username"'), true);
+  assertEquals(body.includes('id="session-menu-icon"'), true);
+  assertEquals(body.includes('id="session-menu-panel"'), true);
+  assertEquals(body.includes('id="session-logout"'), true);
+  assertEquals(body.includes('class="badge badge-warning"'), false);
   assertEquals(body.includes('id="theme-toggle"'), true);
   assertEquals(body.includes("theme-icon-sun"), false);
   assertEquals(body.includes("theme-icon-moon"), false);
@@ -145,7 +157,27 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   );
   assertMatch(
     cssBody,
-    /\.theme-toggle\s*\{[^}]*width:\s*32px;[^}]*min-width:\s*32px;[^}]*padding:\s*0;/s,
+    /\.session-menu-toggle\s*\{[^}]*min-width:\s*0;[^}]*gap:\s*8px;[^}]*padding-inline:\s*0\.65rem;/s,
+  );
+  assertMatch(
+    cssBody,
+    /\.session-username\s*\{[^}]*min-width:\s*0;[^}]*max-width:\s*min\(12rem, 28vw\);[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s,
+  );
+  assertMatch(
+    cssBody,
+    /\.session-menu-panel\s*\{[^}]*position:\s*absolute;[^}]*inset-block-start:\s*calc\(100% \+ 8px\);[^}]*inset-inline-end:\s*0;[^}]*display:\s*grid;[^}]*max-width:\s*calc\(100vw - 20px\);[^}]*background:\s*var\(--surface\);[^}]*box-shadow:\s*var\(--shadow\);/s,
+  );
+  assertMatch(
+    cssBody,
+    /#connection-indicator\s*\{[^}]*width:\s*8px;[^}]*height:\s*8px;[^}]*flex:\s*0 0 8px;/s,
+  );
+  assertMatch(
+    cssBody,
+    /#connection-indicator\[data-state="connected"\]\s*\{[^}]*color:\s*var\(--success\);/s,
+  );
+  assertMatch(
+    cssBody,
+    /#connection-indicator\[data-state="connecting"\],\s*#connection-indicator\[data-state="reconnecting"\]\s*\{[^}]*color:\s*var\(--danger\);/s,
   );
   assertMatch(
     cssBody,
@@ -194,7 +226,7 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   );
   assertMatch(
     cssBody,
-    /\.screen-back \.material-icon,\s*\.program-header-overflow-toggle \.material-icon,\s*\.theme-toggle \.material-icon\s*\{[^}]*--material-icon-size:\s*20px;/s,
+    /\.screen-back \.material-icon,\s*\.program-header-overflow-toggle \.material-icon,\s*\.session-menu-icon \.material-icon,\s*\.theme-toggle \.material-icon\s*\{[^}]*--material-icon-size:\s*20px;/s,
   );
   assertMatch(
     cssBody,
@@ -447,6 +479,7 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
     ["material-arrow-back-24-e083cc60.svg", 300, "M20 11H7.83"],
     ["material-arrow-drop-down-24-e083cc60.svg", 250, "M7 10l5 5"],
     ["material-more-vert-24-e083cc60.svg", 400, "M12 8c1.1"],
+    ["material-menu-24-e083cc60.svg", 300, "M3 18h18"],
     ["material-refresh-24-e083cc60.svg", 500, "M17.65 6.35"],
     ["material-save-24-e083cc60.svg", 500, "M17 3H5"],
   ] as const;

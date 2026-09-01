@@ -32,8 +32,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ## Google Material Icons
 
 The UUI shell includes the 24px filled `arrow_back`, `arrow_drop_down`,
-`dark_mode`, `edit`, `light_mode`, `more_vert`, `refresh`, and `save` SVGs from
-Google Material Icons. The `edit` icon is vendored from
+`dark_mode`, `edit`, `light_mode`, `menu`, `more_vert`, `refresh`, and `save`
+SVGs from Google Material Icons. The `edit` icon is vendored from
 `google/material-design-icons` at Git object
 `a4b3c9f6b79b1a46ddff7e9a29b4e2a7e9c077bb`; the other optimized icons are
 vendored from Git object `e083cc60a0828fdd3b404cea0cb8a5b900e9c23e`. They are

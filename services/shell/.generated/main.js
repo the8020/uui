@@ -12357,9 +12357,17 @@ var HTTPError = class extends Error {
   }
 };
 
+// humanize.ts
+function humanize(value) {
+  const words = value.replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2").replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[-_]+/g, " ").trim().split(/\s+/).filter((word) => word.length > 0).map((word) => /^[A-Z0-9]{2,}$/.test(word) ? word : word.toLowerCase());
+  const text = words.join(" ");
+  return text.length === 0 ? value : text[0].toUpperCase() + text.slice(1);
+}
+
 // ui-config.json
 var ui_config_default = {
   loginUrl: "/the8020/uui/login/",
+  logoutUrl: "/the8020/uui/login/logout",
   postLoginUrl: "/the8020/uui/shell/",
   sessionWebSocketPath: "/the8020/uui/session/connect",
   protocolVersion: 1,
@@ -12471,6 +12479,25 @@ var kernel = Object.freeze({
       return invoke("execution.completePersistent", {});
     }
   }),
+  secrets: Object.freeze({
+    async list() {
+      const result = await executeAdminCommand("secret.list");
+      return result.secrets;
+    },
+    async get(name) {
+      const result = await executeAdminCommand("secret.get", {
+        name
+      });
+      return result.secret;
+    },
+    async set(input) {
+      const result = await executeAdminCommand("secret.set", {
+        name: input.name,
+        value: input.value
+      });
+      return result.secret;
+    }
+  }),
   packages: Object.freeze({
     index: Object.freeze({
       async list() {
@@ -12515,6 +12542,34 @@ var kernel = Object.freeze({
       async create(input) {
         const result = await executeAdminCommand("package.local.create", optionalArguments(input));
         return result.package;
+      }
+    }),
+    repository: Object.freeze({
+      async inspect(packageId) {
+        const result = await executeAdminCommand("package.repository.inspect", {
+          package_id: packageId
+        });
+        return result.repository;
+      },
+      async pull(packageId) {
+        const result = await executeAdminCommand("package.repository.pull", {
+          package_id: packageId
+        });
+        return result.repository;
+      },
+      async push(packageId) {
+        const result = await executeAdminCommand("package.repository.push", {
+          package_id: packageId
+        });
+        return result.repository;
+      },
+      async checkout(input) {
+        const result = await executeAdminCommand("package.repository.checkout", optionalArguments({
+          package_id: input.packageId,
+          branch: input.branch,
+          commit: input.commit
+        }));
+        return result.repository;
       }
     })
   }),
@@ -12810,6 +12865,7 @@ var MATERIAL_ICON_ASSETS = {
   dark_mode: "./assets/material-dark-mode-24-bab57d17.svg",
   edit: "./assets/material-edit-24-a4b3c9f6.svg",
   light_mode: "./assets/material-light-mode-24-e5b6e132.svg",
+  menu: "./assets/material-menu-24-e083cc60.svg",
   more_vert: "./assets/material-more-vert-24-e083cc60.svg",
   refresh: "./assets/material-refresh-24-e083cc60.svg",
   save: "./assets/material-save-24-e083cc60.svg"
@@ -12887,9 +12943,6 @@ function pushText(tokens, text) {
     type: "text",
     text
   });
-}
-function humanize(value) {
-  return value.replaceAll("_", " ").replace(/^./, (character) => character.toUpperCase());
 }
 
 // services/shell/frontend/custom_elements.ts
@@ -13568,7 +13621,7 @@ function renderImplicitFieldGroups(items) {
     card.setAttribute("role", "group");
     if (name.length > 0) {
       const title = element("h2", "group-title");
-      renderIconText(title, humanize2(name));
+      renderIconText(title, humanize(name));
       title.id = `implicit-group-title-${result.length}`;
       card.setAttribute("aria-labelledby", title.id);
       card.append(title);
@@ -13634,7 +13687,7 @@ function renderList(node, model2, pagination, callbacks) {
   for (const column of columns) {
     const cell = document.createElement("th");
     cell.scope = "col";
-    renderIconText(cell, column);
+    renderIconText(cell, node.headings?.[column] ?? humanize(column));
     headRow.append(cell);
   }
   head.append(headRow);
@@ -13725,6 +13778,7 @@ function renderControl(control, model2, callbacks) {
   } else {
     input = document.createElement("input");
     input.type = inputType(control.control);
+    if (control.control === "password") input.autocomplete = "new-password";
     if (control.control === "checkbox" || control.control === "switch") {
       input.checked = Boolean(value);
       if (control.control === "switch") input.setAttribute("role", "switch");
@@ -13965,6 +14019,8 @@ function inputValue(input, kind) {
 }
 function inputType(kind) {
   switch (kind) {
+    case "password":
+      return "password";
     case "email":
       return "email";
     case "number":
@@ -13991,10 +14047,6 @@ function displayValue(value) {
   if (value === null || value === void 0) return "";
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
-}
-function humanize2(value) {
-  const spaced = value.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[-_]+/g, " ");
-  return spaced.length === 0 ? value : spaced[0].toUpperCase() + spaced.slice(1);
 }
 function element(tag, className) {
   const value = document.createElement(tag);
@@ -14199,12 +14251,19 @@ var app = requiredElement("app");
 var connectionState = requiredElement("connection-state");
 var connectionIndicator = requiredElement("connection-indicator");
 var notice = requiredElement("notice");
+var sessionMenu = requiredElement("session-menu");
+var sessionMenuToggle = requiredElement("session-menu-toggle");
+var sessionMenuIcon = requiredElement("session-menu-icon");
+var sessionUsername = requiredElement("session-username");
+var sessionLogout = requiredElement("session-logout");
 var themeToggle = requiredElement("theme-toggle");
 var screenBack = requiredElement("screen-back");
 var programHeaderOverflowToggle = requiredElement("program-header-overflow-toggle");
 var programHeaderRoot = requiredElement("program-header");
 var programHeader = new ResponsiveProgramHeader(programHeaderRoot, requiredElement("program-header-visible"), requiredElement("program-header-overflow"), requiredElement("program-header-overflow-items"));
 var boot = JSON.parse(requiredElement("the8020-boot").textContent ?? "");
+var username = typeof boot.username === "string" && boot.username.trim() !== "" ? boot.username.trim() : "User";
+var logoutUrl = typeof boot.logoutUrl === "string" && boot.logoutUrl.startsWith("/") && !boot.logoutUrl.startsWith("//") ? boot.logoutUrl : "/the8020/uui/login/logout";
 var routeKey = `the8020.route:${boot.websocketUrl}`;
 var themePreferences = new ThemePreferences(sessionStorage, localStorage, boot.websocketUrl, matchMedia("(prefers-color-scheme: dark)").matches);
 var routeToken = sessionStorage.getItem(routeKey);
@@ -14217,6 +14276,9 @@ var currentSessionID = "";
 var screen;
 var model = {};
 var interactionSequence;
+var connectionText = "Connecting\u2026";
+var logoutFallback;
+var logoutRequested = false;
 var dirty = new DirtyBindings();
 var pending = /* @__PURE__ */ new Map();
 var customElements = new CustomElementRenderer();
@@ -14226,9 +14288,29 @@ renderIconText(screenBack, "[[icon=arrow_back]]", {
 renderIconText(programHeaderOverflowToggle, "[[icon=more_vert]]", {
   decorativeIcons: true
 });
+renderIconText(sessionMenuIcon, "[[icon=menu]]", {
+  decorativeIcons: true
+});
+sessionUsername.textContent = username;
+sessionUsername.title = username;
+updateSessionMenuLabel();
 applyTheme(themePreferences.current());
 themeToggle.addEventListener("click", () => {
   applyTheme(themePreferences.select(themePreferences.current() === "dark" ? "light" : "dark"));
+  sessionMenu.open = false;
+});
+sessionLogout.addEventListener("click", requestLogout);
+sessionMenu.addEventListener("toggle", () => {
+  sessionMenuToggle.setAttribute("aria-expanded", String(sessionMenu.open));
+  updateSessionMenuLabel();
+});
+document.addEventListener("pointerdown", (event) => {
+  if (sessionMenu.open && event.target instanceof Node && !sessionMenu.contains(event.target)) sessionMenu.open = false;
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || !sessionMenu.open) return;
+  sessionMenu.open = false;
+  sessionMenuToggle.focus();
 });
 screenBack.addEventListener("click", () => dispatch(BACK_EVENT, BACK_EVENT));
 synchronizeWindowTitle();
@@ -14406,6 +14488,7 @@ function receive(raw) {
       showNotice(message.message ?? message.code ?? "Session error");
       break;
     case "session.end":
+      if (logoutFallback !== void 0) clearTimeout(logoutFallback);
       setInteractionPending(void 0);
       ended = true;
       customElements.dispose();
@@ -14425,13 +14508,34 @@ function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
   themeToggle.setAttribute("aria-pressed", String(dark));
   themeToggle.setAttribute("aria-label", dark ? "Switch to light mode" : "Switch to dark mode");
-  renderIconText(themeToggle, dark ? "[[icon=light_mode]]" : "[[icon=dark_mode]]", {
+  renderIconText(themeToggle, dark ? "[[icon=light_mode]] Light mode" : "[[icon=dark_mode]] Dark mode", {
     decorativeIcons: true
   });
 }
 function setConnectionState(text, state) {
   renderIconText(connectionState, text);
   connectionIndicator.dataset.state = state;
+  connectionText = text;
+  updateSessionMenuLabel();
+}
+function updateSessionMenuLabel() {
+  sessionMenuToggle.setAttribute("aria-label", `${username}, ${connectionText} ${sessionMenu.open ? "Close" : "Open"} session menu`);
+}
+function requestLogout() {
+  if (logoutRequested) return;
+  logoutRequested = true;
+  sessionMenu.open = false;
+  sessionLogout.disabled = true;
+  themeToggle.disabled = true;
+  const connected = socket?.readyState === WebSocket.OPEN && currentSessionID !== "";
+  if (connected) {
+    sendClient({
+      type: "session.logout"
+    });
+    logoutFallback = setTimeout(() => location.assign(logoutUrl), 1500);
+    return;
+  }
+  location.assign(logoutUrl);
 }
 async function writeClipboard(text) {
   try {

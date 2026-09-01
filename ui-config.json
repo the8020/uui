@@ -1,5 +1,6 @@
 {
   "loginUrl": "/the8020/uui/login/",
+  "logoutUrl": "/the8020/uui/login/logout",
   "postLoginUrl": "/the8020/uui/shell/",
   "sessionWebSocketPath": "/the8020/uui/session/connect",
   "protocolVersion": 1,
