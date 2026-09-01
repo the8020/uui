@@ -944,7 +944,7 @@ textarea {
   color: var(--danger);
 }
 
-.field-message-trigger {
+.field-message-text {
   display: block;
   width: 100%;
   max-width: 100%;
@@ -957,10 +957,16 @@ textarea {
   font: inherit;
   line-height: inherit;
   text-align: start;
-  text-decoration: underline dotted;
   text-overflow: ellipsis;
-  text-underline-offset: 0.15em;
+  user-select: text;
   white-space: nowrap;
+  cursor: text;
+}
+
+.field-message-trigger {
+  text-decoration: underline dotted;
+  text-underline-offset: 0.15em;
+  user-select: none;
   cursor: help;
 }
 
@@ -980,10 +986,10 @@ textarea {
 
 .field-message-popover {
   position: fixed;
-  inset: 0;
+  inset: auto;
   width: max-content;
   max-width: min(28rem, calc(100vw - 20px));
-  margin: auto;
+  margin: 0;
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 0.65rem 0.75rem;

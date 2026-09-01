@@ -397,11 +397,15 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   );
   assertMatch(
     cssBody,
-    /\.field-message-trigger\s*\{[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s,
+    /\.field-message-text\s*\{[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;[^}]*user-select:\s*text;[^}]*white-space:\s*nowrap;[^}]*cursor:\s*text;/s,
   );
   assertMatch(
     cssBody,
-    /\.field-message-popover\s*\{[^}]*position:\s*fixed;[^}]*max-width:\s*min\(28rem, calc\(100vw - 20px\)\);[^}]*overflow-wrap:\s*anywhere;/s,
+    /\.field-message-trigger\s*\{[^}]*text-decoration:\s*underline dotted;[^}]*user-select:\s*none;[^}]*cursor:\s*help;/s,
+  );
+  assertMatch(
+    cssBody,
+    /\.field-message-popover\s*\{[^}]*position:\s*fixed;[^}]*inset:\s*auto;[^}]*max-width:\s*min\(28rem, calc\(100vw - 20px\)\);[^}]*margin:\s*0;[^}]*overflow-wrap:\s*anywhere;/s,
   );
   assertMatch(
     cssBody,

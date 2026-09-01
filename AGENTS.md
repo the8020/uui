@@ -174,7 +174,7 @@
   plus `N - 1` 20px row gaps, aligning its underline and reserved message slot
   with the `N`th ordinary field. Every field reserves the same
   supporting-message slot even when empty. Hints occupy exactly one ellipsized
-  line in that slot; their button opens the complete text in a
+  line in that slot; truncated hints open the complete text in a
   keyboard-accessible, light-dismiss popover. The renderer and semantic
   message-kind styling form the shared field message concept so later validation
   errors can use the same slot without changing geometry. Textarea resizing is
@@ -208,6 +208,9 @@
   the head resolves the browser-only stored or operating-system preference
   before CSS and first paint; theme state never enters UUI messages, service
   requests, kernel APIs, or backend storage.
+- Untruncated field messages remain ordinary selectable text. Only genuine
+  overflow adds the underline, help cursor, button semantics, and locally
+  anchored full-message popover; responsive width changes update that state.
 - Browser source executes bounded framework clipboard-write commands using the
   standard Clipboard API with a compatibility fallback.
 - Browser custom elements are selected only by framework-validated initializer
@@ -283,5 +286,8 @@
   provisioning, staged rootfs fixtures dereference symlinks only through a
   component-wise resolver contained by the source root, and process cleanup is
   time-bounded.
+- Browser E2E distinguishes selectable untruncated messages from responsive
+  overflow triggers and verifies that full-message popovers stay beside their
+  field while remaining inside the viewport.
 
 # Child DOX Index

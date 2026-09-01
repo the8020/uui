@@ -1241,7 +1241,7 @@ try {
         slider.getBoundingClientRect().left && sliderValue.nextElementSibling === slider;
       const reservedMessageRows = maximumField instanceof HTMLElement &&
         sliderField instanceof HTMLElement && maximumMessage instanceof HTMLElement &&
-        sliderMessage instanceof HTMLElement && maximumHint instanceof HTMLButtonElement &&
+        sliderMessage instanceof HTMLElement && maximumHint instanceof HTMLElement &&
         sliderShell instanceof HTMLElement &&
         maximumMessage.dataset.messageKind === 'hint' &&
         sliderMessage.dataset.messageKind === 'none' &&
@@ -1303,13 +1303,21 @@ try {
     })()`,
     "unified field groups and editable field affordances",
   );
+  await first.evaluate(`document.querySelector('[data-bind="maximumWorkers"]')
+    ?.closest('.field')?.querySelector('.field-message')
+    ?.scrollIntoView({ block: 'center' })`);
   const openedServiceHint = await first.evaluate<boolean>(`(() => {
     const field = document.querySelector('[data-bind="maximumWorkers"]')?.closest('.field');
     const trigger = field?.querySelector('.field-message-trigger');
     const popover = field?.querySelector('.field-message-popover');
-    if (!(trigger instanceof HTMLButtonElement) || !(popover instanceof HTMLElement)) return false;
+    if (!(trigger instanceof HTMLElement) || !(popover instanceof HTMLElement)) return false;
     trigger.click();
-    return popover.matches(':popover-open') &&
+    const triggerBounds = trigger.getBoundingClientRect();
+    const popoverBounds = popover.getBoundingClientRect();
+    const besideHint = Math.abs(popoverBounds.left - triggerBounds.left) < 2 &&
+      (Math.abs(popoverBounds.top - triggerBounds.bottom - 6) < 2 ||
+        Math.abs(popoverBounds.bottom - triggerBounds.top + 6) < 2);
+    return popover.matches(':popover-open') && besideHint &&
       popover.textContent?.trim() ===
         'Zero is unlimited at the service level; kernel sandbox and resource limits still apply.';
   })()`);
@@ -1782,13 +1790,20 @@ try {
     mobile: false,
   });
   await waitForResponsiveFieldLayout(first, "desktop");
+  await first.evaluate(`document.querySelector('[data-bind="username"]')
+    ?.closest('.field')?.querySelector('.field-message')
+    ?.scrollIntoView({ block: 'center' })`);
   const openedResponsiveHint = await first.evaluate<boolean>(`(() => {
     const field = document.querySelector('[data-bind="username"]')?.closest('.field');
     const trigger = field?.querySelector('.field-message-trigger');
     const popover = field?.querySelector('.field-message-popover');
-    if (!(trigger instanceof HTMLButtonElement) || !(popover instanceof HTMLElement)) return false;
+    if (!(trigger instanceof HTMLElement) || !(popover instanceof HTMLElement)) return false;
     trigger.click();
+    const triggerBounds = trigger.getBoundingClientRect();
+    const popoverBounds = popover.getBoundingClientRect();
     return popover.matches(':popover-open') &&
+      Math.abs(popoverBounds.left - triggerBounds.left) < 2 &&
+      Math.abs(popoverBounds.top - triggerBounds.bottom - 6) < 2 &&
       popover.textContent?.trim() ===
         'This deliberately long hint proves that supporting field messages stay on one reserved line across neighboring cards.';
   })()`);
@@ -2724,7 +2739,7 @@ function responsiveFieldLayoutExpression(
         sameRow(usernameField.getBoundingClientRect().top, languageField.getBoundingClientRect().top) &&
         sameRow(roleField.getBoundingClientRect().top, localeField.getBoundingClientRect().top));
     const fieldMessages = usernameMessage instanceof HTMLElement &&
-      languageMessage instanceof HTMLElement && usernameTrigger instanceof HTMLButtonElement &&
+      languageMessage instanceof HTMLElement && usernameTrigger instanceof HTMLElement &&
       usernamePopover instanceof HTMLElement && alignedSiblingMessageRows &&
       usernameMessage.dataset.messageKind === 'hint' &&
       languageMessage.dataset.messageKind === 'none' &&
@@ -2733,9 +2748,12 @@ function responsiveFieldLayoutExpression(
         languageMessage.getBoundingClientRect().height) < 0.5 &&
       hintStyle?.whiteSpace === 'nowrap' && hintStyle.overflowX === 'hidden' &&
       hintStyle.textOverflow === 'ellipsis' &&
+      hintStyle.cursor === 'help' && hintStyle.textDecorationLine === 'underline' &&
+      hintStyle.textDecorationStyle === 'dotted' &&
       usernameTrigger.scrollHeight <= usernameTrigger.clientHeight + 1 &&
       usernameTrigger.scrollWidth > usernameTrigger.clientWidth &&
-      usernameTrigger.getAttribute('popovertarget') === usernamePopover.id &&
+      usernameTrigger.getAttribute('role') === 'button' &&
+      usernameMessage.dataset.messageOverflow === 'true' &&
       usernamePopover.getAttribute('popover') === 'auto' &&
       usernamePopover.getAttribute('role') === 'tooltip';
     const spanningNote = document.querySelector('[data-bind="spanningNote"]');
@@ -2753,6 +2771,23 @@ function responsiveFieldLayoutExpression(
     const spanningShortTwoBounds = spanningShortTwo?.getBoundingClientRect();
     const spanningLongBounds = spanningLong?.getBoundingClientRect();
     const spanningMessage = spanningField?.querySelector(':scope > .field-message');
+    const spanningText = spanningMessage?.querySelector('.field-message-text');
+    const spanningTextStyle = spanningText instanceof HTMLElement
+      ? getComputedStyle(spanningText)
+      : undefined;
+    const spanningTextOverflows = spanningText instanceof HTMLElement &&
+      spanningText.scrollWidth > spanningText.clientWidth + 0.5;
+    const spanningHintBehavior = spanningText instanceof HTMLElement &&
+      (spanningTextOverflows
+        ? spanningText.classList.contains('field-message-trigger') &&
+          spanningText.getAttribute('role') === 'button' &&
+          spanningTextStyle?.cursor === 'help' &&
+          spanningTextStyle.textDecorationLine === 'underline'
+        : !spanningText.classList.contains('field-message-trigger') &&
+          spanningText.getAttribute('role') === null &&
+          spanningTextStyle?.userSelect === 'text' &&
+          spanningTextStyle.textDecorationLine === 'none' &&
+          spanningTextStyle.cursor === 'text');
     const spanningLongMessage = spanningLong?.querySelector(':scope > .field-message');
     const spanningMessageBounds = spanningMessage?.getBoundingClientRect();
     const spanningLongMessageBounds = spanningLongMessage?.getBoundingClientRect();
@@ -2767,6 +2802,7 @@ function responsiveFieldLayoutExpression(
       spanningLong instanceof HTMLElement && spanningTextarea !== undefined &&
       spanningShortOneLabel instanceof HTMLLabelElement &&
       spanningMessage instanceof HTMLElement && spanningLongMessage instanceof HTMLElement &&
+      spanningHintBehavior &&
       spanningField.dataset.fieldRowSpan === '2' && getComputedStyle(spanningTextarea).resize === 'none' &&
       spanningShortOneLabelStyle?.whiteSpace === 'nowrap' &&
       spanningShortOneLabelStyle.overflowX === 'hidden' &&

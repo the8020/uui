@@ -13,6 +13,7 @@ import {
 import { CustomElementRenderer } from "./custom_elements.ts";
 import {
   changesForBindings,
+  disposeFieldMessages,
   type RenderCallbacks,
   renderScreen,
   renderScreenHeader,
@@ -253,6 +254,8 @@ function receive(raw: unknown): void {
       if (screen?.id === message.screenId) {
         setInteractionPending(undefined);
         customElements.dispose();
+        disposeFieldMessages(app);
+        disposeFieldMessages(programHeaderRoot);
         programHeader.clear();
         screenBack.disabled = true;
         app.replaceChildren();
@@ -287,6 +290,7 @@ function receive(raw: unknown): void {
       setInteractionPending(undefined);
       ended = true;
       customElements.dispose();
+      disposeFieldMessages(programHeaderRoot);
       programHeader.clear();
       screenBack.disabled = true;
       themePreferences.endSession();
@@ -360,6 +364,7 @@ function renderCurrentScreen(): void {
   };
   renderScreen(app, screen, model, callbacks, customElements);
   synchronizeWindowTitle();
+  disposeFieldMessages(programHeaderRoot);
   programHeader.render(renderScreenHeader(screen, model, callbacks));
   customElements.end();
 }

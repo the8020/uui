@@ -24,9 +24,9 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// ../kernel/.development/deno-cache/npm/registry.npmjs.org/@xterm/addon-canvas/0.7.0/lib/addon-canvas.js
+// ../../../root/.cache/deno/npm/registry.npmjs.org/@xterm/addon-canvas/0.7.0/lib/addon-canvas.js
 var require_addon_canvas = __commonJS({
-  "../kernel/.development/deno-cache/npm/registry.npmjs.org/@xterm/addon-canvas/0.7.0/lib/addon-canvas.js"(exports, module) {
+  "../../../root/.cache/deno/npm/registry.npmjs.org/@xterm/addon-canvas/0.7.0/lib/addon-canvas.js"(exports, module) {
     !function(e, t) {
       "object" == typeof exports && "object" == typeof module ? module.exports = t() : "function" == typeof define && define.amd ? define([], t) : "object" == typeof exports ? exports.CanvasAddon = t() : e.CanvasAddon = t();
     }(self, () => (() => {
@@ -3606,9 +3606,9 @@ var require_addon_canvas = __commonJS({
   }
 });
 
-// ../kernel/.development/deno-cache/npm/registry.npmjs.org/@xterm/addon-fit/0.10.0/lib/addon-fit.js
+// ../../../root/.cache/deno/npm/registry.npmjs.org/@xterm/addon-fit/0.10.0/lib/addon-fit.js
 var require_addon_fit = __commonJS({
-  "../kernel/.development/deno-cache/npm/registry.npmjs.org/@xterm/addon-fit/0.10.0/lib/addon-fit.js"(exports, module) {
+  "../../../root/.cache/deno/npm/registry.npmjs.org/@xterm/addon-fit/0.10.0/lib/addon-fit.js"(exports, module) {
     !function(e, t) {
       "object" == typeof exports && "object" == typeof module ? module.exports = t() : "function" == typeof define && define.amd ? define([], t) : "object" == typeof exports ? exports.FitAddon = t() : e.FitAddon = t();
     }(self, () => (() => {
@@ -3647,9 +3647,9 @@ var require_addon_fit = __commonJS({
   }
 });
 
-// ../kernel/.development/deno-cache/npm/registry.npmjs.org/@xterm/xterm/5.5.0/lib/xterm.js
+// ../../../root/.cache/deno/npm/registry.npmjs.org/@xterm/xterm/5.5.0/lib/xterm.js
 var require_xterm = __commonJS({
-  "../kernel/.development/deno-cache/npm/registry.npmjs.org/@xterm/xterm/5.5.0/lib/xterm.js"(exports, module) {
+  "../../../root/.cache/deno/npm/registry.npmjs.org/@xterm/xterm/5.5.0/lib/xterm.js"(exports, module) {
     !function(e, t) {
       if ("object" == typeof exports && "object" == typeof module) module.exports = t();
       else if ("function" == typeof define && define.amd) define([], t);
@@ -13324,6 +13324,28 @@ function preferLaterExpansion(candidate, current) {
   return false;
 }
 
+// services/shell/frontend/field_message.ts
+var DEFAULT_EDGE_PADDING = 10;
+var DEFAULT_GAP = 6;
+function fieldMessageIsOverflowing(clientWidth, scrollWidth) {
+  return Number.isFinite(clientWidth) && Number.isFinite(scrollWidth) && clientWidth > 0 && scrollWidth > clientWidth + 0.5;
+}
+function fieldMessagePopoverPosition(anchor, popoverWidth, popoverHeight, viewportWidth, viewportHeight, edgePadding = DEFAULT_EDGE_PADDING, gap = DEFAULT_GAP) {
+  const padding = Math.max(0, edgePadding);
+  const horizontalLimit = Math.max(padding, viewportWidth - padding - Math.max(0, popoverWidth));
+  const verticalLimit = Math.max(padding, viewportHeight - padding - Math.max(0, popoverHeight));
+  const below = anchor.bottom + Math.max(0, gap);
+  const above = anchor.top - Math.max(0, gap) - Math.max(0, popoverHeight);
+  return {
+    left: clamp(anchor.left, padding, horizontalLimit),
+    top: below <= verticalLimit ? below : above >= padding ? above : clamp(below, padding, verticalLimit)
+  };
+}
+function clamp(value, minimum, maximum) {
+  if (!Number.isFinite(value)) return minimum;
+  return Math.min(Math.max(value, minimum), maximum);
+}
+
 // services/shell/frontend/renderer.ts
 function renderScreenHeader(snapshot, model2, callbacks) {
   const items = [];
@@ -13341,7 +13363,16 @@ function renderScreenHeader(snapshot, model2, callbacks) {
   return items;
 }
 var fieldMessageSequence = 0;
+var fieldMessageControllers = /* @__PURE__ */ new WeakMap();
+var fieldMessageResizeObserver = typeof ResizeObserver === "undefined" ? void 0 : new ResizeObserver((entries) => {
+  for (const entry of entries) {
+    if (entry.target instanceof HTMLElement) {
+      fieldMessageControllers.get(entry.target)?.refresh();
+    }
+  }
+});
 function renderScreen(root, snapshot, model2, callbacks, custom) {
+  disposeFieldMessages(root);
   root.replaceChildren();
   const article = element("article", "screen");
   const heading = element("h1", "screen-title");
@@ -13808,25 +13839,98 @@ function renderFieldMessage(fieldLabel, message) {
     slot.setAttribute("aria-hidden", "true");
     return slot;
   }
-  const trigger = element("button", "field-message-trigger");
-  trigger.type = "button";
-  trigger.setAttribute("aria-label", `Show full hint for ${fieldLabel}`);
-  trigger.setAttribute("aria-expanded", "false");
-  renderIconText(trigger, message.text);
+  const text = element("span", "field-message-text");
+  renderIconText(text, message.text);
   const popover = element("div", "field-message-popover");
   popover.id = `field-message-popover-${++fieldMessageSequence}`;
   popover.setAttribute("popover", "auto");
   popover.setAttribute("role", "tooltip");
-  popover.setAttribute("aria-label", `${fieldLabel} hint`);
+  popover.setAttribute("aria-label", `${fieldLabel} message`);
   renderIconText(popover, message.text);
-  trigger.setAttribute("popovertarget", popover.id);
-  trigger.setAttribute("aria-controls", popover.id);
-  trigger.setAttribute("aria-describedby", popover.id);
-  popover.addEventListener("toggle", () => {
-    trigger.setAttribute("aria-expanded", String(popover.matches(":popover-open")));
-  });
-  slot.append(trigger, popover);
+  slot.append(text, popover);
+  const controller = createFieldMessageController(slot, text, popover, fieldLabel);
+  fieldMessageControllers.set(text, controller);
+  queueMicrotask(controller.refresh);
   return slot;
+}
+function disposeFieldMessages(root) {
+  for (const text of root.querySelectorAll(".field-message-text")) {
+    fieldMessageControllers.get(text)?.dispose();
+    fieldMessageControllers.delete(text);
+  }
+}
+function createFieldMessageController(slot, text, popover, fieldLabel) {
+  let interactive = false;
+  const positionPopover = () => {
+    if (!popover.matches(":popover-open")) return;
+    const anchorBounds = text.getBoundingClientRect();
+    const popoverBounds = popover.getBoundingClientRect();
+    const position = fieldMessagePopoverPosition(anchorBounds, popoverBounds.width, popoverBounds.height, innerWidth, innerHeight);
+    popover.style.left = `${position.left}px`;
+    popover.style.top = `${position.top}px`;
+  };
+  const togglePopover = () => {
+    if (!interactive) return;
+    if (popover.matches(":popover-open")) {
+      popover.hidePopover();
+      return;
+    }
+    const anchorBounds = text.getBoundingClientRect();
+    popover.style.left = `${anchorBounds.left}px`;
+    popover.style.top = `${anchorBounds.bottom + 6}px`;
+    popover.showPopover();
+    positionPopover();
+  };
+  const clicked = () => togglePopover();
+  const keyDown = (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    togglePopover();
+  };
+  const toggled = () => {
+    if (!interactive) return;
+    text.setAttribute("aria-expanded", String(popover.matches(":popover-open")));
+    positionPopover();
+  };
+  const setInteractive = (next) => {
+    if (next === interactive) return;
+    interactive = next;
+    slot.dataset.messageOverflow = String(next);
+    text.classList.toggle("field-message-trigger", next);
+    if (next) {
+      text.setAttribute("role", "button");
+      text.setAttribute("tabindex", "0");
+      text.setAttribute("aria-label", `Show full message for ${fieldLabel}`);
+      text.setAttribute("aria-expanded", "false");
+      text.setAttribute("aria-controls", popover.id);
+      text.setAttribute("aria-describedby", popover.id);
+      text.addEventListener("click", clicked);
+      text.addEventListener("keydown", keyDown);
+      return;
+    }
+    if (popover.matches(":popover-open")) popover.hidePopover();
+    text.removeAttribute("role");
+    text.removeAttribute("tabindex");
+    text.removeAttribute("aria-label");
+    text.removeAttribute("aria-expanded");
+    text.removeAttribute("aria-controls");
+    text.removeAttribute("aria-describedby");
+    text.removeEventListener("click", clicked);
+    text.removeEventListener("keydown", keyDown);
+  };
+  const controller = {
+    refresh() {
+      setInteractive(fieldMessageIsOverflowing(text.clientWidth, text.scrollWidth));
+    },
+    dispose() {
+      setInteractive(false);
+      popover.removeEventListener("toggle", toggled);
+      fieldMessageResizeObserver?.unobserve(text);
+    }
+  };
+  popover.addEventListener("toggle", toggled);
+  fieldMessageResizeObserver?.observe(text);
+  return controller;
 }
 function synchronizeBinding(bind, value, source) {
   for (const candidate of document.querySelectorAll("[data-bind]")) {
@@ -14269,6 +14373,8 @@ function receive(raw) {
       if (screen?.id === message.screenId) {
         setInteractionPending(void 0);
         customElements.dispose();
+        disposeFieldMessages(app);
+        disposeFieldMessages(programHeaderRoot);
         programHeader.clear();
         screenBack.disabled = true;
         app.replaceChildren();
@@ -14303,6 +14409,7 @@ function receive(raw) {
       setInteractionPending(void 0);
       ended = true;
       customElements.dispose();
+      disposeFieldMessages(programHeaderRoot);
       programHeader.clear();
       screenBack.disabled = true;
       themePreferences.endSession();
@@ -14364,6 +14471,7 @@ function renderCurrentScreen() {
   };
   renderScreen(app, screen, model, callbacks, customElements);
   synchronizeWindowTitle();
+  disposeFieldMessages(programHeaderRoot);
   programHeader.render(renderScreenHeader(screen, model, callbacks));
   customElements.end();
 }

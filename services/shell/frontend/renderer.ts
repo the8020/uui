@@ -10,6 +10,10 @@ import type {
   ScreenSnapshot,
 } from "@packages/the8020/uui/mod.ts";
 import { fieldGridPositions } from "./field_grid.ts";
+import {
+  fieldMessageIsOverflowing,
+  fieldMessagePopoverPosition,
+} from "./field_message.ts";
 import { createMaterialIcon, renderIconText } from "./icon_text.ts";
 import { getPath, paginationItems, setPath } from "./model.ts";
 
@@ -56,6 +60,25 @@ interface FieldMessage {
 
 let fieldMessageSequence = 0;
 
+interface FieldMessageController {
+  refresh(): void;
+  dispose(): void;
+}
+
+const fieldMessageControllers = new WeakMap<
+  HTMLElement,
+  FieldMessageController
+>();
+const fieldMessageResizeObserver = typeof ResizeObserver === "undefined"
+  ? undefined
+  : new ResizeObserver((entries) => {
+    for (const entry of entries) {
+      if (entry.target instanceof HTMLElement) {
+        fieldMessageControllers.get(entry.target)?.refresh();
+      }
+    }
+  });
+
 export function renderScreen(
   root: HTMLElement,
   snapshot: ScreenSnapshot,
@@ -63,6 +86,7 @@ export function renderScreen(
   callbacks: RenderCallbacks,
   custom: CustomElementCallbacks,
 ): void {
+  disposeFieldMessages(root);
   root.replaceChildren();
   const article = element("article", "screen");
   const heading = element("h1", "screen-title");
@@ -668,30 +692,130 @@ function renderFieldMessage(
     return slot;
   }
 
-  const trigger = element("button", "field-message-trigger");
-  trigger.type = "button";
-  trigger.setAttribute("aria-label", `Show full hint for ${fieldLabel}`);
-  trigger.setAttribute("aria-expanded", "false");
-  renderIconText(trigger, message.text);
+  const text = element("span", "field-message-text");
+  renderIconText(text, message.text);
 
   const popover = element("div", "field-message-popover");
   popover.id = `field-message-popover-${++fieldMessageSequence}`;
   popover.setAttribute("popover", "auto");
   popover.setAttribute("role", "tooltip");
-  popover.setAttribute("aria-label", `${fieldLabel} hint`);
+  popover.setAttribute("aria-label", `${fieldLabel} message`);
   renderIconText(popover, message.text);
 
-  trigger.setAttribute("popovertarget", popover.id);
-  trigger.setAttribute("aria-controls", popover.id);
-  trigger.setAttribute("aria-describedby", popover.id);
-  popover.addEventListener("toggle", () => {
-    trigger.setAttribute(
+  slot.append(text, popover);
+  const controller = createFieldMessageController(
+    slot,
+    text,
+    popover,
+    fieldLabel,
+  );
+  fieldMessageControllers.set(text, controller);
+  queueMicrotask(controller.refresh);
+  return slot;
+}
+
+export function disposeFieldMessages(root: ParentNode): void {
+  for (
+    const text of root.querySelectorAll<HTMLElement>(".field-message-text")
+  ) {
+    fieldMessageControllers.get(text)?.dispose();
+    fieldMessageControllers.delete(text);
+  }
+}
+
+function createFieldMessageController(
+  slot: HTMLElement,
+  text: HTMLElement,
+  popover: HTMLElement,
+  fieldLabel: string,
+): FieldMessageController {
+  let interactive = false;
+
+  const positionPopover = (): void => {
+    if (!popover.matches(":popover-open")) return;
+    const anchorBounds = text.getBoundingClientRect();
+    const popoverBounds = popover.getBoundingClientRect();
+    const position = fieldMessagePopoverPosition(
+      anchorBounds,
+      popoverBounds.width,
+      popoverBounds.height,
+      innerWidth,
+      innerHeight,
+    );
+    popover.style.left = `${position.left}px`;
+    popover.style.top = `${position.top}px`;
+  };
+
+  const togglePopover = (): void => {
+    if (!interactive) return;
+    if (popover.matches(":popover-open")) {
+      popover.hidePopover();
+      return;
+    }
+    const anchorBounds = text.getBoundingClientRect();
+    popover.style.left = `${anchorBounds.left}px`;
+    popover.style.top = `${anchorBounds.bottom + 6}px`;
+    popover.showPopover();
+    positionPopover();
+  };
+
+  const clicked = (): void => togglePopover();
+  const keyDown = (event: KeyboardEvent): void => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    togglePopover();
+  };
+  const toggled = (): void => {
+    if (!interactive) return;
+    text.setAttribute(
       "aria-expanded",
       String(popover.matches(":popover-open")),
     );
-  });
-  slot.append(trigger, popover);
-  return slot;
+    positionPopover();
+  };
+
+  const setInteractive = (next: boolean): void => {
+    if (next === interactive) return;
+    interactive = next;
+    slot.dataset.messageOverflow = String(next);
+    text.classList.toggle("field-message-trigger", next);
+    if (next) {
+      text.setAttribute("role", "button");
+      text.setAttribute("tabindex", "0");
+      text.setAttribute("aria-label", `Show full message for ${fieldLabel}`);
+      text.setAttribute("aria-expanded", "false");
+      text.setAttribute("aria-controls", popover.id);
+      text.setAttribute("aria-describedby", popover.id);
+      text.addEventListener("click", clicked);
+      text.addEventListener("keydown", keyDown);
+      return;
+    }
+    if (popover.matches(":popover-open")) popover.hidePopover();
+    text.removeAttribute("role");
+    text.removeAttribute("tabindex");
+    text.removeAttribute("aria-label");
+    text.removeAttribute("aria-expanded");
+    text.removeAttribute("aria-controls");
+    text.removeAttribute("aria-describedby");
+    text.removeEventListener("click", clicked);
+    text.removeEventListener("keydown", keyDown);
+  };
+
+  const controller: FieldMessageController = {
+    refresh() {
+      setInteractive(
+        fieldMessageIsOverflowing(text.clientWidth, text.scrollWidth),
+      );
+    },
+    dispose() {
+      setInteractive(false);
+      popover.removeEventListener("toggle", toggled);
+      fieldMessageResizeObserver?.unobserve(text);
+    },
+  };
+  popover.addEventListener("toggle", toggled);
+  fieldMessageResizeObserver?.observe(text);
+  return controller;
 }
 
 function synchronizeBinding(
