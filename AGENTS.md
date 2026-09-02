@@ -123,6 +123,9 @@
   with the visible list slice and all dirty bindings; it does not dispatch a
   program event, and a replacement snapshot clears edits only after the Worker
   has merged and validated them.
+- Root-page overscroll containment must not be inherited by nested horizontal
+  overflow regions. Paginated lists retain horizontal overflow for narrow
+  viewports while vertical wheel and touch movement chains to the page scroller.
 - The authenticated navbar uses an unboxed `80|20` wordmark with a `30px`
   semibold line box: light-mode `80` uses `#cd9d00`, dark mode uses its brighter
   gold token, `20` uses the primary text color, and a `24px` by `3px` rule

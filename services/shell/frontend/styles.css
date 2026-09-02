@@ -57,11 +57,11 @@ html[data-theme="dark"] {
 
 * {
   box-sizing: border-box;
-  overscroll-behavior: contain;
 }
 
 html {
   min-height: 100%;
+  overscroll-behavior: contain;
   scroll-behavior: smooth;
 }
 
