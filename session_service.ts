@@ -55,6 +55,7 @@ interface SessionRecord {
   executionId: string;
   serviceId: string;
   placement: RequestMetadata["execution"];
+  client: RequestMetadata["client"];
   sessionId: string;
   auth: RequestMetadata["auth"];
   config: SessionConfiguration;
@@ -81,7 +82,7 @@ interface SessionRecord {
 }
 
 interface SessionMetadata {
-  schema: 1;
+  schema: 2;
   session_id: string;
   service_id: string;
   persistent_execution_id: string;
@@ -91,6 +92,8 @@ interface SessionMetadata {
   worker_id: string;
   authenticated_user_id: string;
   authenticated_user: string;
+  latest_ip_address: string;
+  latest_network_scope: RequestMetadata["client"]["networkScope"];
   state: string;
   created_at: string;
   updated_at: string;
@@ -182,6 +185,7 @@ async function establish(
       executionId,
       serviceId: meta.serviceId,
       placement: structuredClone(meta.execution),
+      client: structuredClone(meta.client),
       sessionId,
       auth: structuredClone(meta.auth),
       config: sessionConfiguration(),
@@ -273,6 +277,7 @@ async function connect(
   record.disconnectTimer = undefined;
   const resumed = record.lastConnectionAt !== record.createdAt;
   record.socket = socket;
+  record.client = structuredClone(meta.client);
   record.lastConnectionAt = Date.now();
   record.lastPongAt = record.lastConnectionAt;
   log(record, "lifecycle", resumed ? "resumed" : "connected");
@@ -562,7 +567,7 @@ function updateMetadata(record: SessionRecord): void {
 async function writeMetadata(record: SessionRecord): Promise<void> {
   await Deno.mkdir(record.metadataRoot, { recursive: true, mode: 0o700 });
   const metadata: SessionMetadata = {
-    schema: 1,
+    schema: 2,
     session_id: record.sessionId,
     service_id: record.serviceId,
     persistent_execution_id: record.executionId,
@@ -572,6 +577,8 @@ async function writeMetadata(record: SessionRecord): Promise<void> {
     worker_id: record.placement.workerId,
     authenticated_user_id: record.auth.userId ?? "",
     authenticated_user: record.auth.username ?? "",
+    latest_ip_address: record.client.ipAddress,
+    latest_network_scope: record.client.networkScope,
     state: record.ended
       ? record.terminationFailure === undefined ? "ENDED" : "STALE"
       : record.socket === undefined

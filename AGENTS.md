@@ -10,8 +10,8 @@
 - Own the public login service, authenticated browser shell, authenticated
   persistent UUI service, Home and Program terminated programs, browser
   protocol/configuration, session metadata and administration, source/build,
-  package-local layouts, trusted custom-element initializer registry, and xterm
-  terminal rendering.
+  package-local layouts, trusted custom-element initializer registry, xterm
+  terminal rendering, shared Markdown rendering, and the shell message center.
 - Do not own authentication storage/validation, cookie construction, sandbox
   placement, physical WebSockets, or kernel routing.
 
@@ -53,10 +53,12 @@
 - The handler atomically maintains one bounded JSON record per live session at
   `/state/package-data/the8020/uui/sessions/<session-id>.json`, containing exact
   execution placement, authenticated user identity, lifecycle timestamps/state,
-  and bounded current-screen metadata. It never stores passwords, cookies, route
-  tokens, replay buffers, or unbounded messages. Clean termination removes the
-  record after signaling generic persistent completion; abnormal loss may leave
-  recoverable stale metadata.
+  latest kernel-observed client IP address and network scope, and bounded
+  current-screen metadata. Reconnection replaces the address fields with the
+  latest observation. It never stores passwords, cookies, route tokens, replay
+  buffers, or unbounded messages. Clean termination removes the record after
+  signaling generic persistent completion; abnormal loss may leave recoverable
+  stale metadata.
 - `the8020/uui/sessions` explicitly scans a bounded number of bounded package
   metadata records, validates a selected record against its exact Worker with
   `kernel.worker.invoke()`, and calls package-owned inspect, bounded
@@ -75,6 +77,14 @@
   that retained output in server-sequence order before `session.ready`, so the
   shell always receives the first screen instead of remaining on its opening
   placeholder.
+- Programs import `sendMessage(body, kind?)` from the public
+  `@packages/the8020/uui/mod.ts` surface and may call it while a screen
+  roundtrip is active or from a background asynchronous task for the same bound
+  session. Message kinds are `info`, `success`, `warning`, and `error`; bodies
+  are non-empty Markdown bounded to 20,000 characters. `showNotification()`
+  remains a deprecated source-compatible alias. Notification frames use the
+  ordinary sequenced/replayable session transport and never require a client
+  event to be emitted.
 - Browser startup performs normal `POST /connect`, reads `X-80-20-Route`, and
   stores it only in `sessionStorage` under the WebSocket URL. It
   opens/reconnects the standard `the8020.uui.v1` WebSocket with the same opaque
@@ -140,6 +150,22 @@
   area's start when none remain; opening it stacks every hidden control
   vertically in original order and clamps the popover to a `10px` viewport edge
   gutter.
+- The session disclosure menu owns a Messages action whose badge counts all
+  messages received since the current screen interaction began. A new
+  `screen.event`, `screen.page`, or route begins a fresh collection. At most the
+  last 100 messages are retained in the browser and at most the last 10 are
+  drawn as toasts. Toasts are anchored below the session disclosure at equal
+  width, overlap downward by `0.5rem`, and keep the oldest card on top. Lower
+  cards retain the fixed three-row base height and align to the active card's
+  lower edge; only the active card expands, up to `25em`, with internal
+  scrolling for longer Markdown. Its bottom progress drains from right to left
+  over three seconds and mouse entry resets the full interval. Expiration
+  animates the card to the session disclosure without removing it from history,
+  pulses the badge, and starts the next card. The native Messages dialog has its
+  own `25em` scrolling list; it expands and scrolls to the most recently
+  archived or otherwise focused message while allowing any retained item to be
+  expanded. History summaries render all retained items, while rich Markdown
+  bodies are materialized only for entries the user expands.
 - The shell's one constrained `/*` static handler serves supported browser
   assets from the generated and frontend roots, deriving MIME and cache policy
   from file type and hashed names; never register one service route or table
@@ -223,6 +249,14 @@
   anchored full-message popover; responsive width changes update that state.
 - Browser source executes bounded framework clipboard-write commands using the
   standard Clipboard API with a compatibility fallback.
+- Shared browser Markdown lives under `frontend/`, outside any service-owned
+  source tree. It uses `markdown-it` with raw HTML and images disabled, rejects
+  executable link schemes, hardens rendered links for a new browsing context,
+  and exposes both HTML and DOM rendering helpers through `frontend/mod.ts`.
+  `frontend/markdown.css` is a dedicated, `.markdown`-scoped stylesheet for
+  headings, tables, lists, quotes, code, and other rendered content; the shell's
+  constrained static handler serves only that CSS from the shared frontend root,
+  never the TypeScript source.
 - Browser custom elements are selected only by framework-validated initializer
   names and plain JSON configuration. `sandbox-console.v1` owns one persistent
   xterm instance, same-origin `the8020.console.v1` connection, binary PTY
@@ -230,9 +264,9 @@
   mouse selection, exact content-box fitting, resize controls, bounded
   reconnect, and teardown; it never accepts executable source or
   backend-provided CSS.
-- `THIRD_PARTY_NOTICES.md` records the MIT notices for the bundled xterm core,
-  Canvas and fit addons, and copied essential xterm styles plus the Apache-2.0
-  license for the individually vendored Google Material `arrow_back`,
+- `THIRD_PARTY_NOTICES.md` records the MIT/BSD notices for the bundled xterm and
+  Markdown renderer dependencies, copied essential xterm styles, plus the
+  Apache-2.0 license for the individually vendored Google Material `arrow_back`,
   `arrow_drop_down`, `dark_mode`, `edit`, `light_mode`, `menu`, `more_vert`,
   `refresh`, and `save` SVGs. The theme menu action shows the icon and visible
   label for the theme it will switch to and retains its accessible label.
@@ -248,6 +282,14 @@
 
 - Keep all assets local, semantic, keyboard-accessible, responsive, and free of
   backend-provided CSS or executable layout content.
+- User-visible descriptions, hints, placeholders, notices, and empty-state copy
+  must help the user act or understand a user-visible outcome. Never add copy
+  solely to explain internal architecture, storage, persistence, sessions,
+  transport, or implementation details; omit it entirely and keep those details
+  in DOX or developer documentation. For example, never show
+  `Value is stored per-session in the user storage.` or
+  `The value is sent directly to kernel secret storage and is not shown again.`
+  in the UI.
 
 # Verification
 
@@ -257,8 +299,9 @@
   natural class/closure program calls, package-owned heartbeat timeout,
   metadata/replay/termination, Program terminated rendering/copy/Home recovery,
   model binding, resume decisions, exception escape, renderer-supporting pure
-  helpers, and standard UUI discovery; `services/shell/build.sh` rebuilds the
-  browser bundle.
+  helpers, the bounded message collection, safe Markdown output, asynchronous
+  session message streaming, and standard UUI discovery;
+  `services/shell/build.sh` rebuilds the browser bundle.
 - `browser_e2e.ts` drives real Chromium through two isolated kernel nodes and
   receives explicit kernel-source and sibling package-workspace roots, then
   assigns distinct ephemeral main-HTTP and SSH ports to every node. The nodes
@@ -290,14 +333,16 @@
   linked details, the package-owned UUI session list/detail with exact-Worker
   inspection, bounded log, stale cleanup, termination, and session-service
   clickthrough, authorized service enable/disable and capacity changes including
-  percentage sliders, nested demos, dirty reconnect, reload resume,
-  TypeError/ValueError short dumps, source context, clipboard copy, Home
-  recovery, per-tab Worker isolation, single-Worker failure, and logout;
-  administrative polling is throttled, startup failures include service/log
-  diagnostics, enabled `IDLE` services are accepted before first-request lazy
-  provisioning, staged rootfs fixtures dereference symlinks only through a
-  component-wise resolver contained by the source root, and process cleanup is
-  time-bounded.
+  percentage sliders, nested demos, dirty reconnect, reload resume, semantic and
+  asynchronous messages, three-second hover reset and archive targeting,
+  stacked-card geometry, bounded toast/history rendering, Markdown expansion and
+  scrolling, message-history focus, roundtrip clearing, TypeError/ValueError
+  short dumps, source context, clipboard copy, Home recovery, per-tab Worker
+  isolation, single-Worker failure, and logout; administrative polling is
+  throttled, startup failures include service/log diagnostics, enabled `IDLE`
+  services are accepted before first-request lazy provisioning, staged rootfs
+  fixtures dereference symlinks only through a component-wise resolver contained
+  by the source root, and process cleanup is time-bounded.
 - Browser E2E distinguishes selectable untruncated messages from responsive
   overflow triggers and verifies that full-message popovers stay beside their
   field while remaining inside the viewport.

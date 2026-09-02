@@ -8,6 +8,7 @@ export {
   currentSessionId,
   endSession,
   type ScreenEvent,
+  sendMessage,
   showNotification,
 } from "./session.ts";
 export {

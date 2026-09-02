@@ -9,6 +9,8 @@
       "state",
       "authenticatedUser",
       "authenticatedUserId",
+      "latestIpAddress",
+      "latestNetworkScope",
       "serviceId",
       "persistentExecutionId",
       "nodeId",

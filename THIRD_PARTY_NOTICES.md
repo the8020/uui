@@ -1,7 +1,10 @@
 # Third-party notices
 
 The browser bundle includes `@xterm/xterm` 5.5.0, `@xterm/addon-canvas` 0.7.0,
-and `@xterm/addon-fit` 0.10.0. All three are provided under the MIT License.
+and `@xterm/addon-fit` 0.10.0. It also includes `markdown-it` 14.1.0 and its
+browser-reachable `linkify-it` 5.0.2, `mdurl` 2.1.0, `punycode.js` 2.3.1, and
+`uc.micro` 2.1.0 dependencies. These libraries are provided under the MIT
+License.
 
 Copyright (c) 2017-2019, The xterm.js authors
 (https://github.com/xtermjs/xterm.js)
@@ -11,6 +14,12 @@ Copyright (c) 2014-2016, SourceLair Private Company (https://www.sourcelair.com)
 Copyright (c) 2012-2013, Christopher Jeffrey (https://github.com/chjj/)
 
 Copyright (c) 2019, The xterm.js authors (https://github.com/xtermjs/xterm.js)
+
+Copyright (c) 2014 Vitaly Puzrin, Alex Kocharin.
+
+Copyright (c) 2015 Vitaly Puzrin.
+
+Copyright Mathias Bynens (https://mathiasbynens.be/)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -28,6 +37,32 @@ FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
 COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
 IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+The Markdown browser bundle also includes `entities` 4.5.0 under the following
+BSD 2-Clause License:
+
+Copyright (c) Felix Böhm All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+Redistributions of source code must retain the above copyright notice, this list
+of conditions and the following disclaimer.
+
+Redistributions in binary form must reproduce the above copyright notice, this
+list of conditions and the following disclaimer in the documentation and/or
+other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## Google Material Icons
 

@@ -2,8 +2,9 @@ import { defineService, type RequestMetadata } from "@the8020/http";
 import uiConfig from "../../ui-config.json" with { type: "json" };
 
 const frontend = new URL("./frontend/", import.meta.url);
+const sharedFrontend = new URL("../../frontend/", import.meta.url);
 const generated = new URL("./.generated/", import.meta.url);
-const staticRoots = [generated, frontend] as const;
+const staticRoots = [generated, frontend, sharedFrontend] as const;
 const staticContentTypes = new Map([
   [".js.map", "application/json; charset=utf-8"],
   [".js", "text/javascript; charset=utf-8"],

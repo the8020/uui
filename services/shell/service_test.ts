@@ -9,6 +9,7 @@ const context = {
     serviceGeneration: 1,
     canonicalBasePath: "/the8020/uui/shell",
     originalUrl: "https://the8020.example/the8020/uui/shell/",
+    client: { ipAddress: "203.0.113.4", networkScope: "public" as const },
     execution: {
       nodeId: "node-test",
       runtimeGroupId: "rgp-test",
@@ -54,6 +55,15 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   assertEquals(body.includes('id="session-username"'), true);
   assertEquals(body.includes('id="session-menu-icon"'), true);
   assertEquals(body.includes('id="session-menu-panel"'), true);
+  assertEquals(body.includes('id="messages-open"'), true);
+  assertEquals(body.includes('id="messages-count"'), true);
+  assertEquals(body.includes('id="message-toast-stack"'), true);
+  assertEquals(body.includes('id="message-dialog"'), true);
+  assertEquals(body.includes('id="message-history-list"'), true);
+  assertEquals(
+    body.includes('<link rel="stylesheet" href="markdown.css">'),
+    true,
+  );
   assertEquals(body.includes('id="session-logout"'), true);
   assertEquals(body.includes('class="badge badge-warning"'), false);
   assertEquals(body.includes('id="theme-toggle"'), true);
@@ -166,6 +176,30 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   assertMatch(
     cssBody,
     /\.session-menu-panel\s*\{[^}]*position:\s*absolute;[^}]*inset-block-start:\s*calc\(100% \+ 8px\);[^}]*inset-inline-end:\s*0;[^}]*display:\s*grid;[^}]*max-width:\s*calc\(100vw - 20px\);[^}]*background:\s*var\(--surface\);[^}]*box-shadow:\s*var\(--shadow\);/s,
+  );
+  assertMatch(
+    cssBody,
+    /\.message-toast-stack\s*\{[^}]*--message-toast-base-height:\s*5rem;[^}]*position:\s*absolute;[^}]*inset-block-start:\s*calc\(100% \+ 10px\);[^}]*inset-inline-end:\s*0;[^}]*width:\s*min\(20rem, calc\(100vw - 20px\)\);/s,
+  );
+  assertMatch(
+    cssBody,
+    /\.message-toast\s*\{[^}]*grid-area:\s*1 \/ 1;[^}]*width:\s*100%;[^}]*min-height:\s*var\(--message-toast-base-height\);[^}]*max-height:\s*25em;[^}]*overflow:\s*hidden;/s,
+  );
+  assertMatch(
+    cssBody,
+    /\.message-toast:not\(\.message-toast-top\)\s*\{[^}]*height:\s*var\(--message-toast-base-height\);[^}]*align-self:\s*end;[^}]*translate:\s*0 var\(--message-stack-offset-y\);/s,
+  );
+  assertMatch(
+    cssBody,
+    /\.message-toast-progress-fill\s*\{[^}]*transform:\s*scaleX\(1\);[^}]*transform-origin:\s*left center;/s,
+  );
+  assertMatch(
+    cssBody,
+    /\.message-toast-leaving\s*\{[^}]*animation:\s*message-toast-archive 320ms/s,
+  );
+  assertMatch(
+    cssBody,
+    /\.message-history-list\s*\{[^}]*max-height:\s*25em;[^}]*overflow:\s*auto;/s,
   );
   assertMatch(
     cssBody,
@@ -472,6 +506,21 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
     /\.field-radio input\[type="radio"\]\s*\{[^}]*appearance:\s*none;[^}]*border:\s*1px solid var\(--border\);[^}]*border-radius:\s*50%;/s,
   );
 
+  const markdownCSS = await service.fetch(
+    new Request("https://service/markdown.css"),
+    context,
+  );
+  assertEquals(markdownCSS.status, 200);
+  assertEquals(
+    markdownCSS.headers.get("content-type"),
+    "text/css; charset=utf-8",
+  );
+  assertEquals(markdownCSS.headers.get("cache-control"), "no-cache");
+  const markdownCSSBody = await markdownCSS.text();
+  assertEquals(markdownCSSBody.includes(".markdown h1"), true);
+  assertEquals(markdownCSSBody.includes(".markdown table"), true);
+  assertEquals(markdownCSSBody.includes(".markdown blockquote"), true);
+
   const staticAssets = [
     ["material-edit-24-a4b3c9f6.svg", 400, "M3 17.25V21h3.75"],
     ["material-light-mode-24-e5b6e132.svg", 1_000, "M12 7c-2.76"],
@@ -508,6 +557,11 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
     context,
   );
   assertEquals(rejectedSource.status, 404);
+  const rejectedSharedSource = await service.fetch(
+    new Request("https://service/markdown.ts"),
+    context,
+  );
+  assertEquals(rejectedSharedSource.status, 404);
   const rejectedTraversal = await service.fetch(
     new Request("https://service/assets/%2e%2e%2fstyles.css"),
     context,

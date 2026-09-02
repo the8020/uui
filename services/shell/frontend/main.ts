@@ -21,6 +21,7 @@ import {
 import { ResponsiveProgramHeader } from "./responsive_header.ts";
 import { type Theme, ThemePreferences } from "./theme.ts";
 import { renderIconText } from "./icon_text.ts";
+import { MessageCenter } from "./message_center.ts";
 import { windowTitleForHeading } from "./window_title.ts";
 
 interface BootData {
@@ -46,6 +47,16 @@ const sessionMenuIcon = requiredElement<HTMLElement>("session-menu-icon");
 const sessionUsername = requiredElement<HTMLElement>("session-username");
 const sessionLogout = requiredElement<HTMLButtonElement>("session-logout");
 const themeToggle = requiredElement<HTMLButtonElement>("theme-toggle");
+const messagesOpen = requiredElement<HTMLButtonElement>("messages-open");
+const messagesCount = requiredElement<HTMLElement>("messages-count");
+const messageToastStack = requiredElement<HTMLElement>("message-toast-stack");
+const messageDialog = requiredElement<HTMLDialogElement>("message-dialog");
+const messageHistoryList = requiredElement<HTMLElement>(
+  "message-history-list",
+);
+const messageDialogClose = requiredElement<HTMLButtonElement>(
+  "message-dialog-close",
+);
 const screenBack = requiredElement<HTMLButtonElement>("screen-back");
 const programHeaderOverflowToggle = requiredElement<HTMLElement>(
   "program-header-overflow-toggle",
@@ -94,6 +105,16 @@ const pending = new Map<
   { encoded: string; dirty: ReadonlyMap<string, number> }
 >();
 const customElements = new CustomElementRenderer();
+const messageCenter = new MessageCenter({
+  toastRegion: messageToastStack,
+  sessionMenu,
+  sessionToggle: sessionMenuToggle,
+  openButton: messagesOpen,
+  count: messagesCount,
+  dialog: messageDialog,
+  list: messageHistoryList,
+  closeButton: messageDialogClose,
+});
 
 renderIconText(screenBack, "[[icon=arrow_back]]", { decorativeIcons: true });
 renderIconText(programHeaderOverflowToggle, "[[icon=more_vert]]", {
@@ -209,6 +230,7 @@ function replaceRoute(token: string | undefined): void {
   currentSessionID = "";
   pending.clear();
   dirty.clear();
+  messageCenter.beginRoundtrip();
   setInteractionPending(undefined);
 }
 
@@ -302,7 +324,7 @@ function receive(raw: unknown): void {
       }
       break;
     case "notification.show":
-      showNotice(message.message);
+      messageCenter.show(message);
       break;
     case "clipboard.write":
       void writeClipboard(message.text);
@@ -329,6 +351,7 @@ function receive(raw: unknown): void {
       if (logoutFallback !== undefined) clearTimeout(logoutFallback);
       setInteractionPending(undefined);
       ended = true;
+      messageCenter.dispose();
       customElements.dispose();
       disposeFieldMessages(programHeaderRoot);
       programHeader.clear();
@@ -502,7 +525,10 @@ function dispatch(
 function sendInteraction(payload: Record<string, unknown>): void {
   if (interactionSequence !== undefined) return;
   const sequence = sendClient(payload, true);
-  if (sequence !== undefined) setInteractionPending(sequence);
+  if (sequence !== undefined) {
+    messageCenter.beginRoundtrip();
+    setInteractionPending(sequence);
+  }
 }
 
 function sendClient(

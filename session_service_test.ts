@@ -5,7 +5,7 @@ import {
   type WebSocketSession,
   z,
 } from "@the8020/http";
-import { callScreen } from "./session.ts";
+import { callScreen, sendMessage } from "./session.ts";
 import { UUI_PROTOCOL_VERSION } from "./protocol.ts";
 import { defineSessionService, workerFunctions } from "./session_service.ts";
 
@@ -15,6 +15,7 @@ const metadata: RequestMetadata = {
   serviceGeneration: 1,
   canonicalBasePath: "/the8020/uui/session",
   originalUrl: "https://example.test/the8020/uui/session/connect",
+  client: { ipAddress: "203.0.113.4", networkScope: "public" },
   persistentExecutionId: "persistent-1",
   persistentKeepAliveMilliseconds: 120_000,
   execution: {
@@ -78,6 +79,9 @@ Deno.test("ordinary persistent UUI service owns metadata and exact Worker admini
     assertEquals(persisted.sandbox_id, "sbx-test");
     assertEquals(persisted.worker_id, "wrk-test");
     assertEquals(persisted.authenticated_user_id, "user-1");
+    assertEquals(persisted.schema, 2);
+    assertEquals(persisted.latest_ip_address, "203.0.113.4");
+    assertEquals(persisted.latest_network_scope, "public");
     assertEquals("route" in persisted, false);
 
     const inspected = workerFunctions["uui.session.inspect"]({
@@ -95,7 +99,11 @@ Deno.test("ordinary persistent UUI service owns metadata and exact Worker admini
     second.message(connectMessage(ready.serverSequence));
     await service.connectWebSocket(
       new Request("https://example.test/connect"),
-      context({ ...metadata, requestId: "request-3" }),
+      context({
+        ...metadata,
+        requestId: "request-3",
+        client: { ipAddress: "172.17.0.1", networkScope: "private" },
+      }),
       second,
     );
     await until(() => second.sent.length > 0);
@@ -103,6 +111,13 @@ Deno.test("ordinary persistent UUI service owns metadata and exact Worker admini
       JSON.parse(String(second.sent.at(-1))).type,
       "session.resumed",
     );
+    await until(async () => {
+      const latest = JSON.parse(
+        await Deno.readTextFile(`${metadataRoot}/${files[0]?.name}`),
+      );
+      return latest.latest_ip_address === "172.17.0.1" &&
+        latest.latest_network_scope === "private";
+    });
 
     await workerFunctions["uui.session.terminate"]({
       sessionId: ready.sessionId,
@@ -167,6 +182,85 @@ Deno.test("initial UUI connection replays its generated screen in sequence", asy
     });
     await until(() => socket.signal.aborted);
   } finally {
+    await Deno.remove(metadataRoot, { recursive: true });
+  }
+});
+
+Deno.test("a session streams messages while its screen roundtrip is pending", async () => {
+  const metadataRoot = await Deno.makeTempDir();
+  let sessionId = "";
+  let releaseMessage!: () => void;
+  const messageReady = new Promise<void>((resolve) => releaseMessage = resolve);
+  const asyncMetadata = {
+    ...metadata,
+    requestId: "request-async-message-establish",
+    persistentExecutionId: "persistent-async-message",
+  };
+  const service = defineSessionService(async () => {
+    const screen = callScreen({
+      id: "async-message",
+      schema: z.object({}),
+      model: {},
+      title: "Async message",
+    });
+    await messageReady;
+    sendMessage("Background work reached its checkpoint.", "success");
+    await screen;
+  }, { metadataRoot, completePersistent: () => Promise.resolve() });
+  try {
+    assertEquals(
+      (await service.fetch(
+        new Request("https://example.test/connect", { method: "POST" }),
+        context(asyncMetadata),
+      )).status,
+      204,
+    );
+    const socket = new TestSocket();
+    socket.message(connectMessage(0));
+    await service.connectWebSocket(
+      new Request("https://example.test/connect"),
+      context({ ...asyncMetadata, requestId: "request-async-message-socket" }),
+      socket,
+    );
+    await until(() => socket.sent.length >= 2);
+    const initial = socket.sent.map((item) => JSON.parse(String(item)));
+    const screen = initial.find((item) => item.type === "screen.show");
+    const ready = initial.find((item) => item.type === "session.ready");
+    sessionId = ready.sessionId;
+    releaseMessage();
+    await until(() =>
+      socket.sent.some((item) =>
+        JSON.parse(String(item)).type === "notification.show"
+      )
+    );
+    const notification = socket.sent.map((item) => JSON.parse(String(item)))
+      .find((item) => item.type === "notification.show");
+    assertEquals(notification, {
+      type: "notification.show",
+      level: "success",
+      message: "Background work reached its checkpoint.",
+      protocol: UUI_PROTOCOL_VERSION,
+      serverSequence: ready.serverSequence + 1,
+      sessionId: ready.sessionId,
+    });
+    socket.message({
+      type: "screen.event",
+      protocol: UUI_PROTOCOL_VERSION,
+      sessionId: ready.sessionId,
+      clientSequence: 1,
+      screenId: screen.screen.id,
+      screenRevision: screen.screen.revision,
+      action: "done",
+      eventType: "action",
+      changes: [],
+    });
+    await until(() => socket.signal.aborted);
+  } finally {
+    if (sessionId !== "") {
+      await workerFunctions["uui.session.terminate"]({ sessionId }).catch(
+        () => undefined,
+      );
+    }
     await Deno.remove(metadataRoot, { recursive: true });
   }
 });

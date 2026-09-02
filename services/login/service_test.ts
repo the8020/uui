@@ -10,6 +10,7 @@ const context = {
     serviceGeneration: 1,
     canonicalBasePath: "/the8020/uui/login",
     originalUrl: "https://example.test/the8020/uui/login/",
+    client: { ipAddress: "203.0.113.4", networkScope: "public" as const },
     execution: {
       nodeId: "node-test",
       runtimeGroupId: "rgp-test",

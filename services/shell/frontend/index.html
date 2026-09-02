@@ -28,6 +28,7 @@
     })();
     </script>
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="markdown.css">
   </head>
   <body>
     <header class="navbar">
@@ -102,6 +103,19 @@
               aria-label="Session menu"
             >
               <button
+                class="btn btn-ghost btn-sm session-menu-action messages-open"
+                id="messages-open"
+                type="button"
+              >
+                <span>Messages</span>
+                <span
+                  class="message-count"
+                  id="messages-count"
+                  data-count="0"
+                  aria-hidden="true"
+                >0</span>
+              </button>
+              <button
                 class="btn btn-ghost btn-sm session-menu-action theme-toggle"
                 id="theme-toggle"
                 type="button"
@@ -115,9 +129,34 @@
               >Logout</button>
             </div>
           </details>
+          <div
+            class="message-toast-stack"
+            id="message-toast-stack"
+            aria-label="New messages"
+            aria-live="polite"
+            aria-relevant="additions"
+            hidden
+          ></div>
         </nav>
       </div>
     </header>
+    <dialog
+      class="message-dialog"
+      id="message-dialog"
+      aria-labelledby="message-dialog-title"
+    >
+      <section class="message-dialog-frame">
+        <header class="message-dialog-header">
+          <h2 id="message-dialog-title">Messages</h2>
+          <button
+            class="btn btn-ghost btn-sm"
+            id="message-dialog-close"
+            type="button"
+          >Close</button>
+        </header>
+        <div class="message-history-list" id="message-history-list"></div>
+      </section>
+    </dialog>
     <div id="notice" class="notice" role="alert" hidden></div>
     <div id="interaction-shield" class="interaction-shield" aria-hidden="true">
       <div class="interaction-indicator">

@@ -15,7 +15,7 @@ const maximumDirectoryEntries = 1_000;
 const maximumMetadataBytes = 64 * 1024;
 
 export interface SessionMetadata {
-  schema: 1;
+  schema: 2;
   session_id: string;
   service_id: string;
   persistent_execution_id: string;
@@ -25,6 +25,13 @@ export interface SessionMetadata {
   worker_id: string;
   authenticated_user_id: string;
   authenticated_user: string;
+  latest_ip_address: string;
+  latest_network_scope:
+    | "loopback"
+    | "private"
+    | "link_local"
+    | "public"
+    | "special";
   state: string;
   created_at: string;
   updated_at: string;
@@ -50,6 +57,14 @@ const DetailScreen = z.object({
   state: field(z.string(), { label: "Metadata state", readOnly: true }),
   authenticatedUser: field(z.string(), { label: "User", readOnly: true }),
   authenticatedUserId: field(z.string(), { label: "User ID", readOnly: true }),
+  latestIpAddress: field(z.string(), {
+    label: "Latest IP address",
+    readOnly: true,
+  }),
+  latestNetworkScope: field(z.string(), {
+    label: "Network scope",
+    readOnly: true,
+  }),
   serviceId: field(z.string(), { label: "Service", readOnly: true }),
   persistentExecutionId: field(z.string(), {
     label: "Persistent execution",
@@ -123,6 +138,8 @@ async function sessionDetail(metadata: SessionMetadata): Promise<void> {
         state: metadata.state,
         authenticatedUser: metadata.authenticated_user,
         authenticatedUserId: metadata.authenticated_user_id,
+        latestIpAddress: metadata.latest_ip_address,
+        latestNetworkScope: formatNetworkScope(metadata.latest_network_scope),
         serviceId: metadata.service_id,
         persistentExecutionId: metadata.persistent_execution_id,
         nodeId: metadata.node_id,
@@ -266,7 +283,7 @@ async function readBoundedFile(
 function validMetadata(value: unknown): value is SessionMetadata {
   if (value === null || typeof value !== "object") return false;
   const item = value as Partial<SessionMetadata>;
-  return item.schema === 1 &&
+  return item.schema === 2 &&
     typeof item.session_id === "string" &&
     typeof item.service_id === "string" &&
     typeof item.persistent_execution_id === "string" &&
@@ -276,10 +293,24 @@ function validMetadata(value: unknown): value is SessionMetadata {
     typeof item.worker_id === "string" &&
     typeof item.authenticated_user_id === "string" &&
     typeof item.authenticated_user === "string" &&
+    typeof item.latest_ip_address === "string" &&
+    (item.latest_network_scope === "loopback" ||
+      item.latest_network_scope === "private" ||
+      item.latest_network_scope === "link_local" ||
+      item.latest_network_scope === "public" ||
+      item.latest_network_scope === "special") &&
     typeof item.state === "string" &&
     typeof item.created_at === "string" &&
     typeof item.updated_at === "string" &&
     typeof item.last_connection_at === "string";
+}
+
+function formatNetworkScope(
+  scope: SessionMetadata["latest_network_scope"],
+): string {
+  return scope === "link_local"
+    ? "Link-local"
+    : scope.charAt(0).toUpperCase() + scope.slice(1);
 }
 
 async function removeMetadata(sessionId: string): Promise<void> {

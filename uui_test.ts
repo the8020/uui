@@ -6,11 +6,18 @@ import { applyLayoutOverride, validateLayout } from "./layout.ts";
 import { DEFAULT_SCREEN_LIST_PAGE_SIZE } from "./pagination.ts";
 import {
   BACK_EVENT,
+  MAX_UUI_MESSAGE_BODY_LENGTH,
   parseClientMessage,
   UUI_PROTOCOL_VERSION,
   type UUIClientMessage,
 } from "./protocol.ts";
-import { bindSession, callScreen, copyText } from "./session.ts";
+import {
+  bindSession,
+  callScreen,
+  copyText,
+  sendMessage,
+  showNotification,
+} from "./session.ts";
 
 class TestChannel {
   readonly sessionId = "session-test";
@@ -731,6 +738,82 @@ Deno.test("clipboard writes stay on the bound session channel and are bounded", 
   } finally {
     unbind();
   }
+});
+
+Deno.test({
+  name: "messages use the public session channel during and between roundtrips",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    assertThrows(
+      () => sendMessage("not bound"),
+      Error,
+      "requires a bound UUI session Worker",
+    );
+    const test = new TestChannel();
+    const unbind = bindSession(test);
+    try {
+      sendMessage("Information");
+      sendMessage("Completed", "success");
+      sendMessage("Attention", "warning");
+      sendMessage("Failed", "error");
+      showNotification("Compatible alias", "info");
+      assertEquals(test.sent, [
+        { type: "notification.show", level: "info", message: "Information" },
+        {
+          type: "notification.show",
+          level: "success",
+          message: "Completed",
+        },
+        {
+          type: "notification.show",
+          level: "warning",
+          message: "Attention",
+        },
+        { type: "notification.show", level: "error", message: "Failed" },
+        {
+          type: "notification.show",
+          level: "info",
+          message: "Compatible alias",
+        },
+      ]);
+      assertThrows(() => sendMessage("   "), TypeError, "1 to 20000");
+      assertThrows(
+        () => sendMessage("x".repeat(MAX_UUI_MESSAGE_BODY_LENGTH + 1)),
+        TypeError,
+        "1 to 20000",
+      );
+      assertThrows(
+        () => sendMessage("bad kind", "fatal" as never),
+        TypeError,
+        "unsupported UUI message kind",
+      );
+
+      const pending = callScreen({
+        id: "message-wait",
+        schema: z.object({}),
+        model: {},
+      });
+      await Promise.resolve();
+      await (async () => {
+        await Promise.resolve();
+        sendMessage("Arrived while the screen was waiting", "success");
+      })();
+      assertEquals(test.sent.at(-1), {
+        type: "notification.show",
+        level: "success",
+        message: "Arrived while the screen was waiting",
+      });
+      test.push(event({
+        screenId: "message-wait",
+        screenRevision: 1,
+        clientSequence: 1,
+      }));
+      assertEquals((await pending).action, "save");
+    } finally {
+      unbind();
+    }
+  },
 });
 
 function event(

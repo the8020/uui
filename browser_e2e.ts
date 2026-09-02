@@ -1835,6 +1835,327 @@ try {
       }`,
     );
   }
+
+  await clickButton(first, "Message types");
+  await waitForPage(
+    first,
+    `document.querySelector("#messages-count")?.textContent === "4" &&
+      document.querySelectorAll(".message-toast").length === 4`,
+    "four semantic message toasts",
+  );
+  const typeStack = await first.evaluate<{
+    valid: boolean;
+    kinds: string[];
+    heights: number[];
+    bottomOffsets: number[];
+    expectedOffset: number;
+    anchorGap: number;
+    animationCount: number;
+  }>(`(() => {
+    const stack = document.querySelector("#message-toast-stack");
+    const toggle = document.querySelector("#session-menu-toggle");
+    const cards = [...document.querySelectorAll(".message-toast")];
+    if (!(stack instanceof HTMLElement) || !(toggle instanceof HTMLElement) ||
+        cards.some((card) => !(card instanceof HTMLElement)) || cards.length !== 4) {
+      return { valid: false, kinds: [], heights: [], bottomOffsets: [], expectedOffset: 0, anchorGap: 0, animationCount: 0 };
+    }
+    const typedCards = cards;
+    typedCards[0].dispatchEvent(new MouseEvent("mouseenter"));
+    const bounds = typedCards.map((card) => card.getBoundingClientRect());
+    const rootSize = parseFloat(getComputedStyle(document.documentElement).fontSize);
+    const expectedOffset = rootSize * 0.5;
+    const toggleBounds = toggle.getBoundingClientRect();
+    const widthsMatch = bounds.every((item) => Math.abs(item.width - bounds[0].width) < 0.5);
+    const heightsMatch = bounds.every((item) => Math.abs(item.height - rootSize * 5) < 1);
+    const bottomsMatch = bounds.every((item, index) =>
+      Math.abs(item.bottom - bounds[0].bottom - index * expectedOffset) < 1);
+    return {
+      valid: typedCards[0].classList.contains("message-toast-top") &&
+        typedCards.filter((card) => card.classList.contains("message-toast-top")).length === 1 &&
+        widthsMatch && heightsMatch && bottomsMatch &&
+        Math.abs(bounds[0].right - toggleBounds.right) < 1 &&
+        bounds[0].top > toggleBounds.bottom,
+      kinds: typedCards.map((card) => card.dataset.messageKind ?? ""),
+      heights: bounds.map((item) => item.height),
+      bottomOffsets: bounds.map((item) => item.bottom - bounds[0].bottom),
+      expectedOffset,
+      anchorGap: bounds[0].top - toggleBounds.bottom,
+      animationCount: typedCards[0].querySelector(".message-toast-progress-fill")?.getAnimations().length ?? 0,
+    };
+  })()`);
+  assert(
+    typeStack.valid &&
+      typeStack.kinds.join(",") === "info,success,warning,error" &&
+      typeStack.animationCount === 1,
+    `semantic toast stack geometry is invalid: ${JSON.stringify(typeStack)}`,
+  );
+  await delay(700);
+  const progressedTime = await first.evaluate<number>(`(() => {
+    const fill = document.querySelector(".message-toast-top .message-toast-progress-fill");
+    return fill instanceof HTMLElement
+      ? Number(fill.getAnimations()[0]?.currentTime ?? -1)
+      : -1;
+  })()`);
+  const resetTime = await first.evaluate<number>(`(() => {
+    const top = document.querySelector(".message-toast-top");
+    if (!(top instanceof HTMLElement)) return -1;
+    top.dispatchEvent(new MouseEvent("mouseenter"));
+    const fill = top.querySelector(".message-toast-progress-fill");
+    return fill instanceof HTMLElement
+      ? Number(fill.getAnimations()[0]?.currentTime ?? -1)
+      : -1;
+  })()`);
+  assert(
+    progressedTime > 500 && resetTime >= 0 && resetTime < 150,
+    `toast hover did not reset its three-second progress: ${progressedTime} -> ${resetTime}`,
+  );
+
+  await clickButton(first, "Long Markdown");
+  await waitForPage(
+    first,
+    `document.querySelector("#messages-count")?.textContent === "3" &&
+      document.querySelectorAll(".message-toast").length === 3 &&
+      document.querySelector(".message-toast-top .markdown h1")?.textContent === "Deployment summary" &&
+      document.querySelector(".message-toast-top .markdown table") !== null`,
+    "long Markdown toast stack",
+  );
+  const markdownStack = await first.evaluate<{
+    valid: boolean;
+    heights: number[];
+    bottomOffsets: number[];
+    bodyClientHeight: number;
+    bodyScrollHeight: number;
+    overflow: string;
+  }>(`(() => {
+    const cards = [...document.querySelectorAll(".message-toast")];
+    const top = cards[0];
+    const body = top?.querySelector(".message-toast-body");
+    if (!(top instanceof HTMLElement) || !(body instanceof HTMLElement) ||
+        cards.length !== 3 || cards.some((card) => !(card instanceof HTMLElement))) {
+      return { valid: false, heights: [], bottomOffsets: [], bodyClientHeight: 0, bodyScrollHeight: 0, overflow: "" };
+    }
+    top.dispatchEvent(new MouseEvent("mouseenter"));
+    const typedCards = cards;
+    const bounds = typedCards.map((card) => card.getBoundingClientRect());
+    const rootSize = parseFloat(getComputedStyle(document.documentElement).fontSize);
+    const expectedOffset = rootSize * 0.5;
+    const widthsMatch = bounds.every((item) => Math.abs(item.width - bounds[0].width) < 0.5);
+    const bottomsMatch = bounds.every((item, index) =>
+      Math.abs(item.bottom - bounds[0].bottom - index * expectedOffset) < 1);
+    return {
+      valid: bounds[0].height > rootSize * 5 + 40 &&
+        bounds[0].height <= rootSize * 25 + 1 &&
+        Math.abs(bounds[1].height - rootSize * 5) < 1 &&
+        Math.abs(bounds[2].height - rootSize * 5) < 1 &&
+        widthsMatch && bottomsMatch &&
+        body.scrollHeight > body.clientHeight &&
+        getComputedStyle(body).overflowY === "auto" &&
+        body.querySelector("h1") !== null && body.querySelector("h2") !== null &&
+        body.querySelector("table") !== null && body.querySelector("ul") !== null &&
+        body.querySelector("code") !== null,
+      heights: bounds.map((item) => item.height),
+      bottomOffsets: bounds.map((item) => item.bottom - bounds[0].bottom),
+      bodyClientHeight: body.clientHeight,
+      bodyScrollHeight: body.scrollHeight,
+      overflow: getComputedStyle(body).overflowY,
+    };
+  })()`);
+  assert(
+    markdownStack.valid,
+    `expanded Markdown toast geometry is invalid: ${
+      JSON.stringify(markdownStack)
+    }`,
+  );
+  const expiringMessageID = await first.evaluate<string>(`(() => {
+    const top = document.querySelector(".message-toast-top");
+    const toggle = document.querySelector("#session-menu-toggle");
+    if (!(top instanceof HTMLElement) || !(toggle instanceof HTMLElement)) return "";
+    const cardBounds = top.getBoundingClientRect();
+    const toggleBounds = toggle.getBoundingClientRect();
+    window.__the8020MessageArchive = {
+      observed: false,
+      expectedX: toggleBounds.left + toggleBounds.width / 2 -
+        (cardBounds.left + cardBounds.width / 2),
+      expectedY: toggleBounds.top + toggleBounds.height / 2 -
+        (cardBounds.top + cardBounds.height / 2),
+    };
+    new MutationObserver(() => {
+      if (!top.classList.contains("message-toast-leaving") ||
+          window.__the8020MessageArchive.observed) return;
+      const style = getComputedStyle(top);
+      Object.assign(window.__the8020MessageArchive, {
+        observed: true,
+        exitX: parseFloat(top.style.getPropertyValue("--message-exit-x")),
+        exitY: parseFloat(top.style.getPropertyValue("--message-exit-y")),
+        animationName: style.animationName,
+      });
+    }).observe(top, { attributes: true, attributeFilter: ["class"] });
+    top.dispatchEvent(new MouseEvent("mouseenter"));
+    return top.dataset.messageId ?? "";
+  })()`);
+  assert(
+    expiringMessageID.length > 0,
+    "expiring Markdown toast has no identity",
+  );
+  await waitForPage(
+    first,
+    `document.querySelector("#messages-count")?.textContent === "3" &&
+      document.querySelectorAll(".message-toast").length === 2`,
+    "oldest toast archive animation",
+    5_000,
+  );
+  const archive = await first.evaluate<{
+    observed: boolean;
+    expectedX: number;
+    expectedY: number;
+    exitX?: number;
+    exitY?: number;
+    animationName?: string;
+  }>(`window.__the8020MessageArchive`);
+  assert(
+    archive.observed && archive.animationName === "message-toast-archive" &&
+      Math.abs((archive.exitX ?? Infinity) - archive.expectedX) < 2 &&
+      Math.abs((archive.exitY ?? Infinity) - archive.expectedY) < 2,
+    `toast did not animate toward the session menu: ${JSON.stringify(archive)}`,
+  );
+  await clickSessionMenuAction(first, "#messages-open");
+  await waitForPage(
+    first,
+    `document.querySelector("#message-dialog")?.open === true &&
+      document.querySelectorAll(".message-history-entry").length === 3 &&
+      document.querySelector('.message-history-entry[open][data-focused="true"]') !== null`,
+    "message history modal",
+  );
+  const historyState = await first.evaluate<{
+    focusedID: string;
+    count: number;
+    overflow: string;
+    maxHeight: string;
+    markdown: boolean;
+  }>(`(() => {
+    const list = document.querySelector("#message-history-list");
+    const focused = list?.querySelector('.message-history-entry[open][data-focused="true"]');
+    return {
+      focusedID: focused?.getAttribute("data-message-id") ?? "",
+      count: list?.querySelectorAll(".message-history-entry").length ?? 0,
+      overflow: list instanceof HTMLElement ? getComputedStyle(list).overflowY : "",
+      maxHeight: list instanceof HTMLElement ? getComputedStyle(list).maxHeight : "",
+      markdown: focused?.querySelector(".markdown table") !== null,
+    };
+  })()`);
+  assert(
+    historyState.focusedID === expiringMessageID &&
+      historyState.count === 3 && historyState.overflow === "auto" &&
+      historyState.markdown,
+    `message history did not focus the archived Markdown message: ${
+      JSON.stringify(historyState)
+    }`,
+  );
+  await click(first, "#message-dialog-close");
+
+  await clickButton(first, "Message limits");
+  await waitForPage(
+    first,
+    `document.querySelector("#messages-count")?.textContent === "100" &&
+      document.querySelectorAll(".message-toast").length === 10`,
+    "bounded message burst",
+  );
+  const boundedToasts = await first.evaluate<string[]>(`(() => {
+    const cards = [...document.querySelectorAll(".message-toast")];
+    cards[0]?.dispatchEvent(new MouseEvent("mouseenter"));
+    return cards.map((card) => card.textContent?.replace(/\\s+/g, " ").trim() ?? "");
+  })()`);
+  assert(
+    boundedToasts.length === 10 &&
+      boundedToasts[0]?.includes("Burst message 96 of 105.") === true &&
+      boundedToasts.at(-1)?.includes("Burst message 105 of 105.") === true,
+    `toast rendering was not capped to the last ten messages: ${
+      JSON.stringify(boundedToasts)
+    }`,
+  );
+  await clickSessionMenuAction(first, "#messages-open");
+  await waitForPage(
+    first,
+    `document.querySelector("#message-dialog")?.open === true &&
+      document.querySelectorAll(".message-history-entry").length === 100`,
+    "bounded message history",
+  );
+  const boundedHistory = await first.evaluate<{
+    entries: string[];
+    renderedBodies: number;
+  }>(`({
+    entries: [...document.querySelectorAll(".message-history-entry")]
+      .map((entry) => entry.textContent?.replace(/\\s+/g, " ").trim() ?? ""),
+    renderedBodies: document.querySelectorAll(".message-history-body").length,
+  })`);
+  assert(
+    boundedHistory.entries.length === 100 &&
+      boundedHistory.entries[0]?.includes("Burst message 6 of 105.") === true &&
+      boundedHistory.entries.at(-1)?.includes("Burst message 105 of 105.") ===
+        true &&
+      boundedHistory.renderedBodies === 1,
+    `message history was not capped to the last hundred messages: ${
+      JSON.stringify([
+        boundedHistory.entries.length,
+        boundedHistory.entries[0],
+        boundedHistory.entries.at(-1),
+        boundedHistory.renderedBodies,
+      ])
+    }`,
+  );
+  await click(first, "#message-dialog-close");
+  await clickButton(first, "Single message");
+  await waitForPage(
+    first,
+    `document.querySelector("#messages-count")?.textContent === "1" &&
+      document.querySelectorAll(".message-toast").length === 1 &&
+      document.querySelector(".message-toast-body")?.textContent?.includes("one informational message") === true`,
+    "roundtrip message reset",
+  );
+
+  await first.evaluate(`(() => {
+    const app = document.querySelector("#app");
+    const stack = document.querySelector("#message-toast-stack");
+    const previousScreen = document.querySelector(".screen");
+    window.__the8020AsyncMessageOrder = [];
+    if (app instanceof HTMLElement) {
+      new MutationObserver(() => {
+        if (document.querySelector(".screen") !== previousScreen &&
+            !window.__the8020AsyncMessageOrder.includes("screen")) {
+          window.__the8020AsyncMessageOrder.push("screen");
+        }
+      }).observe(app, { childList: true });
+    }
+    if (stack instanceof HTMLElement) {
+      new MutationObserver(() => {
+        if (stack.querySelector(".message-toast") !== null &&
+            !window.__the8020AsyncMessageOrder.includes("message")) {
+          window.__the8020AsyncMessageOrder.push("message");
+        }
+      }).observe(stack, { childList: true });
+    }
+  })()`);
+  await clickButton(first, "Async messages");
+  await waitForPage(
+    first,
+    `document.querySelector("#messages-count")?.textContent === "3" &&
+      document.querySelectorAll(".message-toast").length === 3`,
+    "asynchronous backend messages",
+  );
+  const asyncState = await first.evaluate<{
+    order: string[];
+    kinds: string[];
+  }>(`({
+    order: window.__the8020AsyncMessageOrder ?? [],
+    kinds: [...document.querySelectorAll(".message-toast")].map((card) => card.getAttribute("data-message-kind") ?? ""),
+  })`);
+  assert(
+    asyncState.order[0] === "screen" && asyncState.order[1] === "message" &&
+      asyncState.kinds.join(",") === "info,success,warning",
+    `messages did not arrive asynchronously after the next screen: ${
+      JSON.stringify(asyncState)
+    }`,
+  );
   await setValue(first, '[data-bind="email"]', "changed@example.test");
   assert(
     await first.evaluate<boolean>(
@@ -2199,7 +2520,7 @@ try {
     }`,
   );
   console.log(
-    "Phase 1D browser E2E passed: login, browser-only persistent themes, responsive semantic field layouts, kernel-restart stale-route recovery, development Bash console, development activation and start/stop/restart/reset controls, package manifest/Git/content inspection, package-owned UUI session administration, service control, shared-node auth, programs, short dumps, recovery, reconnect, reload, isolation, and logout",
+    "Phase 1D browser E2E passed: login, browser-only persistent themes, responsive semantic field layouts, bounded Markdown and asynchronous messages, kernel-restart stale-route recovery, development Bash console, development activation and start/stop/restart/reset controls, package manifest/Git/content inspection, package-owned UUI session administration, service control, shared-node auth, programs, short dumps, recovery, reconnect, reload, isolation, and logout",
   );
 } finally {
   for (const page of pages) page.close();
@@ -2945,7 +3266,7 @@ async function waitForScreen(
 ): Promise<void> {
   await waitForPage(
     page,
-    `document.querySelector("#connection-state")?.textContent === "Connected" && document.querySelector("h1")?.textContent?.trim() === ${
+    `document.querySelector("#connection-state")?.textContent === "Connected" && document.querySelector(".screen > h1.screen-title")?.textContent?.trim() === ${
       JSON.stringify(title)
     } && document.title === ${JSON.stringify(`80|20 ${title}`)}`,
     title,

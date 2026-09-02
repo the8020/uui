@@ -2,6 +2,15 @@ import uiConfig from "./ui-config.json" with { type: "json" };
 
 export const UUI_PROTOCOL_VERSION = uiConfig.protocolVersion;
 export const BACK_EVENT = "back" as const;
+export const UUI_MESSAGE_KINDS = [
+  "info",
+  "success",
+  "warning",
+  "error",
+] as const;
+export const MAX_UUI_MESSAGE_BODY_LENGTH = 20_000;
+
+export type UUIMessageKind = typeof UUI_MESSAGE_KINDS[number];
 
 export type ScreenEventType =
   | "action"
@@ -146,7 +155,7 @@ export interface ScreenCloseMessage extends ServerMessageBase {
 export interface NotificationMessage extends ServerMessageBase {
   type: "notification.show";
   sessionId: string;
-  level: "info" | "success" | "warning" | "error";
+  level: UUIMessageKind;
   message: string;
 }
 
@@ -282,7 +291,7 @@ export type UUIWorkerOutbound =
   | { type: "screen.close"; screenId: string }
   | {
     type: "notification.show";
-    level: "info" | "success" | "warning" | "error";
+    level: UUIMessageKind;
     message: string;
   }
   | { type: "clipboard.write"; text: string }

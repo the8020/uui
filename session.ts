@@ -13,7 +13,12 @@ import type {
   UUIClientMessage,
   UUIWorkerOutbound,
 } from "./protocol.ts";
-import { BACK_EVENT } from "./protocol.ts";
+import {
+  BACK_EVENT,
+  MAX_UUI_MESSAGE_BODY_LENGTH,
+  UUI_MESSAGE_KINDS,
+  type UUIMessageKind,
+} from "./protocol.ts";
 
 export interface ScreenEvent {
   action: string;
@@ -243,14 +248,33 @@ export async function callScreen<T extends z.ZodRawShape>(
   }
 }
 
-export function showNotification(
-  message: string,
-  level: "info" | "success" | "warning" | "error" = "info",
+export function sendMessage(
+  body: string,
+  kind: UUIMessageKind = "info",
 ): void {
   if (channel === undefined) {
-    throw new Error("UUI session channel is not bound");
+    throw new Error("sendMessage() requires a bound UUI session Worker");
   }
-  channel.send({ type: "notification.show", level, message });
+  if (
+    typeof body !== "string" || body.trim().length === 0 ||
+    body.length > MAX_UUI_MESSAGE_BODY_LENGTH
+  ) {
+    throw new TypeError(
+      `message body must contain 1 to ${MAX_UUI_MESSAGE_BODY_LENGTH} characters`,
+    );
+  }
+  if (!(UUI_MESSAGE_KINDS as readonly unknown[]).includes(kind)) {
+    throw new TypeError(`unsupported UUI message kind ${String(kind)}`);
+  }
+  channel.send({ type: "notification.show", level: kind, message: body });
+}
+
+/** @deprecated Use sendMessage() for new program code. */
+export function showNotification(
+  message: string,
+  level: UUIMessageKind = "info",
+): void {
+  sendMessage(message, level);
 }
 
 export function copyText(text: string): void {
