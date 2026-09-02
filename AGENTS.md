@@ -356,7 +356,8 @@
   refits while overflow is still required. It also covers immediate rapid-event
   suppression and delayed loading feedback, direct home-list invocation, the
   summary-only core-admin package list and selected package manifest/Git/content
-  detail with vertically spaced content cards and service clickthrough, the
+  detail with vertically spaced content cards and service clickthrough, live
+  database catalog list/detail/synchronization through the DB package, the
   core-admin service/sandbox lists and linked details, the package-owned UUI
   session list/detail with exact-Worker inspection, bounded log, stale cleanup,
   termination, and session-service clickthrough, authorized service

@@ -1232,6 +1232,39 @@ try {
   await clickButton(first, "Back");
   await waitForScreen(first, "Welcome to 80|20");
 
+  await clickRow(first, "the8020/db/database");
+  await waitForScreen(first, "Database tables");
+  await waitForPage(
+    first,
+    `[...document.querySelectorAll(".data-list tbody tr")].filter((row) => row.textContent?.includes("the8020__demo__")).length === 3 &&
+      [...document.querySelectorAll(".data-list tbody tr")].filter((row) => row.textContent?.includes("the8020__demo__")).every((row) => row.textContent?.includes("active / synchronized"))`,
+    "synchronized demo database tables",
+  );
+  await clickRow(first, "the8020__demo__orders");
+  await waitForScreen(first, "the8020__demo__orders");
+  await waitForPage(
+    first,
+    `document.querySelector('[data-bind="state"]')?.value === "active / synchronized" &&
+      document.querySelector('[data-bind="differences"]')?.value === "" &&
+      document.querySelector('[data-bind="physical"]')?.value?.includes('"total"') === true`,
+    "database table logical and physical detail",
+  );
+  await clickButton(first, "Synchronize");
+  await waitForPage(
+    first,
+    `document.querySelector(".message-toast-body")?.textContent?.includes("Table synchronized") === true`,
+    "database table synchronization from UUI",
+  );
+  await waitForPage(
+    first,
+    `document.documentElement.hasAttribute("data-interaction-pending") === false`,
+    "database table detail refresh after synchronization",
+  );
+  await clickButton(first, "Back");
+  await waitForScreen(first, "Database tables");
+  await clickButton(first, "Back");
+  await waitForScreen(first, "Welcome to 80|20");
+
   await clickRow(first, "the8020/admin-core/packages");
   await waitForScreen(first, "Packages");
   await clickRow(first, "the8020/demo");
