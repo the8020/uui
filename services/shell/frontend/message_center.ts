@@ -119,7 +119,10 @@ export class MessageCenter {
   readonly #collection = new MessageCollection();
   readonly #cards = new Map<string, HTMLElement>();
   readonly #leavingIDs = new Set<string>();
-  readonly #archiveFallbacks = new Map<string, number>();
+  readonly #archiveFallbacks = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >();
   #activeID: string | undefined;
   #focusedID: string | undefined;
   #archivedID: string | undefined;

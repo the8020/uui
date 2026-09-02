@@ -104,7 +104,7 @@ let screen: ScreenSnapshot | undefined;
 let model: Record<string, unknown> = {};
 let interactionSequence: number | undefined;
 let connectionText = "Connecting…";
-let logoutFallback: number | undefined;
+let logoutFallback: ReturnType<typeof setTimeout> | undefined;
 let logoutRequested = false;
 const dirty = new DirtyBindings();
 const pending = new Map<

@@ -109,7 +109,7 @@ class SandboxConsole implements CustomElementInstance {
   readonly #viewport = document.createElement("div");
   readonly #resizeObserver: ResizeObserver;
   #socket: WebSocket | undefined;
-  #reconnectTimer: number | undefined;
+  #reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   #path = "";
   #configuration: ConsoleConfiguration | undefined;
   #signature = "";
