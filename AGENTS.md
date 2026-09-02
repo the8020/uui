@@ -61,10 +61,10 @@
   stale metadata.
 - `the8020/uui/sessions` explicitly scans a bounded number of bounded package
   metadata records, validates a selected record against its exact Worker with
-  `kernel.worker.invoke()`, and calls package-owned inspect, bounded
-  message-log, or terminate functions. Missing targets are stale and may be
-  cleaned by the program; no kernel Worker scan or UUI administration command
-  exists.
+  `kernel.worker.invoke()`, passes the selected persistent-execution identity,
+  and calls package-owned inspect, bounded message-log, or terminate functions.
+  Missing targets are stale and may be cleaned by the program; no kernel Worker
+  scan or UUI administration command exists.
 - Login, shell, and session declare zero minimum sandboxes and Workers. Login
   and shell share sandbox group `uui`, permit 128 Workers at 64 per sandbox, use
   concurrency 16, target 70% utilization, and retain idle Workers for two
@@ -331,40 +331,42 @@
 - `browser_e2e.ts` drives real Chromium through two isolated kernel nodes and
   receives explicit kernel-source and sibling package-workspace roots, then
   assigns distinct ephemeral main-HTTP and SSH ports to every node. The nodes
-  share authentication through the ordinary mapped `config`, `state`, and
-  `users` roots rather than private auth settings; CDP commands are bounded and
-  the test injects a UUI-subprotocol-only socket handle to force a deterministic
-  brief reconnect without altering package timing constants. Kernel-restart
-  recovery distinguishes the replacement live session from recoverable stale
-  metadata and cleans the stale record through the package-owned sessions
-  program. The suite then covers login/cookie sharing, persistent
-  Canvas-rendered xterm Bash consoles in both a real development sandbox and an
-  ordinary runtime sandbox, `xterm-256color`/`clear`, exact bottom-row fitting,
-  visibly rendered mouse selection, confirmed source and factory reset controls,
-  development activation preview statistics, required-message validation,
-  independent package commits, and clean overlay reset, per-session theme
-  persistence and future-tab theme inheritance, dark and light reload
-  initialization before first paint, responsive two/four-group layouts, semantic
-  field lengths, reserved hinted/unhinted supporting-message alignment,
-  accessible full-hint popovers, and source-ordered multi-row field placement
-  including its message slot at desktop/tablet/mobile widths, persistent
-  standard Back navigation, header action/control rendering, one-row
-  right-to-left responsive hiding, synchronized browser titles, vertical
-  overflow disclosure, and mobile viewport-edge clamping; an open disclosure
-  remains open across responsive refits while overflow is still required. It
-  also covers immediate rapid-event suppression and delayed loading feedback,
-  direct home-list invocation, the summary-only core-admin package list and
-  selected package manifest/Git/content detail with vertically spaced content
-  cards and service clickthrough, the core-admin service/sandbox lists and
-  linked details, the package-owned UUI session list/detail with exact-Worker
-  inspection, bounded log, stale cleanup, termination, and session-service
-  clickthrough, authorized service enable/disable and capacity changes including
-  percentage sliders, nested demos, dirty reconnect, reload resume, semantic and
-  asynchronous messages, adaptive one-to-five-second whole-stack hover pause,
-  direct toast-to-history targeting, rapid independent and close-all dismissal,
-  stacked-card geometry, bounded toast/history rendering, alternating long and
-  short Markdown expansion, viewport-relative history scrolling, message-history
-  focus, roundtrip clearing, TypeError/ValueError short dumps, source context,
+  install the DB package before the demo package so a fresh primary database can
+  evaluate and synchronize the demo tables during bootstrap. The nodes share
+  authentication through the ordinary mapped `config`, `state`, and `users`
+  roots rather than private auth settings; CDP commands are bounded and the test
+  injects a UUI-subprotocol-only socket handle to force a deterministic brief
+  reconnect without altering package timing constants. Kernel-restart recovery
+  distinguishes the replacement live session from recoverable stale metadata and
+  cleans the stale record through the package-owned sessions program. The suite
+  then covers login/cookie sharing, persistent Canvas-rendered xterm Bash
+  consoles in both a real development sandbox and an ordinary runtime sandbox,
+  `xterm-256color`/`clear`, exact bottom-row fitting, visibly rendered mouse
+  selection, confirmed source and factory reset controls, development activation
+  preview statistics, required-message validation, independent package commits,
+  and clean overlay reset, per-session theme persistence and future-tab theme
+  inheritance, dark and light reload initialization before first paint,
+  responsive two/four-group layouts, semantic field lengths, reserved
+  hinted/unhinted supporting-message alignment, accessible full-hint popovers,
+  and source-ordered multi-row field placement including its message slot at
+  desktop/tablet/mobile widths, persistent standard Back navigation, header
+  action/control rendering, one-row right-to-left responsive hiding,
+  synchronized browser titles, vertical overflow disclosure, and mobile
+  viewport-edge clamping; an open disclosure remains open across responsive
+  refits while overflow is still required. It also covers immediate rapid-event
+  suppression and delayed loading feedback, direct home-list invocation, the
+  summary-only core-admin package list and selected package manifest/Git/content
+  detail with vertically spaced content cards and service clickthrough, the
+  core-admin service/sandbox lists and linked details, the package-owned UUI
+  session list/detail with exact-Worker inspection, bounded log, stale cleanup,
+  termination, and session-service clickthrough, authorized service
+  enable/disable and capacity changes including percentage sliders, nested
+  demos, dirty reconnect, reload resume, semantic and asynchronous messages,
+  adaptive one-to-five-second whole-stack hover pause, direct toast-to-history
+  targeting, rapid independent and close-all dismissal, stacked-card geometry,
+  bounded toast/history rendering, alternating long and short Markdown
+  expansion, viewport-relative history scrolling, message-history focus,
+  roundtrip clearing, TypeError/ValueError short dumps, source context,
   clipboard copy, Home recovery, per-tab Worker isolation, single-Worker
   failure, and logout; administrative polling is throttled, startup failures
   include service/log diagnostics, enabled `IDLE` services are accepted before

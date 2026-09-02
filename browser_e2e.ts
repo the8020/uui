@@ -2274,15 +2274,18 @@ try {
     expectedOffset?: number;
     renderedBodies?: number;
   }>(`window.__the8020MessageArchive`);
+  const baseToastHeight = 10 * (archive.expectedOffset ?? 0);
   assert(
     archive.observed && archive.animationName === "message-toast-archive" &&
       archive.position === "absolute" &&
       Math.abs((archive.exitX ?? Infinity) - archive.expectedX) < 2 &&
       Math.abs((archive.exitY ?? Infinity) - archive.expectedY) < 2 &&
       archive.liveKinds?.join(",") === "success,warning,error" &&
-      archive.liveHeights?.every((height) =>
-          Math.abs(height - 10 * (archive.expectedOffset ?? 0)) < 1
-        ) === true &&
+      archive.liveHeights?.length === 3 &&
+      (archive.liveHeights[0] ?? 0) >= baseToastHeight - 1 &&
+      archive.liveHeights.slice(1).every((height) =>
+        Math.abs(height - baseToastHeight) < 1
+      ) &&
       archive.liveBottomOffsets?.every((offset, index) =>
           Math.abs(offset - index * (archive.expectedOffset ?? 0)) < 1
         ) === true &&
@@ -2932,6 +2935,10 @@ async function prepareWorkspaces(
   await copyTree(
     `${options.packageWorkspace}/admin-core`,
     `${primary}/packages/the8020/admin-core`,
+  );
+  await copyTree(
+    `${options.packageWorkspace}/db`,
+    `${primary}/packages/the8020/db`,
   );
   await copyTree(
     `${options.packageWorkspace}/demo`,

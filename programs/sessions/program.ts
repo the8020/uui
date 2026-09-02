@@ -207,6 +207,7 @@ async function invoke(
         nodeId: metadata.node_id,
         sandboxId: metadata.sandbox_id,
         workerId: metadata.worker_id,
+        persistentExecutionId: metadata.persistent_execution_id,
         function: functionName,
         input,
       }),
