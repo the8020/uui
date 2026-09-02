@@ -543,6 +543,7 @@ textarea {
   height: 1.75rem;
   margin-block-start: calc(var(--message-stack-depth-y) + 0.4rem);
   justify-self: end;
+  background: var(--message-soft-color);
   pointer-events: auto;
 }
 
