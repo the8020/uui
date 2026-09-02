@@ -5,10 +5,32 @@ import {
   type UUIMessageKind,
 } from "@packages/the8020/uui/mod.ts";
 import { renderMarkdown } from "../../../frontend/mod.ts";
+import { createMaterialIcon } from "./icon_text.ts";
 
 export const MAX_RENDERED_MESSAGES = 10;
 export const MAX_RETAINED_MESSAGES = 100;
-export const MESSAGE_TOAST_TIMEOUT_MILLISECONDS = 3_000;
+export const MIN_MESSAGE_TOAST_TIMEOUT_MILLISECONDS = 1_000;
+export const MAX_MESSAGE_TOAST_TIMEOUT_MILLISECONDS = 5_000;
+const MIN_MESSAGE_TOAST_LENGTH = 20;
+const MAX_MESSAGE_TOAST_LENGTH = 100;
+
+export function messageToastTimeoutMilliseconds(body: string): number {
+  const length = [...body.trim()].length;
+  if (length <= MIN_MESSAGE_TOAST_LENGTH) {
+    return MIN_MESSAGE_TOAST_TIMEOUT_MILLISECONDS;
+  }
+  if (length >= MAX_MESSAGE_TOAST_LENGTH) {
+    return MAX_MESSAGE_TOAST_TIMEOUT_MILLISECONDS;
+  }
+  const progress = (length - MIN_MESSAGE_TOAST_LENGTH) /
+    (MAX_MESSAGE_TOAST_LENGTH - MIN_MESSAGE_TOAST_LENGTH);
+  return Math.round(
+    MIN_MESSAGE_TOAST_TIMEOUT_MILLISECONDS +
+      progress *
+        (MAX_MESSAGE_TOAST_TIMEOUT_MILLISECONDS -
+          MIN_MESSAGE_TOAST_TIMEOUT_MILLISECONDS),
+  );
+}
 
 export interface PresentedMessage {
   readonly id: string;
@@ -103,6 +125,9 @@ export class MessageCenter {
   #archivedID: string | undefined;
   #progressAnimation: Animation | undefined;
   #renderFrame: number | undefined;
+  #dismissAllAvailable = false;
+  #stackHovered = false;
+  #stackFocused = false;
   #disposed = false;
 
   constructor(elements: MessageCenterElements) {
@@ -116,6 +141,29 @@ export class MessageCenter {
     });
     elements.dismissAllButton.addEventListener("click", () => {
       this.#dismissAllToasts();
+    });
+    elements.dismissAllButton.replaceChildren(
+      createMaterialIcon("tab_close", undefined, { decorativeIcons: true }),
+    );
+    elements.toastRegion.addEventListener("mouseenter", () => {
+      this.#stackHovered = true;
+      this.#pauseProgress();
+    });
+    elements.toastRegion.addEventListener("mouseleave", () => {
+      this.#stackHovered = false;
+      this.#resumeProgress();
+    });
+    elements.toastRegion.addEventListener("focusin", () => {
+      this.#stackFocused = true;
+      this.#pauseProgress();
+    });
+    elements.toastRegion.addEventListener("focusout", () => {
+      queueMicrotask(() => {
+        this.#stackFocused = elements.toastRegion.contains(
+          document.activeElement,
+        );
+        this.#resumeProgress();
+      });
     });
     this.#updateMenuCount();
   }
@@ -158,6 +206,9 @@ export class MessageCenter {
     this.#leavingIDs.clear();
     this.#focusedID = undefined;
     this.#archivedID = undefined;
+    this.#dismissAllAvailable = false;
+    this.#stackHovered = false;
+    this.#stackFocused = false;
     this.#collection.clear();
     for (const card of this.#cards.values()) card.remove();
     this.#cards.clear();
@@ -190,6 +241,8 @@ export class MessageCenter {
 
   #syncToasts(): void {
     const visible = this.#collection.visible();
+    if (visible.length > 1) this.#dismissAllAvailable = true;
+    else if (visible.length === 0) this.#dismissAllAvailable = false;
     const visibleIDs = new Set(visible.map((message) => message.id));
     for (const id of this.#cards.keys()) {
       if (!visibleIDs.has(id) && !this.#leavingIDs.has(id)) {
@@ -206,6 +259,7 @@ export class MessageCenter {
       card.classList.toggle("message-toast-top", top);
       card.toggleAttribute("aria-hidden", !top);
       card.inert = !top;
+      this.#syncToastBody(card, message, top);
       card.style.setProperty(
         "--message-stack-offset-y",
         `${index * 0.5}rem`,
@@ -217,7 +271,8 @@ export class MessageCenter {
       "--message-stack-depth-y",
       `${Math.max(0, visible.length - 1) * 0.5}rem`,
     );
-    this.#elements.dismissAllButton.hidden = visible.length === 0;
+    this.#elements.dismissAllButton.hidden = !this.#dismissAllAvailable ||
+      visible.length === 0;
     this.#elements.toastRegion.hidden = visible.length === 0 &&
       this.#leavingIDs.size === 0;
     const nextID = visible[0]?.id;
@@ -227,8 +282,7 @@ export class MessageCenter {
       return;
     }
     if (this.#activeID !== nextID) {
-      const card = this.#cards.get(nextID);
-      this.#startProgress(nextID, card?.matches(":hover") === true);
+      this.#startProgress(nextID, this.#stackInteractionPaused());
     }
   }
 
@@ -255,7 +309,9 @@ export class MessageCenter {
       `Dismiss ${messageKindLabel(message.kind).toLowerCase()} message`,
     );
     close.title = "Dismiss message";
-    close.textContent = "\u00d7";
+    close.append(
+      createMaterialIcon("close", undefined, { decorativeIcons: true }),
+    );
     close.addEventListener("click", (event) => {
       event.stopPropagation();
       this.#archiveToast(message.id);
@@ -264,7 +320,6 @@ export class MessageCenter {
 
     const body = document.createElement("div");
     body.className = "message-toast-body";
-    renderMarkdown(body, message.body);
 
     const progress = document.createElement("div");
     progress.className = "message-toast-progress";
@@ -301,17 +356,25 @@ export class MessageCenter {
       event.preventDefault();
       this.#openHistory(message.id);
     });
-    card.addEventListener("mouseenter", () => {
-      if (this.#activeID === message.id && !this.#leavingIDs.has(message.id)) {
-        this.#startProgress(message.id, true);
-      }
-    });
-    card.addEventListener("mouseleave", () => {
-      if (this.#activeID === message.id && !this.#leavingIDs.has(message.id)) {
-        this.#progressAnimation?.play();
-      }
-    });
     return card;
+  }
+
+  #syncToastBody(
+    card: HTMLElement,
+    message: PresentedMessage,
+    active: boolean,
+  ): void {
+    const body = card.querySelector<HTMLElement>(".message-toast-body");
+    if (body === null) return;
+    if (!active) {
+      body.replaceChildren();
+      body.classList.remove("markdown");
+      delete body.dataset.rendered;
+      return;
+    }
+    if (body.dataset.rendered === "true") return;
+    renderMarkdown(body, message.body);
+    body.dataset.rendered = "true";
   }
 
   #startProgress(id: string, paused = false): void {
@@ -320,12 +383,14 @@ export class MessageCenter {
       ".message-toast-progress-fill",
     );
     if (card === undefined || fill === null || fill === undefined) return;
+    const message = this.#collection.visible().find((item) => item.id === id);
+    if (message === undefined) return;
     this.#stopProgress();
     this.#activeID = id;
     this.#progressAnimation = fill.animate(
       [{ transform: "scaleX(1)" }, { transform: "scaleX(0)" }],
       {
-        duration: MESSAGE_TOAST_TIMEOUT_MILLISECONDS,
+        duration: messageToastTimeoutMilliseconds(message.body),
         easing: "linear",
         fill: "forwards",
       },
@@ -339,6 +404,21 @@ export class MessageCenter {
         this.#archiveToast(id);
       }
     }, { once: true });
+  }
+
+  #pauseProgress(): void {
+    const id = this.#activeID;
+    if (id === undefined || this.#leavingIDs.has(id)) return;
+    this.#startProgress(id, true);
+  }
+
+  #resumeProgress(): void {
+    if (this.#stackInteractionPaused()) return;
+    this.#progressAnimation?.play();
+  }
+
+  #stackInteractionPaused(): boolean {
+    return this.#stackHovered || this.#stackFocused;
   }
 
   #stopProgress(): void {
@@ -357,7 +437,10 @@ export class MessageCenter {
     this.#syncToasts();
   }
 
-  #animateDismissedToast(id: string): void {
+  #animateDismissedToast(
+    id: string,
+    measuredBounds?: DOMRectReadOnly,
+  ): void {
     const card = this.#cards.get(id);
     if (card === undefined || this.#leavingIDs.has(id)) return;
     if (this.#activeID === id) {
@@ -368,8 +451,17 @@ export class MessageCenter {
     this.#focusedID = id;
     this.#archivedID = id;
     card.inert = true;
-    const cardBounds = card.getBoundingClientRect();
+    const cardBounds = measuredBounds ?? card.getBoundingClientRect();
+    const stackBounds = this.#elements.toastRegion.getBoundingClientRect();
     const toggleBounds = this.#elements.sessionToggle.getBoundingClientRect();
+    card.style.setProperty(
+      "--message-exit-start-y",
+      `${cardBounds.top - stackBounds.top}px`,
+    );
+    card.style.setProperty(
+      "--message-exit-height",
+      `${cardBounds.height}px`,
+    );
     card.style.setProperty(
       "--message-exit-x",
       `${
@@ -398,9 +490,15 @@ export class MessageCenter {
   }
 
   #dismissAllToasts(): void {
+    const bounds = new Map(
+      this.#collection.visible().map((message) => [
+        message.id,
+        this.#cards.get(message.id)?.getBoundingClientRect(),
+      ]),
+    );
     const ids = this.#collection.dismissAllVisible();
     for (const id of ids) {
-      this.#animateDismissedToast(id);
+      this.#animateDismissedToast(id, bounds.get(id));
     }
     this.#syncToasts();
   }

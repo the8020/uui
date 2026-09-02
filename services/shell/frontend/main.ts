@@ -20,7 +20,11 @@ import {
 } from "./renderer.ts";
 import { ResponsiveProgramHeader } from "./responsive_header.ts";
 import { type Theme, ThemePreferences } from "./theme.ts";
-import { renderIconText } from "./icon_text.ts";
+import {
+  createMaterialIcon,
+  type MaterialIconName,
+  renderIconText,
+} from "./icon_text.ts";
 import { MessageCenter } from "./message_center.ts";
 import { windowTitleForHeading } from "./window_title.ts";
 
@@ -125,6 +129,7 @@ renderIconText(programHeaderOverflowToggle, "[[icon=more_vert]]", {
   decorativeIcons: true,
 });
 renderIconText(sessionMenuIcon, "[[icon=menu]]", { decorativeIcons: true });
+renderSessionMenuAction(sessionLogout, "logout", "Logout");
 sessionUsername.textContent = username;
 sessionUsername.title = username;
 updateSessionMenuLabel();
@@ -377,10 +382,24 @@ function applyTheme(theme: Theme): void {
     "aria-label",
     dark ? "Switch to light mode" : "Switch to dark mode",
   );
-  renderIconText(
+  renderSessionMenuAction(
     themeToggle,
-    dark ? "[[icon=light_mode]] Light mode" : "[[icon=dark_mode]] Dark mode",
-    { decorativeIcons: true },
+    dark ? "light_mode" : "dark_mode",
+    dark ? "Light mode" : "Dark mode",
+  );
+}
+
+function renderSessionMenuAction(
+  button: HTMLButtonElement,
+  icon: MaterialIconName,
+  label: string,
+): void {
+  const text = document.createElement("span");
+  text.className = "session-menu-action-label";
+  text.textContent = label;
+  button.replaceChildren(
+    createMaterialIcon(icon, undefined, { decorativeIcons: true }),
+    text,
   );
 }
 

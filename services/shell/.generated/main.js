@@ -12898,13 +12898,16 @@ var import_xterm = __toESM(require_xterm());
 var MATERIAL_ICON_ASSETS = {
   arrow_back: "./assets/material-arrow-back-24-e083cc60.svg",
   arrow_drop_down: "./assets/material-arrow-drop-down-24-e083cc60.svg",
+  close: "./assets/material-close-24-84ccef28.svg",
   dark_mode: "./assets/material-dark-mode-24-bab57d17.svg",
   edit: "./assets/material-edit-24-a4b3c9f6.svg",
   light_mode: "./assets/material-light-mode-24-e5b6e132.svg",
+  logout: "./assets/material-logout-24-84ccef28.svg",
   menu: "./assets/material-menu-24-e083cc60.svg",
   more_vert: "./assets/material-more-vert-24-e083cc60.svg",
   refresh: "./assets/material-refresh-24-e083cc60.svg",
-  save: "./assets/material-save-24-e083cc60.svg"
+  save: "./assets/material-save-24-e083cc60.svg",
+  tab_close: "./assets/material-tab-close-24-84ccef28.svg"
 };
 var SEMANTIC_COLORS = /* @__PURE__ */ new Set([
   "text",
@@ -26262,7 +26265,23 @@ function renderMarkdown(target, source) {
 // services/shell/frontend/message_center.ts
 var MAX_RENDERED_MESSAGES = 10;
 var MAX_RETAINED_MESSAGES = 100;
-var MESSAGE_TOAST_TIMEOUT_MILLISECONDS = 3e3;
+var MIN_MESSAGE_TOAST_TIMEOUT_MILLISECONDS = 1e3;
+var MAX_MESSAGE_TOAST_TIMEOUT_MILLISECONDS = 5e3;
+var MIN_MESSAGE_TOAST_LENGTH = 20;
+var MAX_MESSAGE_TOAST_LENGTH = 100;
+function messageToastTimeoutMilliseconds(body) {
+  const length = [
+    ...body.trim()
+  ].length;
+  if (length <= MIN_MESSAGE_TOAST_LENGTH) {
+    return MIN_MESSAGE_TOAST_TIMEOUT_MILLISECONDS;
+  }
+  if (length >= MAX_MESSAGE_TOAST_LENGTH) {
+    return MAX_MESSAGE_TOAST_TIMEOUT_MILLISECONDS;
+  }
+  const progress = (length - MIN_MESSAGE_TOAST_LENGTH) / (MAX_MESSAGE_TOAST_LENGTH - MIN_MESSAGE_TOAST_LENGTH);
+  return Math.round(MIN_MESSAGE_TOAST_TIMEOUT_MILLISECONDS + progress * (MAX_MESSAGE_TOAST_TIMEOUT_MILLISECONDS - MIN_MESSAGE_TOAST_TIMEOUT_MILLISECONDS));
+}
 var MessageCollection = class {
   #history = [];
   #visible = [];
@@ -26319,6 +26338,9 @@ var MessageCenter = class {
   #archivedID;
   #progressAnimation;
   #renderFrame;
+  #dismissAllAvailable = false;
+  #stackHovered = false;
+  #stackFocused = false;
   #disposed = false;
   constructor(elements) {
     this.#elements = elements;
@@ -26331,6 +26353,27 @@ var MessageCenter = class {
     });
     elements.dismissAllButton.addEventListener("click", () => {
       this.#dismissAllToasts();
+    });
+    elements.dismissAllButton.replaceChildren(createMaterialIcon("tab_close", void 0, {
+      decorativeIcons: true
+    }));
+    elements.toastRegion.addEventListener("mouseenter", () => {
+      this.#stackHovered = true;
+      this.#pauseProgress();
+    });
+    elements.toastRegion.addEventListener("mouseleave", () => {
+      this.#stackHovered = false;
+      this.#resumeProgress();
+    });
+    elements.toastRegion.addEventListener("focusin", () => {
+      this.#stackFocused = true;
+      this.#pauseProgress();
+    });
+    elements.toastRegion.addEventListener("focusout", () => {
+      queueMicrotask(() => {
+        this.#stackFocused = elements.toastRegion.contains(document.activeElement);
+        this.#resumeProgress();
+      });
     });
     this.#updateMenuCount();
   }
@@ -26367,6 +26410,9 @@ var MessageCenter = class {
     this.#leavingIDs.clear();
     this.#focusedID = void 0;
     this.#archivedID = void 0;
+    this.#dismissAllAvailable = false;
+    this.#stackHovered = false;
+    this.#stackFocused = false;
     this.#collection.clear();
     for (const card of this.#cards.values()) card.remove();
     this.#cards.clear();
@@ -26393,6 +26439,8 @@ var MessageCenter = class {
   }
   #syncToasts() {
     const visible = this.#collection.visible();
+    if (visible.length > 1) this.#dismissAllAvailable = true;
+    else if (visible.length === 0) this.#dismissAllAvailable = false;
     const visibleIDs = new Set(visible.map((message) => message.id));
     for (const id of this.#cards.keys()) {
       if (!visibleIDs.has(id) && !this.#leavingIDs.has(id)) {
@@ -26409,12 +26457,13 @@ var MessageCenter = class {
       card.classList.toggle("message-toast-top", top);
       card.toggleAttribute("aria-hidden", !top);
       card.inert = !top;
+      this.#syncToastBody(card, message, top);
       card.style.setProperty("--message-stack-offset-y", `${index * 0.5}rem`);
       card.style.zIndex = String(MAX_RENDERED_MESSAGES - index);
       this.#elements.dismissAllButton.before(card);
     });
     this.#elements.toastRegion.style.setProperty("--message-stack-depth-y", `${Math.max(0, visible.length - 1) * 0.5}rem`);
-    this.#elements.dismissAllButton.hidden = visible.length === 0;
+    this.#elements.dismissAllButton.hidden = !this.#dismissAllAvailable || visible.length === 0;
     this.#elements.toastRegion.hidden = visible.length === 0 && this.#leavingIDs.size === 0;
     const nextID = visible[0]?.id;
     if (nextID === void 0) {
@@ -26423,8 +26472,7 @@ var MessageCenter = class {
       return;
     }
     if (this.#activeID !== nextID) {
-      const card = this.#cards.get(nextID);
-      this.#startProgress(nextID, card?.matches(":hover") === true);
+      this.#startProgress(nextID, this.#stackInteractionPaused());
     }
   }
   #createToast(message) {
@@ -26446,7 +26494,9 @@ var MessageCenter = class {
     close.type = "button";
     close.setAttribute("aria-label", `Dismiss ${messageKindLabel(message.kind).toLowerCase()} message`);
     close.title = "Dismiss message";
-    close.textContent = "\xD7";
+    close.append(createMaterialIcon("close", void 0, {
+      decorativeIcons: true
+    }));
     close.addEventListener("click", (event) => {
       event.stopPropagation();
       this.#archiveToast(message.id);
@@ -26454,7 +26504,6 @@ var MessageCenter = class {
     header.append(marker, kind, close);
     const body = document.createElement("div");
     body.className = "message-toast-body";
-    renderMarkdown(body, message.body);
     const progress = document.createElement("div");
     progress.className = "message-toast-progress";
     progress.setAttribute("aria-hidden", "true");
@@ -26481,22 +26530,27 @@ var MessageCenter = class {
       event.preventDefault();
       this.#openHistory(message.id);
     });
-    card.addEventListener("mouseenter", () => {
-      if (this.#activeID === message.id && !this.#leavingIDs.has(message.id)) {
-        this.#startProgress(message.id, true);
-      }
-    });
-    card.addEventListener("mouseleave", () => {
-      if (this.#activeID === message.id && !this.#leavingIDs.has(message.id)) {
-        this.#progressAnimation?.play();
-      }
-    });
     return card;
+  }
+  #syncToastBody(card, message, active) {
+    const body = card.querySelector(".message-toast-body");
+    if (body === null) return;
+    if (!active) {
+      body.replaceChildren();
+      body.classList.remove("markdown");
+      delete body.dataset.rendered;
+      return;
+    }
+    if (body.dataset.rendered === "true") return;
+    renderMarkdown(body, message.body);
+    body.dataset.rendered = "true";
   }
   #startProgress(id, paused = false) {
     const card = this.#cards.get(id);
     const fill = card?.querySelector(".message-toast-progress-fill");
     if (card === void 0 || fill === null || fill === void 0) return;
+    const message = this.#collection.visible().find((item) => item.id === id);
+    if (message === void 0) return;
     this.#stopProgress();
     this.#activeID = id;
     this.#progressAnimation = fill.animate([
@@ -26507,7 +26561,7 @@ var MessageCenter = class {
         transform: "scaleX(0)"
       }
     ], {
-      duration: MESSAGE_TOAST_TIMEOUT_MILLISECONDS,
+      duration: messageToastTimeoutMilliseconds(message.body),
       easing: "linear",
       fill: "forwards"
     });
@@ -26523,6 +26577,18 @@ var MessageCenter = class {
       once: true
     });
   }
+  #pauseProgress() {
+    const id = this.#activeID;
+    if (id === void 0 || this.#leavingIDs.has(id)) return;
+    this.#startProgress(id, true);
+  }
+  #resumeProgress() {
+    if (this.#stackInteractionPaused()) return;
+    this.#progressAnimation?.play();
+  }
+  #stackInteractionPaused() {
+    return this.#stackHovered || this.#stackFocused;
+  }
   #stopProgress() {
     if (this.#progressAnimation !== void 0) {
       this.#progressAnimation.cancel();
@@ -26534,7 +26600,7 @@ var MessageCenter = class {
     this.#animateDismissedToast(id);
     this.#syncToasts();
   }
-  #animateDismissedToast(id) {
+  #animateDismissedToast(id, measuredBounds) {
     const card = this.#cards.get(id);
     if (card === void 0 || this.#leavingIDs.has(id)) return;
     if (this.#activeID === id) {
@@ -26545,8 +26611,11 @@ var MessageCenter = class {
     this.#focusedID = id;
     this.#archivedID = id;
     card.inert = true;
-    const cardBounds = card.getBoundingClientRect();
+    const cardBounds = measuredBounds ?? card.getBoundingClientRect();
+    const stackBounds = this.#elements.toastRegion.getBoundingClientRect();
     const toggleBounds = this.#elements.sessionToggle.getBoundingClientRect();
+    card.style.setProperty("--message-exit-start-y", `${cardBounds.top - stackBounds.top}px`);
+    card.style.setProperty("--message-exit-height", `${cardBounds.height}px`);
     card.style.setProperty("--message-exit-x", `${toggleBounds.left + toggleBounds.width / 2 - (cardBounds.left + cardBounds.width / 2)}px`);
     card.style.setProperty("--message-exit-y", `${toggleBounds.top + toggleBounds.height / 2 - (cardBounds.top + cardBounds.height / 2)}px`);
     card.classList.remove("message-toast-top");
@@ -26564,9 +26633,13 @@ var MessageCenter = class {
     this.#archiveFallbacks.set(id, setTimeout(complete, 600));
   }
   #dismissAllToasts() {
+    const bounds = new Map(this.#collection.visible().map((message) => [
+      message.id,
+      this.#cards.get(message.id)?.getBoundingClientRect()
+    ]));
     const ids = this.#collection.dismissAllVisible();
     for (const id of ids) {
-      this.#animateDismissedToast(id);
+      this.#animateDismissedToast(id, bounds.get(id));
     }
     this.#syncToasts();
   }
@@ -26764,6 +26837,7 @@ renderIconText(programHeaderOverflowToggle, "[[icon=more_vert]]", {
 renderIconText(sessionMenuIcon, "[[icon=menu]]", {
   decorativeIcons: true
 });
+renderSessionMenuAction(sessionLogout, "logout", "Logout");
 sessionUsername.textContent = username;
 sessionUsername.title = username;
 updateSessionMenuLabel();
@@ -26983,9 +27057,15 @@ function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
   themeToggle.setAttribute("aria-pressed", String(dark));
   themeToggle.setAttribute("aria-label", dark ? "Switch to light mode" : "Switch to dark mode");
-  renderIconText(themeToggle, dark ? "[[icon=light_mode]] Light mode" : "[[icon=dark_mode]] Dark mode", {
+  renderSessionMenuAction(themeToggle, dark ? "light_mode" : "dark_mode", dark ? "Light mode" : "Dark mode");
+}
+function renderSessionMenuAction(button, icon, label) {
+  const text2 = document.createElement("span");
+  text2.className = "session-menu-action-label";
+  text2.textContent = label;
+  button.replaceChildren(createMaterialIcon(icon, void 0, {
     decorativeIcons: true
-  });
+  }), text2);
 }
 function setConnectionState(text2, state) {
   renderIconText(connectionState, text2);

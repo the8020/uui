@@ -3,13 +3,16 @@ import { humanize } from "../../../humanize.ts";
 const MATERIAL_ICON_ASSETS = {
   arrow_back: "./assets/material-arrow-back-24-e083cc60.svg",
   arrow_drop_down: "./assets/material-arrow-drop-down-24-e083cc60.svg",
+  close: "./assets/material-close-24-84ccef28.svg",
   dark_mode: "./assets/material-dark-mode-24-bab57d17.svg",
   edit: "./assets/material-edit-24-a4b3c9f6.svg",
   light_mode: "./assets/material-light-mode-24-e5b6e132.svg",
+  logout: "./assets/material-logout-24-84ccef28.svg",
   menu: "./assets/material-menu-24-e083cc60.svg",
   more_vert: "./assets/material-more-vert-24-e083cc60.svg",
   refresh: "./assets/material-refresh-24-e083cc60.svg",
   save: "./assets/material-save-24-e083cc60.svg",
+  tab_close: "./assets/material-tab-close-24-84ccef28.svg",
 } as const;
 
 const SEMANTIC_COLORS = new Set([

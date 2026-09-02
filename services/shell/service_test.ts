@@ -180,11 +180,15 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   );
   assertMatch(
     cssBody,
-    /\.message-toast-stack\s*\{[^}]*--message-toast-base-height:\s*5rem;[^}]*position:\s*absolute;[^}]*inset-block-start:\s*calc\(100% \+ 10px\);[^}]*inset-inline-end:\s*0;[^}]*width:\s*min\(20rem, calc\(100vw - 20px\)\);/s,
+    /\.session-menu-panel \.session-menu-action\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*1\.65rem minmax\(0, 1fr\);[^}]*text-align:\s*left;/s,
   );
   assertMatch(
     cssBody,
-    /\.message-toast\s*\{[^}]*grid-area:\s*1 \/ 1;[^}]*width:\s*100%;[^}]*min-height:\s*var\(--message-toast-base-height\);[^}]*max-height:\s*25em;[^}]*overflow:\s*hidden;/s,
+    /\.message-toast-stack\s*\{[^}]*--message-toast-base-height:\s*5rem;[^}]*position:\s*absolute;[^}]*inset-block-start:\s*calc\(100% \+ 10px\);[^}]*inset-inline-end:\s*0;[^}]*width:\s*min\(20rem, calc\(100vw - 20px\)\);[^}]*pointer-events:\s*auto;/s,
+  );
+  assertMatch(
+    cssBody,
+    /\.message-toast\s*\{[^}]*grid-area:\s*1 \/ 1;[^}]*width:\s*100%;[^}]*min-height:\s*var\(--message-toast-base-height\);[^}]*max-height:\s*25em;[^}]*overflow:\s*hidden;[^}]*pointer-events:\s*none;[^}]*user-select:\s*none;/s,
   );
   assertMatch(
     cssBody,
@@ -206,11 +210,15 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   );
   assertMatch(
     cssBody,
+    /\.message-toast-close,\s*\.message-toast-dismiss-all\s*\{[^}]*place-items:\s*center;[^}]*border:\s*0;[^}]*background:\s*transparent;/s,
+  );
+  assertMatch(
+    cssBody,
     /\.message-toast-progress-fill\s*\{[^}]*transform:\s*scaleX\(1\);[^}]*transform-origin:\s*left center;/s,
   );
   assertMatch(
     cssBody,
-    /\.message-toast-leaving\s*\{[^}]*animation:\s*message-toast-archive 320ms/s,
+    /\.message-toast-leaving\s*\{[^}]*position:\s*absolute;[^}]*inset-block-start:\s*var\(--message-exit-start-y, 0px\);[^}]*height:\s*var\(--message-exit-height, var\(--message-toast-base-height\)\);[^}]*animation:\s*message-toast-archive 320ms/s,
   );
   assertMatch(
     cssBody,
@@ -558,6 +566,9 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
     ["material-menu-24-e083cc60.svg", 300, "M3 18h18"],
     ["material-refresh-24-e083cc60.svg", 500, "M17.65 6.35"],
     ["material-save-24-e083cc60.svg", 500, "M17 3H5"],
+    ["material-close-24-84ccef28.svg", 400, "M19 6.41"],
+    ["material-logout-24-84ccef28.svg", 400, "m17 7"],
+    ["material-tab-close-24-84ccef28.svg", 700, "m476-420"],
   ] as const;
   for (const [name, maximumLength, marker] of staticAssets) {
     const asset = await service.fetch(

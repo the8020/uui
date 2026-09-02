@@ -1,10 +1,29 @@
 import { assertEquals } from "@std/assert";
 import {
+  MAX_MESSAGE_TOAST_TIMEOUT_MILLISECONDS,
   MAX_RENDERED_MESSAGES,
   MAX_RETAINED_MESSAGES,
   MessageCollection,
+  messageToastTimeoutMilliseconds,
+  MIN_MESSAGE_TOAST_TIMEOUT_MILLISECONDS,
   type PresentedMessage,
 } from "./message_center.ts";
+
+Deno.test("message timeout scales from one to five seconds", () => {
+  assertEquals(
+    messageToastTimeoutMilliseconds("short"),
+    MIN_MESSAGE_TOAST_TIMEOUT_MILLISECONDS,
+  );
+  assertEquals(messageToastTimeoutMilliseconds("x".repeat(20)), 1_000);
+  assertEquals(messageToastTimeoutMilliseconds("x".repeat(40)), 2_000);
+  assertEquals(messageToastTimeoutMilliseconds("x".repeat(60)), 3_000);
+  assertEquals(messageToastTimeoutMilliseconds("x".repeat(80)), 4_000);
+  assertEquals(messageToastTimeoutMilliseconds("x".repeat(100)), 5_000);
+  assertEquals(
+    messageToastTimeoutMilliseconds("x".repeat(1_000)),
+    MAX_MESSAGE_TOAST_TIMEOUT_MILLISECONDS,
+  );
+});
 
 Deno.test("message collection keeps only the last 10 toasts and 100 messages", () => {
   const messages = new MessageCollection();

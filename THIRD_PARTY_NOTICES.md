@@ -66,13 +66,14 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## Google Material Icons
 
-The UUI shell includes the 24px filled `arrow_back`, `arrow_drop_down`,
-`dark_mode`, `edit`, `light_mode`, `menu`, `more_vert`, `refresh`, and `save`
-SVGs from Google Material Icons. The `edit` icon is vendored from
-`google/material-design-icons` at Git object
-`a4b3c9f6b79b1a46ddff7e9a29b4e2a7e9c077bb`; the other optimized icons are
-vendored from Git object `e083cc60a0828fdd3b404cea0cb8a5b900e9c23e`. They are
-provided under the Apache License, Version 2.0.
+The UUI shell includes the 24px filled `arrow_back`, `arrow_drop_down`, `close`,
+`dark_mode`, `edit`, `light_mode`, `logout`, `menu`, `more_vert`, `refresh`,
+`save`, and outlined `tab_close` SVGs from Google Material Icons and Material
+Symbols. The `edit` icon is vendored from `google/material-design-icons` at Git
+object `a4b3c9f6b79b1a46ddff7e9a29b4e2a7e9c077bb`; the other optimized icons are
+vendored from Git objects `e083cc60a0828fdd3b404cea0cb8a5b900e9c23e` and
+`84ccef280841abfac506afc4ad4a2782f6d0a1d0`. They are provided under the Apache
+License, Version 2.0.
 
 Apache License Version 2.0, January 2004 http://www.apache.org/licenses/
 

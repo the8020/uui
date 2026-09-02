@@ -280,6 +280,9 @@ try {
     "/the8020/uui/shell/assets/material-edit-24-a4b3c9f6.svg",
     "/the8020/uui/shell/assets/material-light-mode-24-e5b6e132.svg",
     "/the8020/uui/shell/assets/material-dark-mode-24-bab57d17.svg",
+    "/the8020/uui/shell/assets/material-close-24-84ccef28.svg",
+    "/the8020/uui/shell/assets/material-logout-24-84ccef28.svg",
+    "/the8020/uui/shell/assets/material-tab-close-24-84ccef28.svg",
   ].map(async (path) => {
     const response = await fetch(path);
     return {
@@ -338,17 +341,32 @@ try {
       const menu = document.querySelector("#session-menu");
       const toggle = document.querySelector("#session-menu-toggle");
       const panel = document.querySelector("#session-menu-panel");
+      const messages = document.querySelector("#messages-open");
       const theme = document.querySelector("#theme-toggle");
       const logout = document.querySelector("#session-logout");
       if (!(menu instanceof HTMLDetailsElement) || !(toggle instanceof HTMLElement) ||
-        !(panel instanceof HTMLElement) || !(theme instanceof HTMLButtonElement) ||
+        !(panel instanceof HTMLElement) || !(messages instanceof HTMLButtonElement) ||
+        !(theme instanceof HTMLButtonElement) ||
         !(logout instanceof HTMLButtonElement)) return false;
       const toggleBounds = toggle.getBoundingClientRect();
       const panelBounds = panel.getBoundingClientRect();
+      const actions = [messages, theme, logout];
+      const labels = actions.map((action) =>
+        action.querySelector(".session-menu-action-label")
+      );
+      const labelLefts = labels.map((label) => label?.getBoundingClientRect().left ?? -1);
+      const alignedLabels = labelLefts.every((left) =>
+        Math.abs(left - labelLefts[0]) < 1
+      );
       return menu.open && toggle.getAttribute("aria-expanded") === "true" &&
         toggle.getAttribute("aria-label") === "admin, Connected Close session menu" &&
         getComputedStyle(panel).display === "grid" && panelBounds.top >= toggleBounds.bottom &&
         Math.abs(panelBounds.right - toggleBounds.right) < 2 &&
+        actions.every((action) => getComputedStyle(action).textAlign === "left") &&
+        messages.firstElementChild?.id === "messages-count" &&
+        theme.firstElementChild?.getAttribute("data-material-icon")?.match(/^(light_mode|dark_mode)$/) &&
+        logout.firstElementChild?.getAttribute("data-material-icon") === "logout" &&
+        labels.every((label) => label instanceof HTMLElement) && alignedLabels &&
         ["Light mode", "Dark mode"].includes(theme.textContent?.trim() ?? "") &&
         logout.textContent?.trim() === "Logout";
     })()`,
@@ -1851,8 +1869,15 @@ try {
     expectedOffset: number;
     anchorGap: number;
     animationCount: number;
+    animationDuration: number;
     closeButtons: number;
     dismissAllBelow: boolean;
+    dismissAllVisible: boolean;
+    borderlessControls: boolean;
+    centeredCloseIcon: boolean;
+    closeAllIcon: boolean;
+    onlyTopBodyRendered: boolean;
+    stackOwnsHover: boolean;
     unifiedHeader: boolean;
   }>(`(() => {
     const stack = document.querySelector("#message-toast-stack");
@@ -1862,7 +1887,7 @@ try {
     if (!(stack instanceof HTMLElement) || !(toggle instanceof HTMLElement) ||
         !(dismissAll instanceof HTMLButtonElement) ||
         cards.some((card) => !(card instanceof HTMLElement)) || cards.length !== 4) {
-      return { valid: false, kinds: [], heights: [], bottomOffsets: [], expectedOffset: 0, anchorGap: 0, animationCount: 0, closeButtons: 0, dismissAllBelow: false, unifiedHeader: false };
+      return { valid: false, kinds: [], heights: [], bottomOffsets: [], expectedOffset: 0, anchorGap: 0, animationCount: 0, animationDuration: 0, closeButtons: 0, dismissAllBelow: false, dismissAllVisible: false, borderlessControls: false, centeredCloseIcon: false, closeAllIcon: false, onlyTopBodyRendered: false, stackOwnsHover: false, unifiedHeader: false };
     }
     const typedCards = cards;
     const bounds = typedCards.map((card) => card.getBoundingClientRect());
@@ -1873,6 +1898,14 @@ try {
     const header = typedCards[0].querySelector(".message-toast-header");
     const close = typedCards[0].querySelector(".message-toast-close");
     const headerStyle = header instanceof HTMLElement ? getComputedStyle(header) : undefined;
+    const closeIcon = close?.querySelector('[data-material-icon="close"]');
+    const closeBounds = close instanceof HTMLElement ? close.getBoundingClientRect() : undefined;
+    const closeIconBounds = closeIcon instanceof HTMLElement ? closeIcon.getBoundingClientRect() : undefined;
+    const controls = [
+      ...typedCards.map((card) => card.querySelector(".message-toast-close")),
+      dismissAll,
+    ];
+    const animation = typedCards[0].querySelector(".message-toast-progress-fill")?.getAnimations()[0];
     const widthsMatch = bounds.every((item) => Math.abs(item.width - bounds[0].width) < 0.5);
     const heightsMatch = bounds.every((item) => Math.abs(item.height - rootSize * 5) < 1);
     const bottomsMatch = bounds.every((item, index) =>
@@ -1889,11 +1922,28 @@ try {
       expectedOffset,
       anchorGap: bounds[0].top - toggleBounds.bottom,
       animationCount: typedCards[0].querySelector(".message-toast-progress-fill")?.getAnimations().length ?? 0,
+      animationDuration: Number(animation?.effect?.getTiming().duration ?? 0),
       closeButtons: typedCards.filter((card) =>
         card.querySelector(".message-toast-close") instanceof HTMLButtonElement
       ).length,
       dismissAllBelow: dismissAllBounds.top > bounds.at(-1).bottom &&
         Math.abs(dismissAllBounds.right - bounds[0].right) < 1,
+      dismissAllVisible: !dismissAll.hidden,
+      borderlessControls: controls.every((control) =>
+        control instanceof HTMLElement && getComputedStyle(control).borderTopWidth === "0px"
+      ),
+      centeredCloseIcon: closeBounds !== undefined && closeIconBounds !== undefined &&
+        Math.abs(closeBounds.left + closeBounds.width / 2 -
+          (closeIconBounds.left + closeIconBounds.width / 2)) < 0.5 &&
+        Math.abs(closeBounds.top + closeBounds.height / 2 -
+          (closeIconBounds.top + closeIconBounds.height / 2)) < 0.5,
+      closeAllIcon: dismissAll.querySelector('[data-material-icon="tab_close"]') !== null,
+      onlyTopBodyRendered: typedCards[0].querySelector(".message-toast-body.markdown") !== null &&
+        typedCards.slice(1).every((card) =>
+          card.querySelector(".message-toast-body")?.childElementCount === 0
+        ),
+      stackOwnsHover: getComputedStyle(stack).pointerEvents === "auto" &&
+        getComputedStyle(typedCards[0]).userSelect === "none",
       unifiedHeader: headerStyle?.backgroundColor === "rgba(0, 0, 0, 0)" &&
         headerStyle.borderBottomWidth === "0px" && close instanceof HTMLElement &&
         Math.abs(close.getBoundingClientRect().right - bounds[0].right) < rootSize,
@@ -1903,7 +1953,12 @@ try {
     typeStack.valid &&
       typeStack.kinds.join(",") === "info,success,warning,error" &&
       typeStack.animationCount === 1 && typeStack.closeButtons === 4 &&
-      typeStack.dismissAllBelow && typeStack.unifiedHeader,
+      typeStack.animationDuration > 1_000 &&
+      typeStack.animationDuration < 5_000 &&
+      typeStack.dismissAllBelow && typeStack.dismissAllVisible &&
+      typeStack.borderlessControls && typeStack.centeredCloseIcon &&
+      typeStack.closeAllIcon && typeStack.onlyTopBodyRendered &&
+      typeStack.stackOwnsHover && typeStack.unifiedHeader,
     `semantic toast stack geometry is invalid: ${JSON.stringify(typeStack)}`,
   );
   await delay(700);
@@ -1914,10 +1969,10 @@ try {
       : -1;
   })()`);
   const resetTime = await first.evaluate<number>(`(() => {
-    const top = document.querySelector(".message-toast-top");
-    if (!(top instanceof HTMLElement)) return -1;
-    top.dispatchEvent(new MouseEvent("mouseenter"));
-    const fill = top.querySelector(".message-toast-progress-fill");
+    const stack = document.querySelector("#message-toast-stack");
+    const fill = stack?.querySelector(".message-toast-top .message-toast-progress-fill");
+    if (!(stack instanceof HTMLElement) || !(fill instanceof HTMLElement)) return -1;
+    stack.dispatchEvent(new MouseEvent("mouseenter"));
     return fill instanceof HTMLElement
       ? Number(fill.getAnimations()[0]?.currentTime ?? -1)
       : -1;
@@ -1937,7 +1992,7 @@ try {
   })()`);
   assert(
     progressedTime > 500 && resetTime >= 0 && resetTime < 150,
-    `toast hover did not reset its three-second progress: ${progressedTime} -> ${resetTime}`,
+    `stack hover did not reset adaptive toast progress: ${progressedTime} -> ${resetTime}`,
   );
   assert(
     pausedProgress.playState === "paused" && pausedProgress.toastCount === 4 &&
@@ -1945,10 +2000,10 @@ try {
     `toast progress continued while hovered: ${JSON.stringify(pausedProgress)}`,
   );
   const resumedState = await first.evaluate<string>(`(() => {
-    const top = document.querySelector(".message-toast-top");
-    if (!(top instanceof HTMLElement)) return "missing";
-    top.dispatchEvent(new MouseEvent("mouseleave"));
-    return top.querySelector(".message-toast-progress-fill")?.getAnimations()[0]?.playState ?? "missing";
+    const stack = document.querySelector("#message-toast-stack");
+    if (!(stack instanceof HTMLElement)) return "missing";
+    stack.dispatchEvent(new MouseEvent("mouseleave"));
+    return stack.querySelector(".message-toast-top .message-toast-progress-fill")?.getAnimations()[0]?.playState ?? "missing";
   })()`);
   assert(
     resumedState === "running" || resumedState === "pending",
@@ -1960,6 +2015,8 @@ try {
     leaving: number;
     remaining: number;
     activeKind: string;
+    dismissAllVisible: boolean;
+    exitingCardsOutOfFlow: boolean;
   }>(`(() => {
     const dismissedKinds = [];
     for (let index = 0; index < 3; index++) {
@@ -1975,12 +2032,17 @@ try {
       leaving: document.querySelectorAll(".message-toast-leaving").length,
       remaining: document.querySelectorAll(".message-toast:not(.message-toast-leaving)").length,
       activeKind: active instanceof HTMLElement ? active.dataset.messageKind ?? "" : "",
+      dismissAllVisible: document.querySelector("#message-toast-dismiss-all")?.hidden === false,
+      exitingCardsOutOfFlow: [...document.querySelectorAll(".message-toast-leaving")].every((card) =>
+        card instanceof HTMLElement && getComputedStyle(card).position === "absolute"
+      ),
     };
   })()`);
   assert(
     rapidDismiss.dismissedKinds.join(",") === "info,success,warning" &&
       rapidDismiss.leaving === 3 && rapidDismiss.remaining === 1 &&
-      rapidDismiss.activeKind === "error",
+      rapidDismiss.activeKind === "error" && rapidDismiss.dismissAllVisible &&
+      rapidDismiss.exitingCardsOutOfFlow,
     `rapid toast dismissal did not expose each following card: ${
       JSON.stringify(rapidDismiss)
     }`,
@@ -2011,14 +2073,15 @@ try {
     bodyClientHeight: number;
     bodyScrollHeight: number;
     overflow: string;
-    alternating: boolean;
+    animationDuration: number;
+    deferredBodies: boolean;
   }>(`(() => {
     const cards = [...document.querySelectorAll(".message-toast")];
     const top = cards[0];
     const body = top?.querySelector(".message-toast-body");
     if (!(top instanceof HTMLElement) || !(body instanceof HTMLElement) ||
         cards.length !== 4 || cards.some((card) => !(card instanceof HTMLElement))) {
-      return { valid: false, heights: [], bottomOffsets: [], bodyClientHeight: 0, bodyScrollHeight: 0, overflow: "", alternating: false };
+      return { valid: false, heights: [], bottomOffsets: [], bodyClientHeight: 0, bodyScrollHeight: 0, overflow: "", animationDuration: 0, deferredBodies: false };
     }
     const typedCards = cards;
     const bounds = typedCards.map((card) => card.getBoundingClientRect());
@@ -2044,22 +2107,27 @@ try {
       bodyClientHeight: body.clientHeight,
       bodyScrollHeight: body.scrollHeight,
       overflow: getComputedStyle(body).overflowY,
-      alternating: typedCards[1].querySelector(".markdown :is(h1, h2, table)") === null &&
-        typedCards[2].querySelector(".markdown h2")?.textContent === "Follow-up validation" &&
-        typedCards[2].querySelector(".markdown table") !== null &&
-        typedCards[3].querySelector(".markdown :is(h1, h2, table)") === null,
+      animationDuration: Number(
+        top.querySelector(".message-toast-progress-fill")?.getAnimations()[0]?.effect?.getTiming().duration ?? 0
+      ),
+      deferredBodies: typedCards.slice(1).every((card) => {
+        const hiddenBody = card.querySelector(".message-toast-body");
+        return hiddenBody instanceof HTMLElement && hiddenBody.childElementCount === 0;
+      }) && document.querySelectorAll(".message-toast-body.markdown").length === 1,
     };
   })()`);
   assert(
-    markdownStack.valid && markdownStack.alternating,
+    markdownStack.valid && markdownStack.animationDuration === 5_000 &&
+      markdownStack.deferredBodies,
     `expanded Markdown toast geometry is invalid: ${
       JSON.stringify(markdownStack)
     }`,
   );
   const clickedMessageID = await first.evaluate<string>(`(() => {
+    const stack = document.querySelector("#message-toast-stack");
     const top = document.querySelector(".message-toast-top");
-    if (!(top instanceof HTMLElement)) return "";
-    top.dispatchEvent(new MouseEvent("mouseenter"));
+    if (!(stack instanceof HTMLElement) || !(top instanceof HTMLElement)) return "";
+    stack.dispatchEvent(new MouseEvent("mouseenter"));
     const id = top.dataset.messageId ?? "";
     top.click();
     return id;
@@ -2122,9 +2190,11 @@ try {
   await click(first, "#message-dialog-close");
 
   const expiringMessageID = await first.evaluate<string>(`(() => {
+    const stack = document.querySelector("#message-toast-stack");
     const top = document.querySelector(".message-toast-top");
     const toggle = document.querySelector("#session-menu-toggle");
-    if (!(top instanceof HTMLElement) || !(toggle instanceof HTMLElement)) return "";
+    if (!(stack instanceof HTMLElement) || !(top instanceof HTMLElement) ||
+        !(toggle instanceof HTMLElement)) return "";
     const cardBounds = top.getBoundingClientRect();
     const toggleBounds = toggle.getBoundingClientRect();
     window.__the8020MessageArchive = {
@@ -2138,14 +2208,27 @@ try {
       if (!top.classList.contains("message-toast-leaving") ||
           window.__the8020MessageArchive.observed) return;
       const style = getComputedStyle(top);
+      const liveCards = [...document.querySelectorAll(
+        ".message-toast:not(.message-toast-leaving)",
+      )];
+      const liveBounds = liveCards.map((card) => card.getBoundingClientRect());
+      const rootSize = parseFloat(getComputedStyle(document.documentElement).fontSize);
       Object.assign(window.__the8020MessageArchive, {
         observed: true,
         exitX: parseFloat(top.style.getPropertyValue("--message-exit-x")),
         exitY: parseFloat(top.style.getPropertyValue("--message-exit-y")),
         animationName: style.animationName,
+        position: style.position,
+        liveKinds: liveCards.map((card) => card.getAttribute("data-message-kind") ?? ""),
+        liveHeights: liveBounds.map((bounds) => bounds.height),
+        liveBottomOffsets: liveBounds.map((bounds) => bounds.bottom - liveBounds[0].bottom),
+        expectedOffset: rootSize * 0.5,
+        renderedBodies: liveCards.filter((card) =>
+          card.querySelector(".message-toast-body.markdown") !== null
+        ).length,
       });
     }).observe(top, { attributes: true, attributeFilter: ["class"] });
-    top.dispatchEvent(new MouseEvent("mouseleave"));
+    stack.dispatchEvent(new MouseEvent("mouseleave"));
     return top.dataset.messageId ?? "";
   })()`);
   assert(
@@ -2157,7 +2240,7 @@ try {
     `document.querySelector("#messages-count")?.textContent === "4" &&
       document.querySelectorAll(".message-toast").length === 3`,
     "oldest toast archive animation",
-    5_000,
+    7_000,
   );
   const archive = await first.evaluate<{
     observed: boolean;
@@ -2166,15 +2249,30 @@ try {
     exitX?: number;
     exitY?: number;
     animationName?: string;
+    position?: string;
+    liveKinds?: string[];
+    liveHeights?: number[];
+    liveBottomOffsets?: number[];
+    expectedOffset?: number;
+    renderedBodies?: number;
   }>(`window.__the8020MessageArchive`);
   assert(
     archive.observed && archive.animationName === "message-toast-archive" &&
+      archive.position === "absolute" &&
       Math.abs((archive.exitX ?? Infinity) - archive.expectedX) < 2 &&
-      Math.abs((archive.exitY ?? Infinity) - archive.expectedY) < 2,
+      Math.abs((archive.exitY ?? Infinity) - archive.expectedY) < 2 &&
+      archive.liveKinds?.join(",") === "success,warning,error" &&
+      archive.liveHeights?.every((height) =>
+          Math.abs(height - 10 * (archive.expectedOffset ?? 0)) < 1
+        ) === true &&
+      archive.liveBottomOffsets?.every((offset, index) =>
+          Math.abs(offset - index * (archive.expectedOffset ?? 0)) < 1
+        ) === true &&
+      archive.renderedBodies === 1,
     `toast did not animate toward the session menu: ${JSON.stringify(archive)}`,
   );
   await first.evaluate(
-    `document.querySelector(".message-toast-top")?.dispatchEvent(
+    `document.querySelector("#message-toast-stack")?.dispatchEvent(
     new MouseEvent("mouseenter")
   )`,
   );
@@ -2219,19 +2317,22 @@ try {
     finalWasShort: boolean;
     leaving: number;
     remaining: number;
-  }>(`(() => {
+    dismissAllVisible: boolean;
+  }>(`(async () => {
     const first = document.querySelector(".message-toast-top");
     const firstClose = first?.querySelector(".message-toast-close");
     const firstWasShort = first instanceof HTMLElement &&
       first.textContent?.includes("short success card") === true;
     if (firstClose instanceof HTMLButtonElement) firstClose.click();
     const long = document.querySelector(".message-toast-top");
-    const longClose = long?.querySelector(".message-toast-close");
     const rootSize = parseFloat(getComputedStyle(document.documentElement).fontSize);
     const longExpanded = long instanceof HTMLElement &&
       long.querySelector(".markdown h2")?.textContent === "Follow-up validation" &&
       long.getBoundingClientRect().height > rootSize * 5 + 20;
-    if (longClose instanceof HTMLButtonElement) longClose.click();
+    const animation = long?.querySelector(".message-toast-progress-fill")?.getAnimations()[0];
+    animation?.finish();
+    await animation?.finished;
+    await new Promise((resolve) => requestAnimationFrame(resolve));
     const final = document.querySelector(".message-toast-top");
     return {
       firstWasShort,
@@ -2240,12 +2341,14 @@ try {
         final.textContent?.includes("short error card") === true,
       leaving: document.querySelectorAll(".message-toast-leaving").length,
       remaining: document.querySelectorAll(".message-toast:not(.message-toast-leaving)").length,
+      dismissAllVisible: document.querySelector("#message-toast-dismiss-all")?.hidden === false,
     };
   })()`);
   assert(
     alternatingAdvance.firstWasShort && alternatingAdvance.longExpanded &&
       alternatingAdvance.finalWasShort && alternatingAdvance.leaving === 2 &&
-      alternatingAdvance.remaining === 1,
+      alternatingAdvance.remaining === 1 &&
+      alternatingAdvance.dismissAllVisible,
     `alternating short and Markdown messages did not advance immediately: ${
       JSON.stringify(alternatingAdvance)
     }`,
@@ -2268,15 +2371,23 @@ try {
       document.querySelectorAll(".message-toast").length === 10`,
     "bounded message burst",
   );
-  const boundedToasts = await first.evaluate<string[]>(`(() => {
+  const boundedToasts = await first.evaluate<{
+    labels: string[];
+    renderedBodies: number;
+  }>(`(() => {
+    const stack = document.querySelector("#message-toast-stack");
     const cards = [...document.querySelectorAll(".message-toast")];
-    cards[0]?.dispatchEvent(new MouseEvent("mouseenter"));
-    return cards.map((card) => card.textContent?.replace(/\\s+/g, " ").trim() ?? "");
+    stack?.dispatchEvent(new MouseEvent("mouseenter"));
+    return {
+      labels: cards.map((card) => card.getAttribute("aria-label") ?? ""),
+      renderedBodies: document.querySelectorAll(".message-toast-body.markdown").length,
+    };
   })()`);
   assert(
-    boundedToasts.length === 10 &&
-      boundedToasts[0]?.includes("Burst message 96 of 105.") === true &&
-      boundedToasts.at(-1)?.includes("Burst message 105 of 105.") === true,
+    boundedToasts.labels.length === 10 && boundedToasts.renderedBodies === 1 &&
+      boundedToasts.labels[0]?.includes("Burst message 96 of 105.") === true &&
+      boundedToasts.labels.at(-1)?.includes("Burst message 105 of 105.") ===
+        true,
     `toast rendering was not capped to the last ten messages: ${
       JSON.stringify(boundedToasts)
     }`,
@@ -2317,7 +2428,8 @@ try {
     first,
     `document.querySelector("#messages-count")?.textContent === "1" &&
       document.querySelectorAll(".message-toast").length === 1 &&
-      document.querySelector(".message-toast-body")?.textContent?.includes("one informational message") === true`,
+      document.querySelector(".message-toast-body")?.textContent?.includes("one informational message") === true &&
+      document.querySelector("#message-toast-dismiss-all")?.hidden === true`,
     "roundtrip message reset",
   );
 
