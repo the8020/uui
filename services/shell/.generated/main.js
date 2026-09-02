@@ -26678,6 +26678,7 @@ var MessageCenter = class {
   }
   #openHistory(requestedID) {
     if (requestedID !== void 0) {
+      this.#dismissAllToasts();
       this.#focusedID = requestedID;
       this.#archivedID = void 0;
     }

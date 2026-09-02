@@ -545,6 +545,7 @@ export class MessageCenter {
 
   #openHistory(requestedID?: string): void {
     if (requestedID !== undefined) {
+      this.#dismissAllToasts();
       this.#focusedID = requestedID;
       this.#archivedID = undefined;
     }

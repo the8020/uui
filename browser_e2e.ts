@@ -2135,6 +2135,7 @@ try {
   await waitForPage(
     first,
     `document.querySelector("#message-dialog")?.open === true &&
+      document.querySelectorAll(".message-toast:not(.message-toast-leaving)").length === 0 &&
       document.querySelector('.message-history-entry[open][data-focused="true"]')?.getAttribute("data-message-id") === ${
       JSON.stringify(clickedMessageID)
     }`,
@@ -2187,7 +2188,23 @@ try {
       JSON.stringify(clickedHistory)
     }`,
   );
+  await waitForPage(
+    first,
+    `document.querySelector("#message-dialog")?.open === true &&
+      document.querySelectorAll(".message-toast").length === 0 &&
+      document.querySelector("#message-toast-stack")?.hidden === true`,
+    "clicked toast close-all completion",
+  );
   await click(first, "#message-dialog-close");
+
+  await clickButton(first, "Long Markdown");
+  await waitForPage(
+    first,
+    `document.querySelector("#messages-count")?.textContent === "4" &&
+      document.querySelectorAll(".message-toast").length === 4 &&
+      document.querySelector(".message-toast-top .markdown h1")?.textContent === "Deployment summary"`,
+    "second long Markdown toast stack",
+  );
 
   const expiringMessageID = await first.evaluate<string>(`(() => {
     const stack = document.querySelector("#message-toast-stack");
@@ -2195,6 +2212,7 @@ try {
     const toggle = document.querySelector("#session-menu-toggle");
     if (!(stack instanceof HTMLElement) || !(top instanceof HTMLElement) ||
         !(toggle instanceof HTMLElement)) return "";
+    stack.dispatchEvent(new MouseEvent("mouseenter"));
     const cardBounds = top.getBoundingClientRect();
     const toggleBounds = toggle.getBoundingClientRect();
     window.__the8020MessageArchive = {
@@ -2232,7 +2250,7 @@ try {
     return top.dataset.messageId ?? "";
   })()`);
   assert(
-    expiringMessageID.length > 0 && expiringMessageID === clickedMessageID,
+    expiringMessageID.length > 0,
     "expiring Markdown toast has no identity",
   );
   await waitForPage(
