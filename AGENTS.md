@@ -103,6 +103,10 @@
 - Runtime-loaded package modules address shared package APIs through the generic
   `@packages/` mount alias. The package does not depend on a UUI-specific
   runtime import-map entry that the generic image would have to know.
+- `deno.json` contains the canonical deployed `/opt/runtime` and
+  `/workspace/packages` mappings. Package-local checks and tests override only
+  those mappings with `deno.local.json` so they resolve sibling source trees
+  while retaining the production compiler options.
 - Layouts and future overrides are serializable data without executable code;
   user-specific layout variants are not persisted in this phase.
 - Browser source uses the shared UUI protocol types, preserves DOM/model/dirty
