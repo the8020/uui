@@ -69,8 +69,8 @@ interface SessionRecord {
   replayBytes: number;
   currentScreen?: ScreenShowMessage;
   lastPongAt: number;
-  heartbeatTimer?: number;
-  disconnectTimer?: number;
+  heartbeatTimer?: ReturnType<typeof setInterval>;
+  disconnectTimer?: ReturnType<typeof setTimeout>;
   createdAt: number;
   lastConnectionAt: number;
   messageLog: SessionLogEntry[];
