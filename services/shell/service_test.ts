@@ -58,6 +58,7 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   assertEquals(body.includes('id="messages-open"'), true);
   assertEquals(body.includes('id="messages-count"'), true);
   assertEquals(body.includes('id="message-toast-stack"'), true);
+  assertEquals(body.includes('id="message-toast-dismiss-all"'), true);
   assertEquals(body.includes('id="message-dialog"'), true);
   assertEquals(body.includes('id="message-history-list"'), true);
   assertEquals(
@@ -187,7 +188,21 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   );
   assertMatch(
     cssBody,
-    /\.message-toast:not\(\.message-toast-top\)\s*\{[^}]*height:\s*var\(--message-toast-base-height\);[^}]*align-self:\s*end;[^}]*translate:\s*0 var\(--message-stack-offset-y\);/s,
+    /\.message-toast:not\(\.message-toast-top\):not\(\.message-toast-leaving\)\s*\{[^}]*height:\s*var\(--message-toast-base-height\);[^}]*align-self:\s*end;[^}]*translate:\s*0 var\(--message-stack-offset-y\);/s,
+  );
+  assertMatch(
+    cssBody,
+    /\.message-toast-header\s*\{[^}]*position:\s*relative;[^}]*display:\s*flex;[^}]*padding:\s*0\.55rem 2\.7rem 0\.45rem 0\.7rem;[^}]*color:\s*var\(--message-color\);/s,
+  );
+  assertEquals(
+    /\.message-toast-header\s*\{[^}]*(?:background|border-bottom):/s.test(
+      cssBody,
+    ),
+    false,
+  );
+  assertMatch(
+    cssBody,
+    /\.message-toast-dismiss-all\s*\{[^}]*grid-area:\s*2 \/ 1;[^}]*margin-block-start:\s*calc\(var\(--message-stack-depth-y\) \+ 0\.4rem\);[^}]*justify-self:\s*end;[^}]*pointer-events:\s*auto;/s,
   );
   assertMatch(
     cssBody,
@@ -199,7 +214,15 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   );
   assertMatch(
     cssBody,
-    /\.message-history-list\s*\{[^}]*max-height:\s*25em;[^}]*overflow:\s*auto;/s,
+    /\.message-dialog\s*\{[^}]*max-height:\s*90dvh;[^}]*overflow:\s*hidden;/s,
+  );
+  assertMatch(
+    cssBody,
+    /\.message-history-list\s*\{[^}]*min-height:\s*0;[^}]*max-height:\s*calc\(90dvh - 4rem\);[^}]*overflow:\s*auto;/s,
+  );
+  assertEquals(
+    /\.message-history-body\s*\{[^}]*background:/s.test(cssBody),
+    false,
   );
   assertMatch(
     cssBody,

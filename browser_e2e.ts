@@ -1851,20 +1851,28 @@ try {
     expectedOffset: number;
     anchorGap: number;
     animationCount: number;
+    closeButtons: number;
+    dismissAllBelow: boolean;
+    unifiedHeader: boolean;
   }>(`(() => {
     const stack = document.querySelector("#message-toast-stack");
     const toggle = document.querySelector("#session-menu-toggle");
+    const dismissAll = document.querySelector("#message-toast-dismiss-all");
     const cards = [...document.querySelectorAll(".message-toast")];
     if (!(stack instanceof HTMLElement) || !(toggle instanceof HTMLElement) ||
+        !(dismissAll instanceof HTMLButtonElement) ||
         cards.some((card) => !(card instanceof HTMLElement)) || cards.length !== 4) {
-      return { valid: false, kinds: [], heights: [], bottomOffsets: [], expectedOffset: 0, anchorGap: 0, animationCount: 0 };
+      return { valid: false, kinds: [], heights: [], bottomOffsets: [], expectedOffset: 0, anchorGap: 0, animationCount: 0, closeButtons: 0, dismissAllBelow: false, unifiedHeader: false };
     }
     const typedCards = cards;
-    typedCards[0].dispatchEvent(new MouseEvent("mouseenter"));
     const bounds = typedCards.map((card) => card.getBoundingClientRect());
     const rootSize = parseFloat(getComputedStyle(document.documentElement).fontSize);
     const expectedOffset = rootSize * 0.5;
     const toggleBounds = toggle.getBoundingClientRect();
+    const dismissAllBounds = dismissAll.getBoundingClientRect();
+    const header = typedCards[0].querySelector(".message-toast-header");
+    const close = typedCards[0].querySelector(".message-toast-close");
+    const headerStyle = header instanceof HTMLElement ? getComputedStyle(header) : undefined;
     const widthsMatch = bounds.every((item) => Math.abs(item.width - bounds[0].width) < 0.5);
     const heightsMatch = bounds.every((item) => Math.abs(item.height - rootSize * 5) < 1);
     const bottomsMatch = bounds.every((item, index) =>
@@ -1881,12 +1889,21 @@ try {
       expectedOffset,
       anchorGap: bounds[0].top - toggleBounds.bottom,
       animationCount: typedCards[0].querySelector(".message-toast-progress-fill")?.getAnimations().length ?? 0,
+      closeButtons: typedCards.filter((card) =>
+        card.querySelector(".message-toast-close") instanceof HTMLButtonElement
+      ).length,
+      dismissAllBelow: dismissAllBounds.top > bounds.at(-1).bottom &&
+        Math.abs(dismissAllBounds.right - bounds[0].right) < 1,
+      unifiedHeader: headerStyle?.backgroundColor === "rgba(0, 0, 0, 0)" &&
+        headerStyle.borderBottomWidth === "0px" && close instanceof HTMLElement &&
+        Math.abs(close.getBoundingClientRect().right - bounds[0].right) < rootSize,
     };
   })()`);
   assert(
     typeStack.valid &&
       typeStack.kinds.join(",") === "info,success,warning,error" &&
-      typeStack.animationCount === 1,
+      typeStack.animationCount === 1 && typeStack.closeButtons === 4 &&
+      typeStack.dismissAllBelow && typeStack.unifiedHeader,
     `semantic toast stack geometry is invalid: ${JSON.stringify(typeStack)}`,
   );
   await delay(700);
@@ -1905,16 +1922,84 @@ try {
       ? Number(fill.getAnimations()[0]?.currentTime ?? -1)
       : -1;
   })()`);
+  await delay(600);
+  const pausedProgress = await first.evaluate<{
+    currentTime: number;
+    playState: string;
+    toastCount: number;
+  }>(`(() => {
+    const animation = document.querySelector(".message-toast-top .message-toast-progress-fill")?.getAnimations()[0];
+    return {
+      currentTime: Number(animation?.currentTime ?? -1),
+      playState: animation?.playState ?? "missing",
+      toastCount: document.querySelectorAll(".message-toast:not(.message-toast-leaving)").length,
+    };
+  })()`);
   assert(
     progressedTime > 500 && resetTime >= 0 && resetTime < 150,
     `toast hover did not reset its three-second progress: ${progressedTime} -> ${resetTime}`,
+  );
+  assert(
+    pausedProgress.playState === "paused" && pausedProgress.toastCount === 4 &&
+      Math.abs(pausedProgress.currentTime - resetTime) < 50,
+    `toast progress continued while hovered: ${JSON.stringify(pausedProgress)}`,
+  );
+  const resumedState = await first.evaluate<string>(`(() => {
+    const top = document.querySelector(".message-toast-top");
+    if (!(top instanceof HTMLElement)) return "missing";
+    top.dispatchEvent(new MouseEvent("mouseleave"));
+    return top.querySelector(".message-toast-progress-fill")?.getAnimations()[0]?.playState ?? "missing";
+  })()`);
+  assert(
+    resumedState === "running" || resumedState === "pending",
+    `toast progress did not resume after hover: ${resumedState}`,
+  );
+
+  const rapidDismiss = await first.evaluate<{
+    dismissedKinds: string[];
+    leaving: number;
+    remaining: number;
+    activeKind: string;
+  }>(`(() => {
+    const dismissedKinds = [];
+    for (let index = 0; index < 3; index++) {
+      const top = document.querySelector(".message-toast-top");
+      const close = top?.querySelector(".message-toast-close");
+      if (!(top instanceof HTMLElement) || !(close instanceof HTMLButtonElement)) break;
+      dismissedKinds.push(top.dataset.messageKind ?? "");
+      close.click();
+    }
+    const active = document.querySelector(".message-toast-top");
+    return {
+      dismissedKinds,
+      leaving: document.querySelectorAll(".message-toast-leaving").length,
+      remaining: document.querySelectorAll(".message-toast:not(.message-toast-leaving)").length,
+      activeKind: active instanceof HTMLElement ? active.dataset.messageKind ?? "" : "",
+    };
+  })()`);
+  assert(
+    rapidDismiss.dismissedKinds.join(",") === "info,success,warning" &&
+      rapidDismiss.leaving === 3 && rapidDismiss.remaining === 1 &&
+      rapidDismiss.activeKind === "error",
+    `rapid toast dismissal did not expose each following card: ${
+      JSON.stringify(rapidDismiss)
+    }`,
+  );
+  await first.evaluate(
+    `document.querySelector("#message-toast-dismiss-all")?.click()`,
+  );
+  await waitForPage(
+    first,
+    `document.querySelectorAll(".message-toast").length === 0 &&
+      document.querySelector("#message-toast-stack")?.hidden === true`,
+    "dismiss all message toasts",
   );
 
   await clickButton(first, "Long Markdown");
   await waitForPage(
     first,
-    `document.querySelector("#messages-count")?.textContent === "3" &&
-      document.querySelectorAll(".message-toast").length === 3 &&
+    `document.querySelector("#messages-count")?.textContent === "4" &&
+      document.querySelectorAll(".message-toast").length === 4 &&
       document.querySelector(".message-toast-top .markdown h1")?.textContent === "Deployment summary" &&
       document.querySelector(".message-toast-top .markdown table") !== null`,
     "long Markdown toast stack",
@@ -1926,15 +2011,15 @@ try {
     bodyClientHeight: number;
     bodyScrollHeight: number;
     overflow: string;
+    alternating: boolean;
   }>(`(() => {
     const cards = [...document.querySelectorAll(".message-toast")];
     const top = cards[0];
     const body = top?.querySelector(".message-toast-body");
     if (!(top instanceof HTMLElement) || !(body instanceof HTMLElement) ||
-        cards.length !== 3 || cards.some((card) => !(card instanceof HTMLElement))) {
-      return { valid: false, heights: [], bottomOffsets: [], bodyClientHeight: 0, bodyScrollHeight: 0, overflow: "" };
+        cards.length !== 4 || cards.some((card) => !(card instanceof HTMLElement))) {
+      return { valid: false, heights: [], bottomOffsets: [], bodyClientHeight: 0, bodyScrollHeight: 0, overflow: "", alternating: false };
     }
-    top.dispatchEvent(new MouseEvent("mouseenter"));
     const typedCards = cards;
     const bounds = typedCards.map((card) => card.getBoundingClientRect());
     const rootSize = parseFloat(getComputedStyle(document.documentElement).fontSize);
@@ -1947,6 +2032,7 @@ try {
         bounds[0].height <= rootSize * 25 + 1 &&
         Math.abs(bounds[1].height - rootSize * 5) < 1 &&
         Math.abs(bounds[2].height - rootSize * 5) < 1 &&
+        Math.abs(bounds[3].height - rootSize * 5) < 1 &&
         widthsMatch && bottomsMatch &&
         body.scrollHeight > body.clientHeight &&
         getComputedStyle(body).overflowY === "auto" &&
@@ -1958,14 +2044,83 @@ try {
       bodyClientHeight: body.clientHeight,
       bodyScrollHeight: body.scrollHeight,
       overflow: getComputedStyle(body).overflowY,
+      alternating: typedCards[1].querySelector(".markdown :is(h1, h2, table)") === null &&
+        typedCards[2].querySelector(".markdown h2")?.textContent === "Follow-up validation" &&
+        typedCards[2].querySelector(".markdown table") !== null &&
+        typedCards[3].querySelector(".markdown :is(h1, h2, table)") === null,
     };
   })()`);
   assert(
-    markdownStack.valid,
+    markdownStack.valid && markdownStack.alternating,
     `expanded Markdown toast geometry is invalid: ${
       JSON.stringify(markdownStack)
     }`,
   );
+  const clickedMessageID = await first.evaluate<string>(`(() => {
+    const top = document.querySelector(".message-toast-top");
+    if (!(top instanceof HTMLElement)) return "";
+    top.dispatchEvent(new MouseEvent("mouseenter"));
+    const id = top.dataset.messageId ?? "";
+    top.click();
+    return id;
+  })()`);
+  await waitForPage(
+    first,
+    `document.querySelector("#message-dialog")?.open === true &&
+      document.querySelector('.message-history-entry[open][data-focused="true"]')?.getAttribute("data-message-id") === ${
+      JSON.stringify(clickedMessageID)
+    }`,
+    "clicked toast history target",
+  );
+  const clickedHistory = await first.evaluate<{
+    focusedID: string;
+    count: number;
+    markdown: boolean;
+    focusedVisible: boolean;
+    bodyBackground: string;
+    dialogHeight: number;
+    dialogMaxHeight: number;
+    listMaxHeight: number;
+    viewportHeight: number;
+  }>(`(() => {
+    const dialog = document.querySelector("#message-dialog");
+    const list = document.querySelector("#message-history-list");
+    const focused = list?.querySelector('.message-history-entry[open][data-focused="true"]');
+    const body = focused?.querySelector(".message-history-body");
+    if (!(dialog instanceof HTMLDialogElement) || !(list instanceof HTMLElement) ||
+        !(focused instanceof HTMLElement) || !(body instanceof HTMLElement)) {
+      return { focusedID: "", count: 0, markdown: false, focusedVisible: false, bodyBackground: "", dialogHeight: 0, dialogMaxHeight: 0, listMaxHeight: 0, viewportHeight: innerHeight };
+    }
+    const listBounds = list.getBoundingClientRect();
+    const focusedBounds = focused.getBoundingClientRect();
+    return {
+      focusedID: focused.dataset.messageId ?? "",
+      count: list.querySelectorAll(".message-history-entry").length,
+      markdown: body.querySelector("table") !== null,
+      focusedVisible: focusedBounds.top >= listBounds.top - 1 &&
+        focusedBounds.top < listBounds.bottom,
+      bodyBackground: getComputedStyle(body).backgroundColor,
+      dialogHeight: dialog.getBoundingClientRect().height,
+      dialogMaxHeight: parseFloat(getComputedStyle(dialog).maxHeight),
+      listMaxHeight: parseFloat(getComputedStyle(list).maxHeight),
+      viewportHeight: innerHeight,
+    };
+  })()`);
+  assert(
+    clickedHistory.focusedID === clickedMessageID &&
+      clickedHistory.count === 4 &&
+      clickedHistory.markdown && clickedHistory.focusedVisible &&
+      clickedHistory.bodyBackground === "rgba(0, 0, 0, 0)" &&
+      clickedHistory.dialogHeight > clickedHistory.viewportHeight * 0.5 &&
+      clickedHistory.dialogMaxHeight >= clickedHistory.viewportHeight * 0.89 &&
+      clickedHistory.dialogMaxHeight <= clickedHistory.viewportHeight * 0.91 &&
+      clickedHistory.listMaxHeight > clickedHistory.viewportHeight * 0.75,
+    `clicked toast did not open the expanded viewport-sized history entry: ${
+      JSON.stringify(clickedHistory)
+    }`,
+  );
+  await click(first, "#message-dialog-close");
+
   const expiringMessageID = await first.evaluate<string>(`(() => {
     const top = document.querySelector(".message-toast-top");
     const toggle = document.querySelector("#session-menu-toggle");
@@ -1990,17 +2145,17 @@ try {
         animationName: style.animationName,
       });
     }).observe(top, { attributes: true, attributeFilter: ["class"] });
-    top.dispatchEvent(new MouseEvent("mouseenter"));
+    top.dispatchEvent(new MouseEvent("mouseleave"));
     return top.dataset.messageId ?? "";
   })()`);
   assert(
-    expiringMessageID.length > 0,
+    expiringMessageID.length > 0 && expiringMessageID === clickedMessageID,
     "expiring Markdown toast has no identity",
   );
   await waitForPage(
     first,
-    `document.querySelector("#messages-count")?.textContent === "3" &&
-      document.querySelectorAll(".message-toast").length === 2`,
+    `document.querySelector("#messages-count")?.textContent === "4" &&
+      document.querySelectorAll(".message-toast").length === 3`,
     "oldest toast archive animation",
     5_000,
   );
@@ -2018,11 +2173,16 @@ try {
       Math.abs((archive.exitY ?? Infinity) - archive.expectedY) < 2,
     `toast did not animate toward the session menu: ${JSON.stringify(archive)}`,
   );
+  await first.evaluate(
+    `document.querySelector(".message-toast-top")?.dispatchEvent(
+    new MouseEvent("mouseenter")
+  )`,
+  );
   await clickSessionMenuAction(first, "#messages-open");
   await waitForPage(
     first,
     `document.querySelector("#message-dialog")?.open === true &&
-      document.querySelectorAll(".message-history-entry").length === 3 &&
+      document.querySelectorAll(".message-history-entry").length === 4 &&
       document.querySelector('.message-history-entry[open][data-focused="true"]') !== null`,
     "message history modal",
   );
@@ -2045,13 +2205,61 @@ try {
   })()`);
   assert(
     historyState.focusedID === expiringMessageID &&
-      historyState.count === 3 && historyState.overflow === "auto" &&
+      historyState.count === 4 && historyState.overflow === "auto" &&
       historyState.markdown,
     `message history did not focus the archived Markdown message: ${
       JSON.stringify(historyState)
     }`,
   );
   await click(first, "#message-dialog-close");
+
+  const alternatingAdvance = await first.evaluate<{
+    firstWasShort: boolean;
+    longExpanded: boolean;
+    finalWasShort: boolean;
+    leaving: number;
+    remaining: number;
+  }>(`(() => {
+    const first = document.querySelector(".message-toast-top");
+    const firstClose = first?.querySelector(".message-toast-close");
+    const firstWasShort = first instanceof HTMLElement &&
+      first.textContent?.includes("short success card") === true;
+    if (firstClose instanceof HTMLButtonElement) firstClose.click();
+    const long = document.querySelector(".message-toast-top");
+    const longClose = long?.querySelector(".message-toast-close");
+    const rootSize = parseFloat(getComputedStyle(document.documentElement).fontSize);
+    const longExpanded = long instanceof HTMLElement &&
+      long.querySelector(".markdown h2")?.textContent === "Follow-up validation" &&
+      long.getBoundingClientRect().height > rootSize * 5 + 20;
+    if (longClose instanceof HTMLButtonElement) longClose.click();
+    const final = document.querySelector(".message-toast-top");
+    return {
+      firstWasShort,
+      longExpanded,
+      finalWasShort: final instanceof HTMLElement &&
+        final.textContent?.includes("short error card") === true,
+      leaving: document.querySelectorAll(".message-toast-leaving").length,
+      remaining: document.querySelectorAll(".message-toast:not(.message-toast-leaving)").length,
+    };
+  })()`);
+  assert(
+    alternatingAdvance.firstWasShort && alternatingAdvance.longExpanded &&
+      alternatingAdvance.finalWasShort && alternatingAdvance.leaving === 2 &&
+      alternatingAdvance.remaining === 1,
+    `alternating short and Markdown messages did not advance immediately: ${
+      JSON.stringify(alternatingAdvance)
+    }`,
+  );
+  await first.evaluate(
+    `document.querySelector("#message-toast-dismiss-all")?.click()`,
+  );
+  await waitForPage(
+    first,
+    `document.querySelectorAll(".message-toast").length === 0 &&
+      document.querySelector("#message-toast-stack")?.hidden === true &&
+      document.querySelector("#messages-count")?.textContent === "4"`,
+    "alternating toast close-all dismissal",
+  );
 
   await clickButton(first, "Message limits");
   await waitForPage(

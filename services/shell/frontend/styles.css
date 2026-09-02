@@ -336,6 +336,7 @@ textarea {
 .message-toast-stack {
   --message-toast-base-height: 5rem;
   --message-stack-offset: 0.5rem;
+  --message-stack-depth-y: 0rem;
 
   position: absolute;
   z-index: 45;
@@ -367,11 +368,12 @@ textarea {
   background: var(--surface);
   box-shadow: var(--shadow);
   color: var(--text);
+  cursor: pointer;
   opacity: 1;
   pointer-events: none;
 }
 
-.message-toast:not(.message-toast-top) {
+.message-toast:not(.message-toast-top):not(.message-toast-leaving) {
   height: var(--message-toast-base-height);
   max-height: var(--message-toast-base-height);
   align-self: end;
@@ -401,15 +403,46 @@ textarea {
 }
 
 .message-toast-header {
+  position: relative;
   display: flex;
   align-items: center;
   flex: 0 0 auto;
   gap: 8px;
-  border-bottom: 1px solid
-    color-mix(in srgb, var(--message-color), transparent 78%);
-  padding: 0.55rem 0.7rem 0.45rem;
-  background: var(--message-soft-color);
+  padding: 0.55rem 2.7rem 0.45rem 0.7rem;
   color: var(--message-color);
+}
+
+.message-toast-close,
+.message-toast-dismiss-all {
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--message-color), var(--border) 70%);
+  border-radius: 999px;
+  padding: 0;
+  background: var(--surface);
+  color: var(--message-color);
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.message-toast-close {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-end: 0.7rem;
+  width: 1.45rem;
+  height: 1.45rem;
+  translate: 0 -50%;
+}
+
+.message-toast-close:hover,
+.message-toast-close:focus-visible,
+.message-toast-dismiss-all:hover,
+.message-toast-dismiss-all:focus-visible {
+  border-color: var(--message-color);
+  background: var(--message-soft-color);
+  outline: none;
 }
 
 .message-kind-marker {
@@ -466,6 +499,23 @@ textarea {
   animation: message-toast-archive 320ms cubic-bezier(0.4, 0, 0.2, 1)
     forwards;
   pointer-events: none;
+  z-index: 20 !important;
+}
+
+.message-toast-dismiss-all {
+  --message-color: var(--muted);
+  --message-soft-color: var(--surface-muted);
+
+  grid-area: 2 / 1;
+  width: 1.6rem;
+  height: 1.6rem;
+  margin-block-start: calc(var(--message-stack-depth-y) + 0.4rem);
+  justify-self: end;
+  pointer-events: auto;
+}
+
+.message-toast-dismiss-all[hidden] {
+  display: none;
 }
 
 @keyframes message-toast-archive {
@@ -486,7 +536,9 @@ textarea {
 .message-dialog {
   width: min(48rem, calc(100vw - 24px));
   max-width: none;
-  max-height: calc(100vh - 24px);
+  max-height: 90vh;
+  max-height: 90dvh;
+  overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 0;
@@ -502,7 +554,8 @@ textarea {
 
 .message-dialog-frame {
   display: flex;
-  max-height: calc(100vh - 26px);
+  max-height: 90vh;
+  max-height: 90dvh;
   flex-direction: column;
 }
 
@@ -521,7 +574,9 @@ textarea {
 }
 
 .message-history-list {
-  max-height: 25em;
+  min-height: 0;
+  max-height: calc(90vh - 4rem);
+  max-height: calc(90dvh - 4rem);
   padding: 0.8rem;
   overflow: auto;
 }
@@ -596,7 +651,6 @@ textarea {
 .message-history-body {
   border-top: 1px solid var(--border);
   padding: 0.8rem;
-  background: color-mix(in srgb, var(--message-soft-color), transparent 55%);
   font-size: 0.88rem;
 }
 

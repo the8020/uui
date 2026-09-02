@@ -159,13 +159,21 @@
   cards retain the fixed three-row base height and align to the active card's
   lower edge; only the active card expands, up to `25em`, with internal
   scrolling for longer Markdown. Its bottom progress drains from right to left
-  over three seconds and mouse entry resets the full interval. Expiration
-  animates the card to the session disclosure without removing it from history,
-  pulses the badge, and starts the next card. The native Messages dialog has its
-  own `25em` scrolling list; it expands and scrolls to the most recently
-  archived or otherwise focused message while allowing any retained item to be
-  expanded. History summaries render all retained items, while rich Markdown
-  bodies are materialized only for entries the user expands.
+  over three seconds; mouse entry resets it to full and pauses it until mouse
+  exit. Clicking a toast opens the native Messages dialog at that exact expanded
+  entry. Every toast has an exact-right-edge close control, and each dismissal
+  removes the card from stack interaction immediately while its pointer-
+  transparent exit animation completes, allowing repeated clicks on newly
+  exposed cards. A compact close-all control below the stack dismisses every
+  visible toast without removing history. Expiration and explicit dismissal
+  animate cards to the session disclosure, pulse the badge, and start the next
+  card. The Messages dialog grows with its contents up to 90% of the dynamic
+  viewport and gives the remaining height to its scrolling list; it expands and
+  scrolls to the most recently archived or otherwise focused message while
+  allowing any retained item to be expanded. Expanded history bodies use the
+  dialog surface without a semantic background fill. History summaries render
+  all retained items, while rich Markdown bodies are materialized only for
+  entries the user expands.
 - The shell's one constrained `/*` static handler serves supported browser
   assets from the generated and frontend roots, deriving MIME and cache policy
   from file type and hashed names; never register one service route or table
@@ -334,15 +342,17 @@
   inspection, bounded log, stale cleanup, termination, and session-service
   clickthrough, authorized service enable/disable and capacity changes including
   percentage sliders, nested demos, dirty reconnect, reload resume, semantic and
-  asynchronous messages, three-second hover reset and archive targeting,
-  stacked-card geometry, bounded toast/history rendering, Markdown expansion and
-  scrolling, message-history focus, roundtrip clearing, TypeError/ValueError
-  short dumps, source context, clipboard copy, Home recovery, per-tab Worker
-  isolation, single-Worker failure, and logout; administrative polling is
-  throttled, startup failures include service/log diagnostics, enabled `IDLE`
-  services are accepted before first-request lazy provisioning, staged rootfs
-  fixtures dereference symlinks only through a component-wise resolver contained
-  by the source root, and process cleanup is time-bounded.
+  asynchronous messages, paused three-second hover reset, direct toast-to-
+  history targeting, rapid independent and close-all dismissal, stacked-card
+  geometry, bounded toast/history rendering, alternating long and short Markdown
+  expansion, viewport-relative history scrolling, message-history focus,
+  roundtrip clearing, TypeError/ValueError short dumps, source context,
+  clipboard copy, Home recovery, per-tab Worker isolation, single-Worker
+  failure, and logout; administrative polling is throttled, startup failures
+  include service/log diagnostics, enabled `IDLE` services are accepted before
+  first-request lazy provisioning, staged rootfs fixtures dereference symlinks
+  only through a component-wise resolver contained by the source root, and
+  process cleanup is time-bounded.
 - Browser E2E distinguishes selectable untruncated messages from responsive
   overflow triggers and verifies that full-message popovers stay beside their
   field while remaining inside the viewport.

@@ -50,6 +50,9 @@ const themeToggle = requiredElement<HTMLButtonElement>("theme-toggle");
 const messagesOpen = requiredElement<HTMLButtonElement>("messages-open");
 const messagesCount = requiredElement<HTMLElement>("messages-count");
 const messageToastStack = requiredElement<HTMLElement>("message-toast-stack");
+const messageToastDismissAll = requiredElement<HTMLButtonElement>(
+  "message-toast-dismiss-all",
+);
 const messageDialog = requiredElement<HTMLDialogElement>("message-dialog");
 const messageHistoryList = requiredElement<HTMLElement>(
   "message-history-list",
@@ -114,6 +117,7 @@ const messageCenter = new MessageCenter({
   dialog: messageDialog,
   list: messageHistoryList,
   closeButton: messageDialogClose,
+  dismissAllButton: messageToastDismissAll,
 });
 
 renderIconText(screenBack, "[[icon=arrow_back]]", { decorativeIcons: true });

@@ -27,6 +27,10 @@ Deno.test("message collection deduplicates, archives toasts, and clears a roundt
   assertEquals(messages.visible(), []);
   assertEquals(messages.history().map((item) => item.sequence), [1]);
   messages.add(message(2));
+  messages.add(message(3));
+  assertEquals(messages.dismissAllVisible(), ["session:2", "session:3"]);
+  assertEquals(messages.visible(), []);
+  assertEquals(messages.history().map((item) => item.sequence), [1, 2, 3]);
   messages.clear();
   assertEquals(messages.visible(), []);
   assertEquals(messages.history(), []);

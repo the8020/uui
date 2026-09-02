@@ -26285,6 +26285,11 @@ var MessageCollection = class {
     this.#visible.splice(index, 1);
     return true;
   }
+  dismissAllVisible() {
+    const ids = this.#visible.map((item) => item.id);
+    this.#visible = [];
+    return ids;
+  }
   clear() {
     this.#history = [];
     this.#visible = [];
@@ -26307,12 +26312,12 @@ var MessageCenter = class {
   #elements;
   #collection = new MessageCollection();
   #cards = /* @__PURE__ */ new Map();
+  #leavingIDs = /* @__PURE__ */ new Set();
+  #archiveFallbacks = /* @__PURE__ */ new Map();
   #activeID;
-  #leavingID;
   #focusedID;
   #archivedID;
   #progressAnimation;
-  #archiveFallback;
   #renderFrame;
   #disposed = false;
   constructor(elements) {
@@ -26323,6 +26328,9 @@ var MessageCenter = class {
     });
     elements.dialog.addEventListener("click", (event) => {
       if (event.target === elements.dialog) elements.dialog.close();
+    });
+    elements.dismissAllButton.addEventListener("click", () => {
+      this.#dismissAllToasts();
     });
     this.#updateMenuCount();
   }
@@ -26347,22 +26355,23 @@ var MessageCenter = class {
   beginRoundtrip() {
     if (this.#disposed) return;
     this.#stopProgress();
-    if (this.#archiveFallback !== void 0) {
-      clearTimeout(this.#archiveFallback);
-      this.#archiveFallback = void 0;
+    for (const fallback of this.#archiveFallbacks.values()) {
+      clearTimeout(fallback);
     }
+    this.#archiveFallbacks.clear();
     if (this.#renderFrame !== void 0) {
       cancelAnimationFrame(this.#renderFrame);
       this.#renderFrame = void 0;
     }
     this.#activeID = void 0;
-    this.#leavingID = void 0;
+    this.#leavingIDs.clear();
     this.#focusedID = void 0;
     this.#archivedID = void 0;
     this.#collection.clear();
     for (const card of this.#cards.values()) card.remove();
     this.#cards.clear();
-    this.#elements.toastRegion.replaceChildren();
+    this.#elements.toastRegion.style.setProperty("--message-stack-depth-y", "0rem");
+    this.#elements.dismissAllButton.hidden = true;
     this.#elements.toastRegion.hidden = true;
     this.#updateMenuCount();
     if (this.#elements.dialog.open) this.#renderHistory();
@@ -26386,7 +26395,9 @@ var MessageCenter = class {
     const visible = this.#collection.visible();
     const visibleIDs = new Set(visible.map((message) => message.id));
     for (const id of this.#cards.keys()) {
-      if (!visibleIDs.has(id)) this.#removeCard(id);
+      if (!visibleIDs.has(id) && !this.#leavingIDs.has(id)) {
+        this.#removeCard(id);
+      }
     }
     visible.forEach((message, index) => {
       let card = this.#cards.get(message.id);
@@ -26400,17 +26411,20 @@ var MessageCenter = class {
       card.inert = !top;
       card.style.setProperty("--message-stack-offset-y", `${index * 0.5}rem`);
       card.style.zIndex = String(MAX_RENDERED_MESSAGES - index);
-      this.#elements.toastRegion.append(card);
+      this.#elements.dismissAllButton.before(card);
     });
-    this.#elements.toastRegion.hidden = visible.length === 0;
+    this.#elements.toastRegion.style.setProperty("--message-stack-depth-y", `${Math.max(0, visible.length - 1) * 0.5}rem`);
+    this.#elements.dismissAllButton.hidden = visible.length === 0;
+    this.#elements.toastRegion.hidden = visible.length === 0 && this.#leavingIDs.size === 0;
     const nextID = visible[0]?.id;
     if (nextID === void 0) {
       this.#stopProgress();
       this.#activeID = void 0;
       return;
     }
-    if (this.#leavingID !== nextID && this.#activeID !== nextID) {
-      this.#startProgress(nextID);
+    if (this.#activeID !== nextID) {
+      const card = this.#cards.get(nextID);
+      this.#startProgress(nextID, card?.matches(":hover") === true);
     }
   }
   #createToast(message) {
@@ -26427,7 +26441,17 @@ var MessageCenter = class {
     const kind = document.createElement("strong");
     kind.className = "message-kind-label";
     kind.textContent = messageKindLabel(message.kind);
-    header.append(marker, kind);
+    const close = document.createElement("button");
+    close.className = "message-toast-close";
+    close.type = "button";
+    close.setAttribute("aria-label", `Dismiss ${messageKindLabel(message.kind).toLowerCase()} message`);
+    close.title = "Dismiss message";
+    close.textContent = "\xD7";
+    close.addEventListener("click", (event) => {
+      event.stopPropagation();
+      this.#archiveToast(message.id);
+    });
+    header.append(marker, kind, close);
     const body = document.createElement("div");
     body.className = "message-toast-body";
     renderMarkdown(body, message.body);
@@ -26438,14 +26462,38 @@ var MessageCenter = class {
     fill.className = "message-toast-progress-fill";
     progress.append(fill);
     card.append(header, body, progress);
+    card.tabIndex = 0;
+    card.setAttribute("aria-label", `${messageKindLabel(message.kind)}: ${messagePreview(message.body)}. Open in Messages`);
+    card.setAttribute("aria-haspopup", "dialog");
+    if (this.#elements.dialog.id !== "") {
+      card.setAttribute("aria-controls", this.#elements.dialog.id);
+    }
+    card.addEventListener("click", (event) => {
+      if (event.target instanceof Element && event.target.closest("a") !== null) {
+        return;
+      }
+      this.#openHistory(message.id);
+    });
+    card.addEventListener("keydown", (event) => {
+      if (event.target !== card || event.key !== "Enter" && event.key !== " ") {
+        return;
+      }
+      event.preventDefault();
+      this.#openHistory(message.id);
+    });
     card.addEventListener("mouseenter", () => {
-      if (this.#activeID === message.id && this.#leavingID === void 0) {
-        this.#startProgress(message.id);
+      if (this.#activeID === message.id && !this.#leavingIDs.has(message.id)) {
+        this.#startProgress(message.id, true);
+      }
+    });
+    card.addEventListener("mouseleave", () => {
+      if (this.#activeID === message.id && !this.#leavingIDs.has(message.id)) {
+        this.#progressAnimation?.play();
       }
     });
     return card;
   }
-  #startProgress(id) {
+  #startProgress(id, paused = false) {
     const card = this.#cards.get(id);
     const fill = card?.querySelector(".message-toast-progress-fill");
     if (card === void 0 || fill === null || fill === void 0) return;
@@ -26463,8 +26511,12 @@ var MessageCenter = class {
       easing: "linear",
       fill: "forwards"
     });
+    if (paused) {
+      this.#progressAnimation.pause();
+      this.#progressAnimation.currentTime = 0;
+    }
     this.#progressAnimation.addEventListener("finish", () => {
-      if (this.#activeID === id && this.#leavingID === void 0) {
+      if (this.#activeID === id && !this.#leavingIDs.has(id)) {
         this.#archiveToast(id);
       }
     }, {
@@ -26478,11 +26530,18 @@ var MessageCenter = class {
     }
   }
   #archiveToast(id) {
+    if (this.#leavingIDs.has(id) || !this.#collection.dismissVisible(id)) return;
+    this.#animateDismissedToast(id);
+    this.#syncToasts();
+  }
+  #animateDismissedToast(id) {
     const card = this.#cards.get(id);
-    if (card === void 0 || this.#leavingID !== void 0) return;
-    this.#stopProgress();
-    this.#activeID = void 0;
-    this.#leavingID = id;
+    if (card === void 0 || this.#leavingIDs.has(id)) return;
+    if (this.#activeID === id) {
+      this.#stopProgress();
+      this.#activeID = void 0;
+    }
+    this.#leavingIDs.add(id);
     this.#focusedID = id;
     this.#archivedID = id;
     card.inert = true;
@@ -26490,26 +26549,29 @@ var MessageCenter = class {
     const toggleBounds = this.#elements.sessionToggle.getBoundingClientRect();
     card.style.setProperty("--message-exit-x", `${toggleBounds.left + toggleBounds.width / 2 - (cardBounds.left + cardBounds.width / 2)}px`);
     card.style.setProperty("--message-exit-y", `${toggleBounds.top + toggleBounds.height / 2 - (cardBounds.top + cardBounds.height / 2)}px`);
+    card.classList.remove("message-toast-top");
+    card.setAttribute("aria-hidden", "true");
     card.classList.add("message-toast-leaving");
     let completed = false;
     const complete = () => {
-      if (completed || this.#leavingID !== id) return;
+      if (completed || !this.#leavingIDs.has(id)) return;
       completed = true;
       this.#completeArchive(id);
     };
     card.addEventListener("animationend", complete, {
       once: true
     });
-    this.#archiveFallback = setTimeout(complete, 600);
+    this.#archiveFallbacks.set(id, setTimeout(complete, 600));
+  }
+  #dismissAllToasts() {
+    const ids = this.#collection.dismissAllVisible();
+    for (const id of ids) {
+      this.#animateDismissedToast(id);
+    }
+    this.#syncToasts();
   }
   #completeArchive(id) {
-    if (this.#archiveFallback !== void 0) {
-      clearTimeout(this.#archiveFallback);
-      this.#archiveFallback = void 0;
-    }
-    this.#collection.dismissVisible(id);
     this.#removeCard(id);
-    this.#leavingID = void 0;
     this.#pulseMenuCount();
     this.#syncToasts();
     if (this.#elements.dialog.open) this.#renderHistory();
@@ -26519,13 +26581,12 @@ var MessageCenter = class {
       this.#stopProgress();
       this.#activeID = void 0;
     }
-    if (this.#leavingID === id) {
-      if (this.#archiveFallback !== void 0) {
-        clearTimeout(this.#archiveFallback);
-        this.#archiveFallback = void 0;
-      }
-      this.#leavingID = void 0;
+    const fallback = this.#archiveFallbacks.get(id);
+    if (fallback !== void 0) {
+      clearTimeout(fallback);
+      this.#archiveFallbacks.delete(id);
     }
+    this.#leavingIDs.delete(id);
     const card = this.#cards.get(id);
     card?.remove();
     this.#cards.delete(id);
@@ -26542,12 +26603,16 @@ var MessageCenter = class {
     void count.offsetWidth;
     count.classList.add("message-count-arrival");
   }
-  #openHistory() {
+  #openHistory(requestedID) {
+    if (requestedID !== void 0) {
+      this.#focusedID = requestedID;
+      this.#archivedID = void 0;
+    }
     this.#elements.sessionMenu.open = false;
     this.#renderHistory();
     if (!this.#elements.dialog.open) this.#elements.dialog.showModal();
     const history = this.#collection.history();
-    const targetMessage = this.#focusMessage(history);
+    const targetMessage = requestedID === void 0 ? this.#focusMessage(history) : history.find((message) => message.id === requestedID);
     if (targetMessage === void 0) return;
     const targetID = targetMessage.id;
     const selector = `[data-message-id="${CSS.escape(targetID)}"]`;
@@ -26650,6 +26715,7 @@ var themeToggle = requiredElement("theme-toggle");
 var messagesOpen = requiredElement("messages-open");
 var messagesCount = requiredElement("messages-count");
 var messageToastStack = requiredElement("message-toast-stack");
+var messageToastDismissAll = requiredElement("message-toast-dismiss-all");
 var messageDialog = requiredElement("message-dialog");
 var messageHistoryList = requiredElement("message-history-list");
 var messageDialogClose = requiredElement("message-dialog-close");
@@ -26686,7 +26752,8 @@ var messageCenter = new MessageCenter({
   count: messagesCount,
   dialog: messageDialog,
   list: messageHistoryList,
-  closeButton: messageDialogClose
+  closeButton: messageDialogClose,
+  dismissAllButton: messageToastDismissAll
 });
 renderIconText(screenBack, "[[icon=arrow_back]]", {
   decorativeIcons: true
