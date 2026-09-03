@@ -10,7 +10,15 @@ import {
 Deno.test("home discovers canonical visible program manifests", async () => {
   const root = await Deno.makeTempDir({ prefix: "the8020-discovery-test-" });
   try {
-    for (const repository of ["uui", "admin-core", "demo", "dev-core"]) {
+    for (
+      const repository of [
+        "uui",
+        "admin-core",
+        "admin-db",
+        "demo",
+        "dev-core",
+      ]
+    ) {
       const source = new URL(`../../${repository}/programs`, import.meta.url)
         .pathname;
       await copyDirectory(source, `${root}/the8020/${repository}/programs`);
@@ -40,6 +48,10 @@ Deno.test("home discovers canonical visible program manifests", async () => {
     );
     assertEquals(
       programs.some((item) => item.id === "the8020/admin-core/packages"),
+      true,
+    );
+    assertEquals(
+      programs.some((item) => item.id === "the8020/admin-db/database"),
       true,
     );
     assertEquals(

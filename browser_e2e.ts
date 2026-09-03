@@ -1232,23 +1232,54 @@ try {
   await clickButton(first, "Back");
   await waitForScreen(first, "Welcome to 80|20");
 
-  await clickRow(first, "the8020/db/database");
+  const evaluatorJobsBeforeBrowse = await evaluatorExecutionCount(primaryRoot);
+  await clickRow(first, "the8020/admin-db/database");
   await waitForScreen(first, "Database tables");
   await waitForPage(
     first,
     `[...document.querySelectorAll(".data-list tbody tr")].filter((row) => row.textContent?.includes("the8020__demo__")).length === 3 &&
-      [...document.querySelectorAll(".data-list tbody tr")].filter((row) => row.textContent?.includes("the8020__demo__")).every((row) => row.textContent?.includes("active / synchronized"))`,
+      [...document.querySelectorAll(".data-list tbody tr")].filter((row) => row.textContent?.includes("the8020__demo__")).every((row) => row.textContent?.includes("Active") && row.textContent?.includes("Synchronized"))`,
     "synchronized demo database tables",
   );
   await clickRow(first, "the8020__demo__orders");
   await waitForScreen(first, "the8020__demo__orders");
   await waitForPage(
     first,
-    `document.querySelector('[data-bind="state"]')?.value === "active / synchronized" &&
-      document.querySelector('[data-bind="differences"]')?.value === "" &&
-      document.querySelector('[data-bind="physical"]')?.value?.includes('"total"') === true`,
-    "database table logical and physical detail",
+    `document.querySelector('[data-bind="tableState"]')?.value === "Active" &&
+      document.querySelector('[data-bind="schemaState"]')?.value === "Synchronized" &&
+      document.querySelectorAll('textarea').length === 0 &&
+      [...document.querySelectorAll('[data-layout-id="columns"] tbody tr')].some((row) =>
+        row.textContent?.includes("total") && row.textContent?.includes("decimal(18, 2)") && row.textContent?.includes("INTEGER")) &&
+      [...document.querySelectorAll('[data-layout-id="differences"] tbody tr')].some((row) =>
+        row.textContent?.includes("No differences detected")) &&
+      !document.querySelector('#app')?.textContent?.includes('Worker "wrk-')`,
+    "human-readable database field detail",
   );
+  assert(
+    await evaluatorExecutionCount(primaryRoot) === evaluatorJobsBeforeBrowse,
+    "ordinary database list/detail browsing launched a table evaluator job",
+  );
+  await clickButton(first, "Compare activated definition");
+  await waitForScreen(first, "Compare the8020__demo__orders", 120_000);
+  await waitForPage(
+    first,
+    `document.querySelector('[data-bind="definitionState"]')?.value === "Present" &&
+      [...document.querySelectorAll('[data-layout-id="columns"] tbody tr')].some((row) =>
+        row.textContent?.includes("total") && row.textContent?.includes("decimal(18, 2)") && row.textContent?.includes("INTEGER")) &&
+      [...document.querySelectorAll('[data-layout-id="differences"] tbody tr')].some((row) =>
+        row.textContent?.includes("No differences detected")) &&
+      document.querySelectorAll('textarea').length === 0 &&
+      !document.querySelector('#app')?.textContent?.includes('Worker "wrk-')`,
+    "structured activated database definition comparison after kernel restart",
+    120_000,
+  );
+  assert(
+    await evaluatorExecutionCount(primaryRoot) ===
+      evaluatorJobsBeforeBrowse + 1,
+    "explicit table comparison did not launch exactly one evaluator job",
+  );
+  await clickButton(first, "Back");
+  await waitForScreen(first, "the8020__demo__orders");
   await clickButton(first, "Synchronize");
   await waitForPage(
     first,
@@ -1259,6 +1290,25 @@ try {
     first,
     `document.documentElement.hasAttribute("data-interaction-pending") === false`,
     "database table detail refresh after synchronization",
+  );
+  await clickButton(first, "Back");
+  await waitForScreen(first, "Database tables");
+  const evaluatorJobsAfterSynchronize = await evaluatorExecutionCount(
+    primaryRoot,
+  );
+  await clickRow(first, "the8020__demo__customers");
+  await waitForScreen(first, "the8020__demo__customers");
+  await waitForPage(
+    first,
+    `[...document.querySelectorAll('[data-layout-id="columns"] tbody tr')].some((row) =>
+      row.textContent?.includes("email") && row.textContent?.includes("text") && row.textContent?.includes("TEXT")) &&
+      document.querySelectorAll('textarea').length === 0`,
+    "second fast database table detail",
+  );
+  assert(
+    await evaluatorExecutionCount(primaryRoot) ===
+      evaluatorJobsAfterSynchronize,
+    "re-entering database detail launched an evaluator job",
   );
   await clickButton(first, "Back");
   await waitForScreen(first, "Database tables");
@@ -2970,6 +3020,10 @@ async function prepareWorkspaces(
     `${primary}/packages/the8020/admin-core`,
   );
   await copyTree(
+    `${options.packageWorkspace}/admin-db`,
+    `${primary}/packages/the8020/admin-db`,
+  );
+  await copyTree(
     `${options.packageWorkspace}/db`,
     `${primary}/packages/the8020/db`,
   );
@@ -2991,6 +3045,8 @@ async function prepareWorkspaces(
     const repository of [
       `${primary}/packages/the8020/uui`,
       `${primary}/packages/the8020/admin-core`,
+      `${primary}/packages/the8020/admin-db`,
+      `${primary}/packages/the8020/db`,
       `${primary}/packages/the8020/demo`,
       `${primary}/packages/the8020/dev-core`,
       `${secondary}/packages/the8020/uui`,
@@ -3279,6 +3335,13 @@ async function admin(
     throw new Error(envelope.error?.message ?? "administrative command failed");
   }
   return envelope.result;
+}
+
+async function evaluatorExecutionCount(root: string): Promise<number> {
+  const result = await admin(root, ["job", "list"]);
+  const jobs = result.executions as Array<{ job_id?: string }> | undefined;
+  return jobs?.filter((job) => job.job_id === "database-table-evaluator")
+    .length ?? 0;
 }
 
 async function waitForServices(
