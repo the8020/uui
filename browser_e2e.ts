@@ -1237,17 +1237,29 @@ try {
   await waitForScreen(first, "Database tables");
   await waitForPage(
     first,
-    `[...document.querySelectorAll(".data-list tbody tr")].filter((row) => row.textContent?.includes("the8020__demo__")).length === 3 &&
-      [...document.querySelectorAll(".data-list tbody tr")].filter((row) => row.textContent?.includes("the8020__demo__")).every((row) => row.textContent?.includes("Active") && row.textContent?.includes("Synchronized"))`,
+    `(() => {
+      const rows = [...document.querySelectorAll(".data-list tbody tr")]
+        .filter((row) => row.querySelector("td")?.textContent?.trim() === "the8020/demo");
+      const tables = rows.map((row) => row.querySelectorAll("td")[1]?.textContent?.trim());
+      return JSON.stringify(tables) === JSON.stringify(["customers", "order_items", "orders"]) &&
+        rows.every((row) => row.textContent?.includes("Active") && row.textContent?.includes("Synchronized")) &&
+        rows.every((row) => !row.textContent?.includes("the8020__demo__"));
+    })()`,
     "synchronized demo database tables",
   );
-  await clickRow(first, "the8020__demo__orders");
+  await clickRow(first, "orders");
   await waitForScreen(first, "the8020__demo__orders");
   await waitForPage(
     first,
-    `document.querySelector('[data-bind="tableState"]')?.value === "Active" &&
+    `document.querySelector('[data-bind="package"]')?.value === "the8020/demo" &&
+      document.querySelector('[data-bind="tableName"]')?.value === "orders" &&
+      document.querySelector('[data-bind="physicalTable"]')?.value === "the8020__demo__orders" &&
+      document.querySelector('[data-bind="tableState"]')?.value === "Active" &&
       document.querySelector('[data-bind="schemaState"]')?.value === "Synchronized" &&
       document.querySelectorAll('textarea').length === 0 &&
+      JSON.stringify([...document.querySelectorAll('[data-layout-id="columns"] tbody tr')]
+        .map((row) => row.querySelector('td')?.textContent?.trim())) ===
+        JSON.stringify(["createdAt", "updatedAt", "id", "customerId", "status", "total", "score", "receipt", "metadata"]) &&
       [...document.querySelectorAll('[data-layout-id="columns"] tbody tr')].some((row) =>
         row.textContent?.includes("total") && row.textContent?.includes("decimal(18, 2)") && row.textContent?.includes("INTEGER")) &&
       [...document.querySelectorAll('[data-layout-id="differences"] tbody tr')].some((row) =>
@@ -1296,7 +1308,7 @@ try {
   const evaluatorJobsAfterSynchronize = await evaluatorExecutionCount(
     primaryRoot,
   );
-  await clickRow(first, "the8020__demo__customers");
+  await clickRow(first, "customers");
   await waitForScreen(first, "the8020__demo__customers");
   await waitForPage(
     first,
