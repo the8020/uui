@@ -77,11 +77,11 @@
   shell always receives the first presentation instead of remaining on its
   opening placeholder.
 - Programs import `sendMessage(body, kind?)` from the public
-  `@packages/the8020/uui/mod.ts` surface and may call it while a screen
-  roundtrip is active or from a background asynchronous task for the same bound
-  session. Message kinds are `info`, `success`, `warning`, and `error`; bodies
-  are non-empty Markdown bounded to 20,000 characters. Notification frames use
-  the ordinary sequenced/replayable session transport and never require a client
+  `/p/the8020/uui/mod.ts` surface and may call it while a screen roundtrip is
+  active or from a background asynchronous task for the same bound session.
+  Message kinds are `info`, `success`, `warning`, and `error`; bodies are
+  non-empty Markdown bounded to 20,000 characters. Notification frames use the
+  ordinary sequenced/replayable session transport and never require a client
   event to be emitted. There is no compatibility alias.
 - Browser startup performs normal `POST /connect`, reads `X-80-20-Route`, and
   stores it only in `sessionStorage` under the WebSocket URL. It
@@ -124,8 +124,8 @@
   only when uncovered. Every settlement and session end detaches the channel;
   detached commands are discarded rather than buffered.
 - Runtime-loaded package modules address shared package APIs through the generic
-  `@packages/` mount alias. The package does not depend on a UUI-specific
-  runtime import-map entry that the generic image would have to know.
+  `/p/` mount alias. The package does not depend on a UUI-specific runtime
+  import-map entry that the generic image would have to know.
 - `deno.json` contains the canonical deployed `/opt/runtime` and
   `/workspace/packages` mappings. Package-local checks and tests override only
   those mappings with `deno.local.json` so they resolve sibling source trees
@@ -247,14 +247,14 @@
 - The browser's shared icon-text renderer expands `[[icon=<name>]]` placeholders
   in UUI button and text content into accessible Material icon spans. An
   optional `color` accepts `text`, `muted`, `primary`, `success`, `warning`,
-  `danger`, `info`, `brand`, or a 3/4/6/8-digit hex value. Icon names resolve
-  only through the fixed registry of individually vendored hashed SVGs. Inline
-  text icons are `1.2em` and vertically centered; button icons are `1.5em`,
-  flex-based buttons keep `0.45em` between every rendered child, and explicitly
-  sized shell icons remain `20px`. Unregistered names and invalid colors remain
-  literal text. Shell-owned Back, overflow, session menu, theme, edit, and
-  select affordances use the same registry and ship no icon font or unused
-  collection.
+  `danger`, its `error` alias, `info`, `brand`, or a 3/4/6/8-digit hex value.
+  Icon names resolve only through the fixed registry of individually vendored
+  hashed SVGs. Inline text icons are `1.2em` and vertically centered; button
+  icons are `1.5em`, flex-based buttons keep `0.45em` between every rendered
+  child, and explicitly sized shell icons remain `20px`. Unregistered names and
+  invalid colors remain literal text. Shell-owned Back, overflow, session menu,
+  theme, edit, and select affordances use the same registry and ship no icon
+  font or unused collection.
 - The authenticated shell uses the static demo's light/dark visual tokens and
   component language with an explicit two-level hierarchy. Screen and section
   canvases remain unboxed and section titles render as H1 headings; semantic
@@ -341,11 +341,11 @@
 - `THIRD_PARTY_NOTICES.md` records the MIT/BSD notices for the bundled xterm and
   Markdown renderer dependencies, copied essential xterm styles, plus the
   Apache-2.0 license for the individually vendored Google Material `arrow_back`,
-  `arrow_drop_down`, `dark_mode`, `edit`, `light_mode`, `menu`, `more_vert`,
-  `refresh`, `save`, `close`, `logout`, and `tab_close` SVGs. Session menu rows
-  place a fixed-width leading icon or message-count badge before a left-aligned
-  label. The theme menu action shows the icon and visible label for the theme it
-  will switch to and retains its accessible label.
+  `arrow_drop_down`, `dark_mode`, `edit`, `error`, `light_mode`, `menu`,
+  `more_vert`, `refresh`, `save`, `close`, `logout`, and `tab_close` SVGs.
+  Session menu rows place a fixed-width leading icon or message-count badge
+  before a left-aligned label. The theme menu action shows the icon and visible
+  label for the theme it will switch to and retains its accessible label.
 - Reload resume synchronizes the Worker-acknowledged client sequence before a
   new event is emitted, preventing post-reload actions from being mistaken for
   duplicates.

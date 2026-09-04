@@ -1,14 +1,11 @@
 import { assertEquals } from "@std/assert";
-import { BACK_EVENT, UUI_PROTOCOL_VERSION } from "@packages/the8020/uui/mod.ts";
+import { BACK_EVENT, UUI_PROTOCOL_VERSION } from "/p/the8020/uui/mod.ts";
 import type {
   ScreenEventMessage,
   UUIClientMessage,
   UUIWorkerOutbound,
-} from "@packages/the8020/uui/mod.ts";
-import {
-  bindSession,
-  type SessionChannel,
-} from "@packages/the8020/uui/internal.ts";
+} from "/p/the8020/uui/mod.ts";
+import { bindSession, type SessionChannel } from "/p/the8020/uui/internal.ts";
 import { runHome } from "../programs/home/program.ts";
 
 type PresentationShow = Extract<

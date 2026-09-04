@@ -6,7 +6,7 @@ import {
   field,
   type TerminatedProgramInput,
   z,
-} from "@packages/the8020/uui/mod.ts";
+} from "/p/the8020/uui/mod.ts";
 import { buildShortDump } from "../../src/short_dump.ts";
 import layout from "./layouts/main.json" with { type: "json" };
 
@@ -74,7 +74,7 @@ export default async function programTerminated(
   while (true) {
     const event = await callScreen({
       id: "program-terminated",
-      title: "Program terminated",
+      title: "[[icon=error color=error]] Program terminated",
       description:
         `Uncaught exception of type '${model.exceptionType}' was raised in '${model.location}' and terminated the current program.`,
       schema: TerminationScreen,

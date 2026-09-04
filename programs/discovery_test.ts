@@ -5,7 +5,7 @@ import {
   ProgramExecutionError,
   readProgramManifest,
   validProgramID,
-} from "@packages/the8020/uui/mod.ts";
+} from "/p/the8020/uui/mod.ts";
 
 Deno.test("home discovers canonical visible program manifests", async () => {
   const root = await Deno.makeTempDir({ prefix: "the8020-discovery-test-" });

@@ -19,6 +19,8 @@ interface UISession {
   worker_id: string;
   sandbox_id: string;
   state: string;
+  persistent_execution_id: string;
+  termination_failure: string | null;
 }
 
 interface CDPTarget {
@@ -304,6 +306,7 @@ try {
     "/the8020/uui/shell/assets/material-edit-24-a4b3c9f6.svg",
     "/the8020/uui/shell/assets/material-light-mode-24-e5b6e132.svg",
     "/the8020/uui/shell/assets/material-dark-mode-24-bab57d17.svg",
+    "/the8020/uui/shell/assets/material-error-24-e083cc60.svg",
     "/the8020/uui/shell/assets/material-close-24-84ccef28.svg",
     "/the8020/uui/shell/assets/material-logout-24-84ccef28.svg",
     "/the8020/uui/shell/assets/material-tab-close-24-84ccef28.svg",
@@ -645,6 +648,7 @@ try {
     firstSession !== undefined,
     "kernel restart reused a lost logical UUI session",
   );
+  const firstSessionObservedAt = Date.now();
   await waitFor(
     () => first.websocketFrames.length > framesBeforeKernelRestart,
     "replacement session frame after kernel restart",
@@ -1972,20 +1976,41 @@ try {
     );
   `);
   await clickButton(first, "Open nested modal");
-  await waitForPage(
-    first,
-    `(() => {
-      const dialogs = [...document.querySelectorAll("dialog.presentation-modal[open]")];
-      return dialogs.length === 2 &&
-        dialogs[0]?.querySelector(".screen-title")?.textContent?.trim() === "Presentation modal B" &&
-        dialogs[1]?.querySelector(".screen-title")?.textContent?.trim() === "Presentation modal C" &&
-        window.__the8020PresentationModal === dialogs[0]?.querySelector(".screen") &&
-        dialogs[0]?.inert === true && dialogs[1]?.inert === false &&
-        dialogs[1]?.contains(document.activeElement) === true &&
-        document.title === "80|20 Presentation modal C";
-    })()`,
-    "nested modal presentation",
-  );
+  try {
+    await waitForPage(
+      first,
+      `(() => {
+        const dialogs = [...document.querySelectorAll("dialog.presentation-modal[open]")];
+        return dialogs.length === 2 &&
+          dialogs[0]?.querySelector(".screen-title")?.textContent?.trim() === "Presentation modal B" &&
+          dialogs[1]?.querySelector(".screen-title")?.textContent?.trim() === "Presentation modal C" &&
+          window.__the8020PresentationModal === dialogs[0]?.querySelector(".screen") &&
+          dialogs[0]?.inert === true && dialogs[1]?.inert === false &&
+          dialogs[1]?.contains(document.activeElement) === true &&
+          document.title === "80|20 Presentation modal C";
+      })()`,
+      "nested modal presentation",
+    );
+  } catch (error) {
+    const state = await first.evaluate(`({
+      connected: document.querySelector("#connection-state")?.textContent,
+      title: document.title,
+      dialogs: [...document.querySelectorAll("dialog.presentation-modal")].map((dialog) => ({
+        open: dialog.open,
+        inert: dialog.inert,
+        title: dialog.querySelector(".screen-title")?.textContent?.trim(),
+        active: dialog.contains(document.activeElement),
+      })),
+      messages: [...document.querySelectorAll(".message-toast-body")].map((item) => item.textContent),
+    })`);
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}; state: ${
+        JSON.stringify(state)
+      }; sessions: ${
+        JSON.stringify(await uiSessions(primaryRoot))
+      }; ${await latestKernelLog(primaryRoot)}`,
+    );
+  }
   await pressEscape(first);
   await waitForPage(
     first,
@@ -2771,7 +2796,7 @@ try {
             !window.__the8020AsyncMessageOrder.includes("screen")) {
           window.__the8020AsyncMessageOrder.push("screen");
         }
-      }).observe(app, { childList: true });
+      }).observe(app, { childList: true, subtree: true });
     }
     if (stack instanceof HTMLElement) {
       new MutationObserver(() => {
@@ -2890,10 +2915,13 @@ try {
       const message = document.querySelector('[data-bind="message"]')?.value ?? "";
       const stack = document.querySelector('[data-bind="stack"]')?.value ?? "";
       const source = document.querySelector('[data-bind="source"]')?.value ?? "";
+      const titleIcon = document.querySelector('.screen-title [data-material-icon="error"]');
       return text.includes("TypeError") &&
         message.includes("intentionally raised an uncaught TypeError") &&
         stack.includes("demo-form/program.ts") &&
-        source.includes("raiseDemoTypeError");
+        source.includes("raiseDemoTypeError") &&
+        titleIcon?.classList.contains("material-icon-color-danger") === true &&
+        getComputedStyle(titleIcon).maskImage !== "none";
     })()`),
     "TypeError short dump is missing exception, stack, or source details",
   );
@@ -3082,6 +3110,16 @@ try {
     ),
     "second session theme change replaced the first session theme",
   );
+  await delay(Math.max(0, 61_000 - (Date.now() - firstSessionObservedAt)));
+  const minuteStableSession = (await uiSessions(primaryRoot)).find((item) =>
+    item.session_id === firstSession.session_id
+  );
+  assert(
+    minuteStableSession?.state === "CONNECTED" &&
+      minuteStableSession.worker_id === firstSession.worker_id &&
+      minuteStableSession.sandbox_id === firstSession.sandbox_id,
+    "the active UUI session did not survive one minute on its original Worker",
+  );
   await admin(primaryRoot, ["worker", "kill", firstSession.worker_id]);
   await waitFor(
     async () => {
@@ -3152,12 +3190,22 @@ try {
         ? inspectionError.message
         : String(inspectionError),
     }));
+    const routes = await admin(primaryRoot, [
+      "db.sql",
+      `SELECT "serviceId", "runtimeGroupId", "sandboxId", "workerId", "executionId", "connected" FROM "the8020__services__routes" WHERE "executionId" = '${
+        thirdSession.persistent_execution_id.replaceAll("'", "''")
+      }' LIMIT 10`,
+    ]).catch((routeError) => ({
+      error: routeError instanceof Error
+        ? routeError.message
+        : String(routeError),
+    }));
     throw new Error(
       `${
         error instanceof Error ? error.message : String(error)
       }; expected retained session ${secondSession.session_id} and terminated session ${thirdSession.session_id}; target Worker ${
         JSON.stringify(worker)
-      }; third-page frames ${
+      }; persistent routes ${JSON.stringify(routes)}; third-page frames ${
         websocketOutput(third, Math.max(0, third.websocketFrames.length - 12))
       }; third-page state ${await third.evaluate<string>(
         `JSON.stringify({location: location.href, notice: document.querySelector("#notice")?.textContent, connection: document.querySelector("#connection-state")?.textContent})`,
@@ -3623,11 +3671,15 @@ async function uiSessions(root: string): Promise<UISession[]> {
   try {
     const result = await admin(root, [
       "db.sql",
-      `SELECT "sessionId", "nodeId", "runtimeGroupId", "workerId", "sandboxId", "state" FROM "the8020__uui__sessions" ORDER BY "sessionId" LIMIT 200`,
+      `SELECT "sessionId", "nodeId", "runtimeGroupId", "workerId", "sandboxId", "state", "persistentExecutionId", "terminationFailure" FROM "the8020__uui__sessions" ORDER BY "sessionId" LIMIT 200`,
     ]);
     const rows = result.rows as unknown[][] | undefined;
     return (rows ?? []).flatMap((row) => {
-      if (row.length !== 6 || row.some((value) => typeof value !== "string")) {
+      if (
+        row.length !== 8 ||
+        row.slice(0, 7).some((value) => typeof value !== "string") ||
+        row[7] !== null && typeof row[7] !== "string"
+      ) {
         return [];
       }
       return [{
@@ -3637,6 +3689,8 @@ async function uiSessions(root: string): Promise<UISession[]> {
         worker_id: row[3] as string,
         sandbox_id: row[4] as string,
         state: row[5] as string,
+        persistent_execution_id: row[6] as string,
+        termination_failure: row[7] as string | null,
       }];
     });
   } catch {

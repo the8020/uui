@@ -578,6 +578,7 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
 
   const staticAssets = [
     ["material-edit-24-a4b3c9f6.svg", 400, "M3 17.25V21h3.75"],
+    ["material-error-24-e083cc60.svg", 400, "M12 2C6.48"],
     ["material-light-mode-24-e5b6e132.svg", 1_000, "M12 7c-2.76"],
     ["material-dark-mode-24-bab57d17.svg", 400, "M12 3c-4.97"],
     ["material-arrow-back-24-e083cc60.svg", 300, "M20 11H7.83"],

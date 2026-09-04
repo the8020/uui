@@ -3,12 +3,9 @@ import type {
   ScreenEventMessage,
   UUIClientMessage,
   UUIWorkerOutbound,
-} from "@packages/the8020/uui/mod.ts";
-import { UUI_PROTOCOL_VERSION } from "@packages/the8020/uui/mod.ts";
-import {
-  bindSession,
-  type SessionChannel,
-} from "@packages/the8020/uui/internal.ts";
+} from "/p/the8020/uui/mod.ts";
+import { UUI_PROTOCOL_VERSION } from "/p/the8020/uui/mod.ts";
+import { bindSession, type SessionChannel } from "/p/the8020/uui/internal.ts";
 import programTerminated from "./program.ts";
 
 type PresentationShow = Extract<
@@ -34,7 +31,10 @@ Deno.test("Program terminated renders, copies its dump, and returns Home", async
     });
     const first = await channel.next("presentation.show") as PresentationShow;
     const firstScreen = topSurface(first).screen;
-    assertEquals(firstScreen.title, "Program terminated");
+    assertEquals(
+      firstScreen.title,
+      "[[icon=error color=error]] Program terminated",
+    );
     const model = firstScreen.model as Record<string, string>;
     assertEquals(model.exceptionType, "TypeError");
     assertStringIncludes(model.dumpText!, "program demonstration failed");

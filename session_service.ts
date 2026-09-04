@@ -209,8 +209,11 @@ async function establish(
     auth: record.auth,
     signal: controller.signal,
   }).then(
-    () => void end(record, "session handler returned"),
+    () => {
+      if (!record.ended) void end(record, "session handler returned");
+    },
     (error: unknown) => {
+      if (record.ended) return;
       emit(record, {
         type: "session.error",
         code: "program_failed",
@@ -679,6 +682,7 @@ async function runConfiguredSession(context: UUISessionContext): Promise<void> {
       await invokeProgram(programs.home);
       return;
     } catch (error) {
+      if (context.signal.aborted) return;
       const failure = terminationInput(error, programs.home, programs);
       const action = await invokeProgram(programs.terminated, failure);
       if (action !== "home") return;

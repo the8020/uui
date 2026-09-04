@@ -6,7 +6,7 @@ import {
   type ScreenEventType,
   type ScreenSnapshot,
   type UUIServerMessage,
-} from "@packages/the8020/uui/protocol.ts";
+} from "/p/the8020/uui/protocol.ts";
 import {
   DirtyBindings,
   reconnectDelay,
@@ -704,9 +704,6 @@ function updateLayer(
   if (layer.kind !== surface.kind) {
     throw new TypeError("presentation surface kind changed");
   }
-  const fingerprint = JSON.stringify(surface.screen);
-  if (fingerprint === layer.screenFingerprint) return false;
-  rememberLayerFocus(layer);
   const sameScreen = layer.screenFingerprint !== "" &&
     layer.screen.id === surface.screen.id &&
     layer.screen.revision === surface.screen.revision;
@@ -718,9 +715,15 @@ function updateLayer(
     )
     : structuredClone(surface.screen.model) as Record<string, unknown>;
   if (!sameScreen) layer.dirty.clear();
+  const fingerprint = JSON.stringify({
+    ...surface.screen,
+    model: nextModel,
+  });
   layer.screen = surface.screen;
-  layer.screenFingerprint = fingerprint;
   layer.model = nextModel;
+  if (fingerprint === layer.screenFingerprint) return false;
+  rememberLayerFocus(layer);
+  layer.screenFingerprint = fingerprint;
   renderLayer(layer);
   return true;
 }

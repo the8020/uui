@@ -149,6 +149,66 @@ Deno.test("ordinary persistent UUI service owns metadata and exact Worker admini
   }
 });
 
+Deno.test("intentional termination does not report the interrupted program as failed", async () => {
+  const metadataStore = new MemorySessionMetadataStore();
+  let sessionId = "";
+  let completions = 0;
+  const service = defineSessionService(async () => {
+    await callScreen({
+      id: "interrupted",
+      schema: z.object({}),
+      model: {},
+      title: "Interrupted screen",
+    });
+  }, {
+    metadataStore,
+    completePersistent: () => {
+      completions++;
+      return Promise.resolve();
+    },
+  });
+  try {
+    const response = await service.fetch(
+      new Request("https://example.test/connect", { method: "POST" }),
+      context({
+        ...metadata,
+        requestId: "request-intentional-termination",
+        persistentExecutionId: "persistent-intentional-termination",
+      }),
+    );
+    assertEquals(response.status, 204);
+
+    const socket = new TestSocket();
+    socket.message(connectMessage(0));
+    await service.connectWebSocket(
+      new Request("https://example.test/connect"),
+      context({
+        ...metadata,
+        requestId: "request-intentional-termination-socket",
+        persistentExecutionId: "persistent-intentional-termination",
+      }),
+      socket,
+    );
+    await until(() => serverMessages(socket, "session.ready").length === 1);
+    sessionId = serverMessages(socket, "session.ready")[0]!.sessionId;
+
+    await workerFunctions["uui.session.terminate"]({ sessionId });
+    await Promise.resolve();
+    assertEquals(serverMessages(socket, "session.end").length, 1);
+    assertEquals(serverMessages(socket, "session.error").length, 0);
+    assertEquals(socket.signal.aborted, true);
+    assertEquals(completions, 1);
+    assertEquals(metadataStore.size, 0);
+  } finally {
+    if (sessionId !== "") {
+      await workerFunctions["uui.session.terminate"]({ sessionId }).catch(
+        () => undefined,
+      );
+    }
+    await metadataStore.clear();
+  }
+});
+
 Deno.test("initial UUI connection replays its generated screen in sequence", async () => {
   const metadataStore = new MemorySessionMetadataStore();
   const service = defineSessionService(async () => {

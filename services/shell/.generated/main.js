@@ -12046,6 +12046,7 @@ var MATERIAL_ICON_ASSETS = {
   close: "./assets/material-close-24-84ccef28.svg",
   dark_mode: "./assets/material-dark-mode-24-bab57d17.svg",
   edit: "./assets/material-edit-24-a4b3c9f6.svg",
+  error: "./assets/material-error-24-e083cc60.svg",
   light_mode: "./assets/material-light-mode-24-e5b6e132.svg",
   logout: "./assets/material-logout-24-84ccef28.svg",
   menu: "./assets/material-menu-24-e083cc60.svg",
@@ -12061,6 +12062,7 @@ var SEMANTIC_COLORS = /* @__PURE__ */ new Set([
   "success",
   "warning",
   "danger",
+  "error",
   "info",
   "brand"
 ]);
@@ -12101,7 +12103,7 @@ function createMaterialIcon(name, color, options = {}) {
   icon.style.setProperty("--material-icon-url", `url("${MATERIAL_ICON_ASSETS[name]}")`);
   if (color !== void 0) {
     if (SEMANTIC_COLORS.has(color)) {
-      icon.classList.add(`material-icon-color-${color}`);
+      icon.classList.add(`material-icon-color-${color === "error" ? "danger" : color}`);
     } else {
       icon.style.color = color;
     }
@@ -26552,15 +26554,18 @@ function updateLayer(layer, surface) {
   if (layer.kind !== surface.kind) {
     throw new TypeError("presentation surface kind changed");
   }
-  const fingerprint = JSON.stringify(surface.screen);
-  if (fingerprint === layer.screenFingerprint) return false;
-  rememberLayerFocus(layer);
   const sameScreen = layer.screenFingerprint !== "" && layer.screen.id === surface.screen.id && layer.screen.revision === surface.screen.revision;
   const nextModel = sameScreen ? mergeServerModel(surface.screen.model, layer.model, layer.dirty.bindings()) : structuredClone(surface.screen.model);
   if (!sameScreen) layer.dirty.clear();
+  const fingerprint = JSON.stringify({
+    ...surface.screen,
+    model: nextModel
+  });
   layer.screen = surface.screen;
-  layer.screenFingerprint = fingerprint;
   layer.model = nextModel;
+  if (fingerprint === layer.screenFingerprint) return false;
+  rememberLayerFocus(layer);
+  layer.screenFingerprint = fingerprint;
   renderLayer(layer);
   return true;
 }

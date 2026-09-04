@@ -6,6 +6,7 @@ const MATERIAL_ICON_ASSETS = {
   close: "./assets/material-close-24-84ccef28.svg",
   dark_mode: "./assets/material-dark-mode-24-bab57d17.svg",
   edit: "./assets/material-edit-24-a4b3c9f6.svg",
+  error: "./assets/material-error-24-e083cc60.svg",
   light_mode: "./assets/material-light-mode-24-e5b6e132.svg",
   logout: "./assets/material-logout-24-84ccef28.svg",
   menu: "./assets/material-menu-24-e083cc60.svg",
@@ -22,6 +23,7 @@ const SEMANTIC_COLORS = new Set([
   "success",
   "warning",
   "danger",
+  "error",
   "info",
   "brand",
 ]);
@@ -92,7 +94,9 @@ export function createMaterialIcon(
   );
   if (color !== undefined) {
     if (SEMANTIC_COLORS.has(color)) {
-      icon.classList.add(`material-icon-color-${color}`);
+      icon.classList.add(
+        `material-icon-color-${color === "error" ? "danger" : color}`,
+      );
     } else {
       icon.style.color = color;
     }

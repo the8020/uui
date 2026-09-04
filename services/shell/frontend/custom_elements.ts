@@ -1,7 +1,7 @@
 import { CanvasAddon } from "@xterm/addon-canvas";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
-import type { CustomElementDescriptor } from "@packages/the8020/uui/protocol.ts";
+import type { CustomElementDescriptor } from "/p/the8020/uui/protocol.ts";
 import { renderIconText } from "./icon_text.ts";
 
 interface CustomElementInstance {

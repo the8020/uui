@@ -4,11 +4,13 @@ import { parseIconText } from "./icon_text.ts";
 Deno.test("icon text parses vendored names and safe semantic or hex colors", () => {
   assertEquals(
     parseIconText(
-      "Before [[icon=edit color=success]] and [[icon=save color=#3A7]] after",
+      "Before [[icon=edit color=success]] and [[icon=error color=error]] and [[icon=save color=#3A7]] after",
     ),
     [
       { type: "text", text: "Before " },
       { type: "icon", name: "edit", color: "success" },
+      { type: "text", text: " and " },
+      { type: "icon", name: "error", color: "error" },
       { type: "text", text: " and " },
       { type: "icon", name: "save", color: "#3A7" },
       { type: "text", text: " after" },

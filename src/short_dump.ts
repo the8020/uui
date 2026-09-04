@@ -1,4 +1,4 @@
-import type { TerminatedProgramInput } from "@packages/the8020/uui/mod.ts";
+import type { TerminatedProgramInput } from "/p/the8020/uui/mod.ts";
 
 export interface ShortDump {
   exceptionType: string;

@@ -5,7 +5,7 @@ import {
   field,
   sendMessage,
   z,
-} from "@packages/the8020/uui/mod.ts";
+} from "/p/the8020/uui/mod.ts";
 import detailLayout from "./layouts/detail.json" with { type: "json" };
 import listLayout from "./layouts/list.json" with { type: "json" };
 import type { SessionMetadata } from "../../session_metadata.ts";

@@ -1,4 +1,4 @@
-import { db } from "@the8020/db";
+import { db } from "/p/the8020/db/mod.ts";
 import type {
   SessionMetadata,
   SessionMetadataStore,

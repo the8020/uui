@@ -1,15 +1,10 @@
 {
   "imports": {
     "@std/assert": "jsr:@std/assert@1.0.14",
-    "@the8020/db": "../db/mod.ts",
-    "@the8020/db/types": "../db/types.ts",
+    "/p/the8020/": "../",
     "@the8020/http": "../kernel/defaults/config/runtime/deno/http/mod.ts",
     "@the8020/kernel": "../kernel/defaults/config/runtime/deno/kernel/mod.ts",
     "@the8020/protocol": "../kernel/defaults/config/runtime/protocol/generated.ts",
-    "@packages/the8020/uui/": "./",
-    "@packages/the8020/admin-core/": "../admin-core/",
-    "@packages/the8020/demo/": "../demo/",
-    "@packages/the8020/dev-core/": "../dev-core/",
     "@xterm/addon-canvas": "npm:@xterm/addon-canvas@0.7.0",
     "@xterm/addon-fit": "npm:@xterm/addon-fit@0.10.0",
     "@xterm/xterm": "npm:@xterm/xterm@5.5.0",

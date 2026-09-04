@@ -1,4 +1,4 @@
-import { MAX_FIELD_ROW_SPAN } from "@packages/the8020/uui/protocol.ts";
+import { MAX_FIELD_ROW_SPAN } from "/p/the8020/uui/protocol.ts";
 
 export type SemanticFieldLength = "short" | "medium" | "long";
 export type FieldGridMode = "mobile" | "tablet" | "desktop";

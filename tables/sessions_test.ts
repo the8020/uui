@@ -4,7 +4,7 @@ import { kernelDatabaseBackendSymbol } from "@the8020/kernel";
 (globalThis as unknown as Record<symbol, unknown>)[
   kernelDatabaseBackendSymbol
 ] = "sqlite";
-const { descriptorOf } = await import("@the8020/db");
+const { descriptorOf } = await import("/p/the8020/db/mod.ts");
 const Sessions = (await import("./sessions.ts")).default;
 
 Deno.test("UUI owns its application session metadata", () => {
