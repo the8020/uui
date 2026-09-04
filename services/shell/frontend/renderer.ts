@@ -1,14 +1,16 @@
 import type {
   ControlDescriptor,
   CustomElementDescriptor,
-  LayoutDocument,
-  LayoutNode,
   ScreenAction,
   ScreenChange,
   ScreenEventType,
   ScreenListPage,
   ScreenSnapshot,
-} from "@packages/the8020/uui/mod.ts";
+} from "@packages/the8020/uui/protocol.ts";
+import type {
+  LayoutDocument,
+  LayoutNode,
+} from "@packages/the8020/uui/layout.ts";
 import { humanize } from "../../../humanize.ts";
 import { fieldGridPositions } from "./field_grid.ts";
 import {

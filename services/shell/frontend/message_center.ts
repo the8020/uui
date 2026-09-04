@@ -3,7 +3,7 @@ import {
   type NotificationMessage,
   UUI_MESSAGE_KINDS,
   type UUIMessageKind,
-} from "@packages/the8020/uui/mod.ts";
+} from "@packages/the8020/uui/protocol.ts";
 import { renderMarkdown } from "../../../frontend/mod.ts";
 import { createMaterialIcon } from "./icon_text.ts";
 

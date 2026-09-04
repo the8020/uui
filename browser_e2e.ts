@@ -1925,6 +1925,148 @@ try {
     })()`,
     "properly sized, centered, and spaced icon placeholders",
   );
+
+  await first.evaluate(`
+    window.__the8020PresentationPage = document.querySelector(
+      "#app .presentation-page-layer:not([hidden]) .screen"
+    );
+  `);
+  await clickButton(first, "Presentation flow");
+  await waitForPage(
+    first,
+    `(() => {
+      const dialogs = [...document.querySelectorAll("dialog.presentation-modal[open]")];
+      const dialog = dialogs[0];
+      const title = dialog?.querySelector(".screen-title");
+      const localHeader = dialog?.querySelector(".presentation-modal-header");
+      return dialogs.length === 1 && title?.textContent?.trim() === "Presentation modal B" &&
+        localHeader?.textContent?.includes("Close modal") === true &&
+        document.querySelector("#program-header")?.textContent?.includes("Save") === true &&
+        document.querySelector("#app")?.inert === true && dialog?.inert === false &&
+        dialog?.contains(document.activeElement) === true &&
+        document.title === "80|20 Presentation modal B";
+    })()`,
+    "first modal presentation",
+  );
+  await setValue(
+    first,
+    '.presentation-modal[open] [data-bind="value"]',
+    "Locally edited during redraw",
+  );
+  await waitForPage(
+    first,
+    `(() => {
+      const dialog = document.querySelector("dialog.presentation-modal[open]");
+      const value = dialog?.querySelector('[data-bind="value"]');
+      const status = dialog?.querySelector('[data-bind="status"]');
+      return value?.value === "Locally edited during redraw" &&
+        status?.value === "Background redraw completed" &&
+        window.__the8020PresentationPage ===
+          document.querySelector("#app .presentation-page-layer:not([hidden]) .screen");
+    })()`,
+    "modal background redraw preserves its dirty value and page DOM",
+  );
+  await first.evaluate(`
+    window.__the8020PresentationModal = document.querySelector(
+      "dialog.presentation-modal[open] .screen"
+    );
+  `);
+  await clickButton(first, "Open nested modal");
+  await waitForPage(
+    first,
+    `(() => {
+      const dialogs = [...document.querySelectorAll("dialog.presentation-modal[open]")];
+      return dialogs.length === 2 &&
+        dialogs[0]?.querySelector(".screen-title")?.textContent?.trim() === "Presentation modal B" &&
+        dialogs[1]?.querySelector(".screen-title")?.textContent?.trim() === "Presentation modal C" &&
+        window.__the8020PresentationModal === dialogs[0]?.querySelector(".screen") &&
+        dialogs[0]?.inert === true && dialogs[1]?.inert === false &&
+        dialogs[1]?.contains(document.activeElement) === true &&
+        document.title === "80|20 Presentation modal C";
+    })()`,
+    "nested modal presentation",
+  );
+  await pressEscape(first);
+  await waitForPage(
+    first,
+    `document.querySelectorAll("dialog.presentation-modal[open]").length === 1 &&
+      document.querySelector("dialog.presentation-modal[open] .screen-title")?.textContent?.trim() === "Presentation modal B" &&
+      document.title === "80|20 Presentation modal B"`,
+    "Escape returns to the underlying modal",
+  );
+
+  await first.evaluate(`
+    window.__the8020PresentationPage = document.querySelector(
+      "#app .presentation-page-layer:not([hidden]) .screen"
+    );
+    window.__the8020PresentationDialog = document.querySelector(
+      "dialog.presentation-modal[open]"
+    );
+  `);
+  await clickButton(first, "Open page");
+  await waitForPage(
+    first,
+    `(() => {
+      const visible = document.querySelector(
+        "#app .presentation-page-layer:not([hidden]) .screen-title"
+      );
+      const priorPage = window.__the8020PresentationPage?.closest(
+        ".presentation-page-layer"
+      );
+      return visible?.textContent?.trim() === "Presentation page D" &&
+        document.querySelectorAll("dialog.presentation-modal[open]").length === 0 &&
+        window.__the8020PresentationPage?.isConnected === true &&
+        priorPage?.hidden === true &&
+        window.__the8020PresentationDialog?.isConnected === true &&
+        window.__the8020PresentationDialog?.open === false &&
+        document.title === "80|20 Presentation page D";
+    })()`,
+    "page presentation hides without disposing its prior composition",
+  );
+  await clickButton(first, "Open modal E");
+  await waitForPage(
+    first,
+    `document.querySelectorAll("dialog.presentation-modal[open]").length === 1 &&
+      document.querySelector("dialog.presentation-modal[open] .screen-title")?.textContent?.trim() === "Presentation modal E" &&
+      document.querySelector("#app .presentation-page-layer:not([hidden]) .screen-title")?.textContent?.trim() === "Presentation page D" &&
+      document.title === "80|20 Presentation modal E"`,
+    "modal over a later page",
+  );
+  await first.command("Page.reload", { ignoreCache: true });
+  await waitForPage(
+    first,
+    `document.querySelector("#connection-state")?.textContent === "Connected" &&
+      document.querySelectorAll("dialog.presentation-modal[open]").length === 1 &&
+      document.querySelector("dialog.presentation-modal[open] .screen-title")?.textContent?.trim() === "Presentation modal E" &&
+      document.querySelector("#app .presentation-page-layer:not([hidden]) .screen-title")?.textContent?.trim() === "Presentation page D" &&
+      document.title === "80|20 Presentation modal E"`,
+    "reload restores the current page and modal presentation",
+  );
+  await first.evaluate("history.back()");
+  await waitForPage(
+    first,
+    `document.querySelectorAll("dialog.presentation-modal[open]").length === 0 &&
+      document.querySelector("#app .presentation-page-layer:not([hidden]) .screen-title")?.textContent?.trim() === "Presentation page D" &&
+      document.title === "80|20 Presentation page D"`,
+    "browser Back targets the top modal",
+  );
+  await clickButton(first, "Back");
+  await waitForPage(
+    first,
+    `document.querySelectorAll("dialog.presentation-modal[open]").length === 1 &&
+      document.querySelector("dialog.presentation-modal[open] .screen-title")?.textContent?.trim() === "Presentation modal B" &&
+      document.querySelector("#app .presentation-page-layer:not([hidden]) .screen-title")?.textContent?.trim() === "Form and binding demonstration" &&
+      document.title === "80|20 Presentation modal B"`,
+    "returning page restores its earlier page and modal continuation",
+  );
+  await clickButton(first, "Close modal");
+  await waitForScreen(first, "Form and binding demonstration");
+  assert(
+    await first.evaluate(
+      `document.querySelectorAll("dialog.presentation-modal[open]").length === 0`,
+    ),
+    "closing the restored modal did not return to its page",
+  );
   try {
     await waitForPage(
       first,
@@ -3646,6 +3788,23 @@ async function enterTerminal(
     code: "Enter",
     windowsVirtualKeyCode: 13,
     nativeVirtualKeyCode: 13,
+  });
+}
+
+async function pressEscape(page: BrowserPage): Promise<void> {
+  await page.command("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: "Escape",
+    code: "Escape",
+    windowsVirtualKeyCode: 27,
+    nativeVirtualKeyCode: 27,
+  });
+  await page.command("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: "Escape",
+    code: "Escape",
+    windowsVirtualKeyCode: 27,
+    nativeVirtualKeyCode: 27,
   });
 }
 

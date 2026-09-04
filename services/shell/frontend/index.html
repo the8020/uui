@@ -150,20 +150,25 @@
       </div>
     </header>
     <dialog
-      class="message-dialog"
+      class="uui-dialog uui-dialog-compact message-dialog"
       id="message-dialog"
       aria-labelledby="message-dialog-title"
     >
-      <section class="message-dialog-frame">
-        <header class="message-dialog-header">
-          <h2 id="message-dialog-title">Messages</h2>
+      <section class="uui-dialog-frame message-dialog-frame">
+        <header class="uui-dialog-toolbar message-dialog-header">
+          <h2 class="uui-dialog-title" id="message-dialog-title">Messages</h2>
           <button
-            class="btn btn-ghost btn-sm"
+            class="btn btn-ghost btn-sm uui-dialog-close message-dialog-close"
             id="message-dialog-close"
             type="button"
-          >Close</button>
+            aria-label="Close"
+            title="Close"
+          ></button>
         </header>
-        <div class="message-history-list" id="message-history-list"></div>
+        <div
+          class="uui-dialog-body message-history-list"
+          id="message-history-list"
+        ></div>
       </section>
     </dialog>
     <div id="notice" class="notice" role="alert" hidden></div>
@@ -180,6 +185,7 @@
         </div>
       </div>
     </main>
+    <div id="modal-layers"></div>
     <script id="the8020-boot" type="application/json">
     { "__the8020_boot_placeholder__": true }
     </script>

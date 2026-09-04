@@ -60,6 +60,16 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   assertEquals(body.includes('id="message-toast-stack"'), true);
   assertEquals(body.includes('id="message-toast-dismiss-all"'), true);
   assertEquals(body.includes('id="message-dialog"'), true);
+  assertEquals(
+    body.includes('class="uui-dialog uui-dialog-compact message-dialog"'),
+    true,
+  );
+  assertEquals(
+    body.includes(
+      'class="btn btn-ghost btn-sm uui-dialog-close message-dialog-close"',
+    ),
+    true,
+  );
   assertEquals(body.includes('id="message-history-list"'), true);
   assertEquals(
     body.includes('<link rel="stylesheet" href="markdown.css">'),
@@ -84,6 +94,7 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   assertEquals(body.includes('id="program-header-overflow-toggle"'), true);
   assertEquals(body.includes('id="program-header-overflow-items"'), true);
   assertEquals(body.includes('id="interaction-shield"'), true);
+  assertEquals(body.includes('id="modal-layers"'), true);
   assertEquals(body.includes('class="interaction-indicator"'), true);
   assertEquals(body.includes('class="interaction-spinner"'), true);
   assertEquals(body.includes(">80</span>"), true);
@@ -118,7 +129,8 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
     "text/javascript; charset=utf-8",
   );
   assertEquals(browserClient.headers.get("cache-control"), "no-cache");
-  await browserClient.body?.cancel();
+  const browserSource = await browserClient.text();
+  assertEquals(/^import .*from ["']node:/m.test(browserSource), false);
   const sourceMap = await service.fetch(
     new Request("https://service/main.js.map"),
     context,
@@ -149,6 +161,14 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   assertMatch(
     cssBody,
     /html\[data-interaction-pending\] \.interaction-indicator\s*\{[^}]*opacity:\s*1;[^}]*transition-delay:\s*var\(--interaction-feedback-delay\);/s,
+  );
+  assertMatch(
+    cssBody,
+    /\.uui-dialog\s*\{[^}]*max-height:\s*min\(90dvh, 54rem\);[^}]*overflow:\s*hidden;[^}]*border-radius:\s*16px;/s,
+  );
+  assertMatch(
+    cssBody,
+    /\.uui-dialog-body\s*\{[^}]*min-height:\s*0;[^}]*overflow:\s*auto;[^}]*overscroll-behavior:\s*contain;/s,
   );
   assertMatch(
     cssBody,
@@ -222,11 +242,11 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   );
   assertMatch(
     cssBody,
-    /\.message-dialog\s*\{[^}]*max-height:\s*90dvh;[^}]*overflow:\s*hidden;/s,
+    /\.uui-dialog-compact\s*\{[^}]*--uui-dialog-width:\s*48rem;/s,
   );
   assertMatch(
     cssBody,
-    /\.message-history-list\s*\{[^}]*min-height:\s*0;[^}]*max-height:\s*calc\(90dvh - 4rem\);[^}]*overflow:\s*auto;/s,
+    /\.message-history-list\s*\{[^}]*max-height:\s*calc\(90dvh - 4rem\);[^}]*padding:\s*0\.8rem;/s,
   );
   assertEquals(
     /\.message-history-body\s*\{[^}]*background:/s.test(cssBody),

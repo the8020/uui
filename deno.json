@@ -39,6 +39,7 @@
   },
   "tasks": {
     "check": "deno fmt --check . && deno lint . && deno check --import-map=deno.local.json mod.ts tables/sessions.ts services/login/service.ts services/shell/service.ts services/session/service.ts programs/home/program.ts programs/program-terminated/program.ts programs/sessions/program.ts services/shell/frontend/main.ts",
-    "test": "deno test --import-map=deno.local.json --allow-read=.,../admin-core,../admin-db,../demo,../dev-core,../kernel/defaults/config/runtime,/tmp --allow-write=/tmp ."
+    "test": "deno test --import-map=deno.local.json --allow-read=.,../admin-core,../admin-db,../demo,../dev-core,../kernel/defaults/config/runtime,/tmp --allow-write=/tmp .",
+    "test:presentation-browser": "deno run -A --import-map=deno.local.json presentation_browser_e2e.ts"
   }
 }

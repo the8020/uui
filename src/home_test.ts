@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert";
-import { BACK_EVENT } from "@packages/the8020/uui/mod.ts";
+import { BACK_EVENT, UUI_PROTOCOL_VERSION } from "@packages/the8020/uui/mod.ts";
 import type {
   ScreenEventMessage,
   UUIClientMessage,
@@ -11,7 +11,10 @@ import {
 } from "@packages/the8020/uui/internal.ts";
 import { runHome } from "../programs/home/program.ts";
 
-type ScreenShow = Extract<UUIWorkerOutbound, { type: "screen.show" }>;
+type PresentationShow = Extract<
+  UUIWorkerOutbound,
+  { type: "presentation.show" }
+>;
 
 class HomeChannel implements SessionChannel {
   readonly sessionId = "ui-session-home-test";
@@ -33,23 +36,28 @@ class HomeChannel implements SessionChannel {
     return new Promise((resolve) => this.#clientWaiters.push(resolve));
   }
 
-  async screen(): Promise<ScreenShow> {
+  async screen(): Promise<PresentationShow> {
     while (true) {
       const message = this.#server.shift() ?? await new Promise<
         UUIWorkerOutbound
       >((resolve) => this.#serverWaiters.push(resolve));
-      if (message.type === "screen.show") return message;
+      if (
+        message.type === "presentation.show" &&
+        message.presentation.activeSurfaceId !== null
+      ) return message;
     }
   }
 
-  event(screen: ScreenShow, action: string): void {
+  event(presentation: PresentationShow, action: string): void {
+    const surface = topSurface(presentation);
     const message: ScreenEventMessage = {
       type: "screen.event",
-      protocol: 1,
+      protocol: UUI_PROTOCOL_VERSION,
       clientSequence: ++this.#clientSequence,
       sessionId: this.sessionId,
-      screenId: screen.screen.id,
-      screenRevision: screen.screen.revision,
+      surfaceId: surface.surfaceId,
+      screenId: surface.screen.id,
+      screenRevision: surface.screen.revision,
       action,
       eventType: action === BACK_EVENT ? BACK_EVENT : "action",
       changes: [],
@@ -69,10 +77,13 @@ Deno.test("Home rescans package programs when refreshed", async () => {
     const running = runHome(root);
     const first = await channel.screen();
     assertEquals(programIDs(first), ["example/testing/first"]);
-    assertEquals(first.screen.header.actions.map((action) => action.id), [
-      "refresh",
-      "logout",
-    ]);
+    assertEquals(
+      topSurface(first).screen.header.actions.map((action) => action.id),
+      [
+        "refresh",
+        "logout",
+      ],
+    );
 
     await writeProgram(root, "second", "Second program");
     channel.event(first, "refresh");
@@ -90,9 +101,15 @@ Deno.test("Home rescans package programs when refreshed", async () => {
   }
 });
 
-function programIDs(screen: ScreenShow): string[] {
-  return (screen.screen.model as { programs: Array<{ id: string }> }).programs
+function programIDs(presentation: PresentationShow): string[] {
+  return (topSurface(presentation).screen.model as {
+    programs: Array<{ id: string }>;
+  }).programs
     .map((program) => program.id);
+}
+
+function topSurface(presentation: PresentationShow) {
+  return presentation.presentation.surfaces.at(-1)!;
 }
 
 async function writeProgram(

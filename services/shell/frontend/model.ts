@@ -24,8 +24,7 @@ export function setPath(model: unknown, path: string, value: unknown): void {
 }
 
 export function shouldRenderMessage(type: string): boolean {
-  return type === "screen.show" || type === "screen.patch" ||
-    type === "screen.close";
+  return type === "presentation.show";
 }
 
 export function shouldAcceptServerMessage(

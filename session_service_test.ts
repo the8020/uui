@@ -5,8 +5,18 @@ import {
   type WebSocketSession,
   z,
 } from "@the8020/http";
-import { callScreen, sendMessage } from "./session.ts";
-import { UUI_PROTOCOL_VERSION } from "./protocol.ts";
+import {
+  callScreen,
+  presentModal,
+  presentPage,
+  sendMessage,
+} from "./session.ts";
+import {
+  type PresentationShowMessage,
+  UUI_PROTOCOL_VERSION,
+  type UUIClientMessage,
+  type UUIServerMessage,
+} from "./protocol.ts";
 import type {
   SessionMetadata,
   SessionMetadataStore,
@@ -166,18 +176,20 @@ Deno.test("initial UUI connection replays its generated screen in sequence", asy
     await until(() => socket.sent.length >= 2);
     const screen = JSON.parse(String(socket.sent[0]));
     const ready = JSON.parse(String(socket.sent[1]));
-    assertEquals(screen.type, "screen.show");
+    assertEquals(screen.type, "presentation.show");
     assertEquals(screen.serverSequence, 1);
     assertEquals(ready.type, "session.ready");
     assertEquals(ready.serverSequence, 2);
 
+    const surface = screen.presentation.surfaces.at(-1);
     socket.message({
       type: "screen.event",
       protocol: UUI_PROTOCOL_VERSION,
       sessionId: screen.sessionId,
       clientSequence: 1,
-      screenId: screen.screen.id,
-      screenRevision: screen.screen.revision,
+      surfaceId: surface.surfaceId,
+      screenId: surface.screen.id,
+      screenRevision: surface.screen.revision,
       action: "done",
       eventType: "action",
       changes: [],
@@ -226,7 +238,7 @@ Deno.test("a session streams messages while its screen roundtrip is pending", as
     );
     await until(() => socket.sent.length >= 2);
     const initial = socket.sent.map((item) => JSON.parse(String(item)));
-    const screen = initial.find((item) => item.type === "screen.show");
+    const screen = initial.find((item) => item.type === "presentation.show");
     const ready = initial.find((item) => item.type === "session.ready");
     sessionId = ready.sessionId;
     releaseMessage();
@@ -245,18 +257,151 @@ Deno.test("a session streams messages while its screen roundtrip is pending", as
       serverSequence: ready.serverSequence + 1,
       sessionId: ready.sessionId,
     });
+    const surface = screen.presentation.surfaces.at(-1);
     socket.message({
       type: "screen.event",
       protocol: UUI_PROTOCOL_VERSION,
       sessionId: ready.sessionId,
       clientSequence: 1,
-      screenId: screen.screen.id,
-      screenRevision: screen.screen.revision,
+      surfaceId: surface.surfaceId,
+      screenId: surface.screen.id,
+      screenRevision: surface.screen.revision,
       action: "done",
       eventType: "action",
       changes: [],
     });
     await until(() => socket.signal.aborted);
+  } finally {
+    if (sessionId !== "") {
+      await workerFunctions["uui.session.terminate"]({ sessionId }).catch(
+        () => undefined,
+      );
+    }
+    await metadataStore.clear();
+  }
+});
+
+Deno.test("reload and resync retain a stacked presentation and its hidden continuations", async () => {
+  const metadataStore = new MemorySessionMetadataStore();
+  const stackedMetadata = {
+    ...metadata,
+    requestId: "request-stacked-establish",
+    persistentExecutionId: "persistent-stacked",
+  };
+  const schema = z.object({ value: z.string() });
+  const show = (id: string) =>
+    callScreen({ id, title: id, schema, model: { value: id } });
+  const service = defineSessionService(async () => {
+    const pageA = show("page-a");
+    await presentModal(async () => {
+      const modalB = show("modal-b");
+      await presentPage(async () => {
+        const pageD = show("page-d");
+        await presentModal(() => show("modal-e"));
+        await pageD;
+      });
+      await modalB;
+    });
+    await pageA;
+  }, { metadataStore, completePersistent: () => Promise.resolve() });
+  let sessionId = "";
+  try {
+    assertEquals(
+      (await service.fetch(
+        new Request("https://example.test/connect", { method: "POST" }),
+        context(stackedMetadata),
+      )).status,
+      204,
+    );
+    const first = new TestSocket();
+    first.message(connectMessage(0));
+    await service.connectWebSocket(
+      new Request("https://example.test/connect"),
+      context({ ...stackedMetadata, requestId: "request-stacked-first" }),
+      first,
+    );
+    await until(() => serverMessages(first, "session.ready").length === 1);
+    const ready = serverMessages(first, "session.ready")[0]!;
+    sessionId = ready.sessionId;
+    let current = serverMessages(first, "presentation.show").at(-1)!;
+    assertEquals(presentationIDs(current), ["page-d", "modal-e"]);
+    assertEquals(current.presentation.activeSurfaceId, "surface-4");
+
+    first.remoteClose();
+    const reloaded = new TestSocket();
+    reloaded.message(connectMessage(0));
+    await service.connectWebSocket(
+      new Request("https://example.test/connect"),
+      context({ ...stackedMetadata, requestId: "request-stacked-reload" }),
+      reloaded,
+    );
+    await until(() =>
+      serverMessages(reloaded, "presentation.show").length >= 1
+    );
+    current = serverMessages(reloaded, "presentation.show").at(-1)!;
+    assertEquals(presentationIDs(current), ["page-d", "modal-e"]);
+    reloaded.message(screenEvent(current, "close-e", 1));
+    await until(() => {
+      const message = serverMessages(reloaded, "presentation.show").at(-1);
+      return message !== undefined &&
+        presentationIDs(message).join() === "page-d" &&
+        message.presentation.activeSurfaceId === "surface-3";
+    });
+    current = serverMessages(reloaded, "presentation.show").at(-1)!;
+
+    reloaded.remoteClose();
+    const pageReload = new TestSocket();
+    pageReload.message(connectMessage(0));
+    await service.connectWebSocket(
+      new Request("https://example.test/connect"),
+      context({ ...stackedMetadata, requestId: "request-page-reload" }),
+      pageReload,
+    );
+    await until(() =>
+      serverMessages(pageReload, "presentation.show").length >= 1
+    );
+    current = serverMessages(pageReload, "presentation.show").at(-1)!;
+    assertEquals(presentationIDs(current), ["page-d"]);
+    pageReload.message(screenEvent(current, "close-d", 2));
+    await until(() => {
+      const message = serverMessages(pageReload, "presentation.show").at(-1);
+      return message !== undefined &&
+        presentationIDs(message).join() === "page-a,modal-b" &&
+        message.presentation.activeSurfaceId === "surface-2";
+    });
+    current = serverMessages(pageReload, "presentation.show").at(-1)!;
+    assertEquals(presentationIDs(current), ["page-a", "modal-b"]);
+
+    pageReload.message({
+      type: "client.ack",
+      protocol: UUI_PROTOCOL_VERSION,
+      sessionId,
+      clientSequence: 3,
+      resync: true,
+    });
+    await until(() =>
+      serverMessages(pageReload, "presentation.show").length >= 3
+    );
+    const resynced = serverMessages(pageReload, "presentation.show").at(-1)!;
+    assertEquals(presentationIDs(resynced), ["page-a", "modal-b"]);
+    assertEquals(resynced.presentation.activeSurfaceId, "surface-2");
+    assertEquals(
+      (workerFunctions["uui.session.inspect"]({ sessionId }) as {
+        current_screen_id: string;
+      }).current_screen_id,
+      "modal-b",
+    );
+
+    pageReload.message(screenEvent(resynced, "close-b", 4));
+    await until(() => {
+      const message = serverMessages(pageReload, "presentation.show").at(-1);
+      return message !== undefined &&
+        presentationIDs(message).join() === "page-a" &&
+        message.presentation.activeSurfaceId === "surface-1";
+    });
+    current = serverMessages(pageReload, "presentation.show").at(-1)!;
+    pageReload.message(screenEvent(current, "done", 5));
+    await until(() => pageReload.signal.aborted);
   } finally {
     if (sessionId !== "") {
       await workerFunctions["uui.session.terminate"]({ sessionId }).catch(
@@ -535,6 +680,40 @@ function connectMessage(lastServerSequence: number) {
     protocol: UUI_PROTOCOL_VERSION,
     resumeToken: null,
     lastServerSequence,
+  };
+}
+
+function serverMessages<T extends UUIServerMessage["type"]>(
+  socket: TestSocket,
+  type: T,
+): Array<Extract<UUIServerMessage, { type: T }>> {
+  return socket.sent.map((item) => JSON.parse(String(item)) as UUIServerMessage)
+    .filter((item): item is Extract<UUIServerMessage, { type: T }> =>
+      item.type === type
+    );
+}
+
+function presentationIDs(message: PresentationShowMessage): string[] {
+  return message.presentation.surfaces.map((surface) => surface.screen.id);
+}
+
+function screenEvent(
+  presentation: PresentationShowMessage,
+  action: string,
+  clientSequence: number,
+): Extract<UUIClientMessage, { type: "screen.event" }> {
+  const surface = presentation.presentation.surfaces.at(-1)!;
+  return {
+    type: "screen.event",
+    protocol: UUI_PROTOCOL_VERSION,
+    sessionId: presentation.sessionId,
+    clientSequence,
+    surfaceId: surface.surfaceId,
+    screenId: surface.screen.id,
+    screenRevision: surface.screen.revision,
+    action,
+    eventType: "action",
+    changes: [],
   };
 }
 

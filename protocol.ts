@@ -29,9 +29,7 @@ export type UUIMessageType =
   | "session.logout"
   | "session.ping"
   | "session.pong"
-  | "screen.show"
-  | "screen.patch"
-  | "screen.close"
+  | "presentation.show"
   | "screen.event"
   | "screen.page"
   | "notification.show"
@@ -60,6 +58,7 @@ export interface ScreenChange {
 
 export interface ScreenEventMessage extends ClientMessageBase {
   type: "screen.event";
+  surfaceId: string;
   screenId: string;
   screenRevision: number;
   action: string;
@@ -72,6 +71,7 @@ export interface ScreenEventMessage extends ClientMessageBase {
 
 export interface ScreenPageMessage extends ClientMessageBase {
   type: "screen.page";
+  surfaceId: string;
   screenId: string;
   screenRevision: number;
   bind: string;
@@ -132,24 +132,10 @@ export interface SessionErrorMessage extends ServerMessageBase {
   redirectUrl?: string;
 }
 
-export interface ScreenShowMessage extends ServerMessageBase {
-  type: "screen.show";
+export interface PresentationShowMessage extends ServerMessageBase {
+  type: "presentation.show";
   sessionId: string;
-  screen: ScreenSnapshot;
-}
-
-export interface ScreenPatchMessage extends ServerMessageBase {
-  type: "screen.patch";
-  sessionId: string;
-  screenId: string;
-  screenRevision: number;
-  patch: Record<string, unknown>;
-}
-
-export interface ScreenCloseMessage extends ServerMessageBase {
-  type: "screen.close";
-  sessionId: string;
-  screenId: string;
+  presentation: PresentationSnapshot;
 }
 
 export interface NotificationMessage extends ServerMessageBase {
@@ -180,9 +166,7 @@ export type UUIServerMessage =
   | SessionReadyMessage
   | SessionResumedMessage
   | SessionErrorMessage
-  | ScreenShowMessage
-  | ScreenPatchMessage
-  | ScreenCloseMessage
+  | PresentationShowMessage
   | NotificationMessage
   | ClipboardWriteMessage
   | AcknowledgementMessage
@@ -274,6 +258,21 @@ export interface ScreenSnapshot {
   customElements: CustomElementDescriptor[];
 }
 
+export type PresentationSurfaceKind = "page" | "modal";
+
+export interface PresentationSurfaceSnapshot {
+  surfaceId: string;
+  kind: PresentationSurfaceKind;
+  screen: ScreenSnapshot;
+}
+
+export interface PresentationSnapshot {
+  /** One-based depth of the visible page in the Worker's logical page stack. */
+  pageDepth: number;
+  surfaces: PresentationSurfaceSnapshot[];
+  activeSurfaceId: string | null;
+}
+
 export interface ScreenPagination {
   lists: ScreenListPage[];
 }
@@ -287,8 +286,7 @@ export interface ScreenListPage {
 }
 
 export type UUIWorkerOutbound =
-  | { type: "screen.show"; screen: ScreenSnapshot }
-  | { type: "screen.close"; screenId: string }
+  | { type: "presentation.show"; presentation: PresentationSnapshot }
   | {
     type: "notification.show";
     level: UUIMessageKind;
@@ -328,6 +326,7 @@ export function parseClientMessage(value: unknown): UUIClientMessage {
   }
   if (value.type === "screen.page") {
     if (
+      typeof value.surfaceId !== "string" || value.surfaceId.length === 0 ||
       typeof value.screenId !== "string" || value.screenId.length === 0 ||
       !isPositiveSequence(value.screenRevision) ||
       typeof value.bind !== "string" || value.bind.length === 0 ||
@@ -344,7 +343,9 @@ export function parseClientMessage(value: unknown): UUIClientMessage {
     "exit",
   ]);
   if (
-    value.type !== "screen.event" || typeof value.screenId !== "string" ||
+    value.type !== "screen.event" ||
+    typeof value.surfaceId !== "string" || value.surfaceId.length === 0 ||
+    typeof value.screenId !== "string" ||
     value.screenId.length === 0 || !isSequence(value.screenRevision) ||
     value.screenRevision < 1 || typeof value.action !== "string" ||
     value.action.length === 0 ||

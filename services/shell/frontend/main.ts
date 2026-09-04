@@ -1,9 +1,12 @@
 import {
   BACK_EVENT,
+  type PresentationSnapshot,
+  type PresentationSurfaceKind,
+  type PresentationSurfaceSnapshot,
   type ScreenEventType,
   type ScreenSnapshot,
   type UUIServerMessage,
-} from "@packages/the8020/uui/mod.ts";
+} from "@packages/the8020/uui/protocol.ts";
 import {
   DirtyBindings,
   reconnectDelay,
@@ -27,7 +30,33 @@ import {
   renderIconText,
 } from "./icon_text.ts";
 import { MessageCenter } from "./message_center.ts";
+import { mergeServerModel, PresentationHistory } from "./presentation.ts";
 import { windowTitleForHeading } from "./window_title.ts";
+
+interface FocusState {
+  element?: HTMLElement;
+  id?: string;
+  bind?: string;
+  selectionStart?: number | null;
+  selectionEnd?: number | null;
+}
+
+interface PresentationLayer {
+  readonly surfaceId: string;
+  readonly kind: PresentationSurfaceKind;
+  readonly shell: HTMLElement | HTMLDialogElement;
+  readonly root: HTMLElement;
+  readonly headerRoot?: HTMLElement;
+  readonly customElements: CustomElementRenderer;
+  readonly dirty: DirtyBindings;
+  screen: ScreenSnapshot;
+  screenFingerprint: string;
+  model: Record<string, unknown>;
+  headerItems: HTMLElement[];
+  focus?: FocusState;
+  scrollX: number;
+  scrollY: number;
+}
 
 interface BootData {
   username?: string;
@@ -41,6 +70,7 @@ interface BootData {
 }
 
 const app = requiredElement<HTMLElement>("app");
+const modalLayers = requiredElement<HTMLElement>("modal-layers");
 const connectionState = requiredElement<HTMLElement>("connection-state");
 const connectionIndicator = requiredElement<HTMLElement>(
   "connection-indicator",
@@ -101,19 +131,23 @@ let socket: WebSocket | undefined;
 let reconnectAttempt = 0;
 let ended = false;
 let currentSessionID = "";
-let screen: ScreenSnapshot | undefined;
-let model: Record<string, unknown> = {};
 let interactionSequence: number | undefined;
+let activeSurfaceID: string | null = null;
 let connectionText = "Connecting…";
 let logoutFallback: ReturnType<typeof setTimeout> | undefined;
 let logoutRequested = false;
 let terminalRedirect: string | undefined;
-const dirty = new DirtyBindings();
 const pending = new Map<
   number,
-  { encoded: string; dirty: ReadonlyMap<string, number> }
+  {
+    encoded: string;
+    surfaceId: string;
+    dirty: ReadonlyMap<string, number>;
+  }
 >();
-const customElements = new CustomElementRenderer();
+const layers = new Map<string, PresentationLayer>();
+const presentationHistory = new PresentationHistory();
+let globalHeaderSurfaceID: string | undefined;
 const messageCenter = new MessageCenter({
   toastRegion: messageToastStack,
   sessionMenu,
@@ -131,6 +165,9 @@ renderIconText(programHeaderOverflowToggle, "[[icon=more_vert]]", {
   decorativeIcons: true,
 });
 renderIconText(sessionMenuIcon, "[[icon=menu]]", { decorativeIcons: true });
+renderIconText(messageDialogClose, "[[icon=close]]", {
+  decorativeIcons: true,
+});
 renderSessionMenuAction(sessionLogout, "logout", "Logout");
 sessionUsername.textContent = username;
 sessionUsername.title = username;
@@ -283,7 +320,7 @@ function replaceRoute(token: string | undefined): void {
   clientSequence = 0;
   currentSessionID = "";
   pending.clear();
-  dirty.clear();
+  clearPresentation();
   messageCenter.beginRoundtrip();
   setInteractionPending(undefined);
 }
@@ -324,6 +361,7 @@ function receive(raw: unknown): void {
     typeof message.sessionId === "string" &&
     message.sessionId !== currentSessionID
   ) {
+    if (currentSessionID !== "") clearPresentation();
     currentSessionID = message.sessionId;
     applyTheme(themePreferences.bindSession(currentSessionID));
   }
@@ -355,26 +393,12 @@ function receive(raw: unknown): void {
     case "session.ping":
       sendClient({ type: "session.pong" });
       break;
-    case "screen.show":
+    case "presentation.show":
       notice.hidden = true;
-      screen = message.screen;
-      screenBack.disabled = false;
-      model = structuredClone(message.screen.model) as Record<string, unknown>;
-      setInteractionPending(undefined);
-      dirty.clear();
-      pending.clear();
-      renderCurrentScreen();
-      break;
-    case "screen.close":
-      if (screen?.id === message.screenId) {
-        setInteractionPending(undefined);
-        customElements.dispose();
-        disposeFieldMessages(app);
-        disposeFieldMessages(programHeaderRoot);
-        programHeader.clear();
-        screenBack.disabled = true;
-        app.replaceChildren();
-        synchronizeWindowTitle();
+      try {
+        reconcilePresentation(message.presentation);
+      } catch {
+        showNotice("The server sent an invalid presentation.");
       }
       break;
     case "notification.show":
@@ -388,7 +412,9 @@ function receive(raw: unknown): void {
         for (const sequence of pending.keys()) {
           if (sequence <= message.clientSequence) {
             const item = pending.get(sequence);
-            if (item !== undefined) dirty.acknowledge(item.dirty);
+            if (item !== undefined) {
+              layers.get(item.surfaceId)?.dirty.acknowledge(item.dirty);
+            }
             pending.delete(sequence);
           }
         }
@@ -405,10 +431,7 @@ function receive(raw: unknown): void {
       setInteractionPending(undefined);
       ended = true;
       messageCenter.dispose();
-      customElements.dispose();
-      disposeFieldMessages(programHeaderRoot);
-      programHeader.clear();
-      screenBack.disabled = true;
+      clearPresentation();
       themePreferences.endSession();
       sessionStorage.removeItem(routeKey);
       terminalRedirect = message.redirectUrl;
@@ -509,38 +532,310 @@ async function writeClipboard(text: string): Promise<void> {
   }
 }
 
-function renderCurrentScreen(): void {
-  if (screen === undefined) return;
-  customElements.begin();
+function reconcilePresentation(presentation: PresentationSnapshot): void {
+  const surfaces = presentation.surfaces;
+  if (
+    !Number.isSafeInteger(presentation.pageDepth) ||
+    presentation.pageDepth < 1 ||
+    surfaces.length === 0 || surfaces[0]?.kind !== "page" ||
+    surfaces.slice(1).some((surface) => surface.kind !== "modal") ||
+    surfaces.some((surface) =>
+      typeof surface.surfaceId !== "string" || surface.surfaceId.length === 0 ||
+      typeof surface.screen?.id !== "string" ||
+      surface.screen.id.length === 0 ||
+      !Number.isSafeInteger(surface.screen.revision) ||
+      surface.screen.revision < 1
+    ) ||
+    presentation.activeSurfaceId !== null &&
+      presentation.activeSurfaceId !== surfaces.at(-1)?.surfaceId
+  ) {
+    showNotice("The server sent an invalid presentation.");
+    return;
+  }
+
+  captureActiveFocus();
+  const previousVisible = [...presentationHistory.visible()];
+  const previousBase = previousVisible[0];
+  if (previousBase !== undefined) {
+    const layer = layers.get(previousBase);
+    if (layer !== undefined) {
+      layer.scrollX = scrollX;
+      layer.scrollY = scrollY;
+    }
+  }
+  if (
+    interactionSequence !== undefined &&
+    presentation.activeSurfaceId !== null
+  ) {
+    completeInteraction(interactionSequence);
+  }
+
+  let transition: { removed: string[] };
+  try {
+    transition = presentationHistory.reconcile(
+      surfaces.map((surface) => surface.surfaceId),
+      presentation.pageDepth,
+    );
+  } catch {
+    showNotice("The server sent an invalid presentation.");
+    return;
+  }
+
+  for (const surfaceId of transition.removed) disposeLayer(surfaceId);
+  const changed = new Set<string>();
+  for (const surface of surfaces) {
+    let layer = layers.get(surface.surfaceId);
+    if (layer === undefined) {
+      layer = createLayer(surface);
+      layers.set(surface.surfaceId, layer);
+      changed.add(surface.surfaceId);
+    } else if (updateLayer(layer, surface)) {
+      changed.add(surface.surfaceId);
+    }
+  }
+
+  const visible = new Set(surfaces.map((surface) => surface.surfaceId));
+  for (const surfaceId of previousVisible.reverse()) {
+    if (visible.has(surfaceId)) continue;
+    hideLayer(layers.get(surfaceId));
+  }
+  for (const layer of layers.values()) {
+    if (!visible.has(layer.surfaceId)) hideLayer(layer);
+  }
+  for (const surface of surfaces) showLayer(layers.get(surface.surfaceId)!);
+
+  const base = layers.get(surfaces[0]!.surfaceId)!;
+  if (
+    globalHeaderSurfaceID !== base.surfaceId || changed.has(base.surfaceId)
+  ) {
+    programHeader.render(base.headerItems);
+    globalHeaderSurfaceID = base.surfaceId;
+  }
+
+  activeSurfaceID = presentation.activeSurfaceId;
+  updateInteractionState();
+  synchronizeWindowTitle();
+
+  if (previousBase !== base.surfaceId) {
+    scrollTo(base.scrollX, base.scrollY);
+  }
+  if (activeSurfaceID !== null) {
+    const active = layers.get(activeSurfaceID);
+    if (active !== undefined) queueMicrotask(() => restoreFocus(active));
+  }
+}
+
+function createLayer(surface: PresentationSurfaceSnapshot): PresentationLayer {
+  let shell: HTMLElement | HTMLDialogElement;
+  let root: HTMLElement;
+  let headerRoot: HTMLElement | undefined;
+  if (surface.kind === "page") {
+    shell = document.createElement("section");
+    shell.className = "presentation-page-layer";
+    shell.dataset.surfaceId = surface.surfaceId;
+    root = shell;
+    if (app.querySelector(".loading") !== null) app.replaceChildren();
+    app.append(shell);
+  } else {
+    const dialog = document.createElement("dialog");
+    dialog.className = "uui-dialog presentation-modal";
+    dialog.dataset.surfaceId = surface.surfaceId;
+    dialog.setAttribute("aria-modal", "true");
+    const frame = document.createElement("section");
+    frame.className = "uui-dialog-frame presentation-modal-frame";
+    const toolbar = document.createElement("header");
+    toolbar.className = "uui-dialog-toolbar presentation-modal-toolbar";
+    headerRoot = document.createElement("div");
+    headerRoot.className = "uui-dialog-header presentation-modal-header";
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className =
+      "btn btn-ghost btn-sm uui-dialog-close presentation-modal-close";
+    close.setAttribute("aria-label", "Close");
+    close.title = "Close";
+    renderIconText(close, "[[icon=close]]", { decorativeIcons: true });
+    close.addEventListener("click", () => requestLayerBack(surface.surfaceId));
+    toolbar.append(headerRoot, close);
+    root = document.createElement("div");
+    root.className = "uui-dialog-body presentation-modal-body";
+    const shield = document.createElement("div");
+    shield.className = "presentation-modal-interaction-shield";
+    shield.setAttribute("aria-hidden", "true");
+    const indicator = document.createElement("div");
+    indicator.className = "interaction-indicator";
+    const spinner = document.createElement("span");
+    spinner.className = "interaction-spinner";
+    const label = document.createElement("span");
+    label.textContent = "Loading…";
+    indicator.append(spinner, label);
+    shield.append(indicator);
+    frame.append(toolbar, root, shield);
+    dialog.append(frame);
+    dialog.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      requestLayerBack(surface.surfaceId);
+    });
+    modalLayers.append(dialog);
+    shell = dialog;
+  }
+  const layer: PresentationLayer = {
+    surfaceId: surface.surfaceId,
+    kind: surface.kind,
+    shell,
+    root,
+    headerRoot,
+    customElements: new CustomElementRenderer(),
+    dirty: new DirtyBindings(),
+    screen: surface.screen,
+    screenFingerprint: "",
+    model: {},
+    headerItems: [],
+    scrollX: 0,
+    scrollY: 0,
+  };
+  updateLayer(layer, surface);
+  return layer;
+}
+
+function updateLayer(
+  layer: PresentationLayer,
+  surface: PresentationSurfaceSnapshot,
+): boolean {
+  if (layer.kind !== surface.kind) {
+    throw new TypeError("presentation surface kind changed");
+  }
+  const fingerprint = JSON.stringify(surface.screen);
+  if (fingerprint === layer.screenFingerprint) return false;
+  rememberLayerFocus(layer);
+  const sameScreen = layer.screenFingerprint !== "" &&
+    layer.screen.id === surface.screen.id &&
+    layer.screen.revision === surface.screen.revision;
+  const nextModel = sameScreen
+    ? mergeServerModel(
+      surface.screen.model,
+      layer.model,
+      layer.dirty.bindings(),
+    )
+    : structuredClone(surface.screen.model) as Record<string, unknown>;
+  if (!sameScreen) layer.dirty.clear();
+  layer.screen = surface.screen;
+  layer.screenFingerprint = fingerprint;
+  layer.model = nextModel;
+  renderLayer(layer);
+  return true;
+}
+
+function renderLayer(layer: PresentationLayer): void {
   const callbacks: RenderCallbacks = {
     changed(bind, _value, control) {
-      dirty.mark(bind);
-      if (control.reactive) dispatch("change", "change", undefined, bind);
+      if (!layerIsActive(layer)) return;
+      layer.dirty.mark(bind);
+      if (control.reactive) {
+        dispatchFromLayer(layer, "change", "change", undefined, bind);
+      }
     },
     action(action, eventType = "action", value) {
-      dispatch(action, eventType, value);
+      dispatchFromLayer(layer, action, eventType, value);
     },
     page(bind, currentPage, page) {
-      requestPage(bind, currentPage, page);
+      requestPage(layer, bind, currentPage, page);
     },
   };
-  renderScreen(app, screen, model, callbacks, customElements);
+  layer.customElements.begin();
+  renderScreen(
+    layer.root,
+    layer.screen,
+    layer.model,
+    callbacks,
+    layer.customElements,
+  );
+  for (const item of layer.headerItems) disposeFieldMessages(item);
+  layer.headerItems = renderScreenHeader(
+    layer.screen,
+    layer.model,
+    callbacks,
+  );
+  if (layer.kind === "modal") {
+    layer.headerRoot!.replaceChildren(...layer.headerItems);
+    const heading = layer.root.querySelector<HTMLElement>(".screen-title");
+    if (heading !== null) {
+      heading.id = `presentation-title-${layer.surfaceId}`;
+      heading.tabIndex = -1;
+      layer.shell.setAttribute("aria-labelledby", heading.id);
+    }
+  }
+  layer.customElements.end();
+}
+
+function hideLayer(layer: PresentationLayer | undefined): void {
+  if (layer === undefined) return;
+  if (layer.kind === "page") {
+    layer.shell.hidden = true;
+    return;
+  }
+  const dialog = layer.shell as HTMLDialogElement;
+  if (dialog.open) dialog.close();
+}
+
+function showLayer(layer: PresentationLayer): void {
+  if (layer.kind === "page") {
+    layer.shell.hidden = false;
+    return;
+  }
+  const dialog = layer.shell as HTMLDialogElement;
+  if (!dialog.open) dialog.showModal();
+}
+
+function disposeLayer(surfaceId: string): void {
+  const layer = layers.get(surfaceId);
+  if (layer === undefined) return;
+  if (layer.kind === "modal" && (layer.shell as HTMLDialogElement).open) {
+    (layer.shell as HTMLDialogElement).close();
+  }
+  disposeFieldMessages(layer.root);
+  for (const item of layer.headerItems) disposeFieldMessages(item);
+  layer.customElements.dispose();
+  layer.shell.remove();
+  layers.delete(surfaceId);
+  if (globalHeaderSurfaceID === surfaceId) globalHeaderSurfaceID = undefined;
+  for (const [sequence, item] of pending) {
+    if (item.surfaceId === surfaceId) pending.delete(sequence);
+  }
+}
+
+function clearPresentation(): void {
+  presentationHistory.clear();
+  for (const surfaceId of [...layers.keys()]) disposeLayer(surfaceId);
+  activeSurfaceID = null;
+  interactionSequence = undefined;
+  globalHeaderSurfaceID = undefined;
+  programHeader.clear();
+  screenBack.disabled = true;
+  app.replaceChildren();
   synchronizeWindowTitle();
-  disposeFieldMessages(programHeaderRoot);
-  programHeader.render(renderScreenHeader(screen, model, callbacks));
-  customElements.end();
+  updateInteractionState();
 }
 
 function synchronizeWindowTitle(): void {
-  const heading = app.querySelector<HTMLElement>(
-    ".screen > h1.screen-title",
-  );
+  const top = activeSurfaceID === null
+    ? presentationHistory.visible().at(-1)
+    : activeSurfaceID;
+  const heading = top === undefined
+    ? undefined
+    : layers.get(top)?.root.querySelector<HTMLElement>(
+      ".screen > h1.screen-title",
+    );
   document.title = windowTitleForHeading(heading?.textContent);
 }
 
-function requestPage(bind: string, currentPage: number, page: number): void {
-  if (screen === undefined) return;
-  const pagination = screen.pagination?.lists.find((item) =>
+function requestPage(
+  layer: PresentationLayer,
+  bind: string,
+  currentPage: number,
+  page: number,
+): void {
+  if (!layerIsActive(layer)) return;
+  const pagination = layer.screen.pagination?.lists.find((item) =>
     item.bind === bind
   );
   if (
@@ -548,30 +843,58 @@ function requestPage(bind: string, currentPage: number, page: number): void {
     !Number.isSafeInteger(page) || page < 1 || page > pagination.totalPages ||
     page === currentPage
   ) return;
-  sendInteraction({
+  sendInteraction(layer, {
     type: "screen.page",
-    screenId: screen.id,
-    screenRevision: screen.revision,
     bind,
     currentPage,
     page,
-    changes: changesForBindings(model, [...dirty.bindings(), bind]),
+    changes: changesForBindings(layer.model, [
+      ...layer.dirty.bindings(),
+      bind,
+    ]),
   });
 }
 
 function setInteractionPending(sequence: number | undefined): void {
   interactionSequence = sequence;
-  const waiting = sequence !== undefined;
+  updateInteractionState();
+}
+
+function updateInteractionState(): void {
+  const visible = new Set(presentationHistory.visible());
+  const waiting = interactionSequence !== undefined ||
+    (visible.size > 0 && activeSurfaceID === null);
+  const active = activeSurfaceID === null
+    ? undefined
+    : layers.get(activeSurfaceID);
+  const feedbackLayer = active ?? layers.get(
+    presentationHistory.visible().at(-1) ?? "",
+  );
+  const pageWaiting = waiting && feedbackLayer?.kind !== "modal";
   document.documentElement.toggleAttribute(
     "data-interaction-pending",
-    waiting,
+    pageWaiting,
   );
-  app.inert = waiting;
-  programHeaderRoot.inert = waiting;
-  screenBack.disabled = waiting;
-  for (const region of [app, programHeaderRoot]) {
-    if (waiting) region.setAttribute("aria-busy", "true");
-    else region.removeAttribute("aria-busy");
+  for (const layer of layers.values()) {
+    const isVisible = visible.has(layer.surfaceId);
+    const isActive = activeSurfaceID === layer.surfaceId;
+    layer.shell.inert = !isVisible || waiting || !isActive;
+    const modalWaiting = waiting && feedbackLayer === layer &&
+      layer.kind === "modal";
+    layer.shell.toggleAttribute("data-interaction-pending", modalWaiting);
+    if (modalWaiting) layer.root.setAttribute("aria-busy", "true");
+    else layer.root.removeAttribute("aria-busy");
+  }
+  app.inert = waiting || active?.kind === "modal";
+  programHeaderRoot.inert = waiting ||
+    activeSurfaceID !== presentationHistory.visible()[0];
+  screenBack.disabled = waiting || active === undefined;
+  if (pageWaiting) {
+    app.setAttribute("aria-busy", "true");
+    programHeaderRoot.setAttribute("aria-busy", "true");
+  } else {
+    app.removeAttribute("aria-busy");
+    programHeaderRoot.removeAttribute("aria-busy");
   }
 }
 
@@ -581,22 +904,50 @@ function dispatch(
   value?: unknown,
   bind?: string,
 ): void {
-  if (screen === undefined) return;
-  sendInteraction({
+  const layer = activeLayer();
+  if (layer === undefined) return;
+  dispatchFromLayer(layer, action, eventType, value, bind);
+}
+
+function dispatchFromLayer(
+  layer: PresentationLayer,
+  action: string,
+  eventType: ScreenEventType,
+  value?: unknown,
+  bind?: string,
+): void {
+  if (!layerIsActive(layer)) return;
+  sendInteraction(layer, {
     type: "screen.event",
-    screenId: screen.id,
-    screenRevision: screen.revision,
     action,
     eventType,
     value,
     bind,
-    changes: changesForBindings(model, dirty.bindings()),
+    changes: changesForBindings(layer.model, layer.dirty.bindings()),
   });
 }
 
-function sendInteraction(payload: Record<string, unknown>): void {
+function requestLayerBack(surfaceId: string): void {
+  const layer = layers.get(surfaceId);
+  if (layer === undefined || !layerIsActive(layer)) return;
+  dispatchFromLayer(layer, BACK_EVENT, BACK_EVENT);
+}
+
+function sendInteraction(
+  layer: PresentationLayer,
+  payload: Record<string, unknown>,
+): void {
   if (interactionSequence !== undefined) return;
-  const sequence = sendClient(payload, true);
+  const sequence = sendClient(
+    {
+      ...payload,
+      surfaceId: layer.surfaceId,
+      screenId: layer.screen.id,
+      screenRevision: layer.screen.revision,
+    },
+    true,
+    layer,
+  );
   if (sequence !== undefined) {
     messageCenter.beginRoundtrip();
     setInteractionPending(sequence);
@@ -606,6 +957,7 @@ function sendInteraction(payload: Record<string, unknown>): void {
 function sendClient(
   payload: Record<string, unknown>,
   remember = false,
+  layer?: PresentationLayer,
 ): number | undefined {
   if (routeToken === null) return undefined;
   const message = {
@@ -613,20 +965,122 @@ function sendClient(
     protocol: boot.protocol,
     clientSequence: ++clientSequence,
     sessionId: currentSessionID,
-    ...(screen === undefined ? {} : {
-      screenId: screen.id,
-      screenRevision: screen.revision,
-    }),
   };
   const encoded = JSON.stringify(message);
   if (remember) {
+    if (layer === undefined) {
+      throw new TypeError("remembered interaction requires a screen layer");
+    }
     pending.set(message.clientSequence, {
       encoded,
-      dirty: dirty.capture(),
+      surfaceId: layer.surfaceId,
+      dirty: layer.dirty.capture(),
     });
   }
   if (socket?.readyState === WebSocket.OPEN) socket.send(encoded);
   return message.clientSequence;
+}
+
+function completeInteraction(sequence: number): void {
+  const item = pending.get(sequence);
+  if (item !== undefined) {
+    layers.get(item.surfaceId)?.dirty.acknowledge(item.dirty);
+    pending.delete(sequence);
+  }
+  if (interactionSequence === sequence) interactionSequence = undefined;
+}
+
+function activeLayer(): PresentationLayer | undefined {
+  return activeSurfaceID === null ? undefined : layers.get(activeSurfaceID);
+}
+
+function layerIsActive(layer: PresentationLayer): boolean {
+  return interactionSequence === undefined &&
+    activeSurfaceID === layer.surfaceId &&
+    presentationHistory.visible().at(-1) === layer.surfaceId;
+}
+
+function captureActiveFocus(): void {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement)) return;
+  for (const layer of layers.values()) {
+    if (
+      layer.root.contains(active) ||
+      layer.headerItems.some((item) => item === active || item.contains(active))
+    ) {
+      rememberLayerFocus(layer, active);
+      return;
+    }
+  }
+}
+
+function rememberLayerFocus(
+  layer: PresentationLayer,
+  candidate: HTMLElement | null = document.activeElement instanceof HTMLElement
+    ? document.activeElement
+    : null,
+): void {
+  if (
+    candidate === null ||
+    !layer.root.contains(candidate) &&
+      !layer.headerItems.some((item) =>
+        item === candidate || item.contains(candidate)
+      )
+  ) return;
+  const selectable = candidate instanceof HTMLInputElement ||
+    candidate instanceof HTMLTextAreaElement;
+  layer.focus = {
+    element: candidate,
+    id: candidate.id || undefined,
+    bind: candidate.dataset.bind,
+    selectionStart: selectable ? candidate.selectionStart : undefined,
+    selectionEnd: selectable ? candidate.selectionEnd : undefined,
+  };
+}
+
+function restoreFocus(layer: PresentationLayer): void {
+  if (!layerIsActive(layer)) return;
+  const saved = layer.focus;
+  let target = saved?.element?.isConnected ? saved.element : undefined;
+  if (target === undefined && saved?.id !== undefined) {
+    target = elementsInLayer(layer).find((item) => item.id === saved.id);
+  }
+  if (target === undefined && saved?.bind !== undefined) {
+    target = elementsInLayer(layer).find((item) =>
+      item.dataset.bind === saved.bind
+    );
+  }
+  if (target === undefined && layer.kind === "modal") {
+    target = layer.root.querySelector<HTMLElement>(
+      "input:not(:disabled), select:not(:disabled), textarea:not(:disabled), button:not(:disabled), [tabindex]:not([tabindex='-1'])",
+    ) ?? layer.headerRoot?.querySelector<HTMLElement>(
+      "input:not(:disabled), select:not(:disabled), textarea:not(:disabled), button:not(:disabled), [tabindex]:not([tabindex='-1'])",
+    ) ?? layer.root.querySelector<HTMLElement>(".screen-title") ?? undefined;
+  }
+  if (target === undefined) return;
+  target.focus({ preventScroll: true });
+  if (
+    saved !== undefined &&
+    (target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement) &&
+    saved.selectionStart !== undefined && saved.selectionEnd !== undefined
+  ) {
+    try {
+      target.setSelectionRange(saved.selectionStart, saved.selectionEnd);
+    } catch {
+      // Inputs without text selection still receive focus.
+    }
+  }
+}
+
+function elementsInLayer(layer: PresentationLayer): HTMLElement[] {
+  return [
+    ...layer.root.querySelectorAll<HTMLElement>("*"),
+    ...layer.headerItems.flatMap((item) => [
+      item,
+      ...item.querySelectorAll<HTMLElement>("*"),
+    ]),
+  ];
 }
 
 function send(value: unknown): void {

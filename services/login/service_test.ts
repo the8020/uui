@@ -54,6 +54,7 @@ Deno.test("login page and kernel-issued authentication cookie", async () => {
     assertEquals(markup.includes('class="group-title"'), true);
     assertEquals(markup.includes('class="brand"'), true);
     assertEquals(markup.includes('class="brand-gold"'), true);
+    assertEquals(markup.includes("No user yet?"), false);
     assertEquals(
       page.headers.get("content-security-policy")?.includes(
         "style-src 'self'",

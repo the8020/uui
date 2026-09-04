@@ -10,8 +10,22 @@ import {
   parseClientMessage,
   UUI_PROTOCOL_VERSION,
   type UUIClientMessage,
+  type UUIWorkerOutbound,
 } from "./protocol.ts";
-import { bindSession, callScreen, copyText, sendMessage } from "./session.ts";
+import {
+  bindSession,
+  callScreen,
+  copyText,
+  presentModal,
+  presentPage,
+  ScreenChannel,
+  sendMessage,
+} from "./session.ts";
+
+type PresentationShow = Extract<
+  UUIWorkerOutbound,
+  { type: "presentation.show" }
+>;
 
 class TestChannel {
   readonly sessionId = "session-test";
@@ -384,14 +398,14 @@ Deno.test({
         },
       });
       await Promise.resolve();
-      const sent = test.sent[0] as {
-        screen: {
-          customElements: unknown[];
-          layout: { root: { customElement: string } };
-        };
-      };
-      assertEquals(sent.screen.customElements.length, 1);
-      assertEquals(sent.screen.layout.root.customElement, "console");
+      const sent = presentation(test.sent[0]);
+      const screen = sent.presentation.surfaces[0]!.screen;
+      assertEquals(screen.customElements.length, 1);
+      assertEquals(
+        (screen.layout as { root: { customElement: string } }).root
+          .customElement,
+        "console",
+      );
       test.push(event({
         screenId: "custom-screen",
         clientSequence: 1,
@@ -436,10 +450,12 @@ Deno.test("client protocol rejects malformed event metadata", () => {
       { ...valid, eventType: "execute-code" },
       { ...valid, action: BACK_EVENT, eventType: "action" },
       { ...valid, action: "save", eventType: BACK_EVENT },
+      { ...valid, surfaceId: "" },
       { ...valid, screenRevision: 0 },
       { ...valid, controlId: 4 },
       { ...valid, changes: [{ bind: "" }] },
       { ...validPage, currentPage: 0 },
+      { ...validPage, surfaceId: "" },
       { ...validPage, page: 1.5 },
       { ...validPage, changes: [{ bind: "" }] },
       { ...validLogout, sessionId: "" },
@@ -491,18 +507,10 @@ Deno.test({
         return result;
       });
       await Promise.resolve();
-      const initial = test.sent[0] as {
-        type: string;
-        screen: {
-          model: typeof model;
-          pagination: {
-            lists: Array<Record<string, number | string>>;
-          };
-        };
-      };
-      assertEquals(initial.type, "screen.show");
-      assertEquals(initial.screen.model.records.length, pageSize);
-      assertEquals(initial.screen.pagination.lists, [{
+      const initial = topScreen(test.sent[0]);
+      const initialModel = initial.model as typeof model;
+      assertEquals(initialModel.records.length, pageSize);
+      assertEquals(initial.pagination?.lists, [{
         bind: "records",
         page: 1,
         pageSize,
@@ -511,7 +519,7 @@ Deno.test({
       }]);
       assertEquals(model.records.length, pageSize * 2 + 3);
 
-      const firstPage = structuredClone(initial.screen.model.records);
+      const firstPage = structuredClone(initialModel.records);
       firstPage[0]!.name = "Edited on page one";
       test.push(page({
         screenId: "paged-list",
@@ -526,23 +534,17 @@ Deno.test({
       }));
       await Promise.resolve();
       assertEquals(returned, false);
-      const second = test.sent[1] as {
-        type: string;
-        screen: {
-          model: typeof model;
-          pagination: { lists: Array<Record<string, number | string>> };
-        };
-      };
-      assertEquals(second.type, "screen.show");
+      const second = topScreen(test.sent[1]);
+      const secondModel = second.model as typeof model;
       assertEquals(
-        second.screen.model.records.map((record) => record.id),
+        secondModel.records.map((record) => record.id),
         Array.from({ length: pageSize }, (_, index) => index + pageSize),
       );
-      assertEquals(second.screen.pagination.lists[0]?.page, 2);
+      assertEquals(second.pagination?.lists[0]?.page, 2);
       assertEquals(model.records[0]?.name, "Edited on page one");
       assertEquals(model.note, "saved while paging");
 
-      const secondPage = structuredClone(second.screen.model.records);
+      const secondPage = structuredClone(secondModel.records);
       secondPage[0]!.name = "Edited on page two";
       test.push(event({
         screenId: "paged-list",
@@ -609,33 +611,24 @@ Deno.test({
         },
       });
       await Promise.resolve();
-      const headerScreen = test.sent.at(-1) as {
-        screen: {
-          controls: Array<{ id: string }>;
-          actions: unknown[];
-          header: {
-            controls: Array<Record<string, unknown>>;
-            actions: Array<Record<string, unknown>>;
-          };
-        };
-      };
+      const headerScreen = topScreen(test.sent.at(-1));
       assertEquals(
-        headerScreen.screen.header.controls.map((item) => ({
+        headerScreen.header.controls.map((item) => ({
           id: item.id,
           bind: item.bind,
         })),
         [{ id: "header-email", bind: "email" }],
       );
-      assertEquals(headerScreen.screen.header.actions, [{
+      assertEquals(headerScreen.header.actions, [{
         id: "save",
         label: "Save",
         kind: "primary",
       }]);
       assertEquals(
-        headerScreen.screen.controls.some((item) => item.id === "header-email"),
+        headerScreen.controls.some((item) => item.id === "header-email"),
         false,
       );
-      assertEquals(headerScreen.screen.actions, []);
+      assertEquals(headerScreen.actions, []);
       test.push(event({
         screenId: "header-catalog",
         clientSequence: 1,
@@ -645,7 +638,10 @@ Deno.test({
       assertEquals((await headerPending).action, BACK_EVENT);
       const pending = callScreen({ id: "detail", schema, model });
       await Promise.resolve();
-      assertEquals((test.sent[0] as { type: string }).type, "screen.show");
+      assertEquals(
+        (test.sent[0] as { type: string }).type,
+        "presentation.show",
+      );
       await assertRejects(
         () => callScreen({ id: "other", schema, model }),
         Error,
@@ -716,6 +712,417 @@ Deno.test({
         clientSequence: 4,
       });
       assertEquals(model.enabled, false);
+    } finally {
+      unbind();
+    }
+  },
+});
+
+Deno.test({
+  name: "ordinary programs can be presented as a modal or a page",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    const test = new TestChannel();
+    const unbind = bindSession(test);
+    const schema = z.object({ value: z.string() });
+    const ordinaryProgram = async (title: string): Promise<string> => {
+      const result = await callScreen({
+        id: "ordinary-program",
+        title,
+        schema,
+        model: { value: title },
+      });
+      return result.action;
+    };
+    try {
+      const root = callScreen({
+        id: "root",
+        schema,
+        model: { value: "root" },
+      });
+      await flushMicrotasks();
+
+      const modal = presentModal(() => ordinaryProgram("Modal program"));
+      await flushMicrotasks();
+      let shown = lastPresentation(test);
+      assertEquals(surfaceSummary(shown), [
+        ["surface-1", "page", "root"],
+        ["surface-2", "modal", "ordinary-program"],
+      ]);
+      test.push(eventFor(shown, "modal-result", 1));
+      assertEquals(await modal, "modal-result");
+      await flushMicrotasks();
+      assertEquals(surfaceSummary(lastPresentation(test)), [
+        ["surface-1", "page", "root"],
+      ]);
+
+      const pageProgram = presentPage(() => ordinaryProgram("Page program"));
+      await flushMicrotasks();
+      shown = lastPresentation(test);
+      assertEquals(surfaceSummary(shown), [
+        ["surface-3", "page", "ordinary-program"],
+      ]);
+      test.push(eventFor(shown, "page-result", 2));
+      assertEquals(await pageProgram, "page-result");
+      await flushMicrotasks();
+      assertEquals(surfaceSummary(lastPresentation(test)), [
+        ["surface-1", "page", "root"],
+      ]);
+
+      test.push(eventFor(lastPresentation(test), "done", 3));
+      assertEquals((await root).action, "done");
+    } finally {
+      unbind();
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "surface stack restores page and modal continuations and routes only to its top",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    const test = new TestChannel();
+    const unbind = bindSession(test);
+    const schema = z.object({ label: z.string() });
+    const screen = (label: string) =>
+      callScreen({
+        id: "identical-screen-id",
+        title: label,
+        schema,
+        model: { label },
+      });
+    try {
+      const pageA = screen("Page A");
+      await flushMicrotasks();
+      const flow = presentModal(async () => {
+        const modalB = screen("Modal B");
+        await presentPage(async () => {
+          const pageD = screen("Page D");
+          await presentModal(() => screen("Modal E"));
+          return await pageD;
+        });
+        return await modalB;
+      });
+      await flushMicrotasks();
+
+      let shown = lastPresentation(test);
+      assertEquals(surfaceSummary(shown), [
+        ["surface-3", "page", "identical-screen-id"],
+        ["surface-4", "modal", "identical-screen-id"],
+      ]);
+      assertEquals(
+        shown.presentation.surfaces.map((item) => item.screen.title),
+        ["Page D", "Modal E"],
+      );
+
+      const rootSurface = presentationAt(
+        test,
+        (item) =>
+          item.presentation.surfaces[0]?.surfaceId === "surface-1" &&
+          item.presentation.surfaces.length === 1,
+      );
+      test.push(eventFor(rootSurface, "wrong-layer", 1));
+      await flushMicrotasks();
+      assertEquals(
+        test.sent.some((item) =>
+          (item as { type?: string; code?: string }).type === "session.error" &&
+          (item as { code?: string }).code === "screen_revision_mismatch"
+        ),
+        true,
+      );
+
+      test.push(eventFor(shown, "close-e", 1));
+      await flushMicrotasks();
+      shown = lastPresentation(test);
+      assertEquals(surfaceSummary(shown), [
+        ["surface-3", "page", "identical-screen-id"],
+      ]);
+      assertEquals(shown.presentation.surfaces[0]?.screen.title, "Page D");
+
+      test.push(eventFor(shown, "close-d", 2));
+      await flushMicrotasks();
+      shown = lastPresentation(test);
+      assertEquals(surfaceSummary(shown), [
+        ["surface-1", "page", "identical-screen-id"],
+        ["surface-2", "modal", "identical-screen-id"],
+      ]);
+      assertEquals(
+        shown.presentation.surfaces.map((item) => item.screen.title),
+        ["Page A", "Modal B"],
+      );
+
+      test.push(eventFor(shown, BACK_EVENT, 3, BACK_EVENT));
+      assertEquals((await flow).action, BACK_EVENT);
+      await flushMicrotasks();
+      shown = lastPresentation(test);
+      assertEquals(surfaceSummary(shown), [
+        ["surface-1", "page", "identical-screen-id"],
+      ]);
+      test.push(eventFor(shown, "done", 4));
+      assertEquals((await pageA).action, "done");
+    } finally {
+      unbind();
+    }
+  },
+});
+
+Deno.test({
+  name: "modal surfaces stack and restore their unchanged prefixes",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    const test = new TestChannel();
+    const unbind = bindSession(test);
+    const schema = z.object({ value: z.string() });
+    const show = (id: string) =>
+      callScreen({ id, schema, model: { value: id } });
+    try {
+      const pageA = show("page-a");
+      await flushMicrotasks();
+      const modalB = presentModal(async () => {
+        const pendingB = show("modal-b");
+        await presentModal(() => show("modal-c"));
+        return await pendingB;
+      });
+      await flushMicrotasks();
+      let shown = lastPresentation(test);
+      assertEquals(surfaceSummary(shown), [
+        ["surface-1", "page", "page-a"],
+        ["surface-2", "modal", "modal-b"],
+        ["surface-3", "modal", "modal-c"],
+      ]);
+      test.push(eventFor(shown, BACK_EVENT, 1, BACK_EVENT));
+      await flushMicrotasks();
+      shown = lastPresentation(test);
+      assertEquals(surfaceSummary(shown), [
+        ["surface-1", "page", "page-a"],
+        ["surface-2", "modal", "modal-b"],
+      ]);
+      test.push(eventFor(shown, BACK_EVENT, 2, BACK_EVENT));
+      await modalB;
+      await flushMicrotasks();
+      shown = lastPresentation(test);
+      assertEquals(surfaceSummary(shown), [
+        ["surface-1", "page", "page-a"],
+      ]);
+      test.push(eventFor(shown, "done", 3));
+      await pageA;
+    } finally {
+      unbind();
+    }
+  },
+});
+
+Deno.test({
+  name: "one modal surface replaces sequential screens without nesting",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    const test = new TestChannel();
+    const unbind = bindSession(test);
+    const schema = z.object({ step: z.number() });
+    try {
+      const root = callScreen({ id: "root", schema, model: { step: 0 } });
+      await flushMicrotasks();
+      const modal = presentModal(async () => {
+        await callScreen({ id: "step-one", schema, model: { step: 1 } });
+        return await callScreen({
+          id: "step-two",
+          schema,
+          model: { step: 2 },
+        });
+      });
+      await flushMicrotasks();
+      let shown = lastPresentation(test);
+      const modalSurfaceID = shown.presentation.surfaces.at(-1)!.surfaceId;
+      assertEquals(shown.presentation.surfaces.at(-1)?.screen.id, "step-one");
+      test.push(eventFor(shown, "next", 1));
+      await flushMicrotasks();
+      shown = lastPresentation(test);
+      assertEquals(
+        shown.presentation.surfaces.at(-1)?.surfaceId,
+        modalSurfaceID,
+      );
+      assertEquals(shown.presentation.surfaces.at(-1)?.screen.id, "step-two");
+      test.push(eventFor(shown, "finish", 2));
+      assertEquals((await modal).action, "finish");
+      await flushMicrotasks();
+      shown = lastPresentation(test);
+      test.push(eventFor(shown, "done", 3));
+      await root;
+    } finally {
+      unbind();
+    }
+  },
+});
+
+Deno.test({
+  name: "ScreenChannel redraws, coalesces, exits, detaches, and is reusable",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    const test = new TestChannel();
+    const unbind = bindSession(test);
+    const schema = z.object({ count: z.number() });
+    const model = { count: 1 };
+    const channel = new ScreenChannel();
+    try {
+      const first = callScreen({
+        id: "monitor",
+        schema,
+        model,
+        channel,
+      });
+      await flushMicrotasks();
+      const before = presentations(test).length;
+      model.count = 2;
+      channel.redraw();
+      channel.redraw();
+      channel.redraw();
+      await flushMicrotasks();
+      assertEquals(presentations(test).length, before + 1);
+      assertEquals(
+        topScreen(lastPresentation(test)).model,
+        { count: 2 },
+      );
+
+      channel.exit("monitor-stopped");
+      assertEquals(await first, {
+        action: "monitor-stopped",
+        eventType: "exit",
+        origin: "channel",
+      });
+      channel.redraw();
+      channel.exit("stale");
+      channel.fail(new Error("stale"));
+
+      const secondModel = { count: 3 };
+      const second = callScreen({
+        id: "monitor-again",
+        schema,
+        model: secondModel,
+        channel,
+      });
+      await flushMicrotasks();
+      assertEquals(topScreen(lastPresentation(test)).id, "monitor-again");
+      const failure = new Error("monitor failed");
+      channel.fail(failure);
+      await assertRejects(() => second, Error, "monitor failed");
+
+      const third = callScreen({
+        id: "after-failure",
+        schema,
+        model: secondModel,
+        channel,
+      });
+      await flushMicrotasks();
+      channel.exit();
+      assertEquals(await third, {
+        action: "exit",
+        eventType: "exit",
+        origin: "channel",
+      });
+    } finally {
+      unbind();
+    }
+  },
+});
+
+Deno.test({
+  name: "ScreenChannel redraw caches a covered surface until it is restored",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    const test = new TestChannel();
+    const unbind = bindSession(test);
+    const schema = z.object({ value: z.string() });
+    const model = { value: "before" };
+    const channel = new ScreenChannel();
+    try {
+      const root = callScreen({ id: "root", schema, model, channel });
+      await flushMicrotasks();
+      const modal = presentModal(() =>
+        callScreen({
+          id: "cover",
+          schema,
+          model: { value: "cover" },
+        })
+      );
+      await flushMicrotasks();
+      const before = presentations(test).length;
+      model.value = "updated while covered";
+      channel.redraw();
+      await flushMicrotasks();
+      assertEquals(presentations(test).length, before);
+
+      let shown = lastPresentation(test);
+      test.push(eventFor(shown, BACK_EVENT, 1, BACK_EVENT));
+      await modal;
+      await flushMicrotasks();
+      shown = lastPresentation(test);
+      assertEquals(topScreen(shown).model, { value: "updated while covered" });
+      test.push(eventFor(shown, "done", 2));
+      await root;
+    } finally {
+      unbind();
+    }
+  },
+});
+
+Deno.test({
+  name: "surface and channel failures clean up without replacing the caller",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    const test = new TestChannel();
+    const unbind = bindSession(test);
+    const schema = z.object({ value: z.string() });
+    const channel = new ScreenChannel();
+    try {
+      const root = callScreen({
+        id: "root",
+        schema,
+        model: { value: "root" },
+        channel,
+      });
+      await flushMicrotasks();
+      await assertRejects(
+        () =>
+          presentModal(() =>
+            callScreen({
+              id: "illegal-channel-reuse",
+              schema,
+              model: { value: "modal" },
+              channel,
+            })
+          ),
+        Error,
+        "only one pending",
+      );
+      await flushMicrotasks();
+      assertEquals(surfaceSummary(lastPresentation(test)), [
+        ["surface-1", "page", "root"],
+      ]);
+
+      const original = new Error("modal callback failed");
+      await assertRejects(
+        () =>
+          presentModal(async () => {
+            await Promise.resolve();
+            throw original;
+          }),
+        Error,
+        "modal callback failed",
+      );
+      await flushMicrotasks();
+      assertEquals(surfaceSummary(lastPresentation(test)), [
+        ["surface-1", "page", "root"],
+      ]);
+      channel.exit("done");
+      await root;
     } finally {
       unbind();
     }
@@ -811,6 +1218,7 @@ function event(
     type: "screen.event",
     protocol: UUI_PROTOCOL_VERSION,
     sessionId: "session-test",
+    surfaceId: "surface-1",
     screenId: "detail",
     screenRevision: 1,
     clientSequence: 1,
@@ -827,6 +1235,7 @@ function page(
     type: "screen.page",
     protocol: UUI_PROTOCOL_VERSION,
     sessionId: "session-test",
+    surfaceId: "surface-1",
     screenId: "detail",
     screenRevision: 1,
     clientSequence: 1,
@@ -836,4 +1245,71 @@ function page(
     changes: [{ bind: "items", value: [] }],
     ...overrides,
   };
+}
+
+function presentation(value: unknown): PresentationShow {
+  const message = value as PresentationShow;
+  if (message.type !== "presentation.show") {
+    throw new TypeError("expected presentation.show");
+  }
+  return message;
+}
+
+function topScreen(value: unknown) {
+  return presentation(value).presentation.surfaces.at(-1)!.screen;
+}
+
+function presentations(test: TestChannel): PresentationShow[] {
+  return test.sent.filter((item): item is PresentationShow =>
+    (item as { type?: unknown }).type === "presentation.show"
+  );
+}
+
+function lastPresentation(test: TestChannel): PresentationShow {
+  const result = presentations(test).at(-1);
+  if (result === undefined) throw new TypeError("no presentation was sent");
+  return result;
+}
+
+function presentationAt(
+  test: TestChannel,
+  predicate: (message: PresentationShow) => boolean,
+): PresentationShow {
+  const result = presentations(test).find(predicate);
+  if (result === undefined) throw new TypeError("presentation was not found");
+  return result;
+}
+
+function surfaceSummary(
+  message: PresentationShow,
+): Array<[string, "page" | "modal", string]> {
+  return message.presentation.surfaces.map((surface) => [
+    surface.surfaceId,
+    surface.kind,
+    surface.screen.id,
+  ]);
+}
+
+function eventFor(
+  message: PresentationShow,
+  action: string,
+  clientSequence: number,
+  eventType: Extract<
+    UUIClientMessage,
+    { type: "screen.event" }
+  >["eventType"] = "action",
+): Extract<UUIClientMessage, { type: "screen.event" }> {
+  const surface = message.presentation.surfaces.at(-1)!;
+  return event({
+    surfaceId: surface.surfaceId,
+    screenId: surface.screen.id,
+    screenRevision: surface.screen.revision,
+    clientSequence,
+    action,
+    eventType,
+  });
+}
+
+async function flushMicrotasks(): Promise<void> {
+  for (let index = 0; index < 12; index++) await Promise.resolve();
 }

@@ -74,8 +74,8 @@
   instance reservations.
 - Initial program output may precede the physical WebSocket. The service replays
   that retained output in server-sequence order before `session.ready`, so the
-  shell always receives the first screen instead of remaining on its opening
-  placeholder.
+  shell always receives the first presentation instead of remaining on its
+  opening placeholder.
 - Programs import `sendMessage(body, kind?)` from the public
   `@packages/the8020/uui/mod.ts` surface and may call it while a screen
   roundtrip is active or from a background asynchronous task for the same bound
@@ -96,8 +96,33 @@
   `kernel.auth.currentUser()` instead of receiving identity or infrastructure
   dependencies through their function parameters.
 - Programs are plain default-exported functions with ordinary TypeScript call
-  stacks, classes, and closures; there is no program wrapper, decorator, or
-  framework navigation stack.
+  stacks, classes, and closures; there is no program wrapper or decorator.
+  `callScreen()` remains presentation-neutral and defaults to the root page.
+  `presentModal(() => program())` and `presentPage(() => program())` alone push
+  presentation surfaces, and an async-safe ambient context makes direct calls
+  and awaited descendants inherit their caller's surface.
+- A session owns one logical LIFO surface stack whose root is a page. Each
+  surface owns at most one snapshot and one unresolved `callScreen()`. The
+  visible presentation is the suffix beginning with the most recent page: that
+  page is the base and later modal surfaces are ordered above it. A later page
+  suspends the earlier page-plus-modal composition without destroying its Worker
+  continuations. Returning or throwing from a presentation callback removes its
+  surface in `finally` and restores the prior composition. A second concurrent
+  `callScreen()` in one surface is an error; calls in covered surfaces may
+  remain pending.
+- One central dispatcher owns the session input queue and routes screen events
+  only to the logical top surface after validating stable surface identity,
+  screen ID, and revision. Back and Escape are ordinary `BACK_EVENT` inputs to
+  the top screen; programs decide when returning should pop a wrapper. Closed
+  async contexts cannot target another surface, and surface closure is strict
+  LIFO rather than FIFO scheduling or last-writer replacement.
+- `ScreenChannel` is an argument-free, reusable controller optionally attached
+  to one unresolved `callScreen()`. It coalesces `redraw()` calls against that
+  call's existing model/contract, resolves `exit(action?)` with an honest
+  framework-originated exit lacking a fabricated client sequence, and rejects
+  through `fail(error)`. Covered redraws update the cached snapshot and publish
+  only when uncovered. Every settlement and session end detaches the channel;
+  detached commands are discarded rather than buffered.
 - Runtime-loaded package modules address shared package APIs through the generic
   `@packages/` mount alias. The package does not depend on a UUI-specific
   runtime import-map entry that the generic image would have to know.
@@ -107,19 +132,36 @@
   while retaining the production compiler options.
 - Layouts and future overrides are serializable data without executable code;
   user-specific layout variants are not persisted in this phase.
-- Browser source uses the shared UUI protocol types, preserves DOM/model/dirty
-  edits across brief reconnects, and requests a full current snapshot only after
-  reload or explicit resync.
-- The shell window title is `80|20 <page heading>` whenever the rendered screen
-  contains its page H1, using normalized visible heading text; before a screen
-  exists or after it closes, the title is the generic `80|20`.
+- The versioned protocol publishes one atomic `presentation.show` snapshot with
+  stable surface IDs, the visible base page, ordered modal snapshots, its
+  one-based logical page depth, and the active surface ID. Page depth lets a
+  freshly reloaded shell distinguish restoration of an older page from a new
+  page push even though hidden Worker snapshots are not sent. The session
+  service retains this complete visible presentation for replay/resync and
+  reports the top interactive screen in metadata. The live Worker alone retains
+  hidden snapshots, promises, closures, and continuations; durable navigation
+  recovery after Worker loss is out of scope.
+- Browser source uses the shared UUI protocol types and reconciles independent
+  per-surface DOM, model, dirty-binding, custom-element, field-message, focus,
+  and disposal state. Modal pushes preserve the existing layer prefix. Page
+  pushes cache and hide the prior visible composition, and normal pops restore
+  its exact DOM. Reload rebuilds every layer in the retained visible
+  presentation; brief reconnects preserve existing DOM and dirty edits.
+- Browser runtime values come directly from the browser-safe `protocol.ts`
+  contract, not the program-facing `mod.ts` barrel; the latter exports the
+  server session engine and must never pull Node built-ins into the shell
+  bundle.
+- The shell window title is `80|20 <top visible heading>`, using normalized
+  heading text from the active page or modal; before a presentation exists or
+  after it closes, the title is the generic `80|20`.
 - Sending any `screen.event` or `screen.page` enters one shell-owned in-flight
-  interaction state. It immediately makes screen and program-header controls
-  inert, disables Back, rejects additional event sends in JavaScript, and
-  activates a transparent fixed pointer shield. If still pending after `500ms`,
-  the same state reveals a blurred overlay and loading indicator. An early
-  `server.ack` does not unlock the stale screen; the replacement `screen.show`,
-  a session error/resync, screen close, or session end releases it.
+  interaction state for the top surface. It immediately makes presentation and
+  applicable header controls inert, disables Back, rejects additional event
+  sends in JavaScript, and activates a transparent page- or modal-local pointer
+  shield. If still pending after `500ms`, the same state reveals a blurred
+  overlay and loading indicator. An early `server.ack` does not unlock stale
+  content; an atomic presentation with an active surface, a session
+  error/resync, or session end releases it.
 - List pagination renders only the server-described page and bounded page-number
   controls. A page click sends `screen.page` on the existing session WebSocket
   with the visible list slice and all dirty bindings; it does not dispatch a
@@ -135,28 +177,36 @@
   metrics.
 - The shell owns one always-visible icon-only Material `arrow_back` button
   immediately after the brand, retains the accessible `Back` label, and emits
-  the reserved `BACK_EVENT` as both action and event type. The browser Back
-  action traverses one marked same-URL guard entry, immediately restores that
-  guard without growing history, and invokes this same Back path; reload adopts
-  the existing guard instead of adding another. Program header controls and
-  actions render from the screen snapshot between Back and the always-visible
-  session disclosure. That disclosure combines one `8px` status circle, the
-  authenticated username, and a Material `menu` icon in one button. Connected is
-  green; connecting and reconnecting are red, while a visually hidden live label
-  preserves the complete textual state. The username remains one line and
-  ellipsizes at constrained widths. Its locally anchored, light-dismiss menu
-  currently owns labeled light/dark theme switching and clean logout. Logout
-  ends the persistent UUI session through the typed client protocol before
-  redirecting through the configured logout route, with direct navigation as a
-  disconnected-client fallback. The left brand/Back cluster and right session
-  cluster use explicit grid positions, so hiding or emptying the dynamic middle
-  never moves the right cluster away from the navbar's right edge. The navbar
-  remains one row at every width. As the dynamic area shrinks, a measured stable
-  prefix remains visible while items move from right to left into an accessible
-  More disclosure without recreating their DOM controls. More sits immediately
-  after the last visible dynamic control, or at the dynamic area's start when
-  none remain; opening it stacks every hidden control vertically in original
-  order and clamps the popover to a `10px` viewport edge gutter.
+  the reserved `BACK_EVENT` as both action and event type to the topmost visible
+  surface. The browser Back action traverses one marked same-URL guard entry,
+  immediately restores that guard without growing history, and invokes this same
+  Back path; reload adopts the existing guard instead of adding another. Program
+  header controls and actions render from the screen snapshot between Back and
+  the always-visible session disclosure. That disclosure combines one `8px`
+  status circle, the authenticated username, and a Material `menu` icon in one
+  button. Connected is green; connecting and reconnecting are red, while a
+  visually hidden live label preserves the complete textual state. The username
+  remains one line and ellipsizes at constrained widths. Its locally anchored,
+  light-dismiss menu currently owns labeled light/dark theme switching and clean
+  logout. Logout ends the persistent UUI session through the typed client
+  protocol before redirecting through the configured logout route, with direct
+  navigation as a disconnected-client fallback. The left brand/Back cluster and
+  right session cluster use explicit grid positions, so hiding or emptying the
+  dynamic middle never moves the right cluster away from the navbar's right
+  edge. Page header controls remain in this global area; modal header controls
+  render inside their own semantic native dialog. Program presentation dialogs
+  and shell-owned dialogs such as Messages share the same `uui-dialog` frame,
+  toolbar, body, close affordance, backdrop, responsive bounds, and scrolling
+  design; their distinct ownership changes behavior, not appearance. Dialog
+  focus is contained and restored, covered layers are inert, close and Escape
+  route through `BACK_EVENT`, and responsive modal bodies scroll within bounded
+  viewport dimensions. The navbar remains one row at every width. As the dynamic
+  area shrinks, a measured stable prefix remains visible while items move from
+  right to left into an accessible More disclosure without recreating their DOM
+  controls. More sits immediately after the last visible dynamic control, or at
+  the dynamic area's start when none remain; opening it stacks every hidden
+  control vertically in original order and clamps the popover to a `10px`
+  viewport edge gutter.
 - The session disclosure menu owns a Messages action whose badge counts all
   messages received since the current screen interaction began. A new
   `screen.event`, `screen.page`, or route begins a fresh collection. At most the
@@ -322,12 +372,14 @@
 - Deno checks cover all services/programs, including login template/error
   injection and constrained static asset routing. UUI and frontend tests cover
   discovery and containment failures, dynamic/default-export loading, static and
-  natural class/closure program calls, package-owned heartbeat timeout,
-  metadata/replay/termination, Program terminated rendering/copy/Home recovery,
-  model binding, resume decisions, exception escape, renderer-supporting pure
-  helpers, the bounded message collection, safe Markdown output, asynchronous
-  session message streaming, and standard UUI discovery;
-  `services/shell/build.sh` rebuilds the browser bundle.
+  natural class/closure program calls, nested page/modal stack restoration,
+  async-context event ownership, atomic reload/resync presentations,
+  `ScreenChannel` redraw/exit/failure lifecycle, dirty redraw merging,
+  package-owned heartbeat timeout, metadata/replay/termination, Program
+  terminated rendering/copy/Home recovery, model binding, resume decisions,
+  exception escape, renderer-supporting pure helpers, the bounded message
+  collection, safe Markdown output, asynchronous session message streaming, and
+  standard UUI discovery; `services/shell/build.sh` rebuilds the browser bundle.
 - `browser_e2e.ts` drives real Chromium through two isolated kernel nodes and
   receives explicit kernel-source and sibling package-workspace roots, then
   assigns distinct ephemeral main-HTTP and SSH ports to every node. The nodes
@@ -356,13 +408,15 @@
   right-to-left responsive hiding, synchronized browser titles, vertical
   overflow disclosure, and mobile viewport-edge clamping; an open disclosure
   remains open across responsive refits while overflow is still required. It
-  also covers immediate rapid-event suppression and delayed loading feedback,
-  direct home-list invocation, the summary-only core-admin package list and
-  selected package manifest/Git/content detail with vertically spaced content
-  cards and service clickthrough, live database catalog
-  list/detail/synchronization through the DB package, the core-admin
-  service/sandbox lists and linked details, the package-owned UUI session
-  list/detail with exact-Worker inspection, bounded log, stale cleanup,
+  also covers modal stacking/focus/inertness, modal-local headers, Escape and
+  browser-Back routing, page-over-modal suspension, later-page reload and exact
+  continuation restoration, dirty background redraws, immediate rapid-event
+  suppression and delayed loading feedback, direct home-list invocation, the
+  summary-only core-admin package list and selected package manifest/Git/content
+  detail with vertically spaced content cards and service clickthrough, live
+  database catalog list/detail/synchronization through the DB package, the
+  core-admin service/sandbox lists and linked details, the package-owned UUI
+  session list/detail with exact-Worker inspection, bounded log, stale cleanup,
   termination, and session-service clickthrough, authorized service
   enable/disable and capacity changes including percentage sliders, nested
   demos, dirty reconnect, reload resume, semantic and asynchronous messages,
@@ -377,6 +431,15 @@
   first-request lazy provisioning, staged rootfs fixtures dereference symlinks
   only through a component-wise resolver contained by the source root, and
   process cleanup is time-bounded.
+- `presentation_browser_e2e.ts` is the focused presentation-stack browser
+  harness. It serves the built shell, connects it to the real UUI session engine
+  over a local WebSocket, and verifies page/modal stacking, exact hidden layer
+  and custom-element preservation, dirty `ScreenChannel` redraws, Escape/Back
+  routing, reload of a later page plus modal, and restoration of the earlier
+  page-plus-modal continuation. Run it with
+  `deno task test:presentation-browser`; it is not part of the ordinary
+  unit-test glob. Pass `--browser=/path/to/chromium` when Chromium is not at the
+  default path.
 - Browser E2E distinguishes selectable untruncated messages from responsive
   overflow triggers and verifies that full-message popovers stay beside their
   field while remaining inside the viewport.

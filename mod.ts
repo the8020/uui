@@ -4,9 +4,14 @@ export { field, type FieldMetadata } from "./fields.ts";
 export {
   callScreen,
   type CallScreenOptions,
+  type ChannelScreenExit,
+  type ClientScreenEvent,
   copyText,
   currentSessionId,
   endSession,
+  presentModal,
+  presentPage,
+  ScreenChannel,
   type ScreenEvent,
   sendMessage,
 } from "./session.ts";

@@ -4,13 +4,17 @@ import type {
   UUIClientMessage,
   UUIWorkerOutbound,
 } from "@packages/the8020/uui/mod.ts";
+import { UUI_PROTOCOL_VERSION } from "@packages/the8020/uui/mod.ts";
 import {
   bindSession,
   type SessionChannel,
 } from "@packages/the8020/uui/internal.ts";
 import programTerminated from "./program.ts";
 
-type ScreenShow = Extract<UUIWorkerOutbound, { type: "screen.show" }>;
+type PresentationShow = Extract<
+  UUIWorkerOutbound,
+  { type: "presentation.show" }
+>;
 
 Deno.test("Program terminated renders, copies its dump, and returns Home", async () => {
   const channel = new TerminatedChannel();
@@ -28,12 +32,13 @@ Deno.test("Program terminated renders, copies its dump, and returns Home", async
       homeProgram: "the8020/uui/home",
       terminatedProgram: "the8020/uui/program-terminated",
     });
-    const first = await channel.next("screen.show") as ScreenShow;
-    assertEquals(first.screen.title, "Program terminated");
-    const model = first.screen.model as Record<string, string>;
+    const first = await channel.next("presentation.show") as PresentationShow;
+    const firstScreen = topSurface(first).screen;
+    assertEquals(firstScreen.title, "Program terminated");
+    const model = firstScreen.model as Record<string, string>;
     assertEquals(model.exceptionType, "TypeError");
     assertStringIncludes(model.dumpText!, "program demonstration failed");
-    assertEquals(first.screen.header.actions.map((item) => item.id), [
+    assertEquals(firstScreen.header.actions.map((item) => item.id), [
       "home",
       "copy",
       "end",
@@ -45,9 +50,12 @@ Deno.test("Program terminated renders, copies its dump, and returns Home", async
       (copied as Extract<UUIWorkerOutbound, { type: "clipboard.write" }>).text,
       "program demonstration failed",
     );
-    const refreshed = await channel.next("screen.show") as ScreenShow;
+    const refreshed = await channel.next(
+      "presentation.show",
+    ) as PresentationShow;
     assertStringIncludes(
-      (refreshed.screen.model as Record<string, string>).copyStatus!,
+      (topSurface(refreshed).screen.model as Record<string, string>)
+        .copyStatus!,
       "Copied ",
     );
     channel.event(refreshed, "home");
@@ -86,14 +94,16 @@ class TerminatedChannel implements SessionChannel {
     }
   }
 
-  event(screen: ScreenShow, action: string): void {
+  event(presentation: PresentationShow, action: string): void {
+    const surface = topSurface(presentation);
     const message: ScreenEventMessage = {
       type: "screen.event",
-      protocol: 1,
+      protocol: UUI_PROTOCOL_VERSION,
       clientSequence: ++this.#clientSequence,
       sessionId: this.sessionId,
-      screenId: screen.screen.id,
-      screenRevision: screen.screen.revision,
+      surfaceId: surface.surfaceId,
+      screenId: surface.screen.id,
+      screenRevision: surface.screen.revision,
       action,
       eventType: "action",
       changes: [],
@@ -102,4 +112,8 @@ class TerminatedChannel implements SessionChannel {
     if (waiter === undefined) this.#client.push(message);
     else waiter(message);
   }
+}
+
+function topSurface(presentation: PresentationShow) {
+  return presentation.presentation.surfaces.at(-1)!;
 }

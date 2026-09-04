@@ -14,7 +14,7 @@ import {
 } from "./programs.ts";
 import {
   parseClientMessage,
-  type ScreenShowMessage,
+  type PresentationShowMessage,
   UUI_PROTOCOL_VERSION,
   type UUIClientMessage,
   type UUIServerMessage,
@@ -71,7 +71,7 @@ interface SessionRecord {
   lastClientSequence: number;
   replay: ReplayItem[];
   replayBytes: number;
-  currentScreen?: ScreenShowMessage;
+  currentPresentation?: PresentationShowMessage;
   lastPongAt: number;
   heartbeatTimer?: ReturnType<typeof setInterval>;
   disconnectTimer?: ReturnType<typeof setTimeout>;
@@ -339,10 +339,12 @@ function clientMessage(
   }
   if (message.type === "client.ack" && message.resync === true) {
     record.lastClientSequence = message.clientSequence;
-    if (record.currentScreen !== undefined) {
+    if (record.currentPresentation !== undefined) {
       emit(record, {
-        type: "screen.show",
-        screen: structuredClone(record.currentScreen.screen),
+        type: "presentation.show",
+        presentation: structuredClone(
+          record.currentPresentation.presentation,
+        ),
       });
     }
     emit(record, {
@@ -384,8 +386,8 @@ function emit(
     serverSequence: ++record.serverSequence,
     sessionId: record.sessionId,
   } as UUIServerMessage;
-  if (message.type === "screen.show") {
-    record.currentScreen = structuredClone(message);
+  if (message.type === "presentation.show") {
+    record.currentPresentation = structuredClone(message);
     updateMetadata(record);
   }
   send(record, message, retain);
@@ -419,10 +421,12 @@ function replay(record: SessionRecord, lastSequence: number): void {
       resumed: true,
       lastClientSequence: record.lastClientSequence,
     }, false);
-    if (record.currentScreen !== undefined) {
+    if (record.currentPresentation !== undefined) {
       emit(record, {
-        type: "screen.show",
-        screen: structuredClone(record.currentScreen.screen),
+        type: "presentation.show",
+        presentation: structuredClone(
+          record.currentPresentation.presentation,
+        ),
       });
     }
     return;
@@ -537,12 +541,22 @@ function sessionRecordStatus(record: SessionRecord): Record<string, unknown> {
     sandbox_id: record.placement.sandboxId,
     worker_id: record.placement.workerId,
     state: record.socket === undefined ? "DISCONNECTED" : "CONNECTED",
-    current_screen_id: record.currentScreen?.screen.id,
+    current_screen_id: currentScreenID(record),
     server_sequence: record.serverSequence,
     last_client_sequence: record.lastClientSequence,
     created_at: new Date(record.createdAt).toISOString(),
     last_connection_at: new Date(record.lastConnectionAt).toISOString(),
   };
+}
+
+function currentScreenID(record: SessionRecord): string | undefined {
+  const presentation = record.currentPresentation?.presentation;
+  if (presentation?.activeSurfaceId === null || presentation === undefined) {
+    return undefined;
+  }
+  return presentation.surfaces.find((surface) =>
+    surface.surfaceId === presentation.activeSurfaceId
+  )?.screen.id;
 }
 
 function updateMetadata(record: SessionRecord): void {
@@ -575,7 +589,7 @@ async function writeMetadata(record: SessionRecord): Promise<void> {
     createdAt: new Date(record.createdAt),
     updatedAt: new Date(),
     lastConnectionAt: new Date(record.lastConnectionAt),
-    currentScreenId: record.currentScreen?.screen.id ?? null,
+    currentScreenId: currentScreenID(record) ?? null,
     terminationFailure: record.terminationFailure ?? null,
   };
   await record.metadataStore.put(metadata);

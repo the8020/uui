@@ -4,9 +4,6 @@ var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __esm = (fn, res) => function __init() {
-  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
-};
 var __commonJS = (cb, mod) => function __require() {
   return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
 };
@@ -30,491 +27,6 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   1 ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
   mod
 ));
-
-// ../kernel/defaults/config/runtime/deno/kernel/mod.ts
-function executionSecret(name) {
-  if (typeof name !== "string" || name.length === 0) {
-    throw new TypeError("secret name is required");
-  }
-  const resolve = globalThis[kernelSecretSymbol];
-  if (typeof resolve !== "function") {
-    throw new Error("kernel execution context is unavailable");
-  }
-  const value = resolve(name);
-  if (value === void 0) {
-    throw new Error(`execution secret ${name} is unavailable`);
-  }
-  return value;
-}
-function invoke(operation, input) {
-  const bridge = globalThis[kernelInvokeSymbol];
-  if (typeof bridge !== "function") {
-    return Promise.reject(new Error("kernel API is unavailable"));
-  }
-  return bridge(operation, input);
-}
-async function executeRuntimeOperation(operation, input = {}) {
-  if (operation.length === 0) {
-    return Promise.reject(new TypeError("runtime operation is required"));
-  }
-  const response = await invoke("runtime.operation", {
-    operation,
-    input
-  });
-  if (response === null || typeof response !== "object" || typeof response.success !== "boolean") throw new Error("invalid kernel runtime operation response");
-  if (!response.success) {
-    if (response.error === void 0 || typeof response.error.code !== "string" || typeof response.error.message !== "string") throw new Error("kernel runtime operation failed");
-    throw new AdminCommandError(response.error);
-  }
-  return response.result;
-}
-async function runtimeOperationField(operation, input, field2) {
-  const result = await executeRuntimeOperation(operation, input);
-  if (result === null || typeof result !== "object" || !(field2 in result)) {
-    throw new Error(`runtime operation ${operation} returned no ${field2}`);
-  }
-  return result[field2];
-}
-async function executeAdminCommand(commandId, arguments_ = {}) {
-  if (typeof commandId !== "string" || commandId.length === 0) {
-    throw new TypeError("command ID is required");
-  }
-  if (arguments_ === null || typeof arguments_ !== "object" || Array.isArray(arguments_)) {
-    throw new TypeError("command arguments must be an object");
-  }
-  const response = await invoke("admin.execute", {
-    command_id: commandId,
-    arguments: arguments_
-  });
-  if (response === null || typeof response !== "object" || typeof response.success !== "boolean") {
-    throw new Error("invalid kernel admin response");
-  }
-  if (!response.success) {
-    if (response.error === void 0 || typeof response.error.code !== "string" || typeof response.error.message !== "string") throw new Error("kernel admin command failed");
-    throw new AdminCommandError(response.error, response.request_id);
-  }
-  if (response.result === void 0 || response.result === null || typeof response.result !== "object" || Array.isArray(response.result)) throw new Error("kernel admin command returned no result");
-  return response.result;
-}
-function optionalArguments(values) {
-  return Object.fromEntries(Object.entries(values).filter(([, value]) => value !== void 0));
-}
-function databaseArguments(statement, parameters, options = {}) {
-  if (typeof statement !== "string" || statement.trim().length === 0) {
-    throw new TypeError("SQL statement is required");
-  }
-  if (new TextEncoder().encode(statement).byteLength > 1048576) {
-    throw new TypeError("SQL statement exceeds 1 MiB");
-  }
-  if (!Array.isArray(parameters) || parameters.some((value) => !validDatabaseValue(value))) {
-    throw new TypeError("SQL parameters must be an array");
-  }
-  return {
-    statement,
-    parameters,
-    ...options.returnRows === void 0 ? {} : {
-      return_rows: options.returnRows
-    },
-    ...options.transaction === void 0 ? {} : {
-      transaction: options.transaction
-    }
-  };
-}
-function validDatabaseValue(value) {
-  if (value === null || typeof value === "boolean" || typeof value === "string") return true;
-  if (typeof value === "number") return Number.isFinite(value);
-  if (typeof value !== "object" || Array.isArray(value)) return false;
-  const type = value.type;
-  return type === "bigint" || type === "decimal" || type === "datetime" || type === "bytes" || type === "json";
-}
-function settingOperations(scope) {
-  const operation = (action) => `settings.${scope}.${action}`;
-  return Object.freeze({
-    list() {
-      return runtimeOperationField(operation("list"), {}, "settings");
-    },
-    get(key) {
-      return runtimeOperationField(operation("get"), {
-        key
-      }, "setting");
-    },
-    set(key, value) {
-      return runtimeOperationField(operation("set"), {
-        key,
-        value
-      }, "setting");
-    },
-    unset(key) {
-      return runtimeOperationField(operation("unset"), {
-        key
-      }, "setting");
-    }
-  });
-}
-function assertWorkerInvokeInput(input) {
-  if (input === null || typeof input !== "object" || typeof input.nodeId !== "string" || input.nodeId.length === 0 || typeof input.sandboxId !== "string" || input.sandboxId.length === 0 || typeof input.workerId !== "string" || input.workerId.length === 0 || input.persistentExecutionId !== void 0 && (typeof input.persistentExecutionId !== "string" || input.persistentExecutionId.length === 0) || typeof input.function !== "string" || input.function.length === 0 || input.function.length > 128) throw new TypeError("exact Worker target and function are required");
-}
-var AdminCommandError, kernelInvokeSymbol, kernelSecretSymbol, kernelDatabaseBackendSymbol, WorkerInvokeError, kernel;
-var init_mod = __esm({
-  "../kernel/defaults/config/runtime/deno/kernel/mod.ts"() {
-    AdminCommandError = class extends Error {
-      code;
-      details;
-      requestId;
-      constructor(error2, requestId) {
-        super(error2.message);
-        this.name = "AdminCommandError";
-        this.code = error2.code;
-        this.details = error2.details;
-        this.requestId = requestId;
-      }
-    };
-    kernelInvokeSymbol = Symbol.for("the8020.kernel.invoke");
-    kernelSecretSymbol = Symbol.for("the8020.kernel.secret");
-    kernelDatabaseBackendSymbol = Symbol.for("the8020.kernel.databaseBackend");
-    WorkerInvokeError = class extends Error {
-      code;
-      constructor(error2) {
-        super(error2.message);
-        this.name = "WorkerInvokeError";
-        this.code = error2.code;
-      }
-    };
-    kernel = Object.freeze({
-      auth: Object.freeze({
-        currentUser() {
-          return invoke("auth.currentUser", {});
-        },
-        login(input) {
-          if (input === null || typeof input !== "object" || typeof input.username !== "string" || typeof input.password !== "string") {
-            return Promise.reject(new TypeError("username and password are required"));
-          }
-          return invoke("auth.login", {
-            username: input.username,
-            password: input.password
-          });
-        },
-        logoutCurrent() {
-          return invoke("auth.logoutCurrent", {});
-        }
-      }),
-      worker: Object.freeze({
-        async invoke(input) {
-          assertWorkerInvokeInput(input);
-          const encoded = JSON.stringify(input.input);
-          if (new TextEncoder().encode(encoded).byteLength > 1048576) {
-            throw new TypeError("Worker invocation input exceeds 1 MiB");
-          }
-          const response = await invoke("worker.invoke", input);
-          if (response.ok) return response.output;
-          if (response.error === void 0) {
-            throw new Error("Worker invocation returned an invalid result");
-          }
-          throw new WorkerInvokeError(response.error);
-        }
-      }),
-      execution: Object.freeze({
-        secret: executionSecret,
-        optionalSecret(name) {
-          try {
-            return executionSecret(name);
-          } catch {
-            return void 0;
-          }
-        },
-        completePersistent() {
-          return invoke("execution.completePersistent", {});
-        }
-      }),
-      crypto: Object.freeze({
-        password: Object.freeze({
-          async hash(password) {
-            if (typeof password !== "string") {
-              throw new TypeError("password must be a string");
-            }
-            return await runtimeOperationField("crypto.password.hash", {
-              password
-            }, "hash");
-          }
-        })
-      }),
-      services: Object.freeze({
-        list() {
-          return runtimeOperationField("service.list", {}, "services");
-        },
-        inspect(serviceId) {
-          return runtimeOperationField("service.inspect", {
-            service_id: serviceId
-          }, "service");
-        },
-        start(serviceId, detail = false) {
-          return executeRuntimeOperation("service.start", {
-            service_id: serviceId,
-            detail
-          });
-        },
-        stop(serviceId, detail = false) {
-          return executeRuntimeOperation("service.stop", {
-            service_id: serviceId,
-            detail
-          });
-        },
-        restart(serviceId, detail = false) {
-          return executeRuntimeOperation("service.restart", {
-            service_id: serviceId,
-            detail
-          });
-        },
-        scale(input) {
-          return executeRuntimeOperation("service.scale", input);
-        },
-        validate(serviceId) {
-          return executeRuntimeOperation("service.validate", {
-            service_id: serviceId
-          });
-        },
-        openapi(serviceId) {
-          return runtimeOperationField("service.openapi", {
-            service_id: serviceId
-          }, "openapi");
-        },
-        request(input) {
-          return runtimeOperationField("service.request", input, "response");
-        }
-      }),
-      nodes: Object.freeze({
-        list() {
-          return executeRuntimeOperation("node.list");
-        },
-        set(input) {
-          return runtimeOperationField("node.set", input, "node");
-        },
-        remove(nodeId) {
-          return executeRuntimeOperation("node.remove", {
-            node_id: nodeId
-          });
-        }
-      }),
-      settings: Object.freeze({
-        global: settingOperations("global"),
-        node: settingOperations("node")
-      }),
-      development: Object.freeze({
-        imageStatus() {
-          return runtimeOperationField("development.image.status", {}, "image");
-        },
-        sandbox: Object.freeze({
-          list() {
-            return runtimeOperationField("development.sandbox.list", {}, "sandboxes");
-          },
-          run(action, userId, input = {}) {
-            return executeRuntimeOperation(`development.sandbox.${action.replaceAll("-", "_")}`, {
-              user_id: userId,
-              ...input
-            });
-          }
-        }),
-        activate: Object.freeze({
-          preview(input) {
-            return runtimeOperationField("development.activate.preview", input, "preview");
-          },
-          run(input) {
-            return runtimeOperationField("development.activate.run", input, "activation");
-          }
-        })
-      }),
-      database: Object.freeze({
-        check() {
-          return executeRuntimeOperation("database.check");
-        },
-        info() {
-          return invoke("database.info", {});
-        },
-        execute(statement, parameters = [], options = {}) {
-          return invoke("database.execute", databaseArguments(statement, parameters, options));
-        },
-        transaction: Object.freeze({
-          begin(settings = {}) {
-            return invoke("database.transaction.begin", {
-              settings
-            });
-          },
-          commit(transaction) {
-            return invoke("database.transaction.commit", {
-              transaction
-            });
-          },
-          rollback(transaction) {
-            return invoke("database.transaction.rollback", {
-              transaction
-            });
-          }
-        }),
-        tables: Object.freeze({
-          async list() {
-            const result = await executeRuntimeOperation("database.table.list");
-            return result.tables;
-          },
-          async definitions() {
-            const result = await executeRuntimeOperation("database.table.definitions");
-            return result.definitions;
-          },
-          async inspect(tableId) {
-            const result = await executeRuntimeOperation("database.table.inspect", {
-              table_id: tableId
-            });
-            return result.table;
-          },
-          async compare(tableId) {
-            const result = await executeRuntimeOperation("database.table.compare", {
-              table_id: tableId
-            });
-            return result.table;
-          },
-          async synchronize(tableId, sourcePackage) {
-            const result = await executeRuntimeOperation("database.table.sync", optionalArguments({
-              table_id: tableId,
-              source_package: sourcePackage
-            }));
-            return result.table;
-          },
-          async synchronizeAll() {
-            const result = await executeRuntimeOperation("database.table.sync_all");
-            return result.tables;
-          },
-          async trim(input) {
-            await executeRuntimeOperation("database.table.trim", optionalArguments({
-              table_id: input.tableId,
-              columns: input.columns?.join(","),
-              drop_table: input.dropTable,
-              confirm: input.confirm
-            }));
-          }
-        })
-      }),
-      secrets: Object.freeze({
-        async list() {
-          const result = await executeRuntimeOperation("secret.list");
-          return result.secrets;
-        },
-        async get(name) {
-          const result = await executeRuntimeOperation("secret.get", {
-            name
-          });
-          return result.secret;
-        },
-        async set(input) {
-          const result = await executeRuntimeOperation("secret.set", {
-            name: input.name,
-            value: input.value
-          });
-          return result.secret;
-        }
-      }),
-      packages: Object.freeze({
-        list() {
-          return runtimeOperationField("package.list", {}, "packages");
-        },
-        inspect(packageId) {
-          return runtimeOperationField("package.inspect", {
-            package_id: packageId
-          }, "package");
-        },
-        index: Object.freeze({
-          async list() {
-            const result = await executeRuntimeOperation("package.index.list");
-            return result.packages;
-          },
-          async inspect(packageId) {
-            const result = await executeRuntimeOperation("package.index.inspect", {
-              package_id: packageId
-            });
-            return result.package;
-          },
-          async set(input) {
-            const result = await executeRuntimeOperation("package.index.set", optionalArguments(input));
-            return result.package;
-          }
-        }),
-        source: Object.freeze({
-          async inspect(source) {
-            const result = await executeRuntimeOperation("package.source.inspect", {
-              source
-            });
-            return result.source;
-          }
-        }),
-        versions: Object.freeze({
-          async list(packageId, limit) {
-            const result = await executeRuntimeOperation("package.version.list", optionalArguments({
-              package_id: packageId,
-              limit
-            }));
-            return result.package;
-          }
-        }),
-        async synchronize(packageIds = [], gitToken) {
-          const result = await executeRuntimeOperation("package.synchronize", optionalArguments({
-            packages: packageIds.length === 0 ? void 0 : packageIds.join(","),
-            git_token: gitToken
-          }));
-          return result.packages;
-        },
-        local: Object.freeze({
-          async create(input) {
-            const result = await executeRuntimeOperation("package.local.create", optionalArguments(input));
-            return result.package;
-          }
-        }),
-        repository: Object.freeze({
-          list() {
-            return runtimeOperationField("package.repository.list", {}, "repositories");
-          },
-          status(packageId) {
-            return runtimeOperationField("package.repository.status", {
-              package_id: packageId
-            }, "repository");
-          },
-          initialize(input) {
-            return runtimeOperationField("package.repository.init", input, "repository");
-          },
-          remote(input) {
-            return runtimeOperationField("package.repository.remote", input, "repository");
-          },
-          async inspect(packageId) {
-            const result = await executeRuntimeOperation("package.repository.inspect", {
-              package_id: packageId
-            });
-            return result.repository;
-          },
-          async pull(packageId) {
-            const result = await executeRuntimeOperation("package.repository.pull", {
-              package_id: packageId
-            });
-            return result.repository;
-          },
-          async push(packageId) {
-            const result = await executeRuntimeOperation("package.repository.push", {
-              package_id: packageId
-            });
-            return result.repository;
-          },
-          async checkout(input) {
-            const result = await executeRuntimeOperation("package.repository.checkout", optionalArguments({
-              package_id: input.packageId,
-              branch: input.branch,
-              commit: input.commit
-            }));
-            return result.repository;
-          }
-        })
-      }),
-      admin: Object.freeze({
-        execute: executeAdminCommand
-      })
-    });
-  }
-});
 
 // ../../../root/.cache/deno/npm/registry.npmjs.org/@xterm/addon-canvas/0.7.0/lib/addon-canvas.js
 var require_addon_canvas = __commonJS({
@@ -12387,482 +11899,13 @@ WARNING: This link could potentially be dangerous`)) {
   }
 });
 
-// deno:https://jsr.io/@hono/hono/4.9.8/src/request/constants.ts
-var GET_MATCH_RESULT = Symbol();
-
-// deno:https://jsr.io/@hono/hono/4.9.8/src/utils/body.ts
-var parseBody = async (request, options = /* @__PURE__ */ Object.create(null)) => {
-  const { all = false, dot = false } = options;
-  const headers = request instanceof HonoRequest ? request.raw.headers : request.headers;
-  const contentType = headers.get("Content-Type");
-  if (contentType?.startsWith("multipart/form-data") || contentType?.startsWith("application/x-www-form-urlencoded")) {
-    return parseFormData(request, {
-      all,
-      dot
-    });
-  }
-  return {};
-};
-async function parseFormData(request, options) {
-  const formData = await request.formData();
-  if (formData) {
-    return convertFormDataToBodyData(formData, options);
-  }
-  return {};
-}
-function convertFormDataToBodyData(formData, options) {
-  const form = /* @__PURE__ */ Object.create(null);
-  formData.forEach((value, key) => {
-    const shouldParseAllValues = options.all || key.endsWith("[]");
-    if (!shouldParseAllValues) {
-      form[key] = value;
-    } else {
-      handleParsingAllValues(form, key, value);
-    }
-  });
-  if (options.dot) {
-    Object.entries(form).forEach(([key, value]) => {
-      const shouldParseDotValues = key.includes(".");
-      if (shouldParseDotValues) {
-        handleParsingNestedValues(form, key, value);
-        delete form[key];
-      }
-    });
-  }
-  return form;
-}
-var handleParsingAllValues = (form, key, value) => {
-  if (form[key] !== void 0) {
-    if (Array.isArray(form[key])) {
-      ;
-      form[key].push(value);
-    } else {
-      form[key] = [
-        form[key],
-        value
-      ];
-    }
-  } else {
-    if (!key.endsWith("[]")) {
-      form[key] = value;
-    } else {
-      form[key] = [
-        value
-      ];
-    }
-  }
-};
-var handleParsingNestedValues = (form, key, value) => {
-  let nestedForm = form;
-  const keys = key.split(".");
-  keys.forEach((key2, index) => {
-    if (index === keys.length - 1) {
-      nestedForm[key2] = value;
-    } else {
-      if (!nestedForm[key2] || typeof nestedForm[key2] !== "object" || Array.isArray(nestedForm[key2]) || nestedForm[key2] instanceof File) {
-        nestedForm[key2] = /* @__PURE__ */ Object.create(null);
-      }
-      nestedForm = nestedForm[key2];
-    }
-  });
-};
-
-// deno:https://jsr.io/@hono/hono/4.9.8/src/utils/url.ts
-var tryDecode = (str, decoder) => {
-  try {
-    return decoder(str);
-  } catch {
-    return str.replace(/(?:%[0-9A-Fa-f]{2})+/g, (match2) => {
-      try {
-        return decoder(match2);
-      } catch {
-        return match2;
-      }
-    });
-  }
-};
-var _decodeURI = (value) => {
-  if (!/[%+]/.test(value)) {
-    return value;
-  }
-  if (value.indexOf("+") !== -1) {
-    value = value.replace(/\+/g, " ");
-  }
-  return value.indexOf("%") !== -1 ? tryDecode(value, decodeURIComponent_) : value;
-};
-var _getQueryParam = (url, key, multiple) => {
-  let encoded;
-  if (!multiple && key && !/[%+]/.test(key)) {
-    let keyIndex2 = url.indexOf(`?${key}`, 8);
-    if (keyIndex2 === -1) {
-      keyIndex2 = url.indexOf(`&${key}`, 8);
-    }
-    while (keyIndex2 !== -1) {
-      const trailingKeyCode = url.charCodeAt(keyIndex2 + key.length + 1);
-      if (trailingKeyCode === 61) {
-        const valueIndex = keyIndex2 + key.length + 2;
-        const endIndex = url.indexOf("&", valueIndex);
-        return _decodeURI(url.slice(valueIndex, endIndex === -1 ? void 0 : endIndex));
-      } else if (trailingKeyCode == 38 || isNaN(trailingKeyCode)) {
-        return "";
-      }
-      keyIndex2 = url.indexOf(`&${key}`, keyIndex2 + 1);
-    }
-    encoded = /[%+]/.test(url);
-    if (!encoded) {
-      return void 0;
-    }
-  }
-  const results = {};
-  encoded ??= /[%+]/.test(url);
-  let keyIndex = url.indexOf("?", 8);
-  while (keyIndex !== -1) {
-    const nextKeyIndex = url.indexOf("&", keyIndex + 1);
-    let valueIndex = url.indexOf("=", keyIndex);
-    if (valueIndex > nextKeyIndex && nextKeyIndex !== -1) {
-      valueIndex = -1;
-    }
-    let name = url.slice(keyIndex + 1, valueIndex === -1 ? nextKeyIndex === -1 ? void 0 : nextKeyIndex : valueIndex);
-    if (encoded) {
-      name = _decodeURI(name);
-    }
-    keyIndex = nextKeyIndex;
-    if (name === "") {
-      continue;
-    }
-    let value;
-    if (valueIndex === -1) {
-      value = "";
-    } else {
-      value = url.slice(valueIndex + 1, nextKeyIndex === -1 ? void 0 : nextKeyIndex);
-      if (encoded) {
-        value = _decodeURI(value);
-      }
-    }
-    if (multiple) {
-      if (!(results[name] && Array.isArray(results[name]))) {
-        results[name] = [];
-      }
-      ;
-      results[name].push(value);
-    } else {
-      results[name] ??= value;
-    }
-  }
-  return key ? results[key] : results;
-};
-var getQueryParam = _getQueryParam;
-var getQueryParams = (url, key) => {
-  return _getQueryParam(url, key, true);
-};
-var decodeURIComponent_ = decodeURIComponent;
-
-// deno:https://jsr.io/@hono/hono/4.9.8/src/request.ts
-var tryDecodeURIComponent = (str) => tryDecode(str, decodeURIComponent_);
-var HonoRequest = class {
-  /**
-   * `.raw` can get the raw Request object.
-   *
-   * @see {@link https://hono.dev/docs/api/request#raw}
-   *
-   * @example
-   * ```ts
-   * // For Cloudflare Workers
-   * app.post('/', async (c) => {
-   *   const metadata = c.req.raw.cf?.hostMetadata?
-   *   ...
-   * })
-   * ```
-   */
-  raw;
-  #validatedData;
-  #matchResult;
-  routeIndex = 0;
-  /**
-   * `.path` can get the pathname of the request.
-   *
-   * @see {@link https://hono.dev/docs/api/request#path}
-   *
-   * @example
-   * ```ts
-   * app.get('/about/me', (c) => {
-   *   const pathname = c.req.path // `/about/me`
-   * })
-   * ```
-   */
-  path;
-  bodyCache = {};
-  constructor(request, path = "/", matchResult = [
-    []
-  ]) {
-    this.raw = request;
-    this.path = path;
-    this.#matchResult = matchResult;
-    this.#validatedData = {};
-  }
-  param(key) {
-    return key ? this.#getDecodedParam(key) : this.#getAllDecodedParams();
-  }
-  #getDecodedParam(key) {
-    const paramKey = this.#matchResult[0][this.routeIndex][1][key];
-    const param = this.#getParamValue(paramKey);
-    return param && /\%/.test(param) ? tryDecodeURIComponent(param) : param;
-  }
-  #getAllDecodedParams() {
-    const decoded = {};
-    const keys = Object.keys(this.#matchResult[0][this.routeIndex][1]);
-    for (const key of keys) {
-      const value = this.#getParamValue(this.#matchResult[0][this.routeIndex][1][key]);
-      if (value !== void 0) {
-        decoded[key] = /\%/.test(value) ? tryDecodeURIComponent(value) : value;
-      }
-    }
-    return decoded;
-  }
-  #getParamValue(paramKey) {
-    return this.#matchResult[1] ? this.#matchResult[1][paramKey] : paramKey;
-  }
-  query(key) {
-    return getQueryParam(this.url, key);
-  }
-  queries(key) {
-    return getQueryParams(this.url, key);
-  }
-  header(name) {
-    if (name) {
-      return this.raw.headers.get(name) ?? void 0;
-    }
-    const headerData = {};
-    this.raw.headers.forEach((value, key) => {
-      headerData[key] = value;
-    });
-    return headerData;
-  }
-  async parseBody(options) {
-    return this.bodyCache.parsedBody ??= await parseBody(this, options);
-  }
-  #cachedBody = (key) => {
-    const { bodyCache, raw } = this;
-    const cachedBody = bodyCache[key];
-    if (cachedBody) {
-      return cachedBody;
-    }
-    const anyCachedKey = Object.keys(bodyCache)[0];
-    if (anyCachedKey) {
-      return bodyCache[anyCachedKey].then((body) => {
-        if (anyCachedKey === "json") {
-          body = JSON.stringify(body);
-        }
-        return new Response(body)[key]();
-      });
-    }
-    return bodyCache[key] = raw[key]();
-  };
-  /**
-   * `.json()` can parse Request body of type `application/json`
-   *
-   * @see {@link https://hono.dev/docs/api/request#json}
-   *
-   * @example
-   * ```ts
-   * app.post('/entry', async (c) => {
-   *   const body = await c.req.json()
-   * })
-   * ```
-   */
-  json() {
-    return this.#cachedBody("text").then((text2) => JSON.parse(text2));
-  }
-  /**
-   * `.text()` can parse Request body of type `text/plain`
-   *
-   * @see {@link https://hono.dev/docs/api/request#text}
-   *
-   * @example
-   * ```ts
-   * app.post('/entry', async (c) => {
-   *   const body = await c.req.text()
-   * })
-   * ```
-   */
-  text() {
-    return this.#cachedBody("text");
-  }
-  /**
-   * `.arrayBuffer()` parse Request body as an `ArrayBuffer`
-   *
-   * @see {@link https://hono.dev/docs/api/request#arraybuffer}
-   *
-   * @example
-   * ```ts
-   * app.post('/entry', async (c) => {
-   *   const body = await c.req.arrayBuffer()
-   * })
-   * ```
-   */
-  arrayBuffer() {
-    return this.#cachedBody("arrayBuffer");
-  }
-  /**
-   * Parses the request body as a `Blob`.
-   * @example
-   * ```ts
-   * app.post('/entry', async (c) => {
-   *   const body = await c.req.blob();
-   * });
-   * ```
-   * @see https://hono.dev/docs/api/request#blob
-   */
-  blob() {
-    return this.#cachedBody("blob");
-  }
-  /**
-   * Parses the request body as `FormData`.
-   * @example
-   * ```ts
-   * app.post('/entry', async (c) => {
-   *   const body = await c.req.formData();
-   * });
-   * ```
-   * @see https://hono.dev/docs/api/request#formdata
-   */
-  formData() {
-    return this.#cachedBody("formData");
-  }
-  /**
-   * Adds validated data to the request.
-   *
-   * @param target - The target of the validation.
-   * @param data - The validated data to add.
-   */
-  addValidatedData(target, data) {
-    this.#validatedData[target] = data;
-  }
-  valid(target) {
-    return this.#validatedData[target];
-  }
-  /**
-   * `.url()` can get the request url strings.
-   *
-   * @see {@link https://hono.dev/docs/api/request#url}
-   *
-   * @example
-   * ```ts
-   * app.get('/about/me', (c) => {
-   *   const url = c.req.url // `http://localhost:8787/about/me`
-   *   ...
-   * })
-   * ```
-   */
-  get url() {
-    return this.raw.url;
-  }
-  /**
-   * `.method()` can get the method name of the request.
-   *
-   * @see {@link https://hono.dev/docs/api/request#method}
-   *
-   * @example
-   * ```ts
-   * app.get('/about/me', (c) => {
-   *   const method = c.req.method // `GET`
-   * })
-   * ```
-   */
-  get method() {
-    return this.raw.method;
-  }
-  get [GET_MATCH_RESULT]() {
-    return this.#matchResult;
-  }
-  /**
-   * `.matchedRoutes()` can return a matched route in the handler
-   *
-   * @deprecated
-   *
-   * Use matchedRoutes helper defined in "hono/route" instead.
-   *
-   * @see {@link https://hono.dev/docs/api/request#matchedroutes}
-   *
-   * @example
-   * ```ts
-   * app.use('*', async function logger(c, next) {
-   *   await next()
-   *   c.req.matchedRoutes.forEach(({ handler, method, path }, i) => {
-   *     const name = handler.name || (handler.length < 2 ? '[handler]' : '[middleware]')
-   *     console.log(
-   *       method,
-   *       ' ',
-   *       path,
-   *       ' '.repeat(Math.max(10 - path.length, 0)),
-   *       name,
-   *       i === c.req.routeIndex ? '<- respond from here' : ''
-   *     )
-   *   })
-   * })
-   * ```
-   */
-  get matchedRoutes() {
-    return this.#matchResult[0].map(([[, route]]) => route);
-  }
-  /**
-   * `routePath()` can retrieve the path registered within the handler
-   *
-   * @deprecated
-   *
-   * Use routePath helper defined in "hono/route" instead.
-   *
-   * @see {@link https://hono.dev/docs/api/request#routepath}
-   *
-   * @example
-   * ```ts
-   * app.get('/posts/:id', (c) => {
-   *   return c.json({ path: c.req.routePath })
-   * })
-   * ```
-   */
-  get routePath() {
-    return this.#matchResult[0].map(([[, route]]) => route)[this.routeIndex].path;
-  }
-};
-
-// deno:https://jsr.io/@hono/hono/4.9.8/src/router/reg-exp-router/node.ts
-var PATH_ERROR = Symbol();
-var regExpMetaChars = new Set(".\\+*[^]$()");
-
-// ../kernel/defaults/config/runtime/deno/http/mod.ts
-var HTTPError = class extends Error {
-  status;
-  body;
-  headers;
-  constructor(status, body = {
-    error: "request_failed"
-  }, headers) {
-    super(`HTTP ${status}`);
-    if (!Number.isInteger(status) || status < 400 || status > 599) {
-      throw new TypeError("HTTPError status must be between 400 and 599");
-    }
-    this.name = "HTTPError";
-    this.status = status;
-    this.body = body;
-    this.headers = new Headers(headers);
-  }
-};
-
-// humanize.ts
-function humanize(value) {
-  const words = value.replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2").replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[-_]+/g, " ").trim().split(/\s+/).filter((word) => word.length > 0).map((word) => /^[A-Z0-9]{2,}$/.test(word) ? word : word.toLowerCase());
-  const text2 = words.join(" ");
-  return text2.length === 0 ? value : text2[0].toUpperCase() + text2.slice(1);
-}
-
 // ui-config.json
 var ui_config_default = {
   loginUrl: "/the8020/uui/login/",
   logoutUrl: "/the8020/uui/login/logout",
   postLoginUrl: "/the8020/uui/shell/",
   sessionWebSocketPath: "/the8020/uui/session/connect",
-  protocolVersion: 1,
+  protocolVersion: 2,
   disconnectGraceMilliseconds: 12e4,
   heartbeatIntervalMilliseconds: 3e4,
   heartbeatTimeoutMilliseconds: 6e4,
@@ -12887,175 +11930,21 @@ var UUI_MESSAGE_KINDS = [
 var MAX_UUI_MESSAGE_BODY_LENGTH = 2e4;
 var MAX_FIELD_ROW_SPAN = 8;
 
-// session_service.ts
-init_mod();
-var sessions = /* @__PURE__ */ new Map();
-function emit(record, value, retain = true) {
-  const message = {
-    ...value,
-    protocol: UUI_PROTOCOL_VERSION,
-    serverSequence: ++record.serverSequence,
-    sessionId: record.sessionId
-  };
-  if (message.type === "screen.show") {
-    record.currentScreen = structuredClone(message);
-    updateMetadata(record);
-  }
-  send(record, message, retain);
-}
-function send(record, message, retain) {
-  const encoded = JSON.stringify(message);
-  const bytes = new TextEncoder().encode(encoded).byteLength;
-  if (retain) {
-    record.replay.push({
-      sequence: message.serverSequence,
-      encoded,
-      bytes
-    });
-    record.replayBytes += bytes;
-    while (record.replay.length > record.config.replayMessages || record.replayBytes > record.config.replayBytes) record.replayBytes -= record.replay.shift().bytes;
-  }
-  log(record, "server", message.type, message.serverSequence, bytes);
-  if (record.socket !== void 0 && !record.socket.signal.aborted) {
-    record.socket.send(encoded);
-  }
-}
-async function end(record, reason, redirectUrl) {
-  if (!sessions.delete(record.executionId)) return;
-  record.ended = true;
-  if (record.heartbeatTimer !== void 0) clearInterval(record.heartbeatTimer);
-  if (record.disconnectTimer !== void 0) {
-    clearTimeout(record.disconnectTimer);
-  }
-  emit(record, {
-    type: "session.end",
-    message: reason,
-    redirectUrl
-  }, false);
-  record.controller.abort(new DOMException(reason, "AbortError"));
-  record.unbind();
-  log(record, "lifecycle", "ended");
-  await record.metadataWrites.catch(() => void 0);
-  try {
-    await removeMetadata(record);
-    await record.completePersistent();
-  } catch (error2) {
-    record.terminationFailure = errorMessage(error2);
-    try {
-      await writeMetadata(record);
-    } catch {
-    }
-    console.error("UUI persistent execution completion failed", errorMessage(error2));
-  }
-  record.socket?.close(1e3, reason.slice(0, 120));
-  record.socket = void 0;
-}
-function sessionByID(sessionId) {
-  const record = [
-    ...sessions.values()
-  ].find((item) => item.sessionId === sessionId);
-  if (record === void 0) {
-    throw new HTTPError(404, {
-      error: "uui_session_not_found"
-    });
-  }
-  return record;
-}
-function sessionRecordStatus(record) {
-  return {
-    session_id: record.sessionId,
-    persistent_execution_id: record.executionId,
-    authenticated_user: record.auth.username ?? "",
-    authenticated_user_id: record.auth.userId ?? "",
-    service_id: record.serviceId,
-    node_id: record.placement.nodeId,
-    runtime_group_id: record.placement.runtimeGroupId,
-    sandbox_id: record.placement.sandboxId,
-    worker_id: record.placement.workerId,
-    state: record.socket === void 0 ? "DISCONNECTED" : "CONNECTED",
-    current_screen_id: record.currentScreen?.screen.id,
-    server_sequence: record.serverSequence,
-    last_client_sequence: record.lastClientSequence,
-    created_at: new Date(record.createdAt).toISOString(),
-    last_connection_at: new Date(record.lastConnectionAt).toISOString()
-  };
-}
-function updateMetadata(record) {
-  if (record.ended) return;
-  record.metadataWrites = record.metadataWrites.then(() => writeMetadata(record)).catch((error2) => {
-    console.error("UUI session metadata update failed", error2);
-  });
-}
-async function writeMetadata(record) {
-  const metadata = {
-    sessionId: record.sessionId,
-    serviceId: record.serviceId,
-    persistentExecutionId: record.executionId,
-    nodeId: record.placement.nodeId,
-    runtimeGroupId: record.placement.runtimeGroupId,
-    sandboxId: record.placement.sandboxId,
-    workerId: record.placement.workerId,
-    authenticatedUserId: record.auth.userId ?? "",
-    authenticatedUser: record.auth.username ?? "",
-    latestIpAddress: record.client.ipAddress,
-    latestNetworkScope: record.client.networkScope,
-    state: record.ended ? record.terminationFailure === void 0 ? "ENDED" : "STALE" : record.socket === void 0 ? "DISCONNECTED" : "CONNECTED",
-    createdAt: new Date(record.createdAt),
-    updatedAt: /* @__PURE__ */ new Date(),
-    lastConnectionAt: new Date(record.lastConnectionAt),
-    currentScreenId: record.currentScreen?.screen.id ?? null,
-    terminationFailure: record.terminationFailure ?? null
-  };
-  await record.metadataStore.put(metadata);
-}
-async function removeMetadata(record) {
-  await record.metadataStore.remove(record.sessionId);
-}
-var workerFunctions = Object.freeze({
-  "uui.session.inspect": (input) => sessionRecordStatus(sessionByInput(input)),
-  "uui.session.message-log": (input) => ({
-    messages: structuredClone(sessionByInput(input).messageLog)
-  }),
-  "uui.session.terminate": async (input) => {
-    await end(sessionByInput(input), "terminated through session management");
-    return {
-      terminated: true
-    };
-  }
-});
-function sessionByInput(input) {
-  if (input === null || typeof input !== "object" || typeof input.sessionId !== "string") throw new TypeError("sessionId is required");
-  return sessionByID(input.sessionId);
-}
-function log(record, direction, type, sequence, bytes) {
-  record.messageLog.push({
-    at: (/* @__PURE__ */ new Date()).toISOString(),
-    direction,
-    type,
-    sequence,
-    bytes
-  });
-  if (record.messageLog.length > 1e3) record.messageLog.shift();
-}
-function errorMessage(error2) {
-  return error2 instanceof Error ? error2.message : "UUI session failed";
-}
-
 // services/shell/frontend/model.ts
-function getPath2(model2, path) {
-  let current = model2;
+function getPath(model, path) {
+  let current = model;
   for (const segment of path.split(".")) {
     if (current === null || typeof current !== "object") return void 0;
     current = current[segment];
   }
   return current;
 }
-function setPath(model2, path, value) {
-  if (model2 === null || typeof model2 !== "object") {
+function setPath(model, path, value) {
+  if (model === null || typeof model !== "object") {
     throw new TypeError("screen model must be an object");
   }
   const segments = path.split(".");
-  let current = model2;
+  let current = model;
   for (const segment of segments.slice(0, -1)) {
     const next = current[segment];
     if (next === null || typeof next !== "object") {
@@ -13142,6 +12031,13 @@ var DirtyBindings = class {
 var import_addon_canvas = __toESM(require_addon_canvas());
 var import_addon_fit = __toESM(require_addon_fit());
 var import_xterm = __toESM(require_xterm());
+
+// humanize.ts
+function humanize(value) {
+  const words = value.replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2").replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[-_]+/g, " ").trim().split(/\s+/).filter((word) => word.length > 0).map((word) => /^[A-Z0-9]{2,}$/.test(word) ? word : word.toLowerCase());
+  const text2 = words.join(" ");
+  return text2.length === 0 ? value : text2[0].toUpperCase() + text2.slice(1);
+}
 
 // services/shell/frontend/icon_text.ts
 var MATERIAL_ICON_ASSETS = {
@@ -13688,10 +12584,10 @@ function clamp(value, minimum, maximum) {
 }
 
 // services/shell/frontend/renderer.ts
-function renderScreenHeader(snapshot, model2, callbacks) {
+function renderScreenHeader(snapshot, model, callbacks) {
   const items = [];
   for (const control of snapshot.header?.controls ?? []) {
-    const rendered = renderControl(control, model2, callbacks);
+    const rendered = renderControl(control, model, callbacks);
     if (rendered === void 0) continue;
     rendered.classList.add("program-header-item", "program-header-control");
     items.push(rendered);
@@ -13712,7 +12608,7 @@ var fieldMessageResizeObserver = typeof ResizeObserver === "undefined" ? void 0 
     }
   }
 });
-function renderScreen(root, snapshot, model2, callbacks, custom) {
+function renderScreen(root, snapshot, model, callbacks, custom) {
   disposeFieldMessages(root);
   root.replaceChildren();
   const article = element("article", "screen");
@@ -13728,7 +12624,7 @@ function renderScreen(root, snapshot, model2, callbacks, custom) {
     control.id,
     control
   ]));
-  const customElements2 = new Map((snapshot.customElements ?? []).map((descriptor) => [
+  const customElements = new Map((snapshot.customElements ?? []).map((descriptor) => [
     descriptor.id,
     descriptor
   ]));
@@ -13743,12 +12639,12 @@ function renderScreen(root, snapshot, model2, callbacks, custom) {
     item
   ]));
   if (isLayout(snapshot.layout)) {
-    article.append(renderLayout(snapshot.layout.root, controls, byBind, snapshot.actions, model2, pagination, callbacks, customElements2, custom));
+    article.append(renderLayout(snapshot.layout.root, controls, byBind, snapshot.actions, model, pagination, callbacks, customElements, custom));
   } else {
     const stack = element("div", "layout-stack");
     const rendered = [];
     for (const control of snapshot.controls) {
-      const item = renderControl(control, model2, callbacks);
+      const item = renderControl(control, model, callbacks);
       if (item !== void 0) rendered.push({
         control,
         element: item
@@ -13762,15 +12658,15 @@ function renderScreen(root, snapshot, model2, callbacks, custom) {
   }
   root.append(article);
 }
-function changesForBindings(model2, bindings) {
+function changesForBindings(model, bindings) {
   return [
     ...new Set(bindings)
   ].map((bind) => ({
     bind,
-    value: structuredClone(getPath2(model2, bind))
+    value: structuredClone(getPath(model, bind))
   }));
 }
-function renderLayout(node, controls, byBind, actions, model2, pagination, callbacks, customElements2, custom, suppressTitle = false) {
+function renderLayout(node, controls, byBind, actions, model, pagination, callbacks, customElements, custom, suppressTitle = false) {
   const region = element(node.type === "section" ? "section" : "div", `layout-${node.type}`);
   region.dataset.layoutId = node.id;
   if (node.responsive === "stack") region.dataset.responsive = "stack";
@@ -13801,14 +12697,14 @@ function renderLayout(node, controls, byBind, actions, model2, pagination, callb
     region.setAttribute("role", "group");
   }
   if (node.type === "list" && node.bind) {
-    region.append(renderList(node, model2, pagination.get(node.bind), callbacks));
+    region.append(renderList(node, model, pagination.get(node.bind), callbacks));
   }
   if (node.type === "actions") {
     const selected = node.actions === void 0 ? actions : node.actions.map((id) => actions.find((action) => action.id === id)).filter((action) => action !== void 0);
     region.append(renderActions(selected, callbacks));
   }
   if (node.type === "custom" && node.customElement !== void 0) {
-    const descriptor = customElements2.get(node.customElement);
+    const descriptor = customElements.get(node.customElement);
     if (descriptor !== void 0) region.append(custom.render(descriptor));
   }
   const renderedControls = [];
@@ -13817,7 +12713,7 @@ function renderLayout(node, controls, byBind, actions, model2, pagination, callb
       controls.get(controlID)
     ];
     for (const control of candidates) {
-      const rendered = renderControl(control, model2, callbacks);
+      const rendered = renderControl(control, model, callbacks);
       if (rendered !== void 0) {
         renderedControls.push({
           control,
@@ -13844,7 +12740,7 @@ function renderLayout(node, controls, byBind, actions, model2, pagination, callb
       button.type = "button";
       button.role = "tab";
       renderIconText(button, child.title ?? child.id);
-      const panel = renderLayout(child, controls, byBind, actions, model2, pagination, callbacks, customElements2, custom, true);
+      const panel = renderLayout(child, controls, byBind, actions, model, pagination, callbacks, customElements, custom, true);
       const tabID = `tab-${node.id}-${child.id}`;
       const panelID = `panel-${node.id}-${child.id}`;
       button.id = tabID;
@@ -13869,7 +12765,7 @@ function renderLayout(node, controls, byBind, actions, model2, pagination, callb
     region.append(tabs);
   } else {
     for (const child of node.children ?? []) {
-      region.append(renderLayout(child, controls, byBind, actions, model2, pagination, callbacks, customElements2, custom));
+      region.append(renderLayout(child, controls, byBind, actions, model, pagination, callbacks, customElements, custom));
     }
   }
   if (node.type === "grid") {
@@ -13955,8 +12851,8 @@ function synchronizeSiblingFieldRows(fields) {
 function containsNodeType(node, type) {
   return node.type === type || (node.children ?? []).some((child) => containsNodeType(child, type));
 }
-function renderList(node, model2, pagination, callbacks) {
-  const rows = getPath2(model2, node.bind);
+function renderList(node, model, pagination, callbacks) {
+  const rows = getPath(model, node.bind);
   const container = element("div", "data-list-container");
   const scroll = element("div", "data-list-scroll");
   const table2 = document.createElement("table");
@@ -13983,7 +12879,7 @@ function renderList(node, model2, pagination, callbacks) {
   for (const item of rows) {
     const row = document.createElement("tr");
     row.tabIndex = 0;
-    const value = node.key === void 0 ? item : getPath2(item, node.key);
+    const value = node.key === void 0 ? item : getPath(item, node.key);
     const select = () => callbacks.action("select", "select", value);
     row.addEventListener("click", select);
     row.addEventListener("keydown", (event) => {
@@ -13991,7 +12887,7 @@ function renderList(node, model2, pagination, callbacks) {
     });
     for (const column of columns) {
       const cell = document.createElement("td");
-      renderIconText(cell, displayValue(getPath2(item, column)));
+      renderIconText(cell, displayValue(getPath(item, column)));
       row.append(cell);
     }
     body.append(row);
@@ -14008,9 +12904,9 @@ function renderPagination(pagination, callbacks) {
   const navigation = element("nav", "data-list-pagination");
   navigation.setAttribute("aria-label", `Pages for ${pagination.bind}`);
   const start = (pagination.page - 1) * pagination.pageSize + 1;
-  const end2 = Math.min(pagination.totalItems, pagination.page * pagination.pageSize);
+  const end = Math.min(pagination.totalItems, pagination.page * pagination.pageSize);
   const summary = element("span", "data-list-page-summary");
-  renderIconText(summary, `${start}\u2013${end2} of ${pagination.totalItems}`);
+  renderIconText(summary, `${start}\u2013${end} of ${pagination.totalItems}`);
   navigation.append(summary);
   const pages = element("span", "data-list-page-numbers");
   for (const item of paginationItems(pagination.page, pagination.totalPages)) {
@@ -14036,10 +12932,10 @@ function renderPagination(pagination, callbacks) {
   navigation.append(pages);
   return navigation;
 }
-function renderControl(control, model2, callbacks) {
+function renderControl(control, model, callbacks) {
   if (control.hidden) return void 0;
   if (control.control === "radio") {
-    return renderRadioControl(control, model2, callbacks);
+    return renderRadioControl(control, model, callbacks);
   }
   const wrapper = element("div", "field");
   wrapper.dataset.group = control.group ?? "";
@@ -14049,7 +12945,7 @@ function renderControl(control, model2, callbacks) {
   const label = document.createElement("label");
   label.htmlFor = `control-${control.id}`;
   renderIconText(label, control.label ?? control.id);
-  const value = getPath2(model2, control.bind);
+  const value = getPath(model, control.bind);
   let input;
   if (control.control === "textarea") {
     input = document.createElement("textarea");
@@ -14089,7 +12985,7 @@ function renderControl(control, model2, callbacks) {
   input.disabled ||= control.readOnly ?? false;
   input.addEventListener("input", () => {
     const next = inputValue(input, control.control);
-    setPath(model2, control.bind, next);
+    setPath(model, control.bind, next);
     synchronizeBinding(control.bind, next, input);
     if (input instanceof HTMLInputElement && input.type === "range") {
       updateRangeOutput(input);
@@ -14123,7 +13019,7 @@ function renderControl(control, model2, callbacks) {
   wrapper.append(label, inputShell, renderFieldMessage(control.label ?? control.id, hintFor(control)));
   return wrapper;
 }
-function renderRadioControl(control, model2, callbacks) {
+function renderRadioControl(control, model, callbacks) {
   const group = element("fieldset", "field field-radio");
   group.dataset.group = control.group ?? "";
   group.dataset.fieldLength = control.length ?? "medium";
@@ -14132,7 +13028,7 @@ function renderRadioControl(control, model2, callbacks) {
   const legend = document.createElement("legend");
   renderIconText(legend, control.label ?? control.id);
   const inputShell = element("div", "field-input-shell field-radio-options");
-  const current = getPath2(model2, control.bind);
+  const current = getPath(model, control.bind);
   for (const [index, option] of (control.options ?? []).entries()) {
     const label = document.createElement("label");
     const input = document.createElement("input");
@@ -14146,7 +13042,7 @@ function renderRadioControl(control, model2, callbacks) {
     input.required = control.required ?? false;
     input.addEventListener("change", () => {
       if (!input.checked) return;
-      setPath(model2, control.bind, option.value);
+      setPath(model, control.bind, option.value);
       synchronizeBinding(control.bind, option.value, input);
       callbacks.changed(control.bind, option.value, control);
     });
@@ -15238,9 +14134,9 @@ var EntityDecoder = class {
     this.state = EntityDecoderState.NumericDecimal;
     return this.stateNumericDecimal(str, offset);
   }
-  addToNumericResult(str, start, end2, base2) {
-    if (start !== end2) {
-      const digitCount = end2 - start;
+  addToNumericResult(str, start, end, base2) {
+    if (start !== end) {
+      const digitCount = end - start;
       this.result = this.result * Math.pow(base2, digitCount) + parseInt(str.substr(start, digitCount), base2);
       this.consumed += digitCount;
     }
@@ -22956,17 +21852,17 @@ StateBlock.prototype.skipCharsBack = function skipCharsBack(pos, code2, min) {
   }
   return pos;
 };
-StateBlock.prototype.getLines = function getLines(begin, end2, indent, keepLastLF) {
-  if (begin >= end2) {
+StateBlock.prototype.getLines = function getLines(begin, end, indent, keepLastLF) {
+  if (begin >= end) {
     return "";
   }
-  const queue = new Array(end2 - begin);
-  for (let i = 0, line = begin; line < end2; line++, i++) {
+  const queue = new Array(end - begin);
+  for (let i = 0, line = begin; line < end; line++, i++) {
     let lineIndent = 0;
     const lineStart = this.bMarks[line];
     let first = lineStart;
     let last;
-    if (line + 1 < end2 || keepLastLF) {
+    if (line + 1 < end || keepLastLF) {
       last = this.eMarks[line] + 1;
     } else {
       last = this.eMarks[line];
@@ -25435,9 +24331,9 @@ ParserInline.prototype.skipToken = function(state) {
 ParserInline.prototype.tokenize = function(state) {
   const rules = this.ruler.getRules("");
   const len = rules.length;
-  const end2 = state.posMax;
+  const end = state.posMax;
   const maxNesting = state.md.options.maxNesting;
-  while (state.pos < end2) {
+  while (state.pos < end) {
     const prevPos = state.pos;
     let ok = false;
     if (state.level < maxNesting) {
@@ -25452,7 +24348,7 @@ ParserInline.prototype.tokenize = function(state) {
       }
     }
     if (ok) {
-      if (state.pos >= end2) {
+      if (state.pos >= end) {
         break;
       }
       continue;
@@ -27017,6 +25913,129 @@ function messagePreview(body) {
   return plain.length <= 96 ? plain : `${plain.slice(0, 95)}\u2026`;
 }
 
+// services/shell/frontend/presentation.ts
+var PresentationHistory = class {
+  #visible = [];
+  #visiblePageDepth = 0;
+  #hidden = [];
+  visible() {
+    return this.#visible;
+  }
+  reconcile(next, pageDepth) {
+    if (next.length === 0) {
+      return {
+        removed: this.clear()
+      };
+    }
+    if (!Number.isSafeInteger(pageDepth) || pageDepth < 1) {
+      throw new TypeError("presentation page depth must be a positive integer");
+    }
+    if (new Set(next).size !== next.length) {
+      throw new TypeError("presentation contains duplicate surface IDs");
+    }
+    if (this.#visible.length === 0) {
+      this.#visible = [
+        ...next
+      ];
+      this.#visiblePageDepth = pageDepth;
+      return {
+        removed: []
+      };
+    }
+    const currentBase = this.#visible[0];
+    const nextBase = next[0];
+    if (currentBase === nextBase) {
+      if (pageDepth !== this.#visiblePageDepth) {
+        throw new TypeError("presentation page depth changed for a surface");
+      }
+      const retained = commonPrefixLength(this.#visible, next);
+      const removed = this.#visible.slice(retained);
+      this.#visible = [
+        ...next
+      ];
+      return {
+        removed
+      };
+    }
+    const restored = this.#hidden.findLastIndex((item) => item.pageDepth === pageDepth && item.surfaceIds[0] === nextBase);
+    if (restored >= 0) {
+      const removed = [
+        ...this.#visible
+      ];
+      for (const frame of this.#hidden.slice(restored + 1)) {
+        removed.push(...frame.surfaceIds);
+      }
+      const restoredPresentation = this.#hidden[restored].surfaceIds;
+      const retained = commonPrefixLength(restoredPresentation, next);
+      removed.push(...restoredPresentation.slice(retained));
+      this.#hidden = this.#hidden.slice(0, restored);
+      this.#visible = [
+        ...next
+      ];
+      this.#visiblePageDepth = pageDepth;
+      return {
+        removed: unique(removed)
+      };
+    }
+    if (pageDepth <= this.#visiblePageDepth) {
+      const removed = [
+        ...this.#visible
+      ];
+      const retainedFrames = [];
+      for (const frame of this.#hidden) {
+        if (frame.pageDepth >= pageDepth) removed.push(...frame.surfaceIds);
+        else retainedFrames.push(frame);
+      }
+      this.#hidden = retainedFrames;
+      this.#visible = [
+        ...next
+      ];
+      this.#visiblePageDepth = pageDepth;
+      return {
+        removed: unique(removed)
+      };
+    }
+    this.#hidden.push({
+      pageDepth: this.#visiblePageDepth,
+      surfaceIds: this.#visible
+    });
+    this.#visible = [
+      ...next
+    ];
+    this.#visiblePageDepth = pageDepth;
+    return {
+      removed: []
+    };
+  }
+  clear() {
+    const removed = unique([
+      ...this.#hidden.flatMap((frame) => frame.surfaceIds),
+      ...this.#visible
+    ]);
+    this.#hidden = [];
+    this.#visible = [];
+    this.#visiblePageDepth = 0;
+    return removed;
+  }
+};
+function mergeServerModel(serverModel, currentModel, dirtyBindings) {
+  const merged = structuredClone(serverModel);
+  for (const bind of dirtyBindings) {
+    setPath(merged, bind, structuredClone(getPath(currentModel, bind)));
+  }
+  return merged;
+}
+function commonPrefixLength(left, right) {
+  let index = 0;
+  while (index < left.length && index < right.length && left[index] === right[index]) index++;
+  return index;
+}
+function unique(values) {
+  return [
+    ...new Set(values)
+  ];
+}
+
 // services/shell/frontend/window_title.ts
 var GENERIC_WINDOW_TITLE = "80|20";
 function windowTitleForHeading(heading2) {
@@ -27026,6 +26045,7 @@ function windowTitleForHeading(heading2) {
 
 // services/shell/frontend/main.ts
 var app = requiredElement("app");
+var modalLayers = requiredElement("modal-layers");
 var connectionState = requiredElement("connection-state");
 var connectionIndicator = requiredElement("connection-indicator");
 var notice = requiredElement("notice");
@@ -27058,16 +26078,16 @@ var socket;
 var reconnectAttempt = 0;
 var ended = false;
 var currentSessionID = "";
-var screen;
-var model = {};
 var interactionSequence;
+var activeSurfaceID = null;
 var connectionText = "Connecting\u2026";
 var logoutFallback;
 var logoutRequested = false;
 var terminalRedirect;
-var dirty = new DirtyBindings();
 var pending = /* @__PURE__ */ new Map();
-var customElements = new CustomElementRenderer();
+var layers = /* @__PURE__ */ new Map();
+var presentationHistory = new PresentationHistory();
+var globalHeaderSurfaceID;
 var messageCenter = new MessageCenter({
   toastRegion: messageToastStack,
   sessionMenu,
@@ -27086,6 +26106,9 @@ renderIconText(programHeaderOverflowToggle, "[[icon=more_vert]]", {
   decorativeIcons: true
 });
 renderIconText(sessionMenuIcon, "[[icon=menu]]", {
+  decorativeIcons: true
+});
+renderIconText(messageDialogClose, "[[icon=close]]", {
   decorativeIcons: true
 });
 renderSessionMenuAction(sessionLogout, "logout", "Logout");
@@ -27158,7 +26181,7 @@ async function connectAttempt() {
     opened = true;
     reconnectAttempt = 0;
     setConnectionState("Connected", "connected");
-    send2({
+    send({
       type: "session.connect",
       protocol: boot.protocol,
       resumeToken: currentSessionID === "" ? null : routeToken,
@@ -27226,7 +26249,7 @@ function replaceRoute(token) {
   clientSequence = 0;
   currentSessionID = "";
   pending.clear();
-  dirty.clear();
+  clearPresentation();
   messageCenter.beginRoundtrip();
   setInteractionPending(void 0);
 }
@@ -27256,6 +26279,7 @@ function receive(raw) {
     return;
   }
   if (typeof message.sessionId === "string" && message.sessionId !== currentSessionID) {
+    if (currentSessionID !== "") clearPresentation();
     currentSessionID = message.sessionId;
     applyTheme(themePreferences.bindSession(currentSessionID));
   }
@@ -27277,26 +26301,12 @@ function receive(raw) {
         type: "session.pong"
       });
       break;
-    case "screen.show":
+    case "presentation.show":
       notice.hidden = true;
-      screen = message.screen;
-      screenBack.disabled = false;
-      model = structuredClone(message.screen.model);
-      setInteractionPending(void 0);
-      dirty.clear();
-      pending.clear();
-      renderCurrentScreen();
-      break;
-    case "screen.close":
-      if (screen?.id === message.screenId) {
-        setInteractionPending(void 0);
-        customElements.dispose();
-        disposeFieldMessages(app);
-        disposeFieldMessages(programHeaderRoot);
-        programHeader.clear();
-        screenBack.disabled = true;
-        app.replaceChildren();
-        synchronizeWindowTitle();
+      try {
+        reconcilePresentation(message.presentation);
+      } catch {
+        showNotice("The server sent an invalid presentation.");
       }
       break;
     case "notification.show":
@@ -27310,7 +26320,9 @@ function receive(raw) {
         for (const sequence of pending.keys()) {
           if (sequence <= message.clientSequence) {
             const item = pending.get(sequence);
-            if (item !== void 0) dirty.acknowledge(item.dirty);
+            if (item !== void 0) {
+              layers.get(item.surfaceId)?.dirty.acknowledge(item.dirty);
+            }
             pending.delete(sequence);
           }
         }
@@ -27327,10 +26339,7 @@ function receive(raw) {
       setInteractionPending(void 0);
       ended = true;
       messageCenter.dispose();
-      customElements.dispose();
-      disposeFieldMessages(programHeaderRoot);
-      programHeader.clear();
-      screenBack.disabled = true;
+      clearPresentation();
       themePreferences.endSession();
       sessionStorage.removeItem(routeKey);
       terminalRedirect = message.redirectUrl;
@@ -27402,107 +26411,413 @@ async function writeClipboard(text2) {
     }
   }
 }
-function renderCurrentScreen() {
-  if (screen === void 0) return;
-  customElements.begin();
+function reconcilePresentation(presentation) {
+  const surfaces = presentation.surfaces;
+  if (!Number.isSafeInteger(presentation.pageDepth) || presentation.pageDepth < 1 || surfaces.length === 0 || surfaces[0]?.kind !== "page" || surfaces.slice(1).some((surface) => surface.kind !== "modal") || surfaces.some((surface) => typeof surface.surfaceId !== "string" || surface.surfaceId.length === 0 || typeof surface.screen?.id !== "string" || surface.screen.id.length === 0 || !Number.isSafeInteger(surface.screen.revision) || surface.screen.revision < 1) || presentation.activeSurfaceId !== null && presentation.activeSurfaceId !== surfaces.at(-1)?.surfaceId) {
+    showNotice("The server sent an invalid presentation.");
+    return;
+  }
+  captureActiveFocus();
+  const previousVisible = [
+    ...presentationHistory.visible()
+  ];
+  const previousBase = previousVisible[0];
+  if (previousBase !== void 0) {
+    const layer = layers.get(previousBase);
+    if (layer !== void 0) {
+      layer.scrollX = scrollX;
+      layer.scrollY = scrollY;
+    }
+  }
+  if (interactionSequence !== void 0 && presentation.activeSurfaceId !== null) {
+    completeInteraction(interactionSequence);
+  }
+  let transition;
+  try {
+    transition = presentationHistory.reconcile(surfaces.map((surface) => surface.surfaceId), presentation.pageDepth);
+  } catch {
+    showNotice("The server sent an invalid presentation.");
+    return;
+  }
+  for (const surfaceId of transition.removed) disposeLayer(surfaceId);
+  const changed = /* @__PURE__ */ new Set();
+  for (const surface of surfaces) {
+    let layer = layers.get(surface.surfaceId);
+    if (layer === void 0) {
+      layer = createLayer(surface);
+      layers.set(surface.surfaceId, layer);
+      changed.add(surface.surfaceId);
+    } else if (updateLayer(layer, surface)) {
+      changed.add(surface.surfaceId);
+    }
+  }
+  const visible = new Set(surfaces.map((surface) => surface.surfaceId));
+  for (const surfaceId of previousVisible.reverse()) {
+    if (visible.has(surfaceId)) continue;
+    hideLayer(layers.get(surfaceId));
+  }
+  for (const layer of layers.values()) {
+    if (!visible.has(layer.surfaceId)) hideLayer(layer);
+  }
+  for (const surface of surfaces) showLayer(layers.get(surface.surfaceId));
+  const base2 = layers.get(surfaces[0].surfaceId);
+  if (globalHeaderSurfaceID !== base2.surfaceId || changed.has(base2.surfaceId)) {
+    programHeader.render(base2.headerItems);
+    globalHeaderSurfaceID = base2.surfaceId;
+  }
+  activeSurfaceID = presentation.activeSurfaceId;
+  updateInteractionState();
+  synchronizeWindowTitle();
+  if (previousBase !== base2.surfaceId) {
+    scrollTo(base2.scrollX, base2.scrollY);
+  }
+  if (activeSurfaceID !== null) {
+    const active = layers.get(activeSurfaceID);
+    if (active !== void 0) queueMicrotask(() => restoreFocus(active));
+  }
+}
+function createLayer(surface) {
+  let shell;
+  let root;
+  let headerRoot;
+  if (surface.kind === "page") {
+    shell = document.createElement("section");
+    shell.className = "presentation-page-layer";
+    shell.dataset.surfaceId = surface.surfaceId;
+    root = shell;
+    if (app.querySelector(".loading") !== null) app.replaceChildren();
+    app.append(shell);
+  } else {
+    const dialog = document.createElement("dialog");
+    dialog.className = "uui-dialog presentation-modal";
+    dialog.dataset.surfaceId = surface.surfaceId;
+    dialog.setAttribute("aria-modal", "true");
+    const frame = document.createElement("section");
+    frame.className = "uui-dialog-frame presentation-modal-frame";
+    const toolbar = document.createElement("header");
+    toolbar.className = "uui-dialog-toolbar presentation-modal-toolbar";
+    headerRoot = document.createElement("div");
+    headerRoot.className = "uui-dialog-header presentation-modal-header";
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "btn btn-ghost btn-sm uui-dialog-close presentation-modal-close";
+    close.setAttribute("aria-label", "Close");
+    close.title = "Close";
+    renderIconText(close, "[[icon=close]]", {
+      decorativeIcons: true
+    });
+    close.addEventListener("click", () => requestLayerBack(surface.surfaceId));
+    toolbar.append(headerRoot, close);
+    root = document.createElement("div");
+    root.className = "uui-dialog-body presentation-modal-body";
+    const shield = document.createElement("div");
+    shield.className = "presentation-modal-interaction-shield";
+    shield.setAttribute("aria-hidden", "true");
+    const indicator = document.createElement("div");
+    indicator.className = "interaction-indicator";
+    const spinner = document.createElement("span");
+    spinner.className = "interaction-spinner";
+    const label = document.createElement("span");
+    label.textContent = "Loading\u2026";
+    indicator.append(spinner, label);
+    shield.append(indicator);
+    frame.append(toolbar, root, shield);
+    dialog.append(frame);
+    dialog.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      requestLayerBack(surface.surfaceId);
+    });
+    modalLayers.append(dialog);
+    shell = dialog;
+  }
+  const layer = {
+    surfaceId: surface.surfaceId,
+    kind: surface.kind,
+    shell,
+    root,
+    headerRoot,
+    customElements: new CustomElementRenderer(),
+    dirty: new DirtyBindings(),
+    screen: surface.screen,
+    screenFingerprint: "",
+    model: {},
+    headerItems: [],
+    scrollX: 0,
+    scrollY: 0
+  };
+  updateLayer(layer, surface);
+  return layer;
+}
+function updateLayer(layer, surface) {
+  if (layer.kind !== surface.kind) {
+    throw new TypeError("presentation surface kind changed");
+  }
+  const fingerprint = JSON.stringify(surface.screen);
+  if (fingerprint === layer.screenFingerprint) return false;
+  rememberLayerFocus(layer);
+  const sameScreen = layer.screenFingerprint !== "" && layer.screen.id === surface.screen.id && layer.screen.revision === surface.screen.revision;
+  const nextModel = sameScreen ? mergeServerModel(surface.screen.model, layer.model, layer.dirty.bindings()) : structuredClone(surface.screen.model);
+  if (!sameScreen) layer.dirty.clear();
+  layer.screen = surface.screen;
+  layer.screenFingerprint = fingerprint;
+  layer.model = nextModel;
+  renderLayer(layer);
+  return true;
+}
+function renderLayer(layer) {
   const callbacks = {
     changed(bind, _value, control) {
-      dirty.mark(bind);
-      if (control.reactive) dispatch("change", "change", void 0, bind);
+      if (!layerIsActive(layer)) return;
+      layer.dirty.mark(bind);
+      if (control.reactive) {
+        dispatchFromLayer(layer, "change", "change", void 0, bind);
+      }
     },
     action(action, eventType = "action", value) {
-      dispatch(action, eventType, value);
+      dispatchFromLayer(layer, action, eventType, value);
     },
     page(bind, currentPage, page) {
-      requestPage(bind, currentPage, page);
+      requestPage(layer, bind, currentPage, page);
     }
   };
-  renderScreen(app, screen, model, callbacks, customElements);
+  layer.customElements.begin();
+  renderScreen(layer.root, layer.screen, layer.model, callbacks, layer.customElements);
+  for (const item of layer.headerItems) disposeFieldMessages(item);
+  layer.headerItems = renderScreenHeader(layer.screen, layer.model, callbacks);
+  if (layer.kind === "modal") {
+    layer.headerRoot.replaceChildren(...layer.headerItems);
+    const heading2 = layer.root.querySelector(".screen-title");
+    if (heading2 !== null) {
+      heading2.id = `presentation-title-${layer.surfaceId}`;
+      heading2.tabIndex = -1;
+      layer.shell.setAttribute("aria-labelledby", heading2.id);
+    }
+  }
+  layer.customElements.end();
+}
+function hideLayer(layer) {
+  if (layer === void 0) return;
+  if (layer.kind === "page") {
+    layer.shell.hidden = true;
+    return;
+  }
+  const dialog = layer.shell;
+  if (dialog.open) dialog.close();
+}
+function showLayer(layer) {
+  if (layer.kind === "page") {
+    layer.shell.hidden = false;
+    return;
+  }
+  const dialog = layer.shell;
+  if (!dialog.open) dialog.showModal();
+}
+function disposeLayer(surfaceId) {
+  const layer = layers.get(surfaceId);
+  if (layer === void 0) return;
+  if (layer.kind === "modal" && layer.shell.open) {
+    layer.shell.close();
+  }
+  disposeFieldMessages(layer.root);
+  for (const item of layer.headerItems) disposeFieldMessages(item);
+  layer.customElements.dispose();
+  layer.shell.remove();
+  layers.delete(surfaceId);
+  if (globalHeaderSurfaceID === surfaceId) globalHeaderSurfaceID = void 0;
+  for (const [sequence, item] of pending) {
+    if (item.surfaceId === surfaceId) pending.delete(sequence);
+  }
+}
+function clearPresentation() {
+  presentationHistory.clear();
+  for (const surfaceId of [
+    ...layers.keys()
+  ]) disposeLayer(surfaceId);
+  activeSurfaceID = null;
+  interactionSequence = void 0;
+  globalHeaderSurfaceID = void 0;
+  programHeader.clear();
+  screenBack.disabled = true;
+  app.replaceChildren();
   synchronizeWindowTitle();
-  disposeFieldMessages(programHeaderRoot);
-  programHeader.render(renderScreenHeader(screen, model, callbacks));
-  customElements.end();
+  updateInteractionState();
 }
 function synchronizeWindowTitle() {
-  const heading2 = app.querySelector(".screen > h1.screen-title");
+  const top = activeSurfaceID === null ? presentationHistory.visible().at(-1) : activeSurfaceID;
+  const heading2 = top === void 0 ? void 0 : layers.get(top)?.root.querySelector(".screen > h1.screen-title");
   document.title = windowTitleForHeading(heading2?.textContent);
 }
-function requestPage(bind, currentPage, page) {
-  if (screen === void 0) return;
-  const pagination = screen.pagination?.lists.find((item) => item.bind === bind);
+function requestPage(layer, bind, currentPage, page) {
+  if (!layerIsActive(layer)) return;
+  const pagination = layer.screen.pagination?.lists.find((item) => item.bind === bind);
   if (pagination === void 0 || pagination.page !== currentPage || !Number.isSafeInteger(page) || page < 1 || page > pagination.totalPages || page === currentPage) return;
-  sendInteraction({
+  sendInteraction(layer, {
     type: "screen.page",
-    screenId: screen.id,
-    screenRevision: screen.revision,
     bind,
     currentPage,
     page,
-    changes: changesForBindings(model, [
-      ...dirty.bindings(),
+    changes: changesForBindings(layer.model, [
+      ...layer.dirty.bindings(),
       bind
     ])
   });
 }
 function setInteractionPending(sequence) {
   interactionSequence = sequence;
-  const waiting = sequence !== void 0;
-  document.documentElement.toggleAttribute("data-interaction-pending", waiting);
-  app.inert = waiting;
-  programHeaderRoot.inert = waiting;
-  screenBack.disabled = waiting;
-  for (const region of [
-    app,
-    programHeaderRoot
-  ]) {
-    if (waiting) region.setAttribute("aria-busy", "true");
-    else region.removeAttribute("aria-busy");
+  updateInteractionState();
+}
+function updateInteractionState() {
+  const visible = new Set(presentationHistory.visible());
+  const waiting = interactionSequence !== void 0 || visible.size > 0 && activeSurfaceID === null;
+  const active = activeSurfaceID === null ? void 0 : layers.get(activeSurfaceID);
+  const feedbackLayer = active ?? layers.get(presentationHistory.visible().at(-1) ?? "");
+  const pageWaiting = waiting && feedbackLayer?.kind !== "modal";
+  document.documentElement.toggleAttribute("data-interaction-pending", pageWaiting);
+  for (const layer of layers.values()) {
+    const isVisible = visible.has(layer.surfaceId);
+    const isActive = activeSurfaceID === layer.surfaceId;
+    layer.shell.inert = !isVisible || waiting || !isActive;
+    const modalWaiting = waiting && feedbackLayer === layer && layer.kind === "modal";
+    layer.shell.toggleAttribute("data-interaction-pending", modalWaiting);
+    if (modalWaiting) layer.root.setAttribute("aria-busy", "true");
+    else layer.root.removeAttribute("aria-busy");
+  }
+  app.inert = waiting || active?.kind === "modal";
+  programHeaderRoot.inert = waiting || activeSurfaceID !== presentationHistory.visible()[0];
+  screenBack.disabled = waiting || active === void 0;
+  if (pageWaiting) {
+    app.setAttribute("aria-busy", "true");
+    programHeaderRoot.setAttribute("aria-busy", "true");
+  } else {
+    app.removeAttribute("aria-busy");
+    programHeaderRoot.removeAttribute("aria-busy");
   }
 }
 function dispatch(action, eventType, value, bind) {
-  if (screen === void 0) return;
-  sendInteraction({
+  const layer = activeLayer();
+  if (layer === void 0) return;
+  dispatchFromLayer(layer, action, eventType, value, bind);
+}
+function dispatchFromLayer(layer, action, eventType, value, bind) {
+  if (!layerIsActive(layer)) return;
+  sendInteraction(layer, {
     type: "screen.event",
-    screenId: screen.id,
-    screenRevision: screen.revision,
     action,
     eventType,
     value,
     bind,
-    changes: changesForBindings(model, dirty.bindings())
+    changes: changesForBindings(layer.model, layer.dirty.bindings())
   });
 }
-function sendInteraction(payload) {
+function requestLayerBack(surfaceId) {
+  const layer = layers.get(surfaceId);
+  if (layer === void 0 || !layerIsActive(layer)) return;
+  dispatchFromLayer(layer, BACK_EVENT, BACK_EVENT);
+}
+function sendInteraction(layer, payload) {
   if (interactionSequence !== void 0) return;
-  const sequence = sendClient(payload, true);
+  const sequence = sendClient({
+    ...payload,
+    surfaceId: layer.surfaceId,
+    screenId: layer.screen.id,
+    screenRevision: layer.screen.revision
+  }, true, layer);
   if (sequence !== void 0) {
     messageCenter.beginRoundtrip();
     setInteractionPending(sequence);
   }
 }
-function sendClient(payload, remember = false) {
+function sendClient(payload, remember = false, layer) {
   if (routeToken === null) return void 0;
   const message = {
     ...payload,
     protocol: boot.protocol,
     clientSequence: ++clientSequence,
-    sessionId: currentSessionID,
-    ...screen === void 0 ? {} : {
-      screenId: screen.id,
-      screenRevision: screen.revision
-    }
+    sessionId: currentSessionID
   };
   const encoded = JSON.stringify(message);
   if (remember) {
+    if (layer === void 0) {
+      throw new TypeError("remembered interaction requires a screen layer");
+    }
     pending.set(message.clientSequence, {
       encoded,
-      dirty: dirty.capture()
+      surfaceId: layer.surfaceId,
+      dirty: layer.dirty.capture()
     });
   }
   if (socket?.readyState === WebSocket.OPEN) socket.send(encoded);
   return message.clientSequence;
 }
-function send2(value) {
+function completeInteraction(sequence) {
+  const item = pending.get(sequence);
+  if (item !== void 0) {
+    layers.get(item.surfaceId)?.dirty.acknowledge(item.dirty);
+    pending.delete(sequence);
+  }
+  if (interactionSequence === sequence) interactionSequence = void 0;
+}
+function activeLayer() {
+  return activeSurfaceID === null ? void 0 : layers.get(activeSurfaceID);
+}
+function layerIsActive(layer) {
+  return interactionSequence === void 0 && activeSurfaceID === layer.surfaceId && presentationHistory.visible().at(-1) === layer.surfaceId;
+}
+function captureActiveFocus() {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement)) return;
+  for (const layer of layers.values()) {
+    if (layer.root.contains(active) || layer.headerItems.some((item) => item === active || item.contains(active))) {
+      rememberLayerFocus(layer, active);
+      return;
+    }
+  }
+}
+function rememberLayerFocus(layer, candidate = document.activeElement instanceof HTMLElement ? document.activeElement : null) {
+  if (candidate === null || !layer.root.contains(candidate) && !layer.headerItems.some((item) => item === candidate || item.contains(candidate))) return;
+  const selectable = candidate instanceof HTMLInputElement || candidate instanceof HTMLTextAreaElement;
+  layer.focus = {
+    element: candidate,
+    id: candidate.id || void 0,
+    bind: candidate.dataset.bind,
+    selectionStart: selectable ? candidate.selectionStart : void 0,
+    selectionEnd: selectable ? candidate.selectionEnd : void 0
+  };
+}
+function restoreFocus(layer) {
+  if (!layerIsActive(layer)) return;
+  const saved = layer.focus;
+  let target = saved?.element?.isConnected ? saved.element : void 0;
+  if (target === void 0 && saved?.id !== void 0) {
+    target = elementsInLayer(layer).find((item) => item.id === saved.id);
+  }
+  if (target === void 0 && saved?.bind !== void 0) {
+    target = elementsInLayer(layer).find((item) => item.dataset.bind === saved.bind);
+  }
+  if (target === void 0 && layer.kind === "modal") {
+    target = layer.root.querySelector("input:not(:disabled), select:not(:disabled), textarea:not(:disabled), button:not(:disabled), [tabindex]:not([tabindex='-1'])") ?? layer.headerRoot?.querySelector("input:not(:disabled), select:not(:disabled), textarea:not(:disabled), button:not(:disabled), [tabindex]:not([tabindex='-1'])") ?? layer.root.querySelector(".screen-title") ?? void 0;
+  }
+  if (target === void 0) return;
+  target.focus({
+    preventScroll: true
+  });
+  if (saved !== void 0 && (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) && saved.selectionStart !== void 0 && saved.selectionEnd !== void 0) {
+    try {
+      target.setSelectionRange(saved.selectionStart, saved.selectionEnd);
+    } catch {
+    }
+  }
+}
+function elementsInLayer(layer) {
+  return [
+    ...layer.root.querySelectorAll("*"),
+    ...layer.headerItems.flatMap((item) => [
+      item,
+      ...item.querySelectorAll("*")
+    ])
+  ];
+}
+function send(value) {
   if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(value));
 }
 function showNotice(message) {

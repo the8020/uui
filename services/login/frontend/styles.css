@@ -225,16 +225,6 @@ button:focus-visible {
   font-size: 0.84rem;
 }
 
-.hint {
-  margin: 20px 0 0;
-  color: var(--muted);
-  font-size: 0.85rem;
-}
-
-.hint code {
-  color: var(--primary-dark);
-}
-
 @media (max-width: 480px) {
   .login-card {
     --group-radius: 11px;
