@@ -28,7 +28,7 @@ Deno.test("login page and kernel-issued authentication cookie", async () => {
     ((operation, input) => {
       calls.push(operation);
       return Promise.resolve(
-        operation === "auth.bootstrapLogin"
+        operation === "auth.login"
           ? input.username === "Admin"
             ? {
               authenticated: true,
@@ -121,8 +121,8 @@ Deno.test("login page and kernel-issued authentication cookie", async () => {
     );
     assertEquals(logout.status, 303);
     assertEquals(calls, [
-      "auth.bootstrapLogin",
-      "auth.bootstrapLogin",
+      "auth.login",
+      "auth.login",
       "auth.logoutCurrent",
     ]);
   } finally {

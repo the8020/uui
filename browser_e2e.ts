@@ -163,6 +163,7 @@ const options = parseOptions(Deno.args);
 const temporaryRoot = await Deno.makeTempDir({ prefix: "the8020-phase1d-" });
 const primaryRoot = `${temporaryRoot}/node-primary`;
 const secondaryRoot = `${temporaryRoot}/node-secondary`;
+const sharedDatabase = `${primaryRoot}/database/system.db`;
 const browserData = `${temporaryRoot}/chromium`;
 const primaryPort = await freePort();
 const secondaryPort = await freePort();
@@ -175,23 +176,25 @@ const pages: BrowserPage[] = [];
 
 try {
   await prepareWorkspaces(options, primaryRoot, secondaryRoot);
-  kernels.push(startKernel(primaryRoot, primaryPort, primarySSHPort));
+  kernels.push(
+    startKernel(primaryRoot, primaryPort, primarySSHPort, sharedDatabase),
+  );
   await waitForHTTP(`http://127.0.0.1:${primaryPort}/`);
   await waitForAdmin(primaryRoot);
-  await admin(primaryRoot, [
-    "auth",
-    "bootstrap-admin",
-    "add",
-    "admin",
-    "--password-stdin",
-  ], "phase1d-password\n");
   await waitForServices(primaryRoot, [
     "the8020/uui/login",
     "the8020/uui/session",
     "the8020/uui/shell",
   ]);
+  await admin(
+    primaryRoot,
+    ["users.add", "admin", "--password-stdin"],
+    "phase1d-password\n",
+  );
 
-  kernels.push(startKernel(secondaryRoot, secondaryPort, secondarySSHPort));
+  kernels.push(
+    startKernel(secondaryRoot, secondaryPort, secondarySSHPort, sharedDatabase),
+  );
   await waitForHTTP(`http://127.0.0.1:${secondaryPort}/`);
   await waitForAdmin(secondaryRoot);
   await waitForServices(secondaryRoot, ["the8020/uui/shell"]);
@@ -219,11 +222,32 @@ try {
     `${primaryBase}/the8020/uui/shell/`,
   );
   pages.push(first);
-  await waitForPage(
-    first,
-    `location.pathname === "/the8020/uui/login/" && document.querySelector("h1")?.textContent === "Sign in"`,
-    "login redirect and form",
-  );
+  try {
+    await waitForPage(
+      first,
+      `location.pathname === "/the8020/uui/login/" && document.querySelector("h1")?.textContent === "Sign in"`,
+      "login redirect and form",
+    );
+  } catch (error) {
+    const state = await first.evaluate(`({
+      path: location.pathname,
+      title: document.querySelector('h1')?.textContent,
+      body: document.body?.innerText,
+    })`);
+    const services = await admin(primaryRoot, ["services.list"])
+      .catch((serviceError) => ({
+        error: serviceError instanceof Error
+          ? serviceError.message
+          : String(serviceError),
+      }));
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}; state: ${
+        JSON.stringify(state)
+      }; services: ${JSON.stringify(services)}; ${await latestKernelLog(
+        primaryRoot,
+      )}`,
+    );
+  }
   await setValue(first, 'input[name="username"]', "admin");
   await setValue(first, 'input[name="password"]', "phase1d-password");
   await click(first, 'button[type="submit"]');
@@ -243,7 +267,7 @@ try {
       "the8020/uui/session",
     ].map(async (serviceID) => {
       try {
-        return await admin(primaryRoot, ["service", "inspect", serviceID]);
+        return await admin(primaryRoot, ["services.inspect", serviceID]);
       } catch (inspectError) {
         return {
           service_id: serviceID,
@@ -582,7 +606,12 @@ try {
   const priorSessionID = beforeKernelRestart[0]!.session_id;
   const framesBeforeKernelRestart = first.websocketFrames.length;
   await stopKernel(kernels[0]!);
-  kernels[0] = startKernel(primaryRoot, primaryPort, primarySSHPort);
+  kernels[0] = startKernel(
+    primaryRoot,
+    primaryPort,
+    primarySSHPort,
+    sharedDatabase,
+  );
   await waitForHTTP(`http://127.0.0.1:${primaryPort}/`);
   await waitForAdmin(primaryRoot);
   await waitForServices(primaryRoot, [
@@ -1088,11 +1117,29 @@ try {
         ).catch((gitError) => String(gitError)),
       })),
     );
+    const development = await admin(primaryRoot, [
+      "dev-core.sandbox.inspect",
+      "admin",
+    ]).catch((inspectError) => ({
+      error: inspectError instanceof Error
+        ? inspectError.message
+        : String(inspectError),
+    }));
+    const activations = await admin(primaryRoot, [
+      "db.sql",
+      `SELECT "activationId", "stage", "error" FROM "the8020__packages__activations" ORDER BY "startedAt" DESC LIMIT 3`,
+    ]).catch((queryError) => ({
+      error: queryError instanceof Error
+        ? queryError.message
+        : String(queryError),
+    }));
     throw new Error(
       `${error instanceof Error ? error.message : String(error)}; state: ${
         JSON.stringify(state)
-      }; repositories: ${
-        JSON.stringify(repositories)
+      }; repositories: ${JSON.stringify(repositories)}; development: ${
+        JSON.stringify(development)
+      }; activations: ${
+        JSON.stringify(activations)
       }; kernel log: ${await latestKernelLog(primaryRoot)}`,
     );
   }
@@ -1357,12 +1404,21 @@ try {
   );
   await clickRow(first, "the8020/demo/variables");
   await waitForScreen(first, "Service the8020/demo/variables");
-  await clickButton(first, "Back");
+  const guardedHistoryLength = await first.evaluate<number>("history.length");
+  await first.evaluate("history.back()");
   await waitForScreen(first, "Package the8020/demo");
-  await clickButton(first, "Back");
+  await first.evaluate("history.back()");
   await waitForScreen(first, "Packages");
-  await clickButton(first, "Back");
+  await first.evaluate("history.back()");
   await waitForScreen(first, "Welcome to 80|20");
+  assert(
+    await first.evaluate<boolean>(
+      `history.length === ${guardedHistoryLength} &&
+       history.state?.["the8020.uui.back"] === "guard" &&
+       location.pathname === "/the8020/uui/shell/"`,
+    ),
+    "browser Back did not retain and reuse the shell history guard",
+  );
 
   await clickRow(first, "the8020/uui/sessions");
   await waitForScreen(first, "UUI sessions");
@@ -1375,21 +1431,35 @@ try {
   );
   await clickRow(first, firstSession.session_id);
   await waitForScreen(first, `UUI session ${firstSession.session_id}`);
-  await waitForPage(
-    first,
-    `document.querySelector('[data-bind="sessionId"]')?.value === ${
-      JSON.stringify(firstSession.session_id)
-    } &&
-      document.querySelector('[data-bind="sandboxId"]')?.value === ${
-      JSON.stringify(firstSession.sandbox_id)
-    } &&
-      document.querySelector('[data-bind="workerId"]')?.value === ${
-      JSON.stringify(firstSession.worker_id)
-    } &&
-      document.querySelector('[data-bind="liveState"]')?.value === "LIVE" &&
-      document.querySelector('[data-bind="messageLog"]')?.value?.includes('"messages"') === true`,
-    "UUI package session metadata and registered Worker inspection",
-  );
+  try {
+    await waitForPage(
+      first,
+      `document.querySelector('[data-bind="sessionId"]')?.value === ${
+        JSON.stringify(firstSession.session_id)
+      } &&
+        document.querySelector('[data-bind="sandboxId"]')?.value === ${
+        JSON.stringify(firstSession.sandbox_id)
+      } &&
+        document.querySelector('[data-bind="workerId"]')?.value === ${
+        JSON.stringify(firstSession.worker_id)
+      } &&
+        document.querySelector('[data-bind="liveState"]')?.value === "LIVE" &&
+        document.querySelector('[data-bind="messageLog"]')?.value?.includes('"messages"') === true`,
+      "UUI package session metadata and registered Worker inspection",
+    );
+  } catch (error) {
+    const state = await first.evaluate(`Object.fromEntries(
+      ['sessionId', 'sandboxId', 'workerId', 'liveState', 'messageLog']
+        .map((name) => [name, document.querySelector('[data-bind="' + name + '"]')?.value])
+    )`);
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}; expected: ${
+        JSON.stringify(firstSession)
+      }; state: ${JSON.stringify(state)}; sessions: ${
+        JSON.stringify(await uiSessions(primaryRoot).catch(() => []))
+      }; ${await latestKernelLog(primaryRoot)}`,
+    );
+  }
   await clickButton(first, "Back");
   await waitForScreen(first, "UUI sessions");
   await clickButton(first, "Back");
@@ -1654,8 +1724,7 @@ try {
   await waitFor(
     async () => {
       const inspected = await admin(primaryRoot, [
-        "service",
-        "inspect",
+        "services.inspect",
         "the8020/demo/variables",
       ]);
       const service = inspected.service as {
@@ -2929,7 +2998,30 @@ try {
   await waitForScreen(second, `UUI session ${thirdSession.session_id}`);
   await clickButton(second, "Terminate");
   await waitForScreen(second, "UUI sessions");
-  await waitForUISessions(primaryRoot, 1);
+  try {
+    await waitForUISessions(primaryRoot, 1);
+  } catch (error) {
+    const worker = await admin(primaryRoot, [
+      "worker",
+      "inspect",
+      thirdSession.worker_id,
+    ]).catch((inspectionError) => ({
+      error: inspectionError instanceof Error
+        ? inspectionError.message
+        : String(inspectionError),
+    }));
+    throw new Error(
+      `${
+        error instanceof Error ? error.message : String(error)
+      }; expected retained session ${secondSession.session_id} and terminated session ${thirdSession.session_id}; target Worker ${
+        JSON.stringify(worker)
+      }; third-page frames ${
+        websocketOutput(third, Math.max(0, third.websocketFrames.length - 12))
+      }; third-page state ${await third.evaluate<string>(
+        `JSON.stringify({location: location.href, notice: document.querySelector("#notice")?.textContent, connection: document.querySelector("#connection-state")?.textContent})`,
+      )}; ${await latestKernelLog(primaryRoot)}`,
+    );
+  }
   await clickButton(second, "Back");
   await waitForScreen(second, "Welcome to 80|20");
   await clickRow(second, "the8020/demo/demo-form");
@@ -3002,8 +3094,10 @@ async function prepareWorkspaces(
 ): Promise<void> {
   for (const root of [primary, secondary]) {
     await initializeInstance(options.kernel, root);
-    await copyTree(`${options.sourceRoot}/defaults/config`, `${root}/config`);
-    await copyTree(`${options.sourceRoot}/defaults/node`, `${root}/node`);
+    await copyTree(
+      `${options.sourceRoot}/defaults/config/runtime`,
+      `${root}/node/kernel/runtime/definitions`,
+    );
     await copyTree(`${options.sourceRoot}/defaults/scripts`, `${root}/scripts`);
     await linkTree(
       `${options.runtimeRoot}/node/kernel/runtime/images/rootless`,
@@ -3019,51 +3113,25 @@ async function prepareWorkspaces(
       `${root}/node/kernel/bin/runsc`,
     );
   }
-  await copyTree(
-    `${options.packageWorkspace}/uui`,
-    `${primary}/packages/the8020/uui`,
+  const manifest = await Deno.readTextFile(
+    `${options.sourceRoot}/defaults/bootstrap-packages.toml`,
   );
-  await copyTree(
-    `${options.packageWorkspace}/uui`,
-    `${secondary}/packages/the8020/uui`,
-  );
-  await copyTree(
-    `${options.packageWorkspace}/admin-core`,
-    `${primary}/packages/the8020/admin-core`,
-  );
-  await copyTree(
-    `${options.packageWorkspace}/admin-db`,
-    `${primary}/packages/the8020/admin-db`,
-  );
-  await copyTree(
-    `${options.packageWorkspace}/db`,
-    `${primary}/packages/the8020/db`,
-  );
-  await copyTree(
-    `${options.packageWorkspace}/demo`,
-    `${primary}/packages/the8020/demo`,
-  );
-  await copyTree(
-    `${options.packageWorkspace}/dev-core`,
-    `${primary}/packages/the8020/dev-core`,
-  );
-  await Deno.remove(`${secondary}/packages/the8020/uui/services/login`, {
-    recursive: true,
-  });
-  await Deno.remove(`${secondary}/packages/the8020/uui/services/session`, {
-    recursive: true,
-  });
-  for (
-    const repository of [
-      `${primary}/packages/the8020/uui`,
-      `${primary}/packages/the8020/admin-core`,
-      `${primary}/packages/the8020/admin-db`,
-      `${primary}/packages/the8020/db`,
-      `${primary}/packages/the8020/demo`,
-      `${primary}/packages/the8020/dev-core`,
-      `${secondary}/packages/the8020/uui`,
-    ]
-  ) {
+  const packageIds = [...manifest.matchAll(/^id\s*=\s*"([^"]+)"$/gm)]
+    .map((match) => match[1]!)
+    .sort();
+  for (const packageId of packageIds) {
+    const repositoryName = packageId.split("/")[1];
+    if (repositoryName === undefined) {
+      throw new Error(`invalid bootstrap package ${packageId}`);
+    }
+    const repository = `${primary}/packages/${packageId}`;
+    await copyTree(
+      `${options.packageWorkspace}/${repositoryName}`,
+      repository,
+    );
+    if (!await fileExists(`${repository}/.git`)) {
+      await gitOutput("", ["init", "-q", "-b", "main", repository]);
+    }
     await gitOutput(repository, ["add", "--all"]);
     await gitOutput(repository, [
       "-c",
@@ -3077,28 +3145,9 @@ async function prepareWorkspaces(
       "--message=Browser E2E package snapshot",
     ]);
   }
-
-  // Nodes share externally synchronized application configuration, state, and
-  // user data through the ordinary mapped-root contract. Their package roots
-  // remain independent here so the secondary node can prove shell-only
-  // placement without private authentication-path settings.
-  await Deno.writeTextFile(
-    `${secondary}/node/kernel/paths.toml`,
-    `version = 1
-packages = '${secondary}/packages'
-config = '${primary}/config'
-state = '${primary}/state'
-users = '${primary}/users'
-`,
-  );
-  await Deno.mkdir(`${primary}/config/auth`, { recursive: true });
-  await Deno.mkdir(`${primary}/state/auth/bootstrap-sessions`, {
-    recursive: true,
-  });
-  await Deno.chmod(`${primary}/state/auth/bootstrap-sessions`, 0o700);
-  await writeDesiredState(primary, "login", "stateless");
-  await writeDesiredState(primary, "shell", "stateless");
-  await writeDesiredState(primary, "session", "session");
+  // Both nodes must expose the exact package set recorded by the shared test
+  // database. Copying one committed snapshot keeps every commit identical.
+  await copyTree(`${primary}/packages`, `${secondary}/packages`);
 }
 
 async function initializeInstance(kernel: string, root: string): Promise<void> {
@@ -3256,45 +3305,11 @@ async function linkFile(source: string, destination: string): Promise<void> {
   }
 }
 
-async function writeDesiredState(
-  root: string,
-  service: string,
-  mode: "stateless" | "session",
-): Promise<void> {
-  const directory = `${root}/state/services/the8020/uui/${service}`;
-  await Deno.mkdir(directory, { recursive: true });
-  const concurrency = mode === "session" ? 1 : 32;
-  const workersPerSandbox = mode === "session" ? 1000 : 2;
-  const maximumWorkers = workersPerSandbox * 2;
-  await Deno.writeTextFile(
-    `${directory}/state.toml`,
-    `schema = 2
-enabled = true
-generation = 0
-
-[lifecycle]
-service_type = "${mode}"
-session_keep_alive = "2m"
-
-[scaling]
-minimum_workers = 1
-maximum_workers = ${maximumWorkers}
-concurrency_per_worker = ${concurrency}
-target_utilization = 0.7
-worker_keep_alive = "2m"
-
-[placement]
-sandbox_group = "the8020/uui/${service}"
-minimum_sandboxes = 1
-workers_per_sandbox = ${workersPerSandbox}
-`,
-  );
-}
-
 function startKernel(
   root: string,
   port: number,
   sshPort: number,
+  databaseLocation: string,
 ): KernelProcess {
   const child = new Deno.Command(options.kernel, {
     args: [
@@ -3304,6 +3319,8 @@ function startKernel(
       `network.main_port=${port}`,
       "--set",
       `network.ssh_port=${sshPort}`,
+      "--set",
+      `database.location=${databaseLocation}`,
       "--set",
       "sandbox.runtime.mode=rootless",
       "--set",
@@ -3365,7 +3382,7 @@ async function waitForServices(
     await waitFor(
       async () => {
         try {
-          const result = await admin(root, ["service", "list"]);
+          const result = await admin(root, ["services.list"]);
           const services = result.services as
             | Array<{
               service_id?: string;
@@ -3395,7 +3412,7 @@ async function waitForServices(
   } catch (error) {
     const inspections = await Promise.all(expected.map(async (serviceId) => {
       try {
-        return await admin(root, ["service", "inspect", serviceId]);
+        return await admin(root, ["services.inspect", serviceId]);
       } catch (inspectError) {
         return {
           service_id: serviceId,
@@ -3434,77 +3451,54 @@ async function latestKernelLog(root: string): Promise<string> {
 }
 
 async function waitForAdmin(root: string): Promise<void> {
-  await waitFor(
-    async () => {
-      try {
-        await admin(root, ["system", "status"]);
-        return true;
-      } catch {
-        return false;
-      }
-    },
-    `kernel command bus in ${root}`,
-    120_000,
-    250,
-  );
+  let lastError: unknown;
+  try {
+    await waitFor(
+      async () => {
+        try {
+          await admin(root, ["kernel.status"]);
+          return true;
+        } catch (error) {
+          lastError = error;
+          return false;
+        }
+      },
+      `kernel command bus in ${root}`,
+      120_000,
+      250,
+    );
+  } catch (error) {
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}; ` +
+        `last command error: ${
+          lastError instanceof Error ? lastError.message : String(lastError)
+        }; ${await latestKernelLog(root)}`,
+    );
+  }
 }
 
 async function uiSessions(root: string): Promise<UISession[]> {
-  const directory = `${root}/state/package-data/the8020/uui/sessions`;
-  const sessions: UISession[] = [];
-  let visited = 0;
   try {
-    for await (const entry of Deno.readDir(directory)) {
-      if (++visited > 1_000) break;
-      if (sessions.length >= 200) break;
-      if (!entry.isFile || !/^uis-[a-z0-9]{8}\.json$/.test(entry.name)) {
-        continue;
+    const result = await admin(root, [
+      "db.sql",
+      `SELECT "sessionId", "nodeId", "runtimeGroupId", "workerId", "sandboxId", "state" FROM "the8020__uui__sessions" ORDER BY "sessionId" LIMIT 200`,
+    ]);
+    const rows = result.rows as unknown[][] | undefined;
+    return (rows ?? []).flatMap((row) => {
+      if (row.length !== 6 || row.some((value) => typeof value !== "string")) {
+        return [];
       }
-      try {
-        const data = await readBoundedSessionMetadata(
-          `${directory}/${entry.name}`,
-        );
-        if (data === undefined) continue;
-        const value = JSON.parse(new TextDecoder().decode(data)) as Partial<
-          UISession
-        >;
-        if (
-          typeof value.session_id === "string" &&
-          typeof value.node_id === "string" &&
-          typeof value.runtime_group_id === "string" &&
-          typeof value.worker_id === "string" &&
-          typeof value.sandbox_id === "string" &&
-          typeof value.state === "string"
-        ) sessions.push(value as UISession);
-      } catch {
-        // One malformed package-owned record cannot hide valid sessions.
-      }
-    }
-  } catch (error) {
-    if (error instanceof Deno.errors.NotFound) return [];
-    throw error;
-  }
-  return sessions.sort((left, right) =>
-    left.session_id.localeCompare(right.session_id)
-  );
-}
-
-async function readBoundedSessionMetadata(
-  path: string,
-): Promise<Uint8Array | undefined> {
-  const maximumBytes = 64 * 1024;
-  const file = await Deno.open(path, { read: true });
-  try {
-    const buffer = new Uint8Array(maximumBytes + 1);
-    let length = 0;
-    while (length < buffer.byteLength) {
-      const count = await file.read(buffer.subarray(length));
-      if (count === null || count === 0) break;
-      length += count;
-    }
-    return length > maximumBytes ? undefined : buffer.subarray(0, length);
-  } finally {
-    file.close();
+      return [{
+        session_id: row[0] as string,
+        node_id: row[1] as string,
+        runtime_group_id: row[2] as string,
+        worker_id: row[3] as string,
+        sandbox_id: row[4] as string,
+        state: row[5] as string,
+      }];
+    });
+  } catch {
+    return [];
   }
 }
 
@@ -3513,14 +3507,22 @@ async function waitForUISessions(
   count: number,
 ): Promise<UISession[]> {
   let sessions: UISession[] = [];
-  await waitFor(
-    async () => {
-      sessions = await uiSessions(root);
-      return sessions.length === count;
-    },
-    `${count} UUI sessions`,
-    15_000,
-  );
+  try {
+    await waitFor(
+      async () => {
+        sessions = await uiSessions(root);
+        return sessions.length === count;
+      },
+      `${count} UUI sessions`,
+      15_000,
+    );
+  } catch (error) {
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}; observed ${
+        JSON.stringify(sessions)
+      }`,
+    );
+  }
   return sessions;
 }
 
@@ -4114,7 +4116,7 @@ async function stopProcess(child: Deno.ChildProcess): Promise<void> {
 
 async function stopKernel(kernel: KernelProcess): Promise<void> {
   try {
-    await admin(kernel.root, ["system", "shutdown"]);
+    await admin(kernel.root, ["kernel.shutdown"]);
   } catch {
     await stopProcess(kernel.child);
     return;

@@ -19,8 +19,8 @@ const context = {
     },
     auth: {
       authenticated: true,
-      realm: "bootstrap-admin" as const,
-      userId: "bootstrap-admin:Admin",
+      realm: "user" as const,
+      userId: "user:Admin",
       username: "Admin",
       authVersion: 1,
     },

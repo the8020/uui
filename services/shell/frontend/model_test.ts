@@ -6,6 +6,7 @@ import {
   reconnectDelay,
   setPath,
   shouldAcceptServerMessage,
+  shouldReconnectWebSocket,
   shouldRenderMessage,
   synchronizeClientSequence,
 } from "./model.ts";
@@ -20,6 +21,9 @@ Deno.test("frontend model binding and reconnect decisions are deterministic", ()
   assertEquals(shouldRenderMessage("screen.show"), true);
   assertEquals(reconnectDelay(0, 250, 10_000), 250);
   assertEquals(reconnectDelay(10, 250, 10_000), 10_000);
+  assertEquals(shouldReconnectWebSocket(false, 1006), true);
+  assertEquals(shouldReconnectWebSocket(false, 1000), false);
+  assertEquals(shouldReconnectWebSocket(true, 1006), false);
   assertEquals(synchronizeClientSequence(0, 18), 18);
   assertEquals(synchronizeClientSequence(20, 18), 20);
   assertEquals(shouldAcceptServerMessage("screen.show", 5, 4), true);

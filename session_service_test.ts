@@ -7,6 +7,10 @@ import {
 } from "@the8020/http";
 import { callScreen, sendMessage } from "./session.ts";
 import { UUI_PROTOCOL_VERSION } from "./protocol.ts";
+import type {
+  SessionMetadata,
+  SessionMetadataStore,
+} from "./session_metadata.ts";
 import { defineSessionService, workerFunctions } from "./session_service.ts";
 
 const metadata: RequestMetadata = {
@@ -28,21 +32,25 @@ const metadata: RequestMetadata = {
   },
   auth: {
     authenticated: true,
-    realm: "bootstrap-admin",
+    realm: "user",
     userId: "user-1",
     username: "Admin",
   },
 };
 
 Deno.test("ordinary persistent UUI service owns metadata and exact Worker administration", async () => {
-  const metadataRoot = await Deno.makeTempDir();
+  let activeSocket: TestSocket | undefined;
+  const metadataStore = new MemorySessionMetadataStore(() => {
+    assertEquals(activeSocket?.signal.aborted, false);
+  });
   let finish!: () => void;
   let completions = 0;
   const service = defineSessionService(
     async () => await new Promise<void>((resolve) => finish = resolve),
     {
-      metadataRoot,
+      metadataStore,
       completePersistent: () => {
+        assertEquals(metadataStore.size, 0);
         completions++;
         return Promise.resolve();
       },
@@ -68,21 +76,16 @@ Deno.test("ordinary persistent UUI service owns metadata and exact Worker admini
     assertEquals(ready.type, "session.ready");
     assertEquals(ready.resumeToken, "");
 
-    const files = await Array.fromAsync(Deno.readDir(metadataRoot));
-    assertEquals(files.length, 1);
-    const persisted = JSON.parse(
-      await Deno.readTextFile(`${metadataRoot}/${files[0]?.name}`),
-    );
-    assertEquals(persisted.session_id, ready.sessionId);
-    assertEquals(persisted.persistent_execution_id, "persistent-1");
-    assertEquals(persisted.node_id, "node-test");
-    assertEquals(persisted.sandbox_id, "sbx-test");
-    assertEquals(persisted.worker_id, "wrk-test");
-    assertEquals(persisted.authenticated_user_id, "user-1");
-    assertEquals(persisted.schema, 2);
-    assertEquals(persisted.latest_ip_address, "203.0.113.4");
-    assertEquals(persisted.latest_network_scope, "public");
-    assertEquals("route" in persisted, false);
+    assertEquals(metadataStore.size, 1);
+    const persisted = metadataStore.get(ready.sessionId)!;
+    assertEquals(persisted.sessionId, ready.sessionId);
+    assertEquals(persisted.persistentExecutionId, "persistent-1");
+    assertEquals(persisted.nodeId, "node-test");
+    assertEquals(persisted.sandboxId, "sbx-test");
+    assertEquals(persisted.workerId, "wrk-test");
+    assertEquals(persisted.authenticatedUserId, "user-1");
+    assertEquals(persisted.latestIpAddress, "203.0.113.4");
+    assertEquals(persisted.latestNetworkScope, "public");
 
     const inspected = workerFunctions["uui.session.inspect"]({
       sessionId: ready.sessionId,
@@ -96,6 +99,7 @@ Deno.test("ordinary persistent UUI service owns metadata and exact Worker admini
 
     first.remoteClose();
     const second = new TestSocket();
+    activeSocket = second;
     second.message(connectMessage(ready.serverSequence));
     await service.connectWebSocket(
       new Request("https://example.test/connect"),
@@ -111,12 +115,10 @@ Deno.test("ordinary persistent UUI service owns metadata and exact Worker admini
       JSON.parse(String(second.sent.at(-1))).type,
       "session.resumed",
     );
-    await until(async () => {
-      const latest = JSON.parse(
-        await Deno.readTextFile(`${metadataRoot}/${files[0]?.name}`),
-      );
-      return latest.latest_ip_address === "172.17.0.1" &&
-        latest.latest_network_scope === "private";
+    await until(() => {
+      const latest = metadataStore.get(ready.sessionId);
+      return latest?.latestIpAddress === "172.17.0.1" &&
+        latest.latestNetworkScope === "private";
     });
 
     await workerFunctions["uui.session.terminate"]({
@@ -124,7 +126,7 @@ Deno.test("ordinary persistent UUI service owns metadata and exact Worker admini
     });
     assertEquals(second.signal.aborted, true);
     assertEquals(completions, 1);
-    assertEquals((await Array.fromAsync(Deno.readDir(metadataRoot))).length, 0);
+    assertEquals(metadataStore.size, 0);
     finish();
 
     const removedAdminEndpoint = await service.fetch(
@@ -133,12 +135,12 @@ Deno.test("ordinary persistent UUI service owns metadata and exact Worker admini
     );
     assertEquals(removedAdminEndpoint.status, 404);
   } finally {
-    await Deno.remove(metadataRoot, { recursive: true });
+    await metadataStore.clear();
   }
 });
 
 Deno.test("initial UUI connection replays its generated screen in sequence", async () => {
-  const metadataRoot = await Deno.makeTempDir();
+  const metadataStore = new MemorySessionMetadataStore();
   const service = defineSessionService(async () => {
     await callScreen({
       id: "initial",
@@ -146,7 +148,7 @@ Deno.test("initial UUI connection replays its generated screen in sequence", asy
       model: {},
       title: "Initial screen",
     });
-  }, { metadataRoot, completePersistent: () => Promise.resolve() });
+  }, { metadataStore, completePersistent: () => Promise.resolve() });
   try {
     const response = await service.fetch(
       new Request("https://example.test/connect", { method: "POST" }),
@@ -182,12 +184,12 @@ Deno.test("initial UUI connection replays its generated screen in sequence", asy
     });
     await until(() => socket.signal.aborted);
   } finally {
-    await Deno.remove(metadataRoot, { recursive: true });
+    await metadataStore.clear();
   }
 });
 
 Deno.test("a session streams messages while its screen roundtrip is pending", async () => {
-  const metadataRoot = await Deno.makeTempDir();
+  const metadataStore = new MemorySessionMetadataStore();
   let sessionId = "";
   let releaseMessage!: () => void;
   const messageReady = new Promise<void>((resolve) => releaseMessage = resolve);
@@ -206,7 +208,7 @@ Deno.test("a session streams messages while its screen roundtrip is pending", as
     await messageReady;
     sendMessage("Background work reached its checkpoint.", "success");
     await screen;
-  }, { metadataRoot, completePersistent: () => Promise.resolve() });
+  }, { metadataStore, completePersistent: () => Promise.resolve() });
   try {
     assertEquals(
       (await service.fetch(
@@ -261,12 +263,12 @@ Deno.test("a session streams messages while its screen roundtrip is pending", as
         () => undefined,
       );
     }
-    await Deno.remove(metadataRoot, { recursive: true });
+    await metadataStore.clear();
   }
 });
 
 Deno.test("session logout ends the persistent execution and redirects", async () => {
-  const metadataRoot = await Deno.makeTempDir();
+  const metadataStore = new MemorySessionMetadataStore();
   let completions = 0;
   let handlerAborted = false;
   let sessionId = "";
@@ -285,7 +287,7 @@ Deno.test("session logout ends the persistent execution and redirects", async ()
       });
     },
     {
-      metadataRoot,
+      metadataStore,
       completePersistent: () => {
         completions++;
         return Promise.resolve();
@@ -325,23 +327,23 @@ Deno.test("session logout ends the persistent execution and redirects", async ()
     assertEquals(ended.message, "Signing out…");
     assertEquals(ended.redirectUrl, "/the8020/uui/login/logout");
     assertEquals(handlerAborted, true);
-    assertEquals((await Array.fromAsync(Deno.readDir(metadataRoot))).length, 0);
+    assertEquals(metadataStore.size, 0);
   } finally {
     if (sessionId !== "") {
       await workerFunctions["uui.session.terminate"]({ sessionId }).catch(
         () => undefined,
       );
     }
-    await Deno.remove(metadataRoot, { recursive: true });
+    await metadataStore.clear();
   }
 });
 
 Deno.test("UUI service enforces its one-execution Worker contract", async () => {
-  const metadataRoot = await Deno.makeTempDir();
+  const metadataStore = new MemorySessionMetadataStore();
   let finish!: () => void;
   const service = defineSessionService(
     async () => await new Promise<void>((resolve) => finish = resolve),
-    { metadataRoot, completePersistent: () => Promise.resolve() },
+    { metadataStore, completePersistent: () => Promise.resolve() },
   );
   try {
     assertEquals(
@@ -359,16 +361,14 @@ Deno.test("UUI service enforces its one-execution Worker contract", async () => 
       503,
     );
     finish();
-    await until(async () =>
-      (await Array.fromAsync(Deno.readDir(metadataRoot))).length === 0
-    );
+    await until(() => metadataStore.size === 0);
   } finally {
-    await Deno.remove(metadataRoot, { recursive: true });
+    await metadataStore.clear();
   }
 });
 
 Deno.test("session heartbeat uses package constants and closes timed-out clients", async () => {
-  const metadataRoot = await Deno.makeTempDir();
+  const metadataStore = new MemorySessionMetadataStore();
   const originalSetInterval = globalThis.setInterval;
   const originalClearInterval = globalThis.clearInterval;
   const originalNow = Date.now;
@@ -391,7 +391,7 @@ Deno.test("session heartbeat uses package constants and closes timed-out clients
   Date.now = () => now;
   const service = defineSessionService(
     async () => await new Promise<void>((resolve) => finish = resolve),
-    { metadataRoot, completePersistent: () => Promise.resolve() },
+    { metadataStore, completePersistent: () => Promise.resolve() },
   );
   try {
     const heartbeatMetadata = {
@@ -437,9 +437,47 @@ Deno.test("session heartbeat uses package constants and closes timed-out clients
     globalThis.setInterval = originalSetInterval;
     globalThis.clearInterval = originalClearInterval;
     Date.now = originalNow;
-    await Deno.remove(metadataRoot, { recursive: true });
+    await metadataStore.clear();
   }
 });
+
+class MemorySessionMetadataStore implements SessionMetadataStore {
+  readonly #records = new Map<string, SessionMetadata>();
+
+  constructor(readonly beforeRemove?: () => void) {}
+
+  get size(): number {
+    return this.#records.size;
+  }
+
+  get(sessionId: string): SessionMetadata | undefined {
+    const value = this.#records.get(sessionId);
+    return value === undefined ? undefined : structuredClone(value);
+  }
+
+  put(metadata: SessionMetadata): Promise<void> {
+    this.#records.set(metadata.sessionId, structuredClone(metadata));
+    return Promise.resolve();
+  }
+
+  remove(sessionId: string): Promise<void> {
+    this.beforeRemove?.();
+    this.#records.delete(sessionId);
+    return Promise.resolve();
+  }
+
+  async clear(): Promise<void> {
+    const ids = [...this.#records.keys()];
+    for (const id of ids) {
+      try {
+        await workerFunctions["uui.session.terminate"]({ sessionId: id });
+      } catch {
+        // A completed session no longer has a live Worker record.
+      }
+    }
+    this.#records.clear();
+  }
+}
 
 class TestSocket implements WebSocketSession {
   readonly protocol = "the8020.uui.v1";

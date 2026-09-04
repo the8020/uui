@@ -8,6 +8,7 @@ import {
   DirtyBindings,
   reconnectDelay,
   shouldAcceptServerMessage,
+  shouldReconnectWebSocket,
   synchronizeClientSequence,
 } from "./model.ts";
 import { CustomElementRenderer } from "./custom_elements.ts";
@@ -106,6 +107,7 @@ let interactionSequence: number | undefined;
 let connectionText = "Connecting…";
 let logoutFallback: ReturnType<typeof setTimeout> | undefined;
 let logoutRequested = false;
+let terminalRedirect: string | undefined;
 const dirty = new DirtyBindings();
 const pending = new Map<
   number,
@@ -158,9 +160,40 @@ document.addEventListener("keydown", (event) => {
   sessionMenu.open = false;
   sessionMenuToggle.focus();
 });
-screenBack.addEventListener("click", () => dispatch(BACK_EVENT, BACK_EVENT));
+screenBack.addEventListener("click", requestBack);
+installBrowserBack();
 synchronizeWindowTitle();
 connect();
+
+function requestBack(): void {
+  if (screenBack.disabled) return;
+  dispatch(BACK_EVENT, BACK_EVENT);
+}
+
+function installBrowserBack(): void {
+  const key = "the8020.uui.back";
+  const slot = (value: unknown): "base" | "guard" | undefined => {
+    if (value === null || typeof value !== "object") return undefined;
+    const marker = (value as Record<string, unknown>)[key];
+    return marker === "base" || marker === "guard" ? marker : undefined;
+  };
+  const state = (marker: "base" | "guard"): Record<string, unknown> => ({
+    ...(history.state !== null && typeof history.state === "object" &&
+        !Array.isArray(history.state)
+      ? history.state
+      : {}),
+    [key]: marker,
+  });
+
+  const current = slot(history.state);
+  if (current === undefined) history.replaceState(state("base"), "");
+  if (current !== "guard") history.pushState(state("guard"), "");
+  addEventListener("popstate", (event) => {
+    if (slot(event.state) !== "base") return;
+    history.pushState(state("guard"), "");
+    requestBack();
+  });
+}
 
 function connect(): void {
   void connectAttempt();
@@ -191,7 +224,19 @@ async function connectAttempt(): Promise<void> {
   });
   socket.addEventListener("message", (event) => receive(event.data));
   socket.addEventListener("close", (event) => {
-    if (ended) return;
+    if (!shouldReconnectWebSocket(ended, event.code)) {
+      if (terminalRedirect !== undefined) {
+        if (logoutFallback !== undefined) clearTimeout(logoutFallback);
+        location.assign(terminalRedirect);
+        return;
+      }
+      if (!ended) {
+        ended = true;
+        sessionStorage.removeItem(routeKey);
+        showNotice(event.reason || "The session ended.");
+      }
+      return;
+    }
     setConnectionState("Reconnecting…", "reconnecting");
     if (!opened || event.code === 1008) {
       void establishRoute(true).catch(() => {}).finally(scheduleReconnect);
@@ -357,7 +402,6 @@ function receive(raw: unknown): void {
       showNotice(message.message ?? message.code ?? "Session error");
       break;
     case "session.end":
-      if (logoutFallback !== undefined) clearTimeout(logoutFallback);
       setInteractionPending(undefined);
       ended = true;
       messageCenter.dispose();
@@ -367,9 +411,14 @@ function receive(raw: unknown): void {
       screenBack.disabled = true;
       themePreferences.endSession();
       sessionStorage.removeItem(routeKey);
-      socket?.close(1000, "session ended");
-      if (message.redirectUrl) location.assign(message.redirectUrl);
-      else showNotice(message.message ?? "The session ended.");
+      terminalRedirect = message.redirectUrl;
+      if (terminalRedirect !== undefined) {
+        if (logoutFallback !== undefined) clearTimeout(logoutFallback);
+        logoutFallback = setTimeout(
+          () => location.assign(terminalRedirect!),
+          1_500,
+        );
+      } else showNotice(message.message ?? "The session ended.");
       break;
   }
 }

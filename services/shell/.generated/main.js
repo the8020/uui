@@ -4,6 +4,9 @@ var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __esm = (fn, res) => function __init() {
+  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+};
 var __commonJS = (cb, mod) => function __require() {
   return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
 };
@@ -27,6 +30,491 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   1 ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
   mod
 ));
+
+// ../kernel/defaults/config/runtime/deno/kernel/mod.ts
+function executionSecret(name) {
+  if (typeof name !== "string" || name.length === 0) {
+    throw new TypeError("secret name is required");
+  }
+  const resolve = globalThis[kernelSecretSymbol];
+  if (typeof resolve !== "function") {
+    throw new Error("kernel execution context is unavailable");
+  }
+  const value = resolve(name);
+  if (value === void 0) {
+    throw new Error(`execution secret ${name} is unavailable`);
+  }
+  return value;
+}
+function invoke(operation, input) {
+  const bridge = globalThis[kernelInvokeSymbol];
+  if (typeof bridge !== "function") {
+    return Promise.reject(new Error("kernel API is unavailable"));
+  }
+  return bridge(operation, input);
+}
+async function executeRuntimeOperation(operation, input = {}) {
+  if (operation.length === 0) {
+    return Promise.reject(new TypeError("runtime operation is required"));
+  }
+  const response = await invoke("runtime.operation", {
+    operation,
+    input
+  });
+  if (response === null || typeof response !== "object" || typeof response.success !== "boolean") throw new Error("invalid kernel runtime operation response");
+  if (!response.success) {
+    if (response.error === void 0 || typeof response.error.code !== "string" || typeof response.error.message !== "string") throw new Error("kernel runtime operation failed");
+    throw new AdminCommandError(response.error);
+  }
+  return response.result;
+}
+async function runtimeOperationField(operation, input, field2) {
+  const result = await executeRuntimeOperation(operation, input);
+  if (result === null || typeof result !== "object" || !(field2 in result)) {
+    throw new Error(`runtime operation ${operation} returned no ${field2}`);
+  }
+  return result[field2];
+}
+async function executeAdminCommand(commandId, arguments_ = {}) {
+  if (typeof commandId !== "string" || commandId.length === 0) {
+    throw new TypeError("command ID is required");
+  }
+  if (arguments_ === null || typeof arguments_ !== "object" || Array.isArray(arguments_)) {
+    throw new TypeError("command arguments must be an object");
+  }
+  const response = await invoke("admin.execute", {
+    command_id: commandId,
+    arguments: arguments_
+  });
+  if (response === null || typeof response !== "object" || typeof response.success !== "boolean") {
+    throw new Error("invalid kernel admin response");
+  }
+  if (!response.success) {
+    if (response.error === void 0 || typeof response.error.code !== "string" || typeof response.error.message !== "string") throw new Error("kernel admin command failed");
+    throw new AdminCommandError(response.error, response.request_id);
+  }
+  if (response.result === void 0 || response.result === null || typeof response.result !== "object" || Array.isArray(response.result)) throw new Error("kernel admin command returned no result");
+  return response.result;
+}
+function optionalArguments(values) {
+  return Object.fromEntries(Object.entries(values).filter(([, value]) => value !== void 0));
+}
+function databaseArguments(statement, parameters, options = {}) {
+  if (typeof statement !== "string" || statement.trim().length === 0) {
+    throw new TypeError("SQL statement is required");
+  }
+  if (new TextEncoder().encode(statement).byteLength > 1048576) {
+    throw new TypeError("SQL statement exceeds 1 MiB");
+  }
+  if (!Array.isArray(parameters) || parameters.some((value) => !validDatabaseValue(value))) {
+    throw new TypeError("SQL parameters must be an array");
+  }
+  return {
+    statement,
+    parameters,
+    ...options.returnRows === void 0 ? {} : {
+      return_rows: options.returnRows
+    },
+    ...options.transaction === void 0 ? {} : {
+      transaction: options.transaction
+    }
+  };
+}
+function validDatabaseValue(value) {
+  if (value === null || typeof value === "boolean" || typeof value === "string") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value !== "object" || Array.isArray(value)) return false;
+  const type = value.type;
+  return type === "bigint" || type === "decimal" || type === "datetime" || type === "bytes" || type === "json";
+}
+function settingOperations(scope) {
+  const operation = (action) => `settings.${scope}.${action}`;
+  return Object.freeze({
+    list() {
+      return runtimeOperationField(operation("list"), {}, "settings");
+    },
+    get(key) {
+      return runtimeOperationField(operation("get"), {
+        key
+      }, "setting");
+    },
+    set(key, value) {
+      return runtimeOperationField(operation("set"), {
+        key,
+        value
+      }, "setting");
+    },
+    unset(key) {
+      return runtimeOperationField(operation("unset"), {
+        key
+      }, "setting");
+    }
+  });
+}
+function assertWorkerInvokeInput(input) {
+  if (input === null || typeof input !== "object" || typeof input.nodeId !== "string" || input.nodeId.length === 0 || typeof input.sandboxId !== "string" || input.sandboxId.length === 0 || typeof input.workerId !== "string" || input.workerId.length === 0 || input.persistentExecutionId !== void 0 && (typeof input.persistentExecutionId !== "string" || input.persistentExecutionId.length === 0) || typeof input.function !== "string" || input.function.length === 0 || input.function.length > 128) throw new TypeError("exact Worker target and function are required");
+}
+var AdminCommandError, kernelInvokeSymbol, kernelSecretSymbol, kernelDatabaseBackendSymbol, WorkerInvokeError, kernel;
+var init_mod = __esm({
+  "../kernel/defaults/config/runtime/deno/kernel/mod.ts"() {
+    AdminCommandError = class extends Error {
+      code;
+      details;
+      requestId;
+      constructor(error2, requestId) {
+        super(error2.message);
+        this.name = "AdminCommandError";
+        this.code = error2.code;
+        this.details = error2.details;
+        this.requestId = requestId;
+      }
+    };
+    kernelInvokeSymbol = Symbol.for("the8020.kernel.invoke");
+    kernelSecretSymbol = Symbol.for("the8020.kernel.secret");
+    kernelDatabaseBackendSymbol = Symbol.for("the8020.kernel.databaseBackend");
+    WorkerInvokeError = class extends Error {
+      code;
+      constructor(error2) {
+        super(error2.message);
+        this.name = "WorkerInvokeError";
+        this.code = error2.code;
+      }
+    };
+    kernel = Object.freeze({
+      auth: Object.freeze({
+        currentUser() {
+          return invoke("auth.currentUser", {});
+        },
+        login(input) {
+          if (input === null || typeof input !== "object" || typeof input.username !== "string" || typeof input.password !== "string") {
+            return Promise.reject(new TypeError("username and password are required"));
+          }
+          return invoke("auth.login", {
+            username: input.username,
+            password: input.password
+          });
+        },
+        logoutCurrent() {
+          return invoke("auth.logoutCurrent", {});
+        }
+      }),
+      worker: Object.freeze({
+        async invoke(input) {
+          assertWorkerInvokeInput(input);
+          const encoded = JSON.stringify(input.input);
+          if (new TextEncoder().encode(encoded).byteLength > 1048576) {
+            throw new TypeError("Worker invocation input exceeds 1 MiB");
+          }
+          const response = await invoke("worker.invoke", input);
+          if (response.ok) return response.output;
+          if (response.error === void 0) {
+            throw new Error("Worker invocation returned an invalid result");
+          }
+          throw new WorkerInvokeError(response.error);
+        }
+      }),
+      execution: Object.freeze({
+        secret: executionSecret,
+        optionalSecret(name) {
+          try {
+            return executionSecret(name);
+          } catch {
+            return void 0;
+          }
+        },
+        completePersistent() {
+          return invoke("execution.completePersistent", {});
+        }
+      }),
+      crypto: Object.freeze({
+        password: Object.freeze({
+          async hash(password) {
+            if (typeof password !== "string") {
+              throw new TypeError("password must be a string");
+            }
+            return await runtimeOperationField("crypto.password.hash", {
+              password
+            }, "hash");
+          }
+        })
+      }),
+      services: Object.freeze({
+        list() {
+          return runtimeOperationField("service.list", {}, "services");
+        },
+        inspect(serviceId) {
+          return runtimeOperationField("service.inspect", {
+            service_id: serviceId
+          }, "service");
+        },
+        start(serviceId, detail = false) {
+          return executeRuntimeOperation("service.start", {
+            service_id: serviceId,
+            detail
+          });
+        },
+        stop(serviceId, detail = false) {
+          return executeRuntimeOperation("service.stop", {
+            service_id: serviceId,
+            detail
+          });
+        },
+        restart(serviceId, detail = false) {
+          return executeRuntimeOperation("service.restart", {
+            service_id: serviceId,
+            detail
+          });
+        },
+        scale(input) {
+          return executeRuntimeOperation("service.scale", input);
+        },
+        validate(serviceId) {
+          return executeRuntimeOperation("service.validate", {
+            service_id: serviceId
+          });
+        },
+        openapi(serviceId) {
+          return runtimeOperationField("service.openapi", {
+            service_id: serviceId
+          }, "openapi");
+        },
+        request(input) {
+          return runtimeOperationField("service.request", input, "response");
+        }
+      }),
+      nodes: Object.freeze({
+        list() {
+          return executeRuntimeOperation("node.list");
+        },
+        set(input) {
+          return runtimeOperationField("node.set", input, "node");
+        },
+        remove(nodeId) {
+          return executeRuntimeOperation("node.remove", {
+            node_id: nodeId
+          });
+        }
+      }),
+      settings: Object.freeze({
+        global: settingOperations("global"),
+        node: settingOperations("node")
+      }),
+      development: Object.freeze({
+        imageStatus() {
+          return runtimeOperationField("development.image.status", {}, "image");
+        },
+        sandbox: Object.freeze({
+          list() {
+            return runtimeOperationField("development.sandbox.list", {}, "sandboxes");
+          },
+          run(action, userId, input = {}) {
+            return executeRuntimeOperation(`development.sandbox.${action.replaceAll("-", "_")}`, {
+              user_id: userId,
+              ...input
+            });
+          }
+        }),
+        activate: Object.freeze({
+          preview(input) {
+            return runtimeOperationField("development.activate.preview", input, "preview");
+          },
+          run(input) {
+            return runtimeOperationField("development.activate.run", input, "activation");
+          }
+        })
+      }),
+      database: Object.freeze({
+        check() {
+          return executeRuntimeOperation("database.check");
+        },
+        info() {
+          return invoke("database.info", {});
+        },
+        execute(statement, parameters = [], options = {}) {
+          return invoke("database.execute", databaseArguments(statement, parameters, options));
+        },
+        transaction: Object.freeze({
+          begin(settings = {}) {
+            return invoke("database.transaction.begin", {
+              settings
+            });
+          },
+          commit(transaction) {
+            return invoke("database.transaction.commit", {
+              transaction
+            });
+          },
+          rollback(transaction) {
+            return invoke("database.transaction.rollback", {
+              transaction
+            });
+          }
+        }),
+        tables: Object.freeze({
+          async list() {
+            const result = await executeRuntimeOperation("database.table.list");
+            return result.tables;
+          },
+          async definitions() {
+            const result = await executeRuntimeOperation("database.table.definitions");
+            return result.definitions;
+          },
+          async inspect(tableId) {
+            const result = await executeRuntimeOperation("database.table.inspect", {
+              table_id: tableId
+            });
+            return result.table;
+          },
+          async compare(tableId) {
+            const result = await executeRuntimeOperation("database.table.compare", {
+              table_id: tableId
+            });
+            return result.table;
+          },
+          async synchronize(tableId, sourcePackage) {
+            const result = await executeRuntimeOperation("database.table.sync", optionalArguments({
+              table_id: tableId,
+              source_package: sourcePackage
+            }));
+            return result.table;
+          },
+          async synchronizeAll() {
+            const result = await executeRuntimeOperation("database.table.sync_all");
+            return result.tables;
+          },
+          async trim(input) {
+            await executeRuntimeOperation("database.table.trim", optionalArguments({
+              table_id: input.tableId,
+              columns: input.columns?.join(","),
+              drop_table: input.dropTable,
+              confirm: input.confirm
+            }));
+          }
+        })
+      }),
+      secrets: Object.freeze({
+        async list() {
+          const result = await executeRuntimeOperation("secret.list");
+          return result.secrets;
+        },
+        async get(name) {
+          const result = await executeRuntimeOperation("secret.get", {
+            name
+          });
+          return result.secret;
+        },
+        async set(input) {
+          const result = await executeRuntimeOperation("secret.set", {
+            name: input.name,
+            value: input.value
+          });
+          return result.secret;
+        }
+      }),
+      packages: Object.freeze({
+        list() {
+          return runtimeOperationField("package.list", {}, "packages");
+        },
+        inspect(packageId) {
+          return runtimeOperationField("package.inspect", {
+            package_id: packageId
+          }, "package");
+        },
+        index: Object.freeze({
+          async list() {
+            const result = await executeRuntimeOperation("package.index.list");
+            return result.packages;
+          },
+          async inspect(packageId) {
+            const result = await executeRuntimeOperation("package.index.inspect", {
+              package_id: packageId
+            });
+            return result.package;
+          },
+          async set(input) {
+            const result = await executeRuntimeOperation("package.index.set", optionalArguments(input));
+            return result.package;
+          }
+        }),
+        source: Object.freeze({
+          async inspect(source) {
+            const result = await executeRuntimeOperation("package.source.inspect", {
+              source
+            });
+            return result.source;
+          }
+        }),
+        versions: Object.freeze({
+          async list(packageId, limit) {
+            const result = await executeRuntimeOperation("package.version.list", optionalArguments({
+              package_id: packageId,
+              limit
+            }));
+            return result.package;
+          }
+        }),
+        async synchronize(packageIds = [], gitToken) {
+          const result = await executeRuntimeOperation("package.synchronize", optionalArguments({
+            packages: packageIds.length === 0 ? void 0 : packageIds.join(","),
+            git_token: gitToken
+          }));
+          return result.packages;
+        },
+        local: Object.freeze({
+          async create(input) {
+            const result = await executeRuntimeOperation("package.local.create", optionalArguments(input));
+            return result.package;
+          }
+        }),
+        repository: Object.freeze({
+          list() {
+            return runtimeOperationField("package.repository.list", {}, "repositories");
+          },
+          status(packageId) {
+            return runtimeOperationField("package.repository.status", {
+              package_id: packageId
+            }, "repository");
+          },
+          initialize(input) {
+            return runtimeOperationField("package.repository.init", input, "repository");
+          },
+          remote(input) {
+            return runtimeOperationField("package.repository.remote", input, "repository");
+          },
+          async inspect(packageId) {
+            const result = await executeRuntimeOperation("package.repository.inspect", {
+              package_id: packageId
+            });
+            return result.repository;
+          },
+          async pull(packageId) {
+            const result = await executeRuntimeOperation("package.repository.pull", {
+              package_id: packageId
+            });
+            return result.repository;
+          },
+          async push(packageId) {
+            const result = await executeRuntimeOperation("package.repository.push", {
+              package_id: packageId
+            });
+            return result.repository;
+          },
+          async checkout(input) {
+            const result = await executeRuntimeOperation("package.repository.checkout", optionalArguments({
+              package_id: input.packageId,
+              branch: input.branch,
+              commit: input.commit
+            }));
+            return result.repository;
+          }
+        })
+      }),
+      admin: Object.freeze({
+        execute: executeAdminCommand
+      })
+    });
+  }
+});
 
 // ../../../root/.cache/deno/npm/registry.npmjs.org/@xterm/addon-canvas/0.7.0/lib/addon-canvas.js
 var require_addon_canvas = __commonJS({
@@ -12399,223 +12887,8 @@ var UUI_MESSAGE_KINDS = [
 var MAX_UUI_MESSAGE_BODY_LENGTH = 2e4;
 var MAX_FIELD_ROW_SPAN = 8;
 
-// ../kernel/defaults/config/runtime/deno/kernel/mod.ts
-var AdminCommandError = class extends Error {
-  code;
-  details;
-  requestId;
-  constructor(error2, requestId) {
-    super(error2.message);
-    this.name = "AdminCommandError";
-    this.code = error2.code;
-    this.details = error2.details;
-    this.requestId = requestId;
-  }
-};
-var kernelInvokeSymbol = Symbol.for("the8020.kernel.invoke");
-function invoke(operation, input) {
-  const bridge = globalThis[kernelInvokeSymbol];
-  if (typeof bridge !== "function") {
-    return Promise.reject(new Error("kernel API is unavailable"));
-  }
-  return bridge(operation, input);
-}
-var WorkerInvokeError = class extends Error {
-  code;
-  constructor(error2) {
-    super(error2.message);
-    this.name = "WorkerInvokeError";
-    this.code = error2.code;
-  }
-};
-async function executeAdminCommand(commandId, arguments_ = {}) {
-  if (typeof commandId !== "string" || commandId.length === 0) {
-    throw new TypeError("command ID is required");
-  }
-  if (arguments_ === null || typeof arguments_ !== "object" || Array.isArray(arguments_)) {
-    throw new TypeError("command arguments must be an object");
-  }
-  const response = await invoke("admin.execute", {
-    command_id: commandId,
-    arguments: arguments_
-  });
-  if (response === null || typeof response !== "object" || typeof response.success !== "boolean") {
-    throw new Error("invalid kernel admin response");
-  }
-  if (!response.success) {
-    if (response.error === void 0 || typeof response.error.code !== "string" || typeof response.error.message !== "string") throw new Error("kernel admin command failed");
-    throw new AdminCommandError(response.error, response.request_id);
-  }
-  if (response.result === void 0 || response.result === null || typeof response.result !== "object" || Array.isArray(response.result)) throw new Error("kernel admin command returned no result");
-  return response.result;
-}
-function optionalArguments(values) {
-  return Object.fromEntries(Object.entries(values).filter(([, value]) => value !== void 0));
-}
-function databaseArguments(statement, parameters) {
-  if (typeof statement !== "string" || statement.trim().length === 0) {
-    throw new TypeError("SQL statement is required");
-  }
-  if (new TextEncoder().encode(statement).byteLength > 1048576) {
-    throw new TypeError("SQL statement exceeds 1 MiB");
-  }
-  if (!Array.isArray(parameters) || parameters.some((value) => value !== null && typeof value !== "boolean" && (typeof value !== "number" || !Number.isFinite(value)) && typeof value !== "string")) {
-    throw new TypeError("SQL parameters must be scalar values");
-  }
-  return {
-    statement,
-    parameters
-  };
-}
-var kernel = Object.freeze({
-  auth: Object.freeze({
-    currentUser() {
-      return invoke("auth.currentUser", {});
-    },
-    bootstrapLogin(input) {
-      if (input === null || typeof input !== "object" || typeof input.username !== "string" || typeof input.password !== "string") {
-        return Promise.reject(new TypeError("username and password are required"));
-      }
-      return invoke("auth.bootstrapLogin", {
-        username: input.username,
-        password: input.password
-      });
-    },
-    logoutCurrent() {
-      return invoke("auth.logoutCurrent", {});
-    }
-  }),
-  worker: Object.freeze({
-    async invoke(input) {
-      assertWorkerInvokeInput(input);
-      const encoded = JSON.stringify(input.input);
-      if (new TextEncoder().encode(encoded).byteLength > 1048576) {
-        throw new TypeError("Worker invocation input exceeds 1 MiB");
-      }
-      const response = await invoke("worker.invoke", input);
-      if (response.ok) return response.output;
-      if (response.error === void 0) {
-        throw new Error("Worker invocation returned an invalid result");
-      }
-      throw new WorkerInvokeError(response.error);
-    }
-  }),
-  execution: Object.freeze({
-    completePersistent() {
-      return invoke("execution.completePersistent", {});
-    }
-  }),
-  database: Object.freeze({
-    query(statement, parameters = []) {
-      return invoke("database.query", databaseArguments(statement, parameters));
-    },
-    execute(statement, parameters = []) {
-      return invoke("database.execute", databaseArguments(statement, parameters));
-    }
-  }),
-  secrets: Object.freeze({
-    async list() {
-      const result = await executeAdminCommand("secret.list");
-      return result.secrets;
-    },
-    async get(name) {
-      const result = await executeAdminCommand("secret.get", {
-        name
-      });
-      return result.secret;
-    },
-    async set(input) {
-      const result = await executeAdminCommand("secret.set", {
-        name: input.name,
-        value: input.value
-      });
-      return result.secret;
-    }
-  }),
-  packages: Object.freeze({
-    index: Object.freeze({
-      async list() {
-        const result = await executeAdminCommand("package.index.list");
-        return result.packages;
-      },
-      async inspect(packageId) {
-        const result = await executeAdminCommand("package.index.inspect", {
-          package_id: packageId
-        });
-        return result.package;
-      },
-      async set(input) {
-        const result = await executeAdminCommand("package.index.set", optionalArguments(input));
-        return result.package;
-      }
-    }),
-    source: Object.freeze({
-      async inspect(source) {
-        const result = await executeAdminCommand("package.source.inspect", {
-          source
-        });
-        return result.source;
-      }
-    }),
-    versions: Object.freeze({
-      async list(packageId, limit) {
-        const result = await executeAdminCommand("package.version.list", optionalArguments({
-          package_id: packageId,
-          limit
-        }));
-        return result.package;
-      }
-    }),
-    async synchronize(packageIds = []) {
-      const result = await executeAdminCommand("package.synchronize", packageIds.length === 0 ? {} : {
-        packages: packageIds.join(",")
-      });
-      return result.packages;
-    },
-    local: Object.freeze({
-      async create(input) {
-        const result = await executeAdminCommand("package.local.create", optionalArguments(input));
-        return result.package;
-      }
-    }),
-    repository: Object.freeze({
-      async inspect(packageId) {
-        const result = await executeAdminCommand("package.repository.inspect", {
-          package_id: packageId
-        });
-        return result.repository;
-      },
-      async pull(packageId) {
-        const result = await executeAdminCommand("package.repository.pull", {
-          package_id: packageId
-        });
-        return result.repository;
-      },
-      async push(packageId) {
-        const result = await executeAdminCommand("package.repository.push", {
-          package_id: packageId
-        });
-        return result.repository;
-      },
-      async checkout(input) {
-        const result = await executeAdminCommand("package.repository.checkout", optionalArguments({
-          package_id: input.packageId,
-          branch: input.branch,
-          commit: input.commit
-        }));
-        return result.repository;
-      }
-    })
-  }),
-  admin: Object.freeze({
-    execute: executeAdminCommand
-  })
-});
-function assertWorkerInvokeInput(input) {
-  if (input === null || typeof input !== "object" || typeof input.nodeId !== "string" || input.nodeId.length === 0 || typeof input.sandboxId !== "string" || input.sandboxId.length === 0 || typeof input.workerId !== "string" || input.workerId.length === 0 || typeof input.function !== "string" || input.function.length === 0 || input.function.length > 128) throw new TypeError("exact Worker target and function are required");
-}
-
 // session_service.ts
+init_mod();
 var sessions = /* @__PURE__ */ new Map();
 function emit(record, value, retain = true) {
   const message = {
@@ -12659,23 +12932,23 @@ async function end(record, reason, redirectUrl) {
     message: reason,
     redirectUrl
   }, false);
-  record.socket?.close(1e3, reason.slice(0, 120));
-  record.socket = void 0;
   record.controller.abort(new DOMException(reason, "AbortError"));
   record.unbind();
   log(record, "lifecycle", "ended");
   await record.metadataWrites.catch(() => void 0);
   try {
-    await record.completePersistent();
     await removeMetadata(record);
+    await record.completePersistent();
   } catch (error2) {
     record.terminationFailure = errorMessage(error2);
     try {
       await writeMetadata(record);
     } catch {
     }
-    console.error("UUI persistent execution completion failed", error2);
+    console.error("UUI persistent execution completion failed", errorMessage(error2));
   }
+  record.socket?.close(1e3, reason.slice(0, 120));
+  record.socket = void 0;
 }
 function sessionByID(sessionId) {
   const record = [
@@ -12714,56 +12987,29 @@ function updateMetadata(record) {
   });
 }
 async function writeMetadata(record) {
-  await Deno.mkdir(record.metadataRoot, {
-    recursive: true,
-    mode: 448
-  });
   const metadata = {
-    schema: 2,
-    session_id: record.sessionId,
-    service_id: record.serviceId,
-    persistent_execution_id: record.executionId,
-    node_id: record.placement.nodeId,
-    runtime_group_id: record.placement.runtimeGroupId,
-    sandbox_id: record.placement.sandboxId,
-    worker_id: record.placement.workerId,
-    authenticated_user_id: record.auth.userId ?? "",
-    authenticated_user: record.auth.username ?? "",
-    latest_ip_address: record.client.ipAddress,
-    latest_network_scope: record.client.networkScope,
+    sessionId: record.sessionId,
+    serviceId: record.serviceId,
+    persistentExecutionId: record.executionId,
+    nodeId: record.placement.nodeId,
+    runtimeGroupId: record.placement.runtimeGroupId,
+    sandboxId: record.placement.sandboxId,
+    workerId: record.placement.workerId,
+    authenticatedUserId: record.auth.userId ?? "",
+    authenticatedUser: record.auth.username ?? "",
+    latestIpAddress: record.client.ipAddress,
+    latestNetworkScope: record.client.networkScope,
     state: record.ended ? record.terminationFailure === void 0 ? "ENDED" : "STALE" : record.socket === void 0 ? "DISCONNECTED" : "CONNECTED",
-    created_at: new Date(record.createdAt).toISOString(),
-    updated_at: (/* @__PURE__ */ new Date()).toISOString(),
-    last_connection_at: new Date(record.lastConnectionAt).toISOString(),
-    current_screen_id: record.currentScreen?.screen.id,
-    termination_failure: record.terminationFailure
+    createdAt: new Date(record.createdAt),
+    updatedAt: /* @__PURE__ */ new Date(),
+    lastConnectionAt: new Date(record.lastConnectionAt),
+    currentScreenId: record.currentScreen?.screen.id ?? null,
+    terminationFailure: record.terminationFailure ?? null
   };
-  const target = `${record.metadataRoot}/${record.sessionId}.json`;
-  const temporary = `${target}.${crypto.randomUUID()}.tmp`;
-  try {
-    await Deno.writeTextFile(temporary, `${JSON.stringify(metadata, null, 2)}
-`, {
-      createNew: true,
-      mode: 384
-    });
-    await Deno.rename(temporary, target);
-  } catch (writeError) {
-    try {
-      await Deno.remove(temporary);
-    } catch (error2) {
-      if (!(error2 instanceof Deno.errors.NotFound)) {
-        console.error("UUI session metadata staging cleanup failed", error2);
-      }
-    }
-    throw writeError;
-  }
+  await record.metadataStore.put(metadata);
 }
 async function removeMetadata(record) {
-  try {
-    await Deno.remove(`${record.metadataRoot}/${record.sessionId}.json`);
-  } catch (error2) {
-    if (!(error2 instanceof Deno.errors.NotFound)) throw error2;
-  }
+  await record.metadataStore.remove(record.sessionId);
 }
 var workerFunctions = Object.freeze({
   "uui.session.inspect": (input) => sessionRecordStatus(sessionByInput(input)),
@@ -12771,7 +13017,7 @@ var workerFunctions = Object.freeze({
     messages: structuredClone(sessionByInput(input).messageLog)
   }),
   "uui.session.terminate": async (input) => {
-    await end(sessionByInput(input), "terminated by administrator");
+    await end(sessionByInput(input), "terminated through session management");
     return {
       terminated: true
     };
@@ -12827,6 +13073,9 @@ function synchronizeClientSequence(current, processed) {
 }
 function reconnectDelay(attempt, initial, maximum) {
   return Math.min(maximum, initial * 2 ** Math.max(0, attempt));
+}
+function shouldReconnectWebSocket(sessionEnded, closeCode) {
+  return !sessionEnded && closeCode !== 1e3;
 }
 function paginationItems(currentPage, totalPages) {
   if (totalPages <= 0) return [];
@@ -26685,8 +26934,8 @@ var MessageCenter = class {
     this.#elements.sessionMenu.open = false;
     this.#renderHistory();
     if (!this.#elements.dialog.open) this.#elements.dialog.showModal();
-    const history = this.#collection.history();
-    const targetMessage = requestedID === void 0 ? this.#focusMessage(history) : history.find((message) => message.id === requestedID);
+    const history2 = this.#collection.history();
+    const targetMessage = requestedID === void 0 ? this.#focusMessage(history2) : history2.find((message) => message.id === requestedID);
     if (targetMessage === void 0) return;
     const targetID = targetMessage.id;
     const selector = `[data-message-id="${CSS.escape(targetID)}"]`;
@@ -26704,15 +26953,15 @@ var MessageCenter = class {
       ...this.#elements.list.querySelectorAll(".message-history-entry[open]")
     ].map((entry) => entry.dataset.messageId ?? ""));
     const fragment = document.createDocumentFragment();
-    const history = this.#collection.history();
-    const focusedID = this.#focusMessage(history)?.id;
-    if (history.length === 0) {
+    const history2 = this.#collection.history();
+    const focusedID = this.#focusMessage(history2)?.id;
+    if (history2.length === 0) {
       const empty = document.createElement("p");
       empty.className = "message-history-empty";
       empty.textContent = "No messages yet.";
       fragment.append(empty);
     }
-    for (const message of history) {
+    for (const message of history2) {
       const entry = document.createElement("details");
       entry.className = "message-history-entry";
       entry.dataset.messageId = message.id;
@@ -26749,8 +26998,8 @@ var MessageCenter = class {
     }
     this.#elements.list.replaceChildren(fragment);
   }
-  #focusMessage(history) {
-    return history.find((item) => item.id === this.#archivedID) ?? history.find((item) => item.id === this.#focusedID) ?? history.at(-1);
+  #focusMessage(history2) {
+    return history2.find((item) => item.id === this.#archivedID) ?? history2.find((item) => item.id === this.#focusedID) ?? history2.at(-1);
   }
   #ensureHistoryBody(entry, message) {
     if (entry.querySelector(".message-history-body") !== null) return;
@@ -26815,6 +27064,7 @@ var interactionSequence;
 var connectionText = "Connecting\u2026";
 var logoutFallback;
 var logoutRequested = false;
+var terminalRedirect;
 var dirty = new DirtyBindings();
 var pending = /* @__PURE__ */ new Map();
 var customElements = new CustomElementRenderer();
@@ -26860,9 +27110,34 @@ document.addEventListener("keydown", (event) => {
   sessionMenu.open = false;
   sessionMenuToggle.focus();
 });
-screenBack.addEventListener("click", () => dispatch(BACK_EVENT, BACK_EVENT));
+screenBack.addEventListener("click", requestBack);
+installBrowserBack();
 synchronizeWindowTitle();
 connect();
+function requestBack() {
+  if (screenBack.disabled) return;
+  dispatch(BACK_EVENT, BACK_EVENT);
+}
+function installBrowserBack() {
+  const key = "the8020.uui.back";
+  const slot = (value) => {
+    if (value === null || typeof value !== "object") return void 0;
+    const marker = value[key];
+    return marker === "base" || marker === "guard" ? marker : void 0;
+  };
+  const state = (marker) => ({
+    ...history.state !== null && typeof history.state === "object" && !Array.isArray(history.state) ? history.state : {},
+    [key]: marker
+  });
+  const current = slot(history.state);
+  if (current === void 0) history.replaceState(state("base"), "");
+  if (current !== "guard") history.pushState(state("guard"), "");
+  addEventListener("popstate", (event) => {
+    if (slot(event.state) !== "base") return;
+    history.pushState(state("guard"), "");
+    requestBack();
+  });
+}
 function connect() {
   void connectAttempt();
 }
@@ -26893,7 +27168,19 @@ async function connectAttempt() {
   });
   socket.addEventListener("message", (event) => receive(event.data));
   socket.addEventListener("close", (event) => {
-    if (ended) return;
+    if (!shouldReconnectWebSocket(ended, event.code)) {
+      if (terminalRedirect !== void 0) {
+        if (logoutFallback !== void 0) clearTimeout(logoutFallback);
+        location.assign(terminalRedirect);
+        return;
+      }
+      if (!ended) {
+        ended = true;
+        sessionStorage.removeItem(routeKey);
+        showNotice(event.reason || "The session ended.");
+      }
+      return;
+    }
     setConnectionState("Reconnecting\u2026", "reconnecting");
     if (!opened || event.code === 1008) {
       void establishRoute(true).catch(() => {
@@ -27037,7 +27324,6 @@ function receive(raw) {
       showNotice(message.message ?? message.code ?? "Session error");
       break;
     case "session.end":
-      if (logoutFallback !== void 0) clearTimeout(logoutFallback);
       setInteractionPending(void 0);
       ended = true;
       messageCenter.dispose();
@@ -27047,9 +27333,11 @@ function receive(raw) {
       screenBack.disabled = true;
       themePreferences.endSession();
       sessionStorage.removeItem(routeKey);
-      socket?.close(1e3, "session ended");
-      if (message.redirectUrl) location.assign(message.redirectUrl);
-      else showNotice(message.message ?? "The session ended.");
+      terminalRedirect = message.redirectUrl;
+      if (terminalRedirect !== void 0) {
+        if (logoutFallback !== void 0) clearTimeout(logoutFallback);
+        logoutFallback = setTimeout(() => location.assign(terminalRedirect), 1500);
+      } else showNotice(message.message ?? "The session ended.");
       break;
   }
 }

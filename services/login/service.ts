@@ -11,18 +11,18 @@ const service = defineService();
 
 service.get(
   "/",
-  { summary: "Render the bootstrap administrator login" },
+  { summary: "Render the user login" },
   async () => htmlResponse(await loginPage()),
 );
 
 service.post(
   "/",
-  { summary: "Authenticate a bootstrap administrator" },
+  { summary: "Authenticate a user" },
   async ({ request }) => {
     const form = await request.formData();
     const username = String(form.get("username") ?? "");
     const password = String(form.get("password") ?? "");
-    const result = await kernel.auth.bootstrapLogin({ username, password });
+    const result = await kernel.auth.login({ username, password });
     if (!result.authenticated || result.setCookie === undefined) {
       return htmlResponse(
         await loginPage("Invalid username or password."),

@@ -21,6 +21,10 @@ import {
   type UUIWorkerOutbound,
 } from "./protocol.ts";
 import { bindSession } from "./session.ts";
+import type {
+  SessionMetadata,
+  SessionMetadataStore,
+} from "./session_metadata.ts";
 
 export interface UUISessionContext {
   readonly sessionId: string;
@@ -75,31 +79,10 @@ interface SessionRecord {
   lastConnectionAt: number;
   messageLog: SessionLogEntry[];
   metadataWrites: Promise<void>;
-  metadataRoot: string;
+  metadataStore: SessionMetadataStore;
   completePersistent: () => Promise<void>;
   ended: boolean;
   terminationFailure?: string;
-}
-
-interface SessionMetadata {
-  schema: 2;
-  session_id: string;
-  service_id: string;
-  persistent_execution_id: string;
-  node_id: string;
-  runtime_group_id: string;
-  sandbox_id: string;
-  worker_id: string;
-  authenticated_user_id: string;
-  authenticated_user: string;
-  latest_ip_address: string;
-  latest_network_scope: RequestMetadata["client"]["networkScope"];
-  state: string;
-  created_at: string;
-  updated_at: string;
-  last_connection_at: string;
-  current_screen_id?: string;
-  termination_failure?: string;
 }
 
 class AsyncQueue<T> {
@@ -120,10 +103,10 @@ class AsyncQueue<T> {
 }
 
 const sessions = new Map<string, SessionRecord>();
-const sessionMetadataRoot = "/state/package-data/the8020/uui/sessions";
+let databaseMetadataStore: Promise<SessionMetadataStore> | undefined;
 
 export interface SessionServiceOptions {
-  metadataRoot?: string;
+  metadataStore?: SessionMetadataStore;
   completePersistent?: () => Promise<void>;
 }
 
@@ -170,6 +153,7 @@ async function establish(
   }
 
   const sessionId = randomSessionID();
+  const metadataStore = options.metadataStore ?? await defaultMetadataStore();
   const input = new AsyncQueue<UUIClientMessage>();
   const controller = new AbortController();
   const record = {} as SessionRecord;
@@ -201,7 +185,7 @@ async function establish(
       lastConnectionAt: now,
       messageLog: [],
       metadataWrites: Promise.resolve(),
-      metadataRoot: options.metadataRoot ?? sessionMetadataRoot,
+      metadataStore,
       completePersistent: options.completePersistent ??
         (() => kernel.execution.completePersistent()),
       ended: false,
@@ -505,15 +489,16 @@ async function end(
     clearTimeout(record.disconnectTimer);
   }
   emit(record, { type: "session.end", message: reason, redirectUrl }, false);
-  record.socket?.close(1000, reason.slice(0, 120));
-  record.socket = undefined;
   record.controller.abort(new DOMException(reason, "AbortError"));
   record.unbind();
   log(record, "lifecycle", "ended");
   await record.metadataWrites.catch(() => undefined);
   try {
-    await record.completePersistent();
     await removeMetadata(record);
+    // Completing the persistent route may immediately stop this Worker. Remove
+    // package-owned metadata first so successful completion cannot leave a
+    // live-looking session row behind.
+    await record.completePersistent();
   } catch (error) {
     record.terminationFailure = errorMessage(error);
     try {
@@ -521,8 +506,13 @@ async function end(
     } catch {
       // The bounded Worker log is the final fallback when package state is lost.
     }
-    console.error("UUI persistent execution completion failed", error);
+    console.error(
+      "UUI persistent execution completion failed",
+      errorMessage(error),
+    );
   }
+  record.socket?.close(1000, reason.slice(0, 120));
+  record.socket = undefined;
 }
 
 function sessionByID(sessionId: string): SessionRecord {
@@ -565,58 +555,41 @@ function updateMetadata(record: SessionRecord): void {
 }
 
 async function writeMetadata(record: SessionRecord): Promise<void> {
-  await Deno.mkdir(record.metadataRoot, { recursive: true, mode: 0o700 });
   const metadata: SessionMetadata = {
-    schema: 2,
-    session_id: record.sessionId,
-    service_id: record.serviceId,
-    persistent_execution_id: record.executionId,
-    node_id: record.placement.nodeId,
-    runtime_group_id: record.placement.runtimeGroupId,
-    sandbox_id: record.placement.sandboxId,
-    worker_id: record.placement.workerId,
-    authenticated_user_id: record.auth.userId ?? "",
-    authenticated_user: record.auth.username ?? "",
-    latest_ip_address: record.client.ipAddress,
-    latest_network_scope: record.client.networkScope,
+    sessionId: record.sessionId,
+    serviceId: record.serviceId,
+    persistentExecutionId: record.executionId,
+    nodeId: record.placement.nodeId,
+    runtimeGroupId: record.placement.runtimeGroupId,
+    sandboxId: record.placement.sandboxId,
+    workerId: record.placement.workerId,
+    authenticatedUserId: record.auth.userId ?? "",
+    authenticatedUser: record.auth.username ?? "",
+    latestIpAddress: record.client.ipAddress,
+    latestNetworkScope: record.client.networkScope,
     state: record.ended
       ? record.terminationFailure === undefined ? "ENDED" : "STALE"
       : record.socket === undefined
       ? "DISCONNECTED"
       : "CONNECTED",
-    created_at: new Date(record.createdAt).toISOString(),
-    updated_at: new Date().toISOString(),
-    last_connection_at: new Date(record.lastConnectionAt).toISOString(),
-    current_screen_id: record.currentScreen?.screen.id,
-    termination_failure: record.terminationFailure,
+    createdAt: new Date(record.createdAt),
+    updatedAt: new Date(),
+    lastConnectionAt: new Date(record.lastConnectionAt),
+    currentScreenId: record.currentScreen?.screen.id ?? null,
+    terminationFailure: record.terminationFailure ?? null,
   };
-  const target = `${record.metadataRoot}/${record.sessionId}.json`;
-  const temporary = `${target}.${crypto.randomUUID()}.tmp`;
-  try {
-    await Deno.writeTextFile(
-      temporary,
-      `${JSON.stringify(metadata, null, 2)}\n`,
-      { createNew: true, mode: 0o600 },
-    );
-    await Deno.rename(temporary, target);
-  } catch (writeError) {
-    try {
-      await Deno.remove(temporary);
-    } catch (error) {
-      if (!(error instanceof Deno.errors.NotFound)) {
-        console.error("UUI session metadata staging cleanup failed", error);
-      }
-    }
-    throw writeError;
-  }
+  await record.metadataStore.put(metadata);
 }
 
 async function removeMetadata(record: SessionRecord): Promise<void> {
-  try {
-    await Deno.remove(`${record.metadataRoot}/${record.sessionId}.json`);
-  } catch (error) {
-    if (!(error instanceof Deno.errors.NotFound)) throw error;
-  }
+  await record.metadataStore.remove(record.sessionId);
+}
+
+function defaultMetadataStore(): Promise<SessionMetadataStore> {
+  databaseMetadataStore ??= import("./session_metadata_database.ts").then(
+    ({ sessionMetadataStore }) => sessionMetadataStore,
+  );
+  return databaseMetadataStore;
 }
 
 export const workerFunctions = Object.freeze({
@@ -628,7 +601,7 @@ export const workerFunctions = Object.freeze({
   "uui.session.terminate": async (
     input: unknown,
   ): Promise<Record<string, unknown>> => {
-    await end(sessionByInput(input), "terminated by administrator");
+    await end(sessionByInput(input), "terminated through session management");
     return { terminated: true };
   },
 });

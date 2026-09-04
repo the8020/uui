@@ -11,13 +11,7 @@ import {
   UUI_PROTOCOL_VERSION,
   type UUIClientMessage,
 } from "./protocol.ts";
-import {
-  bindSession,
-  callScreen,
-  copyText,
-  sendMessage,
-  showNotification,
-} from "./session.ts";
+import { bindSession, callScreen, copyText, sendMessage } from "./session.ts";
 
 class TestChannel {
   readonly sessionId = "session-test";
@@ -757,7 +751,6 @@ Deno.test({
       sendMessage("Completed", "success");
       sendMessage("Attention", "warning");
       sendMessage("Failed", "error");
-      showNotification("Compatible alias", "info");
       assertEquals(test.sent, [
         { type: "notification.show", level: "info", message: "Information" },
         {
@@ -771,11 +764,6 @@ Deno.test({
           message: "Attention",
         },
         { type: "notification.show", level: "error", message: "Failed" },
-        {
-          type: "notification.show",
-          level: "info",
-          message: "Compatible alias",
-        },
       ]);
       assertThrows(() => sendMessage("   "), TypeError, "1 to 20000");
       assertThrows(

@@ -52,6 +52,13 @@ export function reconnectDelay(
   return Math.min(maximum, initial * 2 ** Math.max(0, attempt));
 }
 
+export function shouldReconnectWebSocket(
+  sessionEnded: boolean,
+  closeCode: number,
+): boolean {
+  return !sessionEnded && closeCode !== 1000;
+}
+
 export type PaginationItem = number | "ellipsis";
 
 export function paginationItems(

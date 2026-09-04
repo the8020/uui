@@ -3,42 +3,15 @@ import {
   BACK_EVENT,
   callScreen,
   field,
-  showNotification,
+  sendMessage,
   z,
 } from "@packages/the8020/uui/mod.ts";
 import detailLayout from "./layouts/detail.json" with { type: "json" };
 import listLayout from "./layouts/list.json" with { type: "json" };
+import type { SessionMetadata } from "../../session_metadata.ts";
+import Sessions from "../../tables/sessions.ts";
 
-const metadataRoot = "/state/package-data/the8020/uui/sessions";
 const maximumSessions = 200;
-const maximumDirectoryEntries = 1_000;
-const maximumMetadataBytes = 64 * 1024;
-
-export interface SessionMetadata {
-  schema: 2;
-  session_id: string;
-  service_id: string;
-  persistent_execution_id: string;
-  node_id: string;
-  runtime_group_id: string;
-  sandbox_id: string;
-  worker_id: string;
-  authenticated_user_id: string;
-  authenticated_user: string;
-  latest_ip_address: string;
-  latest_network_scope:
-    | "loopback"
-    | "private"
-    | "link_local"
-    | "public"
-    | "special";
-  state: string;
-  created_at: string;
-  updated_at: string;
-  last_connection_at: string;
-  current_screen_id?: string;
-  termination_failure?: string;
-}
 
 const ListScreen = z.object({
   sessions: z.array(z.object({
@@ -99,13 +72,13 @@ export default async function sessionsProgram(): Promise<void> {
       schema: ListScreen,
       model: {
         sessions: sessions.map((item) => ({
-          navigation: item.session_id,
-          sessionId: item.session_id,
-          user: item.authenticated_user,
+          navigation: item.sessionId,
+          sessionId: item.sessionId,
+          user: item.authenticatedUser,
           state: item.state,
-          screen: item.current_screen_id ?? "",
-          nodeId: item.node_id,
-          updatedAt: item.updated_at,
+          screen: item.currentScreenId ?? "",
+          nodeId: item.nodeId,
+          updatedAt: item.updatedAt.toISOString(),
         })),
       },
       layout: listLayout,
@@ -113,7 +86,7 @@ export default async function sessionsProgram(): Promise<void> {
     });
     if (event.action === BACK_EVENT) return;
     if (event.action === "select" && typeof event.value === "string") {
-      const selected = sessions.find((item) => item.session_id === event.value);
+      const selected = sessions.find((item) => item.sessionId === event.value);
       if (selected !== undefined) await sessionDetail(selected);
     }
   }
@@ -122,34 +95,34 @@ export default async function sessionsProgram(): Promise<void> {
 async function sessionDetail(metadata: SessionMetadata): Promise<void> {
   while (true) {
     const live = await invoke(metadata, "uui.session.inspect", {
-      sessionId: metadata.session_id,
+      sessionId: metadata.sessionId,
     });
     const messages = live.ok
       ? await invoke(metadata, "uui.session.message-log", {
-        sessionId: metadata.session_id,
+        sessionId: metadata.sessionId,
       })
       : live;
     const event = await callScreen({
       id: "uui-session-detail",
-      title: `UUI session ${metadata.session_id}`,
+      title: `UUI session ${metadata.sessionId}`,
       schema: DetailScreen,
       model: {
-        sessionId: metadata.session_id,
+        sessionId: metadata.sessionId,
         state: metadata.state,
-        authenticatedUser: metadata.authenticated_user,
-        authenticatedUserId: metadata.authenticated_user_id,
-        latestIpAddress: metadata.latest_ip_address,
-        latestNetworkScope: formatNetworkScope(metadata.latest_network_scope),
-        serviceId: metadata.service_id,
-        persistentExecutionId: metadata.persistent_execution_id,
-        nodeId: metadata.node_id,
-        runtimeGroupId: metadata.runtime_group_id,
-        sandboxId: metadata.sandbox_id,
-        workerId: metadata.worker_id,
-        currentScreen: metadata.current_screen_id ?? "",
-        createdAt: metadata.created_at,
-        updatedAt: metadata.updated_at,
-        lastConnectionAt: metadata.last_connection_at,
+        authenticatedUser: metadata.authenticatedUser,
+        authenticatedUserId: metadata.authenticatedUserId,
+        latestIpAddress: metadata.latestIpAddress,
+        latestNetworkScope: formatNetworkScope(metadata.latestNetworkScope),
+        serviceId: metadata.serviceId,
+        persistentExecutionId: metadata.persistentExecutionId,
+        nodeId: metadata.nodeId,
+        runtimeGroupId: metadata.runtimeGroupId,
+        sandboxId: metadata.sandboxId,
+        workerId: metadata.workerId,
+        currentScreen: metadata.currentScreenId ?? "",
+        createdAt: metadata.createdAt.toISOString(),
+        updatedAt: metadata.updatedAt.toISOString(),
+        lastConnectionAt: metadata.lastConnectionAt.toISOString(),
         liveState: live.ok ? "LIVE" : `STALE: ${live.message}`,
         messageLog: messages.ok
           ? JSON.stringify(messages.output, null, 2)
@@ -174,22 +147,22 @@ async function sessionDetail(metadata: SessionMetadata): Promise<void> {
     });
     if (event.action === BACK_EVENT) return;
     if (event.action === "clean") {
-      await removeMetadata(metadata.session_id);
-      showNotification("Stale session metadata removed", "success");
+      await removeMetadata(metadata.sessionId);
+      sendMessage("Stale session metadata removed", "success");
       return;
     }
     if (event.action === "terminate") {
       const result = await invoke(metadata, "uui.session.terminate", {
-        sessionId: metadata.session_id,
+        sessionId: metadata.sessionId,
       });
-      showNotification(
+      sendMessage(
         result.ok ? "Session terminated" : result.message,
         result.ok ? "success" : "error",
       );
       if (result.ok) return;
     }
     const refreshed = (await readSessionMetadata()).find((item) =>
-      item.session_id === metadata.session_id
+      item.sessionId === metadata.sessionId
     );
     if (refreshed !== undefined) metadata = refreshed;
   }
@@ -204,10 +177,10 @@ async function invoke(
     return {
       ok: true,
       output: await kernel.worker.invoke({
-        nodeId: metadata.node_id,
-        sandboxId: metadata.sandbox_id,
-        workerId: metadata.worker_id,
-        persistentExecutionId: metadata.persistent_execution_id,
+        nodeId: metadata.nodeId,
+        sandboxId: metadata.sandboxId,
+        workerId: metadata.workerId,
+        persistentExecutionId: metadata.persistentExecutionId,
         function: functionName,
         input,
       }),
@@ -225,89 +198,13 @@ async function invoke(
 }
 
 export async function readSessionMetadata(): Promise<SessionMetadata[]> {
-  const names: string[] = [];
-  let visited = 0;
-  try {
-    for await (const entry of Deno.readDir(metadataRoot)) {
-      if (++visited > maximumDirectoryEntries) break;
-      if (entry.isFile && /^uis-[a-z0-9]{8}\.json$/.test(entry.name)) {
-        names.push(entry.name);
-        if (names.length >= maximumSessions) break;
-      }
-    }
-  } catch (error) {
-    if (error instanceof Deno.errors.NotFound) return [];
-    throw error;
-  }
-  names.sort();
-  const result: SessionMetadata[] = [];
-  for (const name of names) {
-    try {
-      const data = await readBoundedFile(
-        `${metadataRoot}/${name}`,
-        maximumMetadataBytes,
-      );
-      if (data === undefined) continue;
-      const value = JSON.parse(
-        new TextDecoder("utf-8", { fatal: true }).decode(data),
-      );
-      if (validMetadata(value)) result.push(value);
-    } catch {
-      // One malformed package-owned record cannot hide other sessions.
-    }
-  }
-  return result.sort((left, right) =>
-    right.updated_at.localeCompare(left.updated_at)
-  );
-}
-
-async function readBoundedFile(
-  path: string,
-  maximumBytes: number,
-): Promise<Uint8Array | undefined> {
-  const file = await Deno.open(path, { read: true });
-  try {
-    const buffer = new Uint8Array(maximumBytes + 1);
-    let length = 0;
-    while (length < buffer.byteLength) {
-      const count = await file.read(buffer.subarray(length));
-      if (count === null) break;
-      if (count === 0) break;
-      length += count;
-    }
-    return length > maximumBytes ? undefined : buffer.subarray(0, length);
-  } finally {
-    file.close();
-  }
-}
-
-function validMetadata(value: unknown): value is SessionMetadata {
-  if (value === null || typeof value !== "object") return false;
-  const item = value as Partial<SessionMetadata>;
-  return item.schema === 2 &&
-    typeof item.session_id === "string" &&
-    typeof item.service_id === "string" &&
-    typeof item.persistent_execution_id === "string" &&
-    typeof item.node_id === "string" &&
-    typeof item.runtime_group_id === "string" &&
-    typeof item.sandbox_id === "string" &&
-    typeof item.worker_id === "string" &&
-    typeof item.authenticated_user_id === "string" &&
-    typeof item.authenticated_user === "string" &&
-    typeof item.latest_ip_address === "string" &&
-    (item.latest_network_scope === "loopback" ||
-      item.latest_network_scope === "private" ||
-      item.latest_network_scope === "link_local" ||
-      item.latest_network_scope === "public" ||
-      item.latest_network_scope === "special") &&
-    typeof item.state === "string" &&
-    typeof item.created_at === "string" &&
-    typeof item.updated_at === "string" &&
-    typeof item.last_connection_at === "string";
+  return await Sessions.selectAll().orderBy(Sessions.updatedAt, "desc").limit(
+    maximumSessions,
+  ).execute() as SessionMetadata[];
 }
 
 function formatNetworkScope(
-  scope: SessionMetadata["latest_network_scope"],
+  scope: SessionMetadata["latestNetworkScope"],
 ): string {
   return scope === "link_local"
     ? "Link-local"
@@ -318,9 +215,5 @@ async function removeMetadata(sessionId: string): Promise<void> {
   if (!/^uis-[a-z0-9]{8}$/.test(sessionId)) {
     throw new TypeError("invalid session ID");
   }
-  try {
-    await Deno.remove(`${metadataRoot}/${sessionId}.json`);
-  } catch (error) {
-    if (!(error instanceof Deno.errors.NotFound)) throw error;
-  }
+  await Sessions.delete().where(Sessions.sessionId, "=", sessionId).execute();
 }

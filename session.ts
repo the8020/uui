@@ -269,14 +269,6 @@ export function sendMessage(
   channel.send({ type: "notification.show", level: kind, message: body });
 }
 
-/** @deprecated Use sendMessage() for new program code. */
-export function showNotification(
-  message: string,
-  level: UUIMessageKind = "info",
-): void {
-  sendMessage(message, level);
-}
-
 export function copyText(text: string): void {
   if (channel === undefined) {
     throw new Error("UUI session channel is not bound");

@@ -7,6 +7,7 @@
     "npm:@xterm/addon-canvas@0.7.0": "0.7.0_@xterm+xterm@5.5.0",
     "npm:@xterm/addon-fit@0.10.0": "0.10.0_@xterm+xterm@5.5.0",
     "npm:@xterm/xterm@5.5.0": "5.5.0",
+    "npm:kysely@0.29.4": "0.29.4",
     "npm:markdown-it@14.1.0": "14.1.0",
     "npm:zod@4.1.5": "4.1.5"
   },
@@ -46,6 +47,9 @@
     "entities@4.5.0": {
       "integrity": "sha512-V0hjH4dGPh9Ao5p0MoRY6BVqtwCjhz6vI5LT8AJ55H+4g9/4vbHx1I54fS0XuclLhDHArPQCiMjDxjaL8fPxhw=="
     },
+    "kysely@0.29.4": {
+      "integrity": "sha512-y5mVgQNkMbs1eK9Xyc0pmNdabN2wHhRYY/5r4W5HrUT1rYCEPeVNSj1RUJeSDKT3U0p+mXCvLgkrFuIafYI6BA=="
+    },
     "linkify-it@5.0.2": {
       "integrity": "sha512-ONTm2jCMAVZjgQa/Fy1kScXsuOoF5NPTsoFBdE1KVIZ2vAh/r9+Bqo+0jINCBYnavTPQZz38QzFTme79ENoN3Q==",
       "dependencies": [
@@ -84,6 +88,7 @@
       "npm:@xterm/addon-canvas@0.7.0",
       "npm:@xterm/addon-fit@0.10.0",
       "npm:@xterm/xterm@5.5.0",
+      "npm:kysely@0.29.4",
       "npm:markdown-it@14.1.0",
       "npm:zod@4.1.5"
     ]

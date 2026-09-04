@@ -50,21 +50,20 @@
   program lifecycle, metadata, and registered Worker administration functions.
   The supervisor provides only generic persistent execution binding/completion,
   exact registered-function invocation, and physical WebSocket relay.
-- The handler atomically maintains one bounded JSON record per live session at
-  `/state/package-data/the8020/uui/sessions/<session-id>.json`, containing exact
-  execution placement, authenticated user identity, lifecycle timestamps/state,
-  latest kernel-observed client IP address and network scope, and bounded
-  current-screen metadata. Reconnection replaces the address fields with the
-  latest observation. It never stores passwords, cookies, route tokens, replay
-  buffers, or unbounded messages. Clean termination removes the record after
-  signaling generic persistent completion; abnormal loss may leave recoverable
-  stale metadata.
-- `the8020/uui/sessions` explicitly scans a bounded number of bounded package
-  metadata records, validates a selected record against its exact Worker with
-  `kernel.worker.invoke()`, passes the selected persistent-execution identity,
-  and calls package-owned inspect, bounded message-log, or terminate functions.
-  Missing targets are stale and may be cleaned by the program; no kernel Worker
-  scan or UUI administration command exists.
+- The handler atomically maintains one row per live session in
+  `the8020__uui__sessions`, containing exact execution placement, authenticated
+  user identity, lifecycle timestamps/state, latest kernel-observed client IP
+  address and network scope, and bounded current-screen metadata. Reconnection
+  replaces the address fields with the latest observation. It never stores
+  passwords, cookies, route tokens, replay buffers, or unbounded messages. Clean
+  termination removes the record after signaling generic persistent completion;
+  abnormal loss may leave recoverable stale metadata.
+- `the8020/uui/sessions` lists bounded database metadata rows, validates a
+  selected record against its exact Worker with `kernel.worker.invoke()`, passes
+  the selected persistent-execution identity, and calls package-owned inspect,
+  bounded message-log, or terminate functions. Missing targets are stale and may
+  be cleaned by the program; no kernel Worker scan or UUI administration command
+  exists.
 - Login, shell, and session declare zero minimum sandboxes and Workers. Login
   and shell share sandbox group `uui`, permit 128 Workers at 64 per sandbox, use
   concurrency 16, target 70% utilization, and retain idle Workers for two
@@ -81,10 +80,9 @@
   `@packages/the8020/uui/mod.ts` surface and may call it while a screen
   roundtrip is active or from a background asynchronous task for the same bound
   session. Message kinds are `info`, `success`, `warning`, and `error`; bodies
-  are non-empty Markdown bounded to 20,000 characters. `showNotification()`
-  remains a deprecated source-compatible alias. Notification frames use the
-  ordinary sequenced/replayable session transport and never require a client
-  event to be emitted.
+  are non-empty Markdown bounded to 20,000 characters. Notification frames use
+  the ordinary sequenced/replayable session transport and never require a client
+  event to be emitted. There is no compatibility alias.
 - Browser startup performs normal `POST /connect`, reads `X-80-20-Route`, and
   stores it only in `sessionStorage` under the WebSocket URL. It
   opens/reconnects the standard `the8020.uui.v1` WebSocket with the same opaque
@@ -137,26 +135,28 @@
   metrics.
 - The shell owns one always-visible icon-only Material `arrow_back` button
   immediately after the brand, retains the accessible `Back` label, and emits
-  the reserved `BACK_EVENT` as both action and event type. Program header
-  controls and actions render from the screen snapshot between Back and the
-  always-visible session disclosure. That disclosure combines one `8px` status
-  circle, the authenticated username, and a Material `menu` icon in one button.
-  Connected is green; connecting and reconnecting are red, while a visually
-  hidden live label preserves the complete textual state. The username remains
-  one line and ellipsizes at constrained widths. Its locally anchored,
-  light-dismiss menu currently owns labeled light/dark theme switching and clean
-  logout. Logout ends the persistent UUI session through the typed client
-  protocol before redirecting through the configured logout route, with direct
-  navigation as a disconnected-client fallback. The left brand/Back cluster and
-  right session cluster use explicit grid positions, so hiding or emptying the
-  dynamic middle never moves the right cluster away from the navbar's right
-  edge. The navbar remains one row at every width. As the dynamic area shrinks,
-  a measured stable prefix remains visible while items move from right to left
-  into an accessible More disclosure without recreating their DOM controls. More
-  sits immediately after the last visible dynamic control, or at the dynamic
-  area's start when none remain; opening it stacks every hidden control
-  vertically in original order and clamps the popover to a `10px` viewport edge
-  gutter.
+  the reserved `BACK_EVENT` as both action and event type. The browser Back
+  action traverses one marked same-URL guard entry, immediately restores that
+  guard without growing history, and invokes this same Back path; reload adopts
+  the existing guard instead of adding another. Program header controls and
+  actions render from the screen snapshot between Back and the always-visible
+  session disclosure. That disclosure combines one `8px` status circle, the
+  authenticated username, and a Material `menu` icon in one button. Connected is
+  green; connecting and reconnecting are red, while a visually hidden live label
+  preserves the complete textual state. The username remains one line and
+  ellipsizes at constrained widths. Its locally anchored, light-dismiss menu
+  currently owns labeled light/dark theme switching and clean logout. Logout
+  ends the persistent UUI session through the typed client protocol before
+  redirecting through the configured logout route, with direct navigation as a
+  disconnected-client fallback. The left brand/Back cluster and right session
+  cluster use explicit grid positions, so hiding or emptying the dynamic middle
+  never moves the right cluster away from the navbar's right edge. The navbar
+  remains one row at every width. As the dynamic area shrinks, a measured stable
+  prefix remains visible while items move from right to left into an accessible
+  More disclosure without recreating their DOM controls. More sits immediately
+  after the last visible dynamic control, or at the dynamic area's start when
+  none remain; opening it stacks every hidden control vertically in original
+  order and clamps the popover to a `10px` viewport edge gutter.
 - The session disclosure menu owns a Messages action whose badge counts all
   messages received since the current screen interaction began. A new
   `screen.event`, `screen.page`, or route begins a fresh collection. At most the
@@ -331,35 +331,38 @@
 - `browser_e2e.ts` drives real Chromium through two isolated kernel nodes and
   receives explicit kernel-source and sibling package-workspace roots, then
   assigns distinct ephemeral main-HTTP and SSH ports to every node. The nodes
-  install the DB package before the demo package so a fresh primary database can
-  evaluate and synchronize the demo tables during bootstrap. The nodes share
-  authentication through the ordinary mapped `config`, `state`, and `users`
-  roots rather than private auth settings; CDP commands are bounded and the test
-  injects a UUI-subprotocol-only socket handle to force a deterministic brief
-  reconnect without altering package timing constants. Kernel-restart recovery
-  distinguishes the replacement live session from recoverable stale metadata and
-  cleans the stale record through the package-owned sessions program. The suite
-  then covers login/cookie sharing, persistent Canvas-rendered xterm Bash
-  consoles in both a real development sandbox and an ordinary runtime sandbox,
-  `xterm-256color`/`clear`, exact bottom-row fitting, visibly rendered mouse
-  selection, confirmed source and factory reset controls, development activation
-  preview statistics, required-message validation, independent package commits,
-  and clean overlay reset, per-session theme persistence and future-tab theme
-  inheritance, dark and light reload initialization before first paint,
-  responsive two/four-group layouts, semantic field lengths, reserved
-  hinted/unhinted supporting-message alignment, accessible full-hint popovers,
-  and source-ordered multi-row field placement including its message slot at
-  desktop/tablet/mobile widths, persistent standard Back navigation, header
-  action/control rendering, one-row right-to-left responsive hiding,
-  synchronized browser titles, vertical overflow disclosure, and mobile
-  viewport-edge clamping; an open disclosure remains open across responsive
-  refits while overflow is still required. It also covers immediate rapid-event
-  suppression and delayed loading feedback, direct home-list invocation, the
-  summary-only core-admin package list and selected package manifest/Git/content
-  detail with vertically spaced content cards and service clickthrough, live
-  database catalog list/detail/synchronization through the DB package, the
-  core-admin service/sandbox lists and linked details, the package-owned UUI
-  session list/detail with exact-Worker inspection, bounded log, stale cleanup,
+  stage the complete bootstrap package set so a fresh database can
+  batch-evaluate and synchronize all tables before services start. The nodes use
+  only canonical current command IDs: base `kernel.status` establishes the
+  command socket, then package command polling establishes the service plane;
+  the suite must never depend on removed legacy command aliases. The nodes share
+  authentication through the system database; CDP commands are bounded and the
+  test injects a UUI-subprotocol-only socket handle to force a deterministic
+  brief reconnect without altering package timing constants. Kernel-restart
+  recovery distinguishes the replacement live session from recoverable stale
+  metadata and cleans the stale record through the package-owned sessions
+  program. The suite then covers login/cookie sharing, persistent
+  Canvas-rendered xterm Bash consoles in both a real development sandbox and an
+  ordinary runtime sandbox, `xterm-256color`/`clear`, exact bottom-row fitting,
+  visibly rendered mouse selection, confirmed source and factory reset controls,
+  development activation preview statistics, required-message validation,
+  independent package commits, and clean overlay reset, per-session theme
+  persistence and future-tab theme inheritance, dark and light reload
+  initialization before first paint, responsive two/four-group layouts, semantic
+  field lengths, reserved hinted/unhinted supporting-message alignment,
+  accessible full-hint popovers, and source-ordered multi-row field placement
+  including its message slot at desktop/tablet/mobile widths, persistent
+  standard Back navigation, header action/control rendering, one-row
+  right-to-left responsive hiding, synchronized browser titles, vertical
+  overflow disclosure, and mobile viewport-edge clamping; an open disclosure
+  remains open across responsive refits while overflow is still required. It
+  also covers immediate rapid-event suppression and delayed loading feedback,
+  direct home-list invocation, the summary-only core-admin package list and
+  selected package manifest/Git/content detail with vertically spaced content
+  cards and service clickthrough, live database catalog
+  list/detail/synchronization through the DB package, the core-admin
+  service/sandbox lists and linked details, the package-owned UUI session
+  list/detail with exact-Worker inspection, bounded log, stale cleanup,
   termination, and session-service clickthrough, authorized service
   enable/disable and capacity changes including percentage sliders, nested
   demos, dirty reconnect, reload resume, semantic and asynchronous messages,
