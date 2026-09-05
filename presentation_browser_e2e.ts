@@ -1,3 +1,13 @@
+import { Model } from "./model.ts";
+import {
+  runProgramsBrowser,
+  verifyProgramsBrowser,
+} from "./programs_browser_scenarios.ts";
+import {
+  listBrowserProbe,
+  runListsProgram,
+  verifyListsFlow,
+} from "./lists_browser_scenarios.ts";
 import {
   BACK_EVENT,
   callScreen,
@@ -153,6 +163,7 @@ class LocalSessionChannel implements SessionChannel {
   }
 
   push(message: UUIClientMessage): void {
+    if (Deno.args.includes("--lists")) listBrowserProbe.messages.push(message);
     if (this.#closed) return;
     const receiver = this.#receivers.shift();
     if (receiver !== undefined) receiver.resolve(message);
@@ -230,9 +241,16 @@ const channel = new LocalSessionChannel((message) => {
 const unbind = bindSession(channel);
 let stopping = false;
 let programError: unknown;
-const program = runProgram().catch((error) => {
-  if (!stopping) programError = error;
-});
+const program =
+  (Deno.args.includes("--programs")
+    ? runProgramsBrowser(temporaryRoot)
+    : Deno.args.includes("--lists")
+    ? runListsProgram()
+    : runProgram()).catch(
+      (error) => {
+        if (!stopping) programError = error;
+      },
+    );
 
 const server = Deno.serve({
   hostname: "127.0.0.1",
@@ -261,18 +279,37 @@ try {
   }).spawn();
   await waitForHTTP(`http://127.0.0.1:${debugPort}/json/version`);
   page = await openPage(debugPort, `http://127.0.0.1:${httpPort}/`);
-  await verifyPresentationFlow(page);
+  if (Deno.args.includes("--programs")) {
+    await verifyProgramsBrowser(page);
+  } else if (Deno.args.includes("--lists")) {
+    await verifyListsFlow(page, () => currentSocket?.close());
+  } else await verifyPresentationFlow(page);
   if (programError !== undefined) throw programError;
   assert(
     page.exceptions.length === 0,
     `browser exceptions: ${page.exceptions.join("\n")}`,
   );
-  console.log("presentation browser E2E passed");
+  console.log(
+    `${
+      Deno.args.includes("--programs")
+        ? "program"
+        : Deno.args.includes("--lists")
+        ? "list"
+        : "presentation"
+    } browser E2E passed`,
+  );
 } catch (error) {
+  if (Deno.args.includes("--lists")) {
+    console.error(
+      "Recent list interactions",
+      JSON.stringify(listBrowserProbe.messages.slice(-12)),
+    );
+  }
   const state = page === undefined ? undefined : await page.evaluate(`({
       title: document.title,
       connection: document.querySelector('#connection-state')?.textContent,
       body: document.body?.innerText,
+      overflow: { width: innerWidth, scrollWidth: document.documentElement.scrollWidth, elements: [...document.querySelectorAll('body *')].filter(e => e.getBoundingClientRect().right > innerWidth + 1 && !e.closest('.data-list-scroll')).slice(0, 15).map(e => ({ tag: e.tagName, class: e.className, width: e.getBoundingClientRect().width, right: e.getBoundingClientRect().right })) },
     })`).catch(() => undefined);
   throw new Error(
     `${
@@ -294,13 +331,14 @@ try {
 }
 
 async function runProgram(): Promise<void> {
+  const screenModel = new Model({});
   sendMessage("Modal design probe");
   while (true) {
     const event = await callScreen({
       id: "presentation-page-a",
       title: "Presentation page A",
       schema: z.object({}),
-      model: {},
+      model: screenModel,
       customElements: [{
         id: "probe",
         initializer: "presentation-probe.v1",
@@ -331,6 +369,7 @@ async function runModalB(): Promise<void> {
       value: "Edit this before the background redraw",
       status: "Waiting for background redraw",
     };
+    const screenModel = new Model(model);
     const channel = new ScreenChannel();
     while (true) {
       const redraw = setTimeout(() => {
@@ -343,7 +382,7 @@ async function runModalB(): Promise<void> {
           id: "presentation-modal-b",
           title: "Presentation modal B",
           schema: PresentationScreen,
-          model,
+          model: screenModel,
           channel,
           actions: [
             { id: "open-modal", label: "Open nested modal" },
@@ -368,12 +407,13 @@ async function runModalB(): Promise<void> {
 async function runPageD(): Promise<void> {
   await presentPage(async () => {
     const model = { value: "Page D", status: "Ready" };
+    const screenModel = new Model(model);
     while (true) {
       const event = await callScreen({
         id: "presentation-page-d",
         title: "Presentation page D",
         schema: PresentationScreen,
-        model,
+        model: screenModel,
         actions: [{ id: "open-modal", label: "Open modal E" }],
       });
       if (event.action === BACK_EVENT) return;
@@ -386,12 +426,13 @@ async function runPageD(): Promise<void> {
 
 async function runLeaf(title: string): Promise<void> {
   const model = { value: title, status: "Ready" };
+  const screenModel = new Model(model);
   while (true) {
     const event = await callScreen({
       id: "presentation-leaf",
       title,
       schema: PresentationScreen,
-      model,
+      model: screenModel,
       header: { actions: [{ id: "close", label: "Close modal" }] },
     });
     if (event.action === BACK_EVENT || event.action === "close") return;
@@ -403,7 +444,7 @@ async function serve(request: Request): Promise<Response> {
   if (request.method === "POST" && url.pathname === "/session") {
     return new Response(null, {
       status: 204,
-      headers: { "X-80-20-Route": routeToken },
+      headers: { "the8020-route": routeToken },
     });
   }
   if (request.method === "GET" && url.pathname === "/session") {

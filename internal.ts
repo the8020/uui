@@ -1,1 +1,5 @@
-export { bindSession, type SessionChannel } from "./session.ts";
+export {
+  bindSession,
+  cancelDownloads,
+  type SessionChannel,
+} from "./session.ts";

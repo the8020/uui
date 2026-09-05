@@ -17,11 +17,12 @@ const context = {
       workerId: "wrk-test",
       workerExecutionId: "execution-test",
     },
+    user: { userId: "user:admin", username: "admin" },
     auth: {
       authenticated: true,
       realm: "user" as const,
-      userId: "user:Admin",
-      username: "Admin",
+      userId: "user:admin",
+      username: "admin",
       authVersion: 1,
     },
   },
@@ -43,7 +44,7 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   assertEquals(body.includes('"heartbeatInterval":30000'), true);
   assertEquals(body.includes('"reconnectInitialDelay":250'), true);
   assertEquals(body.includes('"reconnectMaximumDelay":10000'), true);
-  assertEquals(body.includes('"username":"Admin"'), true);
+  assertEquals(body.includes('"username":"admin"'), true);
   assertEquals(
     body.includes('"logoutUrl":"/the8020/uui/login/logout"'),
     true,

@@ -20,7 +20,7 @@ import {
   type UUIServerMessage,
   type UUIWorkerOutbound,
 } from "./protocol.ts";
-import { bindSession } from "./session.ts";
+import { bindSession, cancelDownloads } from "./session.ts";
 import type {
   SessionMetadata,
   SessionMetadataStore,
@@ -67,6 +67,7 @@ interface SessionRecord {
   controller: AbortController;
   unbind: () => void;
   socket?: WebSocketSession;
+  hasConnected: boolean;
   serverSequence: number;
   lastClientSequence: number;
   replay: ReplayItem[];
@@ -176,6 +177,7 @@ async function establish(
       input,
       controller,
       unbind,
+      hasConnected: false,
       serverSequence: 0,
       lastClientSequence: 0,
       replay: [],
@@ -257,12 +259,16 @@ async function connect(
     socket.close(1003, "first UUI message must be session.connect");
     return;
   }
-  record.socket?.close(1000, "replaced by reconnected client");
+  if (record.socket !== undefined) {
+    cancelDownloads("UUI connection replaced");
+    record.socket.close(1000, "replaced by reconnected client");
+  }
   if (record.disconnectTimer !== undefined) {
     clearTimeout(record.disconnectTimer);
   }
   record.disconnectTimer = undefined;
-  const resumed = record.lastConnectionAt !== record.createdAt;
+  const resumed = record.hasConnected;
+  record.hasConnected = true;
   record.socket = socket;
   record.client = structuredClone(meta.client);
   record.lastConnectionAt = Date.now();
@@ -328,6 +334,13 @@ function clientMessage(
     record.lastPongAt = Date.now();
     return;
   }
+  if (message.type.startsWith("download.")) {
+    if (message.sessionId !== record.sessionId) {
+      throw new TypeError("download session mismatch");
+    }
+    record.input.push(message);
+    return;
+  }
   if (message.clientSequence <= record.lastClientSequence) {
     emit(record, {
       type: "server.ack",
@@ -359,7 +372,19 @@ function clientMessage(
   record.input.push(message);
 }
 
-function workerMessage(record: SessionRecord, value: UUIWorkerOutbound): void {
+function workerMessage(
+  record: SessionRecord,
+  value: UUIWorkerOutbound | Uint8Array,
+): void {
+  if (value instanceof Uint8Array || value.type.startsWith("download.")) {
+    const socket = record.socket;
+    if (record.ended || socket === undefined || socket.signal.aborted) {
+      throw new Error("Downloads require a connected UUI session");
+    }
+    if (value instanceof Uint8Array) socket.send(value);
+    else emit(record, value, false);
+    return;
+  }
   if (record.executionId === undefined || !sessions.has(record.executionId)) {
     return;
   }
@@ -457,6 +482,7 @@ function replay(record: SessionRecord, lastSequence: number): void {
 function disconnected(record: SessionRecord): void {
   if (record.socket === undefined) return;
   record.socket = undefined;
+  cancelDownloads("UUI connection closed");
   log(record, "lifecycle", "disconnected");
   updateMetadata(record);
   if (record.disconnectTimer !== undefined) {
@@ -684,7 +710,7 @@ async function runConfiguredSession(context: UUISessionContext): Promise<void> {
     } catch (error) {
       if (context.signal.aborted) return;
       const failure = terminationInput(error, programs.home, programs);
-      const action = await invokeProgram(programs.terminated, failure);
+      const action = await invokeProgram(programs.terminated, [failure]);
       if (action !== "home") return;
     }
   }

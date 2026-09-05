@@ -2,18 +2,32 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { z } from "@the8020/http";
 import { buildControls, buildFieldCatalog, schemaAtPath } from "./fields.ts";
 import { validateCustomElements } from "./custom_elements.ts";
-import { validateLayout } from "./layout.ts";
-import { ScreenPaginator } from "./pagination.ts";
+import { resolveLayoutReferences, validateLayout } from "./layout.ts";
+import { ScreenLists, StaleListView } from "./lists.ts";
+import { Model } from "./model.ts";
+import { explicitElementIDs, resolveElementIDs } from "./identifiers.ts";
+import {
+  type ListChange,
+  type ListQuery,
+  screenElement,
+  type ScreenStateUpdate,
+  validScreenStateUpdate,
+} from "./screen_state.ts";
+import {
+  type DownloadHandle,
+  DownloadManager,
+  type DownloadOptions,
+} from "./downloads.ts";
 import type {
-  ControlDescriptor,
-  CustomElementDescriptor,
+  ControlDeclaration,
+  CustomElementDeclaration,
   PresentationSnapshot,
   PresentationSurfaceKind,
-  ScreenAction,
+  ScreenActionDeclaration,
   ScreenChange,
   ScreenEventMessage,
   ScreenHeader,
-  ScreenPageMessage,
+  ScreenListMessage,
   ScreenSnapshot,
   UUIClientMessage,
   UUIWorkerOutbound,
@@ -42,28 +56,41 @@ export interface ChannelScreenExit extends ScreenEventBase {
   origin: "channel";
 }
 
-export type ScreenEvent = ClientScreenEvent | ChannelScreenExit;
+export interface ListQueryScreenEvent {
+  action: "list-query";
+  eventType: "list-query";
+  clientSequence: number;
+  listId: string;
+  bind: string;
+  change: "search" | "filter" | "sort";
+  query: ListQuery;
+}
+
+export type ScreenEvent =
+  | ClientScreenEvent
+  | ChannelScreenExit
+  | ListQueryScreenEvent;
 
 export interface CallScreenOptions<T extends z.ZodRawShape> {
   id: string;
   schema: z.ZodObject<T>;
-  model: z.infer<z.ZodObject<T>>;
+  model: Model<z.infer<z.ZodObject<T>>>;
   layout?: unknown;
-  controls?: ControlDescriptor[];
-  actions?: ScreenAction[];
+  controls?: ControlDeclaration[];
+  actions?: ScreenActionDeclaration[];
   header?: {
-    controls?: ControlDescriptor[];
-    actions?: ScreenAction[];
+    controls?: ControlDeclaration[];
+    actions?: ScreenActionDeclaration[];
   };
   title?: string;
   description?: string;
-  customElements?: CustomElementDescriptor[];
+  customElements?: CustomElementDeclaration[];
   channel?: ScreenChannel;
 }
 
 export interface SessionChannel {
   readonly sessionId: string;
-  send(message: UUIWorkerOutbound): void;
+  send(message: UUIWorkerOutbound | Uint8Array): void;
   receive(): Promise<UUIClientMessage>;
 }
 
@@ -84,7 +111,7 @@ interface ActiveScreenCall {
   readonly screenId: string;
   readonly revision: number;
   readonly snapshot: () => ScreenSnapshot;
-  readonly receive: (message: ScreenEventMessage | ScreenPageMessage) => void;
+  readonly receive: (message: ScreenEventMessage | ScreenListMessage) => void;
   readonly resolve: (event: ScreenEvent) => void;
   readonly reject: (error: unknown) => void;
   detachChannel?: () => void;
@@ -94,7 +121,9 @@ interface ActiveScreenCall {
 
 interface BoundSession {
   readonly channel: SessionChannel;
+  readonly downloads: DownloadManager;
   readonly root: PresentationSurface;
+  readonly models: Set<object>;
   readonly surfaces: PresentationSurface[];
   surfaceSequence: number;
   revision: number;
@@ -152,7 +181,13 @@ export function bindSession(value: SessionChannel): () => void {
     state,
     {
       channel: value,
+      downloads: new DownloadManager(
+        (message) => value.send(message),
+        (message) =>
+          value.send({ type: "notification.show", level: "error", message }),
+      ),
       root,
+      models: new Set<object>(),
       surfaces: [root],
       surfaceSequence: 1,
       revision: 0,
@@ -167,6 +202,7 @@ export function bindSession(value: SessionChannel): () => void {
     state.active = false;
     boundSession = undefined;
     const reason = new DOMException("UUI session ended", "AbortError");
+    state.downloads.abortAll(reason.message);
     for (const surface of state.surfaces) {
       surface.active = false;
       if (surface.pending !== undefined) {
@@ -174,6 +210,19 @@ export function bindSession(value: SessionChannel): () => void {
       }
     }
   };
+}
+
+/**
+ * Start a background download on the current UUI session. Returns immediately;
+ * await the handle's `done` only when the program needs to wait for completion.
+ */
+export function download(options: DownloadOptions): DownloadHandle {
+  return requireBoundSession().downloads.start(options);
+}
+
+/** Infrastructure hook: connection loss cancels streams without replaying bytes. */
+export function cancelDownloads(reason?: string): void {
+  boundSession?.downloads.abortAll(reason);
 }
 
 /** Runs an ordinary program/function in a new modal presentation surface. */
@@ -207,20 +256,64 @@ export async function callScreen<T extends z.ZodRawShape>(
     throw new Error("callScreen() requires a bound UUI session Worker");
   }
   if (options.id.length === 0) throw new TypeError("screen ID is required");
-  const initial = options.schema.safeParse(options.model);
+  if (!(options.model instanceof Model)) {
+    throw new TypeError("callScreen model must be a Model instance");
+  }
+  if (state.models.has(options.model)) {
+    throw new TypeError(
+      "a Model may be attached to only one pending callScreen",
+    );
+  }
+  const initial = options.schema.safeParse(options.model.data);
   if (!initial.success) throw initial.error;
   const fields = buildFieldCatalog(options.schema);
-  const headerControls = options.header?.controls === undefined ||
-      options.header.controls.length === 0
-    ? []
-    : buildControls(fields, options.header.controls);
-  const headerControlIDs = new Set(headerControls.map((item) => item.id));
-  const controls = buildControls(fields, options.controls).filter((item) =>
-    !headerControlIDs.has(item.id)
+  const headerDeclarations = options.header?.controls ?? [];
+  const headerBindings = new Set(headerDeclarations.map((item) => item.bind));
+  const bodyDeclarations: ControlDeclaration[] = options.controls?.length
+    ? options.controls
+    : fields.filter((field) => !headerBindings.has(field.bind)).map((
+      field,
+    ) => ({ ...field, id: undefined }));
+  const authored: Array<{ id?: string }> = [
+    ...bodyDeclarations,
+    ...headerDeclarations,
+    ...(options.actions ?? []),
+    ...(options.header?.actions ?? []),
+    ...(options.customElements ?? []),
+  ];
+  const collectAuthored = (value: unknown): void => {
+    if (value === null || typeof value !== "object") return;
+    const node = value as { id?: string; children?: unknown[] };
+    authored.push(node);
+    if (Array.isArray(node.children)) node.children.forEach(collectAuthored);
+  };
+  collectAuthored((options.layout as { root?: unknown } | undefined)?.root);
+  const reserved = explicitElementIDs(authored);
+  const resolvedControls =
+    bodyDeclarations.length + headerDeclarations.length === 0
+      ? []
+      : buildControls(
+        fields,
+        [...bodyDeclarations, ...headerDeclarations],
+        reserved,
+      );
+  const controls = resolvedControls.slice(0, bodyDeclarations.length);
+  const headerControls = resolvedControls.slice(bodyDeclarations.length);
+  const resolvedActions = resolveElementIDs(
+    structuredClone([
+      ...(options.actions ?? []),
+      ...(options.header?.actions ?? []),
+    ]),
+    (action) => ({ label: action.label, kind: action.kind }),
+    "action",
+    reserved,
   );
-  const actions = structuredClone(options.actions ?? []);
-  const headerActions = structuredClone(options.header?.actions ?? []);
-  const customElements = validateCustomElements(options.customElements);
+  const actions = resolvedActions.slice(0, options.actions?.length ?? 0);
+  const headerActions = resolvedActions.slice(options.actions?.length ?? 0);
+  const customElements = validateCustomElements(
+    options.customElements,
+    reserved,
+  );
   const actionIDs = new Set<string>();
   for (const action of [...actions, ...headerActions]) {
     if (
@@ -239,18 +332,38 @@ export async function callScreen<T extends z.ZodRawShape>(
   };
   const layout = options.layout === undefined ? undefined : validateLayout(
     options.layout,
-    new Set(controls.map((item) => item.id)),
+    new Set(controls.flatMap((item) => [item.id, item.bind])),
     new Set(actions.map((item) => item.id)),
     new Set(customElements.map((item) => item.id)),
+    reserved,
   );
+  if (layout !== undefined) resolveLayoutReferences(layout, controls);
   const screenRevision = ++state.revision;
-  const paginator = new ScreenPaginator(
-    options.model,
-    [...controls, ...headerControls],
+  const lists = new ScreenLists(
+    options.schema,
+    controls,
     layout,
+    options.model.screen,
+    headerControls,
   );
+  const elementIDs = new Set(
+    [
+      ...controls,
+      ...headerControls,
+      ...actions,
+      ...headerActions,
+      ...customElements,
+    ].map((item) => item.id),
+  );
+  const visit = (node: import("./layout.ts").LayoutNode): void => {
+    elementIDs.add(node.id);
+    node.children?.forEach(visit);
+  };
+  if (layout !== undefined) visit(layout.root);
+  for (const id of elementIDs) screenElement(options.model.screen, id);
   const snapshot = (): ScreenSnapshot => {
-    const presented = paginator.present(options.model);
+    for (const id of elementIDs) screenElement(options.model.screen, id);
+    const presented = lists.present(options.model.data);
     return {
       id: options.id,
       revision: screenRevision,
@@ -258,8 +371,15 @@ export async function callScreen<T extends z.ZodRawShape>(
       description: options.description,
       fields,
       controls,
-      model: presented.model,
-      pagination: presented.pagination,
+      model: lists.presentModel(options.model.data),
+      state: {
+        ...structuredClone(options.model.screen),
+        elements: Object.fromEntries([...elementIDs].map((id) => [
+          id,
+          structuredClone(options.model.screen.elements[id]!),
+        ])),
+      },
+      lists: presented,
       layout,
       actions,
       header,
@@ -283,7 +403,8 @@ export async function callScreen<T extends z.ZodRawShape>(
         call,
         options.schema,
         options.model,
-        paginator,
+        lists,
+        elementIDs,
         message,
       ),
     resolve: resolveResult,
@@ -291,6 +412,7 @@ export async function callScreen<T extends z.ZodRawShape>(
     redrawQueued: false,
     settled: false,
   };
+  state.models.add(options.model);
   surface.pending = call;
   try {
     if (options.channel !== undefined) {
@@ -317,6 +439,7 @@ export async function callScreen<T extends z.ZodRawShape>(
     publishPresentation(state);
     return await result;
   } finally {
+    state.models.delete(options.model);
     if (surface.pending === call) surface.pending = undefined;
     call.detachChannel?.();
     call.detachChannel = undefined;
@@ -416,12 +539,31 @@ async function dispatchClientMessages(state: BoundSession): Promise<void> {
     while (state.active && boundSession === state) {
       const message = await state.channel.receive();
       if (!state.active || boundSession !== state) return;
-      if (message.type === "screen.event" || message.type === "screen.page") {
+      if (message.type === "screen.event" || message.type === "screen.list") {
         routeScreenMessage(state, message);
+      } else if (
+        message.type === "download.credit" ||
+        message.type === "download.done" ||
+        message.type === "download.cancel"
+      ) {
+        if (message.sessionId !== state.channel.sessionId) {
+          throw new TypeError("download session mismatch");
+        }
+        try {
+          state.downloads.receive(message);
+        } catch (error) {
+          state.downloads.abortAll("Invalid download control message");
+          state.channel.send({
+            type: "session.error",
+            code: "invalid_download_control",
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
     }
   } catch (error) {
     if (!state.active || boundSession !== state) return;
+    state.downloads.abortAll("UUI input closed");
     for (const surface of state.surfaces) {
       if (surface.pending !== undefined) {
         settleCall(state, surface.pending, { error }, false);
@@ -432,7 +574,7 @@ async function dispatchClientMessages(state: BoundSession): Promise<void> {
 
 function routeScreenMessage(
   state: BoundSession,
-  message: ScreenEventMessage | ScreenPageMessage,
+  message: ScreenEventMessage | ScreenListMessage,
 ): void {
   if (message.sessionId !== state.channel.sessionId) {
     state.channel.send({
@@ -470,38 +612,80 @@ function receiveScreenMessage<T extends z.ZodRawShape>(
   state: BoundSession,
   call: ActiveScreenCall,
   schema: z.ZodObject<T>,
-  model: z.infer<z.ZodObject<T>>,
-  paginator: ScreenPaginator,
-  message: ScreenEventMessage | ScreenPageMessage,
+  model: Model<z.infer<z.ZodObject<T>>>,
+  lists: ScreenLists,
+  elementIDs: ReadonlySet<string>,
+  message: ScreenEventMessage | ScreenListMessage,
 ): void {
   if (call.settled || call.surface.pending !== call) return;
-  if (message.type === "screen.page") {
-    try {
-      if (!message.changes.some((change) => change.bind === message.bind)) {
-        throw new TypeError(
-          `page request for ${message.bind} must include its visible records`,
-        );
-      }
-      paginator.validatePageRequest(
-        message.bind,
-        message.currentPage,
-        message.page,
-        model,
-      );
-      applyChanges(schema, model, message.changes, paginator);
-      paginator.selectPage(message.bind, message.page, model);
-      call.surface.snapshot = call.snapshot();
-    } catch (error) {
-      state.channel.send({
-        type: "session.error",
-        code: "pagination_failed",
-        message: error instanceof Error
-          ? error.message
-          : "screen page request is invalid",
-      });
-      return;
+  let selection:
+    | { value: unknown; bind: string; controlId: string }
+    | undefined;
+  let queryEvent: ListQueryScreenEvent | undefined;
+  try {
+    if (message.instanceId !== model.screen.instanceId) {
+      throw new TypeError("screen instance mismatch");
     }
-    state.lastClientSequence = message.clientSequence;
+    validateScreenUpdate(message.screenState, model, elementIDs);
+    if (message.type === "screen.list") {
+      if (
+        message.updates.filter((item) => item.operation === "query").length > 1
+      ) throw new TypeError("only one query may change per interaction");
+      lists.validateRequests(message.updates, model.data);
+    } else if (message.selection !== undefined) {
+      selection = lists.select(message.selection, model.data);
+    }
+    applyChanges(
+      schema,
+      model.data,
+      message.changes,
+      lists,
+      message.listChanges ?? [],
+    );
+    model.screen.scroll = structuredClone(message.screenState.scroll);
+    for (const [id, update] of Object.entries(message.screenState.elements)) {
+      const element = screenElement(model.screen, id);
+      element.scroll = structuredClone(update.scroll);
+      element.toolbarOpen = update.toolbarOpen;
+      if (update.selectedTab !== undefined) {
+        element.selectedTab = update.selectedTab;
+      }
+    }
+    if (message.type === "screen.list") {
+      for (const request of message.updates) {
+        const changed = lists.update(request);
+        if (changed !== undefined) {
+          queryEvent = {
+            action: "list-query",
+            eventType: "list-query",
+            clientSequence: message.clientSequence,
+            listId: changed.id,
+            bind: changed.bind,
+            change: changed.change,
+            query: changed.query,
+          };
+        }
+      }
+    }
+    call.surface.snapshot = call.snapshot();
+  } catch (error) {
+    state.channel.send({
+      type: "session.error",
+      code: error instanceof StaleListView
+        ? "list_view_mismatch"
+        : "validation_failed",
+      message: error instanceof Error
+        ? error.message
+        : "screen changes are invalid",
+    });
+    if (error instanceof StaleListView) {
+      call.surface.snapshot = call.snapshot();
+      publishPresentation(state);
+    }
+    return;
+  }
+  state.lastClientSequence = message.clientSequence;
+  if (message.type === "screen.list" && queryEvent === undefined) {
     publishPresentation(state);
     state.channel.send({
       type: "server.ack",
@@ -509,41 +693,42 @@ function receiveScreenMessage<T extends z.ZodRawShape>(
     });
     return;
   }
-  try {
-    applyChanges(schema, model, message.changes, paginator);
-    call.surface.snapshot = call.snapshot();
-  } catch (error) {
-    state.channel.send({
-      type: "session.error",
-      code: "validation_failed",
-      message: error instanceof Error
-        ? error.message
-        : "screen changes are invalid",
-    });
-    return;
-  }
-  state.lastClientSequence = message.clientSequence;
   state.channel.send({
     type: "server.ack",
     clientSequence: message.clientSequence,
   });
-  settleCall(state, call, {
-    event: {
-      action: message.action,
-      controlId: message.controlId,
-      bind: message.bind,
-      eventType: message.eventType ?? "action",
-      value: message.value,
-      clientSequence: message.clientSequence,
-    },
-  });
+  if (queryEvent !== undefined) settleCall(state, call, { event: queryEvent });
+  else if (message.type === "screen.event") {
+    settleCall(state, call, {
+      event: {
+        action: message.action,
+        controlId: selection?.controlId ?? message.controlId,
+        bind: selection?.bind ?? message.bind,
+        eventType: message.eventType ?? "action",
+        value: selection === undefined ? message.value : selection.value,
+        clientSequence: message.clientSequence,
+      },
+    });
+  }
+}
+
+function validateScreenUpdate(
+  update: ScreenStateUpdate,
+  model: Model<object>,
+  ids: ReadonlySet<string>,
+): void {
+  if (
+    !validScreenStateUpdate(update) ||
+    update.version !== model.screen.version ||
+    Object.keys(update.elements).some((id) => !ids.has(id))
+  ) throw new TypeError("invalid or stale screen state");
 }
 
 function scheduleRedraw<T extends z.ZodRawShape>(
   state: BoundSession,
   call: ActiveScreenCall,
   schema: z.ZodObject<T>,
-  model: z.infer<z.ZodObject<T>>,
+  model: Model<z.infer<z.ZodObject<T>>>,
 ): void {
   if (call.settled || call.redrawQueued) return;
   call.redrawQueued = true;
@@ -553,7 +738,7 @@ function scheduleRedraw<T extends z.ZodRawShape>(
       call.settled || !state.active || call.surface.pending !== call ||
       !call.surface.active || call.surface.closing
     ) return;
-    const parsed = schema.safeParse(model);
+    const parsed = schema.safeParse(model.data);
     if (!parsed.success) {
       settleCall(state, call, { error: parsed.error });
       return;
@@ -678,37 +863,32 @@ function applyChanges<T extends z.ZodRawShape>(
   schema: z.ZodObject<T>,
   model: z.infer<z.ZodObject<T>>,
   changes: readonly ScreenChange[],
-  paginator: ScreenPaginator,
+  lists: ScreenLists,
+  listChanges: readonly ListChange[],
 ): void {
+  if (changes.length === 0 && listChanges.length === 0) return;
   const candidate = structuredClone(model) as Record<string, unknown>;
+  const bindings = lists.bindings();
+  const changed = lists.applyEdits(listChanges, model, candidate);
   for (const change of changes) {
     const target = schemaAtPath(schema, change.bind);
     if (target === undefined) {
       throw new TypeError(`unknown binding ${change.bind}`);
     }
-    if (paginator.has(change.bind)) {
-      setPath(
-        candidate,
-        change.bind,
-        paginator.mergeVisiblePage(
-          change.bind,
-          getPath(candidate, change.bind),
-          change.value,
-        ),
-      );
-      continue;
+    if (
+      bindings.has(change.bind) ||
+      [...bindings].some((bind) => bind.startsWith(`${change.bind}.`))
+    ) {
+      throw new TypeError("list edits require a displayed-row mapping");
     }
     const parsed = target.safeParse(change.value);
     if (!parsed.success) throw parsed.error;
     setPath(candidate, change.bind, parsed.data);
+    changed.add(change.bind);
   }
   const parsed = schema.parse(candidate) as Record<string, unknown>;
-  for (const change of changes) {
-    setPath(
-      model as Record<string, unknown>,
-      change.bind,
-      getPath(parsed, change.bind),
-    );
+  for (const bind of changed) {
+    setPath(model as Record<string, unknown>, bind, getPath(parsed, bind));
   }
 }
 

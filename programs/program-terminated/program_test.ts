@@ -104,6 +104,12 @@ class TerminatedChannel implements SessionChannel {
       surfaceId: surface.surfaceId,
       screenId: surface.screen.id,
       screenRevision: surface.screen.revision,
+      instanceId: surface.screen.state.instanceId,
+      screenState: {
+        version: surface.screen.state.version,
+        scroll: surface.screen.state.scroll,
+        elements: {},
+      },
       action,
       eventType: "action",
       changes: [],

@@ -1,3 +1,7 @@
+import { resolveElementIDs } from "./identifiers.ts";
+import type { ListOptions } from "./screen_state.ts";
+import { validateListOptions } from "./list_options.ts";
+import type { ControlDescriptor } from "./protocol.ts";
 export type LayoutNodeType =
   | "stack"
   | "split"
@@ -10,7 +14,7 @@ export type LayoutNodeType =
   | "actions"
   | "custom";
 
-export interface LayoutNode {
+export interface LayoutNode extends ListOptions {
   id: string;
   type: LayoutNodeType;
   title?: string;
@@ -37,6 +41,13 @@ export interface LayoutDocument {
   id: string;
   root: LayoutNode;
 }
+export type LayoutNodeDeclaration = Omit<LayoutNode, "id" | "children"> & {
+  id?: string;
+  children?: LayoutNodeDeclaration[];
+};
+export type LayoutDeclaration = Omit<LayoutDocument, "root"> & {
+  root: LayoutNodeDeclaration;
+};
 
 export interface LayoutOverride {
   baseLayoutId: string;
@@ -69,6 +80,8 @@ const nodeKeys = new Set([
   "key",
   "display",
   "headings",
+  "columnOptions",
+  "triggerFilterEvents",
   "controls",
   "actions",
   "children",
@@ -88,14 +101,69 @@ export function validateLayout(
   controls: ReadonlySet<string> = new Set(),
   actions: ReadonlySet<string> = new Set(),
   customElements: ReadonlySet<string> = new Set(),
+  reserved: ReadonlySet<string> = new Set(),
 ): LayoutDocument {
   if (!isRecord(value) || value.schema !== 1 || typeof value.id !== "string") {
     throw new TypeError("layout must have schema 1 and an ID");
   }
   rejectUnknownKeys(value, layoutKeys, "layout");
+  const normalized = structuredClone(value);
+  const nodes: Array<Record<string, unknown> & { id?: string }> = [];
+  const collect = (node: unknown): void => {
+    if (!isRecord(node)) throw new TypeError("invalid layout node");
+    nodes.push(node);
+    if (Array.isArray(node.children)) node.children.forEach(collect);
+  };
+  collect(normalized.root);
+  const resolved = resolveElementIDs(
+    nodes,
+    (node) => ({
+      type: node.type,
+      bind: node.bind,
+      title: node.title,
+      key: node.key,
+      controls: node.controls,
+      actions: node.actions,
+      customElement: node.customElement,
+    }),
+    "region",
+    reserved,
+  );
+  nodes.forEach((node, index) => node.id = resolved[index]!.id);
   const ids = new Set<string>();
-  validateNode(value.root, ids, controls, actions, customElements);
-  return structuredClone(value) as unknown as LayoutDocument;
+  validateNode(normalized.root, ids, controls, actions, customElements);
+  return normalized as unknown as LayoutDocument;
+}
+
+/** Resolve binding shorthand once, and give each placement one declared identity. */
+export function resolveLayoutReferences(
+  layout: LayoutDocument,
+  controls: readonly ControlDescriptor[],
+): void {
+  const byID = new Map(controls.map((control) => [control.id, control]));
+  const used = new Set<string>();
+  const place = (id: string): string => {
+    if (used.has(id)) {
+      throw new TypeError(
+        `element ${id} is placed more than once; declare separate elements for repeated bindings`,
+      );
+    }
+    used.add(id);
+    return id;
+  };
+  visit(layout.root, (node) => {
+    node.controls = node.controls?.flatMap((reference) => {
+      const candidates = byID.has(reference)
+        ? [byID.get(reference)!]
+        : controls.filter((control) => control.bind === reference);
+      if (candidates.length === 0) {
+        throw new TypeError(`unknown control ${reference}`);
+      }
+      return candidates.map((control) => place(control.id));
+    });
+    node.actions?.forEach(place);
+    if (node.customElement !== undefined) place(node.customElement);
+  });
 }
 
 export function applyLayoutOverride(
@@ -142,6 +210,7 @@ function validateNode(
     !nodeTypes.has(value.type as LayoutNodeType)
   ) throw new TypeError("invalid layout node");
   rejectUnknownKeys(value, nodeKeys, `layout node ${value.id}`);
+  if (value.type === "list") validateListOptions(value);
   if (ids.has(value.id)) {
     throw new TypeError(`duplicate layout node ID ${value.id}`);
   }

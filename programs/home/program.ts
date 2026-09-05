@@ -4,6 +4,7 @@ import {
   discoverPrograms,
   endSession,
   invokeProgram,
+  Model,
   z,
 } from "/p/the8020/uui/mod.ts";
 import layout from "./layouts/main.json" with { type: "json" };
@@ -17,13 +18,16 @@ export default function home(): Promise<void> {
 }
 
 export async function runHome(programsRoot: string): Promise<void> {
+  let screenModel: Model<z.infer<typeof HomeScreen>> | undefined;
   while (true) {
     const model = { programs: await discoverPrograms(programsRoot) };
+    screenModel ??= new Model(model);
+    screenModel.data = model;
     const event = await callScreen({
       id: "home",
       title: "Welcome to 80|20",
       schema: HomeScreen,
-      model,
+      model: screenModel,
       layout,
       header: {
         actions: [
@@ -41,7 +45,10 @@ export async function runHome(programsRoot: string): Promise<void> {
       return;
     }
     if (event.action === "select" && typeof event.value === "string") {
-      await invokeProgram(event.value, undefined, programsRoot);
+      if (!model.programs.some((program) => program.id === event.value)) {
+        continue;
+      }
+      await invokeProgram(event.value, [], programsRoot);
     }
   }
 }

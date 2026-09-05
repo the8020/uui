@@ -3,6 +3,7 @@ import {
   BACK_EVENT,
   callScreen,
   field,
+  Model,
   sendMessage,
   z,
 } from "/p/the8020/uui/mod.ts";
@@ -64,23 +65,27 @@ const DetailScreen = z.object({
 });
 
 export default async function sessionsProgram(): Promise<void> {
+  let screenModel: Model<z.infer<typeof ListScreen>> | undefined;
   while (true) {
     const sessions = await readSessionMetadata();
+    const screenModelData = {
+      sessions: sessions.map((item) => ({
+        navigation: item.sessionId,
+        sessionId: item.sessionId,
+        user: item.authenticatedUser,
+        state: item.state,
+        screen: item.currentScreenId ?? "",
+        nodeId: item.nodeId,
+        updatedAt: item.updatedAt.toISOString(),
+      })),
+    };
+    screenModel ??= new Model(screenModelData);
+    screenModel.data = screenModelData;
     const event = await callScreen({
       id: "uui-sessions",
       title: "UUI sessions",
       schema: ListScreen,
-      model: {
-        sessions: sessions.map((item) => ({
-          navigation: item.sessionId,
-          sessionId: item.sessionId,
-          user: item.authenticatedUser,
-          state: item.state,
-          screen: item.currentScreenId ?? "",
-          nodeId: item.nodeId,
-          updatedAt: item.updatedAt.toISOString(),
-        })),
-      },
+      model: screenModel,
       layout: listLayout,
       header: { actions: [{ id: "refresh", label: "Refresh" }] },
     });
@@ -93,6 +98,7 @@ export default async function sessionsProgram(): Promise<void> {
 }
 
 async function sessionDetail(metadata: SessionMetadata): Promise<void> {
+  let screenModel1: Model<z.infer<typeof DetailScreen>> | undefined;
   while (true) {
     const live = await invoke(metadata, "uui.session.inspect", {
       sessionId: metadata.sessionId,
@@ -102,32 +108,35 @@ async function sessionDetail(metadata: SessionMetadata): Promise<void> {
         sessionId: metadata.sessionId,
       })
       : live;
+    const screenModel1Data = {
+      sessionId: metadata.sessionId,
+      state: metadata.state,
+      authenticatedUser: metadata.authenticatedUser,
+      authenticatedUserId: metadata.authenticatedUserId,
+      latestIpAddress: metadata.latestIpAddress,
+      latestNetworkScope: formatNetworkScope(metadata.latestNetworkScope),
+      serviceId: metadata.serviceId,
+      persistentExecutionId: metadata.persistentExecutionId,
+      nodeId: metadata.nodeId,
+      runtimeGroupId: metadata.runtimeGroupId,
+      sandboxId: metadata.sandboxId,
+      workerId: metadata.workerId,
+      currentScreen: metadata.currentScreenId ?? "",
+      createdAt: metadata.createdAt.toISOString(),
+      updatedAt: metadata.updatedAt.toISOString(),
+      lastConnectionAt: metadata.lastConnectionAt.toISOString(),
+      liveState: live.ok ? "LIVE" : `STALE: ${live.message}`,
+      messageLog: messages.ok
+        ? JSON.stringify(messages.output, null, 2)
+        : "Unavailable",
+    };
+    screenModel1 ??= new Model(screenModel1Data);
+    screenModel1.data = screenModel1Data;
     const event = await callScreen({
       id: "uui-session-detail",
       title: `UUI session ${metadata.sessionId}`,
       schema: DetailScreen,
-      model: {
-        sessionId: metadata.sessionId,
-        state: metadata.state,
-        authenticatedUser: metadata.authenticatedUser,
-        authenticatedUserId: metadata.authenticatedUserId,
-        latestIpAddress: metadata.latestIpAddress,
-        latestNetworkScope: formatNetworkScope(metadata.latestNetworkScope),
-        serviceId: metadata.serviceId,
-        persistentExecutionId: metadata.persistentExecutionId,
-        nodeId: metadata.nodeId,
-        runtimeGroupId: metadata.runtimeGroupId,
-        sandboxId: metadata.sandboxId,
-        workerId: metadata.workerId,
-        currentScreen: metadata.currentScreenId ?? "",
-        createdAt: metadata.createdAt.toISOString(),
-        updatedAt: metadata.updatedAt.toISOString(),
-        lastConnectionAt: metadata.lastConnectionAt.toISOString(),
-        liveState: live.ok ? "LIVE" : `STALE: ${live.message}`,
-        messageLog: messages.ok
-          ? JSON.stringify(messages.output, null, 2)
-          : "Unavailable",
-      },
+      model: screenModel1,
       layout: detailLayout,
       header: {
         actions: [

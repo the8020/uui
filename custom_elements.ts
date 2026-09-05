@@ -1,16 +1,26 @@
-import type { CustomElementDescriptor } from "./protocol.ts";
+import type {
+  CustomElementDeclaration,
+  CustomElementDescriptor,
+} from "./protocol.ts";
+import { resolveElementIDs } from "./identifiers.ts";
 
 const identifier = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const initializer = /^[a-z][a-z0-9.-]{0,63}$/;
 
 export function validateCustomElements(
-  value: readonly CustomElementDescriptor[] = [],
+  value: readonly CustomElementDeclaration[] = [],
+  reserved: ReadonlySet<string> = new Set(),
 ): CustomElementDescriptor[] {
   if (!Array.isArray(value) || value.length > 16) {
     throw new TypeError("custom elements must be an array of at most 16 items");
   }
   const ids = new Set<string>();
-  return value.map((item) => {
+  return resolveElementIDs(
+    value,
+    (item) => ({ initializer: item.initializer }),
+    "custom",
+    reserved,
+  ).map((item) => {
     const id = isRecord(item) ? item.id : undefined;
     const initializerName = isRecord(item) ? item.initializer : undefined;
     const config = isRecord(item) ? item.config : undefined;

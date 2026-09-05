@@ -1,5 +1,5 @@
 import { defineService } from "@the8020/http";
-import { kernel } from "@the8020/kernel";
+import { login, logout as logoutUser } from "/p/the8020/users/mod.ts";
 import uiConfig from "../../ui-config.json" with { type: "json" };
 
 const frontend = new URL("./frontend/", import.meta.url);
@@ -22,7 +22,7 @@ service.post(
     const form = await request.formData();
     const username = String(form.get("username") ?? "");
     const password = String(form.get("password") ?? "");
-    const result = await kernel.auth.login({ username, password });
+    const result = await login(request, { username, password });
     if (!result.authenticated || result.setCookie === undefined) {
       return htmlResponse(
         await loginPage("Invalid username or password."),
@@ -40,16 +40,11 @@ service.post(
   },
 );
 
-const logout = async (): Promise<Response> => {
-  const result = await kernel.auth.logoutCurrent();
-  return new Response(null, {
-    status: 303,
-    headers: {
-      location: uiConfig.loginUrl,
-      "set-cookie": result.setCookie,
-      "cache-control": "no-store",
-    },
-  });
+const logout = async ({ request }: { request: Request }): Promise<Response> => {
+  const result = await logoutUser(request);
+  if (result.status !== 204) return result;
+  result.headers.set("location", uiConfig.loginUrl);
+  return new Response(null, { status: 303, headers: result.headers });
 };
 
 service.post(

@@ -1,6 +1,9 @@
 import { humanize } from "../../../humanize.ts";
 
 const MATERIAL_ICON_ASSETS = {
+  arrow_downward: "./assets/material-arrow-downward-24-61643262.svg",
+  arrow_upward: "./assets/material-arrow-upward-24-473799e3.svg",
+  filter_alt: "./assets/material-filter-alt-24-f934b1a5.svg",
   arrow_back: "./assets/material-arrow-back-24-e083cc60.svg",
   arrow_drop_down: "./assets/material-arrow-drop-down-24-e083cc60.svg",
   close: "./assets/material-close-24-84ccef28.svg",

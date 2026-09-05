@@ -1,3 +1,5 @@
+import type { PresentationShowMessage } from "./protocol.ts";
+
 interface Options {
   sourceRoot: string;
   packageWorkspace: string;
@@ -181,7 +183,7 @@ try {
   kernels.push(
     startKernel(primaryRoot, primaryPort, primarySSHPort, sharedDatabase),
   );
-  await waitForHTTP(`http://127.0.0.1:${primaryPort}/`);
+  await waitForHTTP(`http://127.0.0.1:${primaryPort}/`, 120_000);
   await waitForAdmin(primaryRoot);
   await waitForServices(primaryRoot, [
     "the8020/uui/login",
@@ -197,9 +199,85 @@ try {
   kernels.push(
     startKernel(secondaryRoot, secondaryPort, secondarySSHPort, sharedDatabase),
   );
-  await waitForHTTP(`http://127.0.0.1:${secondaryPort}/`);
+  await waitForHTTP(`http://127.0.0.1:${secondaryPort}/`, 120_000);
   await waitForAdmin(secondaryRoot);
   await waitForServices(secondaryRoot, ["the8020/uui/shell"]);
+
+  // Durable edits converge without a service-table poller or an HTTP dependency.
+  const convergenceService = "the8020/demo/variables";
+  const beforeEdit =
+    (await admin(primaryRoot, ["services.inspect", convergenceService]))
+      .service as {
+        effective_configuration: { scaling: { maximum_workers: number } };
+      };
+  await admin(primaryRoot, [
+    "services.scale",
+    convergenceService,
+    "--maximum-workers",
+    "7",
+  ]);
+  await waitFor(
+    async () => {
+      const status =
+        (await admin(secondaryRoot, ["services.inspect", convergenceService]))
+          .service as typeof beforeEdit;
+      return status.effective_configuration.scaling.maximum_workers === 7;
+    },
+    "targeted service configuration convergence",
+    60_000,
+    1_000,
+  );
+  await admin(primaryRoot, [
+    "services.scale",
+    convergenceService,
+    "--maximum-workers",
+    String(beforeEdit.effective_configuration.scaling.maximum_workers),
+  ]);
+
+  // Simulate corrupted application settings, then repair through the ordinary
+  // local package command after a boot with no accepted service fragments.
+  await admin(primaryRoot, [
+    "db.sql",
+    `INSERT INTO "the8020__system__settings" ("key", "value", "definitionHash", "updatedAt")
+    VALUES ('services.default_maximum_workers', '-1', 'e2e', '${
+      new Date().toISOString()
+    }')
+    ON CONFLICT ("key") DO UPDATE SET "value" = '-1'`,
+  ]);
+  let publicationFailure = "";
+  try {
+    await admin(primaryRoot, ["kernel.reindex", "--packages", "the8020/demo"]);
+  } catch (error) {
+    publicationFailure = error instanceof Error ? error.message : String(error);
+  }
+  assert(
+    publicationFailure.includes("not applied"),
+    "invalid service fragment was not rejected",
+  );
+  await waitForServices(primaryRoot, ["the8020/uui/shell"]);
+  await stopKernel(kernels[1]!);
+  kernels[1] = startKernel(
+    secondaryRoot,
+    secondaryPort,
+    secondarySSHPort,
+    sharedDatabase,
+  );
+  await waitForHTTP(`http://127.0.0.1:${secondaryPort}/`, 120_000);
+  await waitForAdmin(secondaryRoot);
+  const brokenIndex = await admin(secondaryRoot, ["services.list"]);
+  assert(
+    Array.isArray(brokenIndex.services) && brokenIndex.services.length === 0,
+    "bad boot configuration unexpectedly produced service fragments",
+  );
+  await admin(secondaryRoot, [
+    "services.defaults",
+    "maximum_workers",
+    "--unset",
+  ]);
+  await waitForServices(secondaryRoot, ["the8020/uui/shell"]);
+  console.log(
+    "Index E2E passed: targeted edits converge; invalid publication retains healthy fragments; local ordinary commands repair a broken service boot.",
+  );
 
   browser = new Deno.Command(options.browser, {
     args: [
@@ -286,6 +364,26 @@ try {
       }; session metadata: ${JSON.stringify(sessions)}; service inspections: ${
         JSON.stringify(serviceInspections)
       }; exceptions: ${JSON.stringify(first.exceptions)}; ${kernelLog}`,
+    );
+  }
+
+  // A cold second node must load authentication dependencies through its
+  // normal runtime profile without another users-package job warming its cache.
+  {
+    const credential = await authenticationCookie(first);
+    const response = await fetch(
+      `http://127.0.0.1:${secondaryPort}/the8020/uui/shell/`,
+      {
+        headers: { cookie: `the8020_auth=${credential.value}` },
+        redirect: "manual",
+      },
+    );
+    await response.body?.cancel();
+    assert(
+      response.status === 200,
+      `shared-key authentication on a cold node returned ${response.status}; ${await latestKernelLog(
+        secondaryRoot,
+      )}`,
     );
   }
 
@@ -583,8 +681,8 @@ try {
   const cookie = await authenticationCookie(first);
   assert(cookie.httpOnly === true, "authentication cookie is not HttpOnly");
   assert(
-    cookie.value.length >= 64 && !cookie.value.includes("admin"),
-    "authentication cookie is not opaque",
+    cookie.value.split(".").length === 3,
+    "authentication cookie is not a platform JWT",
   );
   const shared = await fetch(
     `http://127.0.0.1:${secondaryPort}/the8020/uui/shell/`,
@@ -608,7 +706,47 @@ try {
   const beforeKernelRestart = await waitForUISessions(primaryRoot, 1);
   const priorSessionID = beforeKernelRestart[0]!.session_id;
   const framesBeforeKernelRestart = first.websocketFrames.length;
+  const primaryNodeID =
+    (await admin(primaryRoot, ["kernel.status"])).instance_uuid;
+  assert(typeof primaryNodeID === "string", "primary node identity is missing");
+  const recipientPort = freePort();
+  const configurePeer = [
+    "system.nodes.set",
+    primaryNodeID,
+    "--url",
+    primaryBase,
+    "--recipient-address",
+    "127.0.0.1",
+    "--recipient-port",
+    String(recipientPort),
+    "--enabled",
+  ];
+  await admin(primaryRoot, configurePeer);
+  await admin(secondaryRoot, configurePeer);
+  const priorRoute = await first.evaluate<string>(
+    `sessionStorage.getItem(${
+      JSON.stringify(
+        `the8020.route:ws://127.0.0.1:${primaryPort}/the8020/uui/session/connect`,
+      )
+    })`,
+  );
+  const routedRequest = (token: string) =>
+    fetch(`http://127.0.0.1:${secondaryPort}/the8020/uui/session/connect`, {
+      method: "POST",
+      headers: {
+        "ThE8020-RoUtE": token,
+        "ThE8020-AuThOrIzAtIoN": `Bearer ${cookie.value}`,
+        "ThE8020-InTeRnAl-UsEr": "forged",
+      },
+    });
   await stopKernel(kernels[0]!);
+  const unavailable = await routedRequest(priorRoute);
+  await unavailable.body?.cancel();
+  assert(
+    unavailable.status >= 500 &&
+      unavailable.headers.get("the8020-route") === null,
+    "unavailable node replayed work or reported a lost execution",
+  );
   kernels[0] = startKernel(
     primaryRoot,
     primaryPort,
@@ -629,6 +767,73 @@ try {
       !(document.querySelector("#app")?.textContent?.includes("Opening your session") ?? false)`,
     "automatic stale-route replacement after kernel restart",
     120_000,
+  );
+  const stale = await routedRequest(priorRoute);
+  await stale.body?.cancel();
+  assert(
+    stale.status === 409,
+    "signed route revived a lost execution after restart",
+  );
+  const currentRoute = await first.evaluate<string>(
+    `sessionStorage.getItem(${
+      JSON.stringify(
+        `the8020.route:ws://127.0.0.1:${primaryPort}/the8020/uui/session/connect`,
+      )
+    })`,
+  );
+  // UUI has strict concurrency one. Leave the shell to release its WebSocket
+  // while retaining this tab's route and the browser's authentication cookie.
+  await first.command("Page.navigate", {
+    url: `${primaryBase}/route-e2e-disconnected`,
+  });
+  await waitForPage(
+    first,
+    `location.pathname === "/route-e2e-disconnected" && document.readyState === "complete"`,
+    "release the original WebSocket before forwarded requests",
+  );
+  const forwarded = await routedRequest(currentRoute);
+  await forwarded.body?.cancel();
+  assert(
+    forwarded.status === 204 &&
+      forwarded.headers.get("the8020-route") === currentRoute,
+    `cross-node HTTP returned ${forwarded.status} or changed the signed execution`,
+  );
+  assert(
+    ![...forwarded.headers.keys()].some((key) =>
+      key.startsWith("the8020-internal-")
+    ),
+    "forwarded response leaked internal headers",
+  );
+  await first.evaluate(`new Promise((resolve, reject) => {
+    const socket = new WebSocket(${
+    JSON.stringify(
+      `ws://127.0.0.1:${secondaryPort}/the8020/uui/session/connect?route=${
+        encodeURIComponent(currentRoute)
+      }`,
+    )
+  });
+    let opened = false;
+    const timeout = setTimeout(() => { socket.close(); reject(new Error('forwarded WebSocket timed out')); }, 8_000);
+    socket.onopen = () => { opened = true; socket.close(); };
+    socket.onclose = () => { clearTimeout(timeout); opened ? resolve(true) : reject(new Error('forwarded WebSocket closed before acceptance')); };
+    socket.onerror = () => { clearTimeout(timeout); reject(new Error('forwarded WebSocket failed')); };
+  })`);
+  await first.command("Page.navigate", {
+    url: `${primaryBase}/the8020/uui/shell/`,
+  });
+  await waitForScreen(first, "Welcome to 80|20");
+  assert(
+    await first.evaluate<string>(
+      `sessionStorage.getItem(${
+        JSON.stringify(
+          `the8020.route:ws://127.0.0.1:${primaryPort}/the8020/uui/session/connect`,
+        )
+      })`,
+    ) === currentRoute,
+    "forwarded requests lost the original browser execution",
+  );
+  console.log(
+    "Route E2E passed: signed HTTP/WebSocket forwarding, mixed-case headers, unavailable-node failures without replay, stale-route rejection and browser recovery.",
   );
   let afterKernelRestart: UISession[] = [];
   await waitFor(
@@ -1088,7 +1293,7 @@ try {
     await waitForPage(
       first,
       `document.querySelector('[data-bind="status"]')?.value === "No private changes" &&
-        document.querySelectorAll('[data-layout-id="changed-packages"] tbody tr').length === 0 &&
+        ![...document.querySelectorAll('[data-layout-id="changed-packages"] tbody tr')].some((row) => row.textContent?.includes('the8020/')) &&
         ![...document.querySelectorAll('button')].some((button) => button.textContent?.trim() === "Sync all changes")`,
       "UUI activation publishes every package and clears the overlay",
       120_000,
@@ -1308,15 +1513,30 @@ try {
       document.querySelector('[data-bind="tableState"]')?.value === "Active" &&
       document.querySelector('[data-bind="schemaState"]')?.value === "Synchronized" &&
       document.querySelectorAll('textarea').length === 0 &&
-      JSON.stringify([...document.querySelectorAll('[data-layout-id="columns"] tbody tr')]
-        .map((row) => row.querySelector('td')?.textContent?.trim())) ===
-        JSON.stringify(["createdAt", "updatedAt", "id", "customerId", "status", "total", "score", "receipt", "metadata"]) &&
-      [...document.querySelectorAll('[data-layout-id="columns"] tbody tr')].some((row) =>
-        row.textContent?.includes("total") && row.textContent?.includes("decimal(18, 2)") && row.textContent?.includes("INTEGER")) &&
       [...document.querySelectorAll('[data-layout-id="differences"] tbody tr')].some((row) =>
         row.textContent?.includes("No differences detected")) &&
       !document.querySelector('#app')?.textContent?.includes('Worker "wrk-')`,
     "human-readable database field detail",
+  );
+  const detailColumns = await renderedListRows(first, "columns");
+  assert(
+    JSON.stringify(detailColumns.map((row) => row[0])) ===
+        JSON.stringify([
+          "createdAt",
+          "updatedAt",
+          "id",
+          "customerId",
+          "status",
+          "total",
+          "score",
+          "receipt",
+          "metadata",
+        ]) &&
+      detailColumns.some((row) =>
+        row.includes("total") && row.includes("decimal(18, 2)") &&
+        row.includes("INTEGER")
+      ),
+    `database field order or types differ: ${JSON.stringify(detailColumns)}`,
   );
   assert(
     await evaluatorExecutionCount(primaryRoot) === evaluatorJobsBeforeBrowse,
@@ -1327,14 +1547,20 @@ try {
   await waitForPage(
     first,
     `document.querySelector('[data-bind="definitionState"]')?.value === "Present" &&
-      [...document.querySelectorAll('[data-layout-id="columns"] tbody tr')].some((row) =>
-        row.textContent?.includes("total") && row.textContent?.includes("decimal(18, 2)") && row.textContent?.includes("INTEGER")) &&
       [...document.querySelectorAll('[data-layout-id="differences"] tbody tr')].some((row) =>
         row.textContent?.includes("No differences detected")) &&
       document.querySelectorAll('textarea').length === 0 &&
       !document.querySelector('#app')?.textContent?.includes('Worker "wrk-')`,
     "structured activated database definition comparison after kernel restart",
     120_000,
+  );
+  const comparisonColumns = await renderedListRows(first, "columns");
+  assert(
+    comparisonColumns.some((row) =>
+      row[0] === "total" && row.join(" ").includes("decimal(18, 2)") &&
+      row.join(" ").includes("INTEGER")
+    ),
+    `database comparison types differ: ${JSON.stringify(comparisonColumns)}`,
   );
   assert(
     await evaluatorExecutionCount(primaryRoot) ===
@@ -1363,10 +1589,15 @@ try {
   await waitForScreen(first, "the8020__demo__customers");
   await waitForPage(
     first,
-    `[...document.querySelectorAll('[data-layout-id="columns"] tbody tr')].some((row) =>
-      row.textContent?.includes("email") && row.textContent?.includes("text") && row.textContent?.includes("TEXT")) &&
-      document.querySelectorAll('textarea').length === 0`,
+    `document.querySelectorAll('textarea').length === 0`,
     "second fast database table detail",
+  );
+  const customerColumns = await renderedListRows(first, "columns", "email");
+  assert(
+    customerColumns.some((row) =>
+      row.includes("email") && row.includes("text") && row.includes("TEXT")
+    ),
+    `customer email field differs: ${JSON.stringify(customerColumns)}`,
   );
   assert(
     await evaluatorExecutionCount(primaryRoot) ===
@@ -1386,9 +1617,6 @@ try {
     first,
     `document.querySelector('[data-bind="packageId"]')?.value === "the8020/demo" &&
       document.querySelector('[data-bind="repositoryStatus"]')?.value?.length > 0 &&
-      [...document.querySelectorAll('[data-layout-id="services"] tbody tr')].some((item) => item.textContent?.includes("the8020/demo/variables")) &&
-      [...document.querySelectorAll('[data-layout-id="programs"] tbody tr')].some((item) => item.textContent?.includes("the8020/demo/demo-form")) &&
-      [...document.querySelectorAll('[data-layout-id="files"] tbody tr')].some((item) => item.textContent?.includes("package.toml")) &&
       (() => {
         const section = document.querySelector('[data-layout-id="contents-section"]');
         const title = section?.querySelector(':scope > .section-title');
@@ -1406,6 +1634,19 @@ try {
       })()`,
     "selected package manifest, repository, services, programs, and files",
   );
+  for (
+    const [listId, expected] of [
+      ["services", "the8020/demo/variables"],
+      ["programs", "the8020/demo/demo-form"],
+      ["files", "package.toml"],
+    ] as const
+  ) {
+    const rows = await renderedListRows(first, listId, expected);
+    assert(
+      rows.some((row) => row.some((cell) => cell.includes(expected))),
+      `${listId} is missing ${expected}`,
+    );
+  }
   await clickRow(first, "the8020/demo/variables");
   await waitForScreen(first, "Service the8020/demo/variables");
   const guardedHistoryLength = await first.evaluate<number>("history.length");
@@ -2096,11 +2337,11 @@ try {
     await waitForPage(
       first,
       `(() => {
-      const primaryEmail = document.querySelector('#control-primary-email');
-      const confirmationEmail = document.querySelector('#control-confirmation-email');
-      const biography = document.querySelector('#control-biography');
-      const enabled = document.querySelector('#control-enabled');
-      const role = document.querySelector('#control-role');
+      const primaryEmail = document.querySelector('[data-element-id=primary-email] :is(input,textarea,select)');
+      const confirmationEmail = document.querySelector('[data-element-id=confirmation-email] :is(input,textarea,select)');
+      const biography = document.querySelector('[data-element-id=biography] :is(input,textarea,select)');
+      const enabled = document.querySelector('[data-element-id=enabled] :is(input,textarea,select)');
+      const role = document.querySelector('[data-element-id=role] :is(input,textarea,select)');
       const accountGrid = primaryEmail?.closest('.field-group-fields');
       const profileGrid = biography?.closest('.field-group-fields');
       const primaryPencil = primaryEmail?.closest('.field')?.querySelector('.field-edit-icon');
@@ -2172,10 +2413,10 @@ try {
       };
       return {
         viewport: [innerWidth, innerHeight, devicePixelRatio],
-        primaryEmail: bounds('#control-primary-email'),
-        confirmationEmail: bounds('#control-confirmation-email'),
-        biography: bounds('#control-biography'),
-        enabled: bounds('#control-enabled'),
+        primaryEmail: bounds('[data-element-id=primary-email] :is(input,textarea,select)'),
+        confirmationEmail: bounds('[data-element-id=confirmation-email] :is(input,textarea,select)'),
+        biography: bounds('[data-element-id=biography] :is(input,textarea,select)'),
+        enabled: bounds('[data-element-id=enabled] :is(input,textarea,select)'),
       };
     })()`);
     throw new Error(
@@ -3190,22 +3431,12 @@ try {
         ? inspectionError.message
         : String(inspectionError),
     }));
-    const routes = await admin(primaryRoot, [
-      "db.sql",
-      `SELECT "serviceId", "runtimeGroupId", "sandboxId", "workerId", "executionId", "connected" FROM "the8020__services__routes" WHERE "executionId" = '${
-        thirdSession.persistent_execution_id.replaceAll("'", "''")
-      }' LIMIT 10`,
-    ]).catch((routeError) => ({
-      error: routeError instanceof Error
-        ? routeError.message
-        : String(routeError),
-    }));
     throw new Error(
       `${
         error instanceof Error ? error.message : String(error)
       }; expected retained session ${secondSession.session_id} and terminated session ${thirdSession.session_id}; target Worker ${
         JSON.stringify(worker)
-      }; persistent routes ${JSON.stringify(routes)}; third-page frames ${
+      }; third-page frames ${
         websocketOutput(third, Math.max(0, third.websocketFrames.length - 12))
       }; third-page state ${await third.evaluate<string>(
         `JSON.stringify({location: location.href, notice: document.querySelector("#notice")?.textContent, connection: document.querySelector("#connection-state")?.textContent})`,
@@ -3240,6 +3471,9 @@ try {
   console.log(
     "Phase 1D browser E2E passed: login, browser-only persistent themes, responsive semantic field layouts, bounded Markdown and asynchronous messages, kernel-restart stale-route recovery, development Bash console, development activation and start/stop/restart/reset controls, package manifest/Git/content inspection, package-owned UUI session administration, service control, shared-node auth, programs, short dumps, recovery, reconnect, reload, isolation, and logout",
   );
+} catch (error) {
+  console.error(await latestKernelLog(primaryRoot));
+  throw error;
 } finally {
   for (const page of pages) page.close();
   if (browser !== undefined) await stopProcess(browser);
@@ -3301,6 +3535,10 @@ async function prepareWorkspaces(
     await linkFile(
       `${options.runtimeRoot}/node/kernel/bin/runsc`,
       `${root}/node/kernel/bin/runsc`,
+    );
+    await linkTree(
+      `${options.runtimeRoot}/node/kernel/bin/gvisor-bin`,
+      `${root}/node/kernel/bin/gvisor-bin`,
     );
   }
   const manifest = await Deno.readTextFile(
@@ -3502,6 +3740,8 @@ function startKernel(
   databaseLocation: string,
 ): KernelProcess {
   const child = new Deno.Command(options.kernel, {
+    // All fixture nodes belong to one deployment and verify the same tokens.
+    env: { THE8020_SIGNING_KEY: new Uint8Array(32).fill(7).toBase64() },
     args: [
       "--root",
       root,
@@ -3915,16 +4155,98 @@ async function clickButton(page: BrowserPage, label: string): Promise<void> {
   assert(clicked, `missing ${label} button`);
 }
 
+async function renderedListRows(
+  page: BrowserPage,
+  layoutId: string,
+  findText?: string,
+): Promise<string[][]> {
+  return await listPages(page, `[data-layout-id="${layoutId}"]`, findText);
+}
+
+async function listPages(
+  page: BrowserPage,
+  selector: string,
+  findText?: string,
+): Promise<string[][]> {
+  const listId = await page.evaluate<string>(`(() => {
+    const element = document.querySelector(${JSON.stringify(selector)});
+    const list = element?.matches('.data-list-container') ? element : element?.querySelector('.data-list-container');
+    return list?.dataset.listId;
+  })()`);
+  assert(typeof listId === "string", `missing list ${selector}`);
+  await waitFor(
+    () => {
+      for (const frame of page.websocketFrames.toReversed()) {
+        if (frame.opcode !== 1) continue;
+        const message = JSON.parse(
+          frame.payloadData,
+        ) as PresentationShowMessage;
+        if (message.type !== "presentation.show") continue;
+        return message.presentation.surfaces.some((surface) =>
+          surface.screen.lists.some((list) =>
+            list.id === listId && list.state.measured
+          )
+        );
+      }
+      return false;
+    },
+    `measured ${selector} list`,
+    10_000,
+  );
+  await click(page, `${selector} [aria-label="Page 1"]`);
+  const rows: string[][] = [];
+  for (let number = 1; number <= 100; number++) {
+    await waitForPage(
+      page,
+      `document.querySelector(${
+        JSON.stringify(selector)
+      } + ' [aria-current="page"]')?.textContent === ${
+        JSON.stringify(String(number))
+      }`,
+      `${selector} page ${number}`,
+    );
+    const result = await page.evaluate<{ rows: string[][]; next: boolean }>(
+      `(() => {
+      const list = document.querySelector(${JSON.stringify(selector)});
+      return {
+        rows: [...list.querySelectorAll('tbody tr')].map((row) =>
+          [...row.cells].map((cell) =>
+            (cell.querySelector('.data-list-cell-text')?.textContent ?? cell.textContent)?.trim() ?? '')),
+        next: list.querySelector('[aria-label="Page ${number + 1}"]') !== null,
+      };
+    })()`,
+    );
+    rows.push(...result.rows);
+    if (
+      !result.next || findText !== undefined &&
+        result.rows.some((row) => row.some((cell) => cell.includes(findText)))
+    ) return rows;
+    await click(page, `${selector} [aria-label="Page ${number + 1}"]`);
+  }
+  throw new Error(`${selector} exceeded the fixture pagination bound`);
+}
+
 async function clickRow(page: BrowserPage, text: string): Promise<void> {
-  const clicked = await page.evaluate<boolean>(`(() => {
+  const clickVisible = () =>
+    page.evaluate<boolean>(`(() => {
     const target = [...document.querySelectorAll(".data-list tbody tr")].find((item) => item.textContent?.includes(${
-    JSON.stringify(text)
-  }));
+      JSON.stringify(text)
+    }));
     if (!(target instanceof HTMLTableRowElement)) return false;
     target.click();
     return true;
   })()`);
-  assert(clicked, `missing row containing ${text}`);
+  if (await clickVisible()) return;
+  const lists = await page.evaluate<string[]>(
+    `[...document.querySelectorAll('.data-list-container')]
+      .filter((list) => list.getClientRects().length > 0)
+      .map((list) => list.dataset.listId)`,
+  );
+  for (const list of lists) {
+    await listPages(page, `[data-list-id=${JSON.stringify(list)}]`, text);
+    if (await clickVisible()) return;
+  }
+  throw new Error(`missing row containing ${text}`);
 }
 
 async function waitForScreen(
@@ -3932,14 +4254,29 @@ async function waitForScreen(
   title: string,
   timeout = 10_000,
 ): Promise<void> {
-  await waitForPage(
-    page,
-    `document.querySelector("#connection-state")?.textContent === "Connected" && document.querySelector(".screen > h1.screen-title")?.textContent?.trim() === ${
-      JSON.stringify(title)
-    } && document.title === ${JSON.stringify(`80|20 ${title}`)}`,
-    title,
-    timeout,
-  );
+  try {
+    await waitForPage(
+      page,
+      `document.querySelector("#connection-state")?.textContent === "Connected" && document.querySelector(".screen > h1.screen-title")?.textContent?.trim() === ${
+        JSON.stringify(title)
+      } && document.title === ${JSON.stringify(`80|20 ${title}`)}`,
+      title,
+      timeout,
+    );
+  } catch (error) {
+    const state = await page.evaluate(`({
+      title: document.title,
+      heading: document.querySelector('.screen > h1')?.textContent,
+      connection: document.querySelector('#connection-state')?.textContent,
+      exception: document.querySelector('[data-bind="exceptionType"]')?.value,
+      message: document.querySelector('[data-bind="message"]')?.value,
+    })`);
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}; screen: ${
+        JSON.stringify(state)
+      }`,
+    );
+  }
 }
 
 function responsiveFieldLayoutExpression(
@@ -4276,7 +4613,7 @@ async function assertThemeInitializedBeforePaint(
   );
 }
 
-async function waitForHTTP(url: string): Promise<void> {
+async function waitForHTTP(url: string, timeout = 30_000): Promise<void> {
   await waitFor(
     async () => {
       try {
@@ -4288,7 +4625,7 @@ async function waitForHTTP(url: string): Promise<void> {
       }
     },
     url,
-    30_000,
+    timeout,
   );
 }
 

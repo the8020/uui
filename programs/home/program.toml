@@ -1,5 +1,6 @@
 schema = 1
-description = "Discover and launch available programs"
+uui = true
+description = "Discover and launch UUI programs"
 entrypoint = "program.ts"
 default_layout = "layouts/main.json"
 discoverable = false

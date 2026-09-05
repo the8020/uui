@@ -1,4 +1,23 @@
+import {
+  type ListChange,
+  type ListOptions,
+  type ListRequest,
+  type ListSelection,
+  MAX_LIST_PAGE_SIZE,
+  type ScreenListSnapshot,
+  type ScreenState,
+  type ScreenStateUpdate,
+  validListQuery,
+  validScreenStateUpdate,
+} from "./screen_state.ts";
+export * from "./screen_state.ts";
 import uiConfig from "./ui-config.json" with { type: "json" };
+import {
+  DOWNLOAD_TRANSFER_FRAMES,
+  type DownloadClientCommand,
+  type DownloadServerCommand,
+  validDownloadID,
+} from "./download_protocol.ts";
 
 export const UUI_PROTOCOL_VERSION = uiConfig.protocolVersion;
 export const BACK_EVENT = "back" as const;
@@ -20,6 +39,8 @@ export type ScreenEventType =
   | "exit";
 
 export type UUIMessageType =
+  | DownloadClientCommand["type"]
+  | DownloadServerCommand["type"]
   | "session.connect"
   | "session.ready"
   | "session.resumed"
@@ -31,7 +52,7 @@ export type UUIMessageType =
   | "session.pong"
   | "presentation.show"
   | "screen.event"
-  | "screen.page"
+  | "screen.list"
   | "notification.show"
   | "clipboard.write"
   | "client.ack"
@@ -56,28 +77,29 @@ export interface ScreenChange {
   controlId?: string;
 }
 
-export interface ScreenEventMessage extends ClientMessageBase {
-  type: "screen.event";
+export interface ScreenInteractionBase extends ClientMessageBase {
   surfaceId: string;
   screenId: string;
+  instanceId: string;
   screenRevision: number;
+  screenState: ScreenStateUpdate;
+  changes: ScreenChange[];
+  listChanges?: ListChange[];
+}
+
+export interface ScreenEventMessage extends ScreenInteractionBase {
+  type: "screen.event";
   action: string;
   controlId?: string;
   bind?: string;
   eventType?: ScreenEventType;
   value?: unknown;
-  changes: ScreenChange[];
+  selection?: ListSelection;
 }
 
-export interface ScreenPageMessage extends ClientMessageBase {
-  type: "screen.page";
-  surfaceId: string;
-  screenId: string;
-  screenRevision: number;
-  bind: string;
-  currentPage: number;
-  page: number;
-  changes: ScreenChange[];
+export interface ScreenListMessage extends ScreenInteractionBase {
+  type: "screen.list";
+  updates: ListRequest[];
 }
 
 export interface SessionPongMessage extends ClientMessageBase {
@@ -94,9 +116,10 @@ export interface ResyncConfirmMessage extends ClientMessageBase {
 }
 
 export type UUIClientMessage =
+  | (DownloadClientCommand & ClientMessageBase)
   | SessionConnectMessage
   | ScreenEventMessage
-  | ScreenPageMessage
+  | ScreenListMessage
   | SessionPongMessage
   | SessionLogoutMessage
   | ResyncConfirmMessage;
@@ -104,7 +127,7 @@ export type UUIClientMessage =
 export interface ServerMessageBase {
   type: Exclude<
     UUIMessageType,
-    "session.connect" | "session.logout" | "screen.event" | "screen.page"
+    "session.connect" | "session.logout" | "screen.event" | "screen.list"
   >;
   protocol: number;
   serverSequence: number;
@@ -163,6 +186,7 @@ export interface PingMessage extends ServerMessageBase {
 }
 
 export type UUIServerMessage =
+  | (DownloadServerCommand & ServerMessageBase)
   | SessionReadyMessage
   | SessionResumedMessage
   | SessionErrorMessage
@@ -218,6 +242,7 @@ export interface FieldDescriptor {
   options?: FieldOption[];
   searchHelp?: string;
   semanticType?: string;
+  list?: ListOptions;
 }
 
 export interface ControlDescriptor extends Partial<FieldDescriptor> {
@@ -225,11 +250,18 @@ export interface ControlDescriptor extends Partial<FieldDescriptor> {
   bind: string;
 }
 
+export type ControlDeclaration = Omit<ControlDescriptor, "id"> & {
+  id?: string;
+};
+
 export interface ScreenAction {
   id: string;
   label: string;
   kind?: "primary" | "secondary" | "danger";
 }
+export type ScreenActionDeclaration = Omit<ScreenAction, "id"> & {
+  id?: string;
+};
 
 export interface ScreenHeader {
   controls: ControlDescriptor[];
@@ -242,6 +274,9 @@ export interface CustomElementDescriptor {
   preserve?: boolean;
   config: Record<string, unknown>;
 }
+export type CustomElementDeclaration = Omit<CustomElementDescriptor, "id"> & {
+  id?: string;
+};
 
 export interface ScreenSnapshot {
   id: string;
@@ -251,7 +286,8 @@ export interface ScreenSnapshot {
   fields: FieldDescriptor[];
   controls: ControlDescriptor[];
   model: unknown;
-  pagination?: ScreenPagination;
+  state: ScreenState;
+  lists: ScreenListSnapshot[];
   layout?: unknown;
   actions: ScreenAction[];
   header: ScreenHeader;
@@ -273,19 +309,8 @@ export interface PresentationSnapshot {
   activeSurfaceId: string | null;
 }
 
-export interface ScreenPagination {
-  lists: ScreenListPage[];
-}
-
-export interface ScreenListPage {
-  bind: string;
-  page: number;
-  pageSize: number;
-  totalItems: number;
-  totalPages: number;
-}
-
 export type UUIWorkerOutbound =
+  | DownloadServerCommand
   | { type: "presentation.show"; presentation: PresentationSnapshot }
   | {
     type: "notification.show";
@@ -315,6 +340,19 @@ export function parseClientMessage(value: unknown): UUIClientMessage {
     !isSequence(value.clientSequence) || typeof value.sessionId !== "string" ||
     value.sessionId.length === 0
   ) throw new TypeError("invalid client message identity");
+  if (value.type.startsWith("download.")) {
+    if (
+      !validDownloadID(value.downloadId) ||
+      !(value.type === "download.done" || value.type === "download.cancel" ||
+        value.type === "download.credit") ||
+      value.type === "download.credit" &&
+        (!isSequence(value.consumed) || !isSequence(value.frames) ||
+          value.frames > DOWNLOAD_TRANSFER_FRAMES) ||
+      value.type === "download.cancel" && value.error !== undefined &&
+        (typeof value.error !== "string" || value.error.length > 1000)
+    ) throw new TypeError("invalid download message");
+    return value as unknown as DownloadClientCommand & ClientMessageBase;
+  }
   if (value.type === "session.pong" || value.type === "session.logout") {
     return value as unknown as SessionPongMessage | SessionLogoutMessage;
   }
@@ -324,16 +362,34 @@ export function parseClientMessage(value: unknown): UUIClientMessage {
     }
     return value as unknown as ResyncConfirmMessage;
   }
-  if (value.type === "screen.page") {
+  if (value.type === "screen.list" || value.type === "screen.event") {
     if (
       typeof value.surfaceId !== "string" || value.surfaceId.length === 0 ||
       typeof value.screenId !== "string" || value.screenId.length === 0 ||
+      typeof value.instanceId !== "string" || value.instanceId.length === 0 ||
       !isPositiveSequence(value.screenRevision) ||
-      typeof value.bind !== "string" || value.bind.length === 0 ||
-      !isPositiveSequence(value.currentPage) ||
-      !isPositiveSequence(value.page) || !validChanges(value.changes)
-    ) throw new TypeError("invalid screen.page message");
-    return value as unknown as ScreenPageMessage;
+      !validScreenStateUpdate(value.screenState) ||
+      !validChanges(value.changes) || !validListChanges(value.listChanges)
+    ) {
+      throw new TypeError("invalid screen interaction metadata");
+    }
+  }
+  if (value.type === "screen.list") {
+    if (
+      !Array.isArray(value.updates) || value.updates.length === 0 ||
+      value.updates.length > 200 ||
+      !value.updates.every((item) =>
+        isRecord(item) && typeof item.id === "string" && item.id.length > 0 &&
+        isPositiveSequence(item.revision) &&
+        (item.operation === "page" && isPositiveSequence(item.page) ||
+          item.operation === "capacity" && isPositiveSequence(item.pageSize) &&
+            Number(item.pageSize) <= MAX_LIST_PAGE_SIZE ||
+          item.operation === "query" && validListQuery(item.query))
+      )
+    ) {
+      throw new TypeError("invalid screen.list message");
+    }
+    return value as unknown as ScreenListMessage;
   }
   const eventTypes = new Set<ScreenEventType>([
     "action",
@@ -354,6 +410,11 @@ export function parseClientMessage(value: unknown): UUIClientMessage {
     value.eventType !== undefined &&
       (typeof value.eventType !== "string" ||
         !eventTypes.has(value.eventType as ScreenEventType)) ||
+    (value.selection !== undefined && (!isRecord(value.selection) ||
+      typeof value.selection.id !== "string" ||
+      !isPositiveSequence(value.selection.revision) ||
+      !isSequence(value.selection.index) || value.action !== "select" ||
+      value.eventType !== "select")) ||
     !validChanges(value.changes) ||
     (value.action === BACK_EVENT || value.eventType === BACK_EVENT) &&
       (value.action !== BACK_EVENT || value.eventType !== BACK_EVENT)
@@ -380,4 +441,17 @@ function validChanges(value: unknown): value is ScreenChange[] {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function validListChanges(value: unknown): boolean {
+  return value === undefined ||
+    Array.isArray(value) && value.length <= 200 &&
+      value.every((item) =>
+        isRecord(item) && typeof item.id === "string" &&
+        isPositiveSequence(item.revision) &&
+        Array.isArray(item.rows) && item.rows.length <= MAX_LIST_PAGE_SIZE &&
+        item.rows.every((row) =>
+          isRecord(row) && isSequence(row.index) && Object.hasOwn(row, "value")
+        )
+      );
 }

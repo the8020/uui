@@ -1,9 +1,9 @@
+import { Model } from "./model.ts";
 import { assertEquals, assertRejects, assertThrows } from "@std/assert";
 import { z } from "zod";
 import { validateCustomElements } from "./custom_elements.ts";
 import { buildControls, buildFieldCatalog, field } from "./fields.ts";
 import { applyLayoutOverride, validateLayout } from "./layout.ts";
-import { DEFAULT_SCREEN_LIST_PAGE_SIZE } from "./pagination.ts";
 import {
   BACK_EVENT,
   MAX_UUI_MESSAGE_BODY_LENGTH,
@@ -44,6 +44,12 @@ class TestChannel {
   }
 
   push(message: UUIClientMessage): void {
+    if (
+      (message.type === "screen.event" || message.type === "screen.list") &&
+      message.instanceId === "fixture"
+    ) {
+      message.instanceId = topScreen(lastPresentation(this)).state.instanceId;
+    }
     const waiter = this.#waiters.shift();
     if (waiter === undefined) this.#inputs.push(message);
     else waiter(message);
@@ -110,6 +116,7 @@ Deno.test("field catalog infers controls and keeps id separate from shared bind"
     options: undefined,
     searchHelp: undefined,
     semanticType: undefined,
+    list: undefined,
   });
   const controls = buildControls(fields, [
     {
@@ -380,7 +387,7 @@ Deno.test({
       const pending = callScreen({
         id: "custom-screen",
         schema: z.object({ ready: z.boolean() }),
-        model: { ready: true },
+        model: new Model({ ready: true }),
         customElements: [{
           id: "console",
           initializer: "sandbox-console.v1",
@@ -431,12 +438,7 @@ Deno.test("client protocol rejects malformed event metadata", () => {
     eventType: BACK_EVENT,
   });
   assertEquals(parseClientMessage(validBack), validBack);
-  const validPage = page({
-    bind: "orders",
-    currentPage: 1,
-    page: 2,
-    changes: [{ bind: "orders", value: [] }],
-  });
+  const validPage = page();
   assertEquals(parseClientMessage(validPage), validPage);
   const validLogout = {
     type: "session.logout",
@@ -454,9 +456,20 @@ Deno.test("client protocol rejects malformed event metadata", () => {
       { ...valid, screenRevision: 0 },
       { ...valid, controlId: 4 },
       { ...valid, changes: [{ bind: "" }] },
-      { ...validPage, currentPage: 0 },
+      {
+        ...validPage,
+        updates: [{ id: "items", revision: 0, operation: "page", page: 1 }],
+      },
       { ...validPage, surfaceId: "" },
-      { ...validPage, page: 1.5 },
+      {
+        ...validPage,
+        updates: [{
+          id: "items",
+          revision: 1,
+          operation: "capacity",
+          pageSize: 1.5,
+        }],
+      },
       { ...validPage, changes: [{ bind: "" }] },
       { ...validLogout, sessionId: "" },
       {
@@ -473,89 +486,112 @@ Deno.test("client protocol rejects malformed event metadata", () => {
 });
 
 Deno.test({
-  name: "callScreen pages lists without returning and merges visible edits",
+  name:
+    "retained Model keeps page five through mapped edits, selection, and refreshed data",
   sanitizeOps: false,
   sanitizeResources: false,
   fn: async () => {
     const test = new TestChannel();
     const unbind = bindSession(test);
+    const schema = z.object({
+      records: z.array(z.object({ id: z.number(), name: z.string() })),
+      note: z.string(),
+    });
+    const data = {
+      records: Array.from(
+        { length: 103 },
+        (_, id) => ({ id, name: `Record ${id}` }),
+      ),
+      note: "initial",
+    };
+    const model = new Model(data);
+    const options = {
+      id: "paged-list",
+      schema,
+      model,
+      layout: {
+        schema: 1,
+        id: "paged-layout",
+        root: { id: "records", type: "list", bind: "records", key: "id" },
+      },
+    };
     try {
-      const schema = z.object({
-        records: z.array(z.object({ id: z.number(), name: z.string() })),
-        note: z.string(),
-      });
-      const pageSize = DEFAULT_SCREEN_LIST_PAGE_SIZE;
-      const model = {
-        records: Array.from({ length: pageSize * 2 + 3 }, (_, id) => ({
-          id,
-          name: `Record ${id}`,
-        })),
-        note: "initial",
-      };
       let returned = false;
-      const pending = callScreen({
-        id: "paged-list",
-        schema,
-        model,
-        layout: {
-          schema: 1,
-          id: "paged-layout",
-          root: { id: "records", type: "list", bind: "records" },
-        },
-      }).then((result) => {
+      const pending = callScreen(options).then((event) => {
         returned = true;
-        return result;
+        return event;
       });
-      await Promise.resolve();
-      const initial = topScreen(test.sent[0]);
-      const initialModel = initial.model as typeof model;
-      assertEquals(initialModel.records.length, pageSize);
-      assertEquals(initial.pagination?.lists, [{
-        bind: "records",
-        page: 1,
-        pageSize,
-        totalItems: pageSize * 2 + 3,
-        totalPages: 3,
-      }]);
-      assertEquals(model.records.length, pageSize * 2 + 3);
-
-      const firstPage = structuredClone(initialModel.records);
-      firstPage[0]!.name = "Edited on page one";
-      test.push(page({
-        screenId: "paged-list",
-        clientSequence: 1,
-        bind: "records",
-        currentPage: 1,
-        page: 2,
-        changes: [
-          { bind: "note", value: "saved while paging" },
-          { bind: "records", value: firstPage },
-        ],
-      }));
-      await Promise.resolve();
+      await flushMicrotasks();
+      let shown = lastPresentation(test);
+      let list = topScreen(shown).lists[0]!;
+      assertEquals(list.state.measured, false);
+      assertEquals((topScreen(shown).model as typeof data).records, []);
+      test.push({
+        ...eventFor(shown, "", 1),
+        type: "screen.list",
+        updates: [{
+          id: list.id,
+          revision: list.revision,
+          operation: "capacity",
+          pageSize: 10,
+        }],
+      });
+      await flushMicrotasks();
+      shown = lastPresentation(test);
+      list = topScreen(shown).lists[0]!;
+      test.push({
+        ...eventFor(shown, "", 2),
+        type: "screen.list",
+        updates: [{
+          id: list.id,
+          revision: list.revision,
+          operation: "page",
+          page: 5,
+        }],
+        changes: [{ bind: "note", value: "saved while paging" }],
+        listChanges: [{
+          id: list.id,
+          revision: list.revision,
+          rows: [{ index: 0, value: { id: 0, name: "Edited on page one" } }],
+        }],
+        screenState: {
+          version: 0,
+          scroll: { x: 0, y: 413 },
+          elements: { records: { scroll: { x: 62, y: 0 }, toolbarOpen: true } },
+        },
+      });
+      await flushMicrotasks();
+      shown = lastPresentation(test);
+      list = topScreen(shown).lists[0]!;
       assertEquals(returned, false);
-      const second = topScreen(test.sent[1]);
-      const secondModel = second.model as typeof model;
-      assertEquals(
-        secondModel.records.map((record) => record.id),
-        Array.from({ length: pageSize }, (_, index) => index + pageSize),
-      );
-      assertEquals(second.pagination?.lists[0]?.page, 2);
-      assertEquals(model.records[0]?.name, "Edited on page one");
-      assertEquals(model.note, "saved while paging");
-
-      const secondPage = structuredClone(secondModel.records);
-      secondPage[0]!.name = "Edited on page two";
-      test.push(event({
-        screenId: "paged-list",
-        screenRevision: 1,
-        clientSequence: 2,
-        action: "done",
-        changes: [{ bind: "records", value: secondPage }],
-      }));
-      assertEquals((await pending).action, "done");
-      assertEquals(model.records.length, pageSize * 2 + 3);
-      assertEquals(model.records[pageSize]?.name, "Edited on page two");
+      assertEquals(list.rows, data.records.slice(40, 50));
+      assertEquals(data.records.length, 103);
+      assertEquals(data.records[0]!.name, "Edited on page one");
+      assertEquals(data.note, "saved while paging");
+      assertEquals(model.screen.scroll.y, 413);
+      test.push({
+        ...eventFor(shown, "select", 3, "select"),
+        selection: { id: list.id, revision: list.revision, index: 2 },
+      });
+      const selected = await pending;
+      assertEquals(selected.eventType, "select");
+      if (selected.eventType === "select") assertEquals(selected.value, 42);
+      const next = callScreen(options);
+      await flushMicrotasks();
+      shown = lastPresentation(test);
+      list = topScreen(shown).lists[0]!;
+      assertEquals(list.state.page, 5);
+      assertEquals(topScreen(shown).state.elements.records!.toolbarOpen, true);
+      test.push(eventFor(shown, "refresh", 4));
+      await next;
+      model.data = structuredClone(data);
+      const refreshed = callScreen(options);
+      await flushMicrotasks();
+      shown = lastPresentation(test);
+      assertEquals(topScreen(shown).lists[0]!.state.page, 5);
+      assertEquals(topScreen(shown).state.instanceId, model.screen.instanceId);
+      test.push(eventFor(shown, "done", 5));
+      await refreshed;
     } finally {
       unbind();
     }
@@ -581,7 +617,7 @@ Deno.test({
           callScreen({
             id: "invalid-actions",
             schema,
-            model,
+            model: new Model(model),
             actions: [
               { id: "save", label: "Save" },
               { id: "save", label: "Save again" },
@@ -595,7 +631,7 @@ Deno.test({
           callScreen({
             id: "reserved-back",
             schema,
-            model,
+            model: new Model(model),
             header: { actions: [{ id: BACK_EVENT, label: "Back" }] },
           }),
         TypeError,
@@ -604,7 +640,7 @@ Deno.test({
       const headerPending = callScreen({
         id: "header-catalog",
         schema,
-        model,
+        model: new Model(model),
         header: {
           controls: [{ id: "header-email", bind: "email" }],
           actions: [{ id: "save", label: "Save", kind: "primary" }],
@@ -636,14 +672,18 @@ Deno.test({
         eventType: BACK_EVENT,
       }));
       assertEquals((await headerPending).action, BACK_EVENT);
-      const pending = callScreen({ id: "detail", schema, model });
+      const pending = callScreen({
+        id: "detail",
+        schema,
+        model: new Model(model),
+      });
       await Promise.resolve();
       assertEquals(
         (test.sent[0] as { type: string }).type,
         "presentation.show",
       );
       await assertRejects(
-        () => callScreen({ id: "other", schema, model }),
+        () => callScreen({ id: "other", schema, model: new Model(model) }),
         Error,
         "only one",
       );
@@ -670,7 +710,11 @@ Deno.test({
         2,
       );
 
-      const second = callScreen({ id: "detail", schema, model });
+      const second = callScreen({
+        id: "detail",
+        schema,
+        model: new Model(model),
+      });
       await Promise.resolve();
       test.push(event({ clientSequence: 2, screenRevision: 3 }));
       test.push(
@@ -691,7 +735,11 @@ Deno.test({
         true,
       );
 
-      const reactive = callScreen({ id: "detail", schema, model });
+      const reactive = callScreen({
+        id: "detail",
+        schema,
+        model: new Model(model),
+      });
       await Promise.resolve();
       test.push(event({
         clientSequence: 4,
@@ -731,7 +779,7 @@ Deno.test({
         id: "ordinary-program",
         title,
         schema,
-        model: { value: title },
+        model: new Model({ value: title }),
       });
       return result.action;
     };
@@ -739,7 +787,7 @@ Deno.test({
       const root = callScreen({
         id: "root",
         schema,
-        model: { value: "root" },
+        model: new Model({ value: "root" }),
       });
       await flushMicrotasks();
 
@@ -792,7 +840,7 @@ Deno.test({
         id: "identical-screen-id",
         title: label,
         schema,
-        model: { label },
+        model: new Model({ label }),
       });
     try {
       const pageA = screen("Page A");
@@ -878,7 +926,7 @@ Deno.test({
     const unbind = bindSession(test);
     const schema = z.object({ value: z.string() });
     const show = (id: string) =>
-      callScreen({ id, schema, model: { value: id } });
+      callScreen({ id, schema, model: new Model({ value: id }) });
     try {
       const pageA = show("page-a");
       await flushMicrotasks();
@@ -925,14 +973,22 @@ Deno.test({
     const unbind = bindSession(test);
     const schema = z.object({ step: z.number() });
     try {
-      const root = callScreen({ id: "root", schema, model: { step: 0 } });
+      const root = callScreen({
+        id: "root",
+        schema,
+        model: new Model({ step: 0 }),
+      });
       await flushMicrotasks();
       const modal = presentModal(async () => {
-        await callScreen({ id: "step-one", schema, model: { step: 1 } });
+        await callScreen({
+          id: "step-one",
+          schema,
+          model: new Model({ step: 1 }),
+        });
         return await callScreen({
           id: "step-two",
           schema,
-          model: { step: 2 },
+          model: new Model({ step: 2 }),
         });
       });
       await flushMicrotasks();
@@ -973,7 +1029,7 @@ Deno.test({
       const first = callScreen({
         id: "monitor",
         schema,
-        model,
+        model: new Model(model),
         channel,
       });
       await flushMicrotasks();
@@ -1003,7 +1059,7 @@ Deno.test({
       const second = callScreen({
         id: "monitor-again",
         schema,
-        model: secondModel,
+        model: new Model(secondModel),
         channel,
       });
       await flushMicrotasks();
@@ -1015,7 +1071,7 @@ Deno.test({
       const third = callScreen({
         id: "after-failure",
         schema,
-        model: secondModel,
+        model: new Model(secondModel),
         channel,
       });
       await flushMicrotasks();
@@ -1042,13 +1098,18 @@ Deno.test({
     const model = { value: "before" };
     const channel = new ScreenChannel();
     try {
-      const root = callScreen({ id: "root", schema, model, channel });
+      const root = callScreen({
+        id: "root",
+        schema,
+        model: new Model(model),
+        channel,
+      });
       await flushMicrotasks();
       const modal = presentModal(() =>
         callScreen({
           id: "cover",
           schema,
-          model: { value: "cover" },
+          model: new Model({ value: "cover" }),
         })
       );
       await flushMicrotasks();
@@ -1085,7 +1146,7 @@ Deno.test({
       const root = callScreen({
         id: "root",
         schema,
-        model: { value: "root" },
+        model: new Model({ value: "root" }),
         channel,
       });
       await flushMicrotasks();
@@ -1095,7 +1156,7 @@ Deno.test({
             callScreen({
               id: "illegal-channel-reuse",
               schema,
-              model: { value: "modal" },
+              model: new Model({ value: "modal" }),
               channel,
             })
           ),
@@ -1127,6 +1188,30 @@ Deno.test({
       unbind();
     }
   },
+});
+
+Deno.test("screen functions reject calls outside a UUI session", async () => {
+  const test = new TestChannel();
+  const screen = () =>
+    callScreen({ id: "unbound", schema: z.object({}), model: new Model({}) });
+  let callbackCalled = false;
+  const callback = () => {
+    callbackCalled = true;
+  };
+  for (const ended of [false, true]) {
+    if (ended) bindSession(test)();
+    for (
+      const call of [
+        screen,
+        () => presentPage(callback),
+        () => presentModal(callback),
+      ]
+    ) {
+      await assertRejects(call, Error, "UUI session channel is not bound");
+    }
+  }
+  assertEquals(callbackCalled, false);
+  assertEquals(test.sent, []);
 });
 
 Deno.test("clipboard writes stay on the bound session channel and are bounded", () => {
@@ -1187,7 +1272,7 @@ Deno.test({
       const pending = callScreen({
         id: "message-wait",
         schema: z.object({}),
-        model: {},
+        model: new Model({}),
       });
       await Promise.resolve();
       await (async () => {
@@ -1202,6 +1287,8 @@ Deno.test({
       test.push(event({
         screenId: "message-wait",
         screenRevision: 1,
+        instanceId: "fixture",
+        screenState: { version: 0, scroll: { x: 0, y: 0 }, elements: {} },
         clientSequence: 1,
       }));
       assertEquals((await pending).action, "save");
@@ -1221,6 +1308,8 @@ function event(
     surfaceId: "surface-1",
     screenId: "detail",
     screenRevision: 1,
+    instanceId: "fixture",
+    screenState: { version: 0, scroll: { x: 0, y: 0 }, elements: {} },
     clientSequence: 1,
     action: "save",
     changes: [],
@@ -1229,20 +1318,20 @@ function event(
 }
 
 function page(
-  overrides: Partial<Extract<UUIClientMessage, { type: "screen.page" }>> = {},
-): Extract<UUIClientMessage, { type: "screen.page" }> {
+  overrides: Partial<Extract<UUIClientMessage, { type: "screen.list" }>> = {},
+): Extract<UUIClientMessage, { type: "screen.list" }> {
   return {
-    type: "screen.page",
+    type: "screen.list",
     protocol: UUI_PROTOCOL_VERSION,
     sessionId: "session-test",
     surfaceId: "surface-1",
     screenId: "detail",
     screenRevision: 1,
+    instanceId: "fixture",
+    screenState: { version: 0, scroll: { x: 0, y: 0 }, elements: {} },
     clientSequence: 1,
-    bind: "items",
-    currentPage: 1,
-    page: 2,
-    changes: [{ bind: "items", value: [] }],
+    updates: [{ id: "items", revision: 1, operation: "page", page: 2 }],
+    changes: [],
     ...overrides,
   };
 }
@@ -1304,6 +1393,12 @@ function eventFor(
     surfaceId: surface.surfaceId,
     screenId: surface.screen.id,
     screenRevision: surface.screen.revision,
+    instanceId: surface.screen.state.instanceId,
+    screenState: {
+      version: surface.screen.state.version,
+      scroll: surface.screen.state.scroll,
+      elements: {},
+    },
     clientSequence,
     action,
     eventType,
@@ -1313,3 +1408,214 @@ function eventFor(
 async function flushMicrotasks(): Promise<void> {
   for (let index = 0; index < 12; index++) await Promise.resolve();
 }
+
+Deno.test({
+  name:
+    "query interactions validate edits and stale mappings before atomically merging metadata or resolving",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    const channel = new TestChannel();
+    const unbind = bindSession(channel);
+    const schema = z.object({
+      note: z.string(),
+      rows: z.array(z.object({ id: z.number(), label: z.string() })),
+    });
+    const model = new Model({
+      note: "original",
+      rows: [{ id: 1, label: "One" }, { id: 2, label: "Two" }],
+    });
+    const options = {
+      id: "query",
+      schema,
+      model,
+      layout: {
+        schema: 1,
+        id: "query-layout",
+        root: {
+          id: "rows",
+          type: "list",
+          bind: "rows",
+          triggerFilterEvents: true,
+        },
+      },
+    };
+    try {
+      let settled = false;
+      const pending = callScreen(options).then((e) => {
+        settled = true;
+        return e;
+      });
+      await flushMicrotasks();
+      let shown = lastPresentation(channel);
+      let list = topScreen(shown).lists[0]!;
+      const query = { search: "changed", filters: {}, sort: null };
+      const request = {
+        ...eventFor(shown, "", 1),
+        type: "screen.list" as const,
+        updates: [{
+          id: list.id,
+          revision: list.revision,
+          operation: "query" as const,
+          query,
+        }],
+        screenState: {
+          version: 0,
+          scroll: { x: 0, y: 95 },
+          elements: { rows: { scroll: { x: 45, y: 0 }, toolbarOpen: true } },
+        },
+        changes: [{ bind: "note", value: 42 }],
+        listChanges: [{
+          id: list.id,
+          revision: list.revision,
+          rows: [{ index: 0, value: { id: 1, label: "changed" } }],
+        }],
+      };
+      channel.push(request);
+      await flushMicrotasks();
+      assertEquals(settled, false);
+      assertEquals(model.data.note, "original");
+      assertEquals(model.data.rows[0]!.label, "One");
+      assertEquals(model.screen.scroll.y, 0);
+      assertEquals(model.screen.elements.rows!.list!.query.search, "");
+      model.data.rows.reverse();
+      channel.push({ ...request, changes: [{ bind: "note", value: "saved" }] });
+      await flushMicrotasks();
+      assertEquals(
+        (channel.sent.findLast((message) =>
+          (message as { type: string }).type === "session.error"
+        ) as { code: string }).code,
+        "list_view_mismatch",
+      );
+      assertEquals(model.data.note, "original");
+      assertEquals(model.data.rows[0]!.label, "Two");
+      shown = lastPresentation(channel);
+      list = topScreen(shown).lists[0]!;
+      channel.push({
+        ...request,
+        ...eventFor(shown, "", 1),
+        type: "screen.list",
+        screenState: request.screenState,
+        updates: [{
+          id: list.id,
+          revision: list.revision,
+          operation: "query",
+          query,
+        }],
+        changes: [{ bind: "note", value: "saved" }],
+        listChanges: [{
+          id: list.id,
+          revision: list.revision,
+          rows: [{ index: 0, value: { id: 2, label: "changed" } }],
+        }],
+      });
+      const event = await pending;
+      assertEquals(event, {
+        action: "list-query",
+        eventType: "list-query",
+        listId: "rows",
+        bind: "rows",
+        clientSequence: 1,
+        change: "search",
+        query,
+      });
+      assertEquals(model.data.rows, [{ id: 2, label: "changed" }, {
+        id: 1,
+        label: "One",
+      }]);
+      assertEquals(model.data.note, "saved");
+      assertEquals(model.screen.scroll.y, 95);
+      assertEquals(model.screen.elements.rows!.toolbarOpen, true);
+      const next = callScreen(options);
+      await flushMicrotasks();
+      shown = lastPresentation(channel);
+      list = topScreen(shown).lists[0]!;
+      assertEquals(list.totalItems, 1);
+      channel.push({
+        ...eventFor(shown, "", 2),
+        type: "screen.list",
+        updates: [{
+          id: list.id,
+          revision: list.revision,
+          operation: "query",
+          query,
+        }],
+      });
+      await flushMicrotasks();
+      assertEquals(
+        lastPresentation(channel).presentation.activeSurfaceId,
+        "surface-1",
+      );
+      channel.push(eventFor(lastPresentation(channel), "done", 3));
+      await next;
+    } finally {
+      unbind();
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "screen identities reserve IDs across element kinds and normalize binding references",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    const channel = new TestChannel();
+    const unbind = bindSession(channel);
+    const schema = z.object({ value: z.string() });
+    const model = new Model({ value: "initial" });
+    const implicit = buildControls(buildFieldCatalog(schema))[0]!.id;
+    try {
+      const options = {
+        id: "identity",
+        schema,
+        model,
+        actions: [{ id: implicit, label: "Reserved" }],
+        layout: {
+          schema: 1,
+          id: "identity-layout",
+          root: { type: "section", controls: ["value"] },
+        },
+        customElements: [{ initializer: "probe.v1", config: {} }],
+      };
+      const pending = callScreen(options);
+      await flushMicrotasks();
+      const screen = topScreen(lastPresentation(channel));
+      assertEquals(screen.controls[0]!.id === implicit, false);
+      assertEquals(
+        (screen.layout as import("./layout.ts").LayoutDocument).root.controls,
+        [screen.controls[0]!.id],
+      );
+      assertEquals(screen.customElements[0]!.id.startsWith("custom-"), true);
+      channel.push(eventFor(lastPresentation(channel), "done", 1));
+      await pending;
+      await assertRejects(
+        () =>
+          callScreen({
+            ...options,
+            controls: [{ id: "duplicate", bind: "value" }],
+            actions: [{ id: "duplicate", label: "Duplicate" }],
+          }),
+        TypeError,
+        "duplicate",
+      );
+      const special = callScreen({
+        id: "special-id",
+        schema,
+        model,
+        controls: [{ id: "__proto__", bind: "value" }],
+      });
+      await flushMicrotasks();
+      assertEquals(Object.hasOwn(model.screen.elements, "__proto__"), true);
+      assertEquals(
+        Object.keys(topScreen(lastPresentation(channel)).state.elements),
+        ["__proto__"],
+      );
+      assertEquals(model.screen.elements.__proto__!.scroll, { x: 0, y: 0 });
+      channel.push(eventFor(lastPresentation(channel), "done", 2));
+      await special;
+    } finally {
+      unbind();
+    }
+  },
+});

@@ -35,7 +35,7 @@ async function shellResponse(meta: RequestMetadata): Promise<Response> {
   const websocketScheme = requestURL.protocol === "https:" ? "wss:" : "ws:";
   const themeNonce = contentSecurityNonce();
   const boot = {
-    username: meta.auth.username ?? meta.authenticatedUser ?? "User",
+    username: meta.user.username,
     logoutUrl: uiConfig.logoutUrl,
     websocketUrl:
       `${websocketScheme}//${requestURL.host}${uiConfig.sessionWebSocketPath}`,

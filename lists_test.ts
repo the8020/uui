@@ -1,0 +1,303 @@
+import {
+  assert,
+  assertEquals,
+  assertNotEquals,
+  assertStrictEquals,
+  assertThrows,
+} from "@std/assert";
+import { z } from "@the8020/http";
+import { buildControls, buildFieldCatalog } from "./fields.ts";
+import { resolveElementIDs } from "./identifiers.ts";
+import { validateLayout } from "./layout.ts";
+import { ScreenLists, StaleListView } from "./lists.ts";
+import { Model } from "./model.ts";
+import { emptyListQuery } from "./screen_state.ts";
+
+const schema = z.object({
+  rows: z.array(
+    z.object({ id: z.number(), name: z.string(), enabled: z.boolean() }),
+  ),
+});
+
+function fixture(duplicate = false, triggerFilterEvents = false) {
+  const data = {
+    rows: Array.from(
+      { length: 130 },
+      (_, id) => ({ id, name: `Row ${id}`, enabled: id % 2 === 0 }),
+    ),
+  };
+  const model = new Model(data);
+  const layout = validateLayout({
+    schema: 1,
+    id: "lists",
+    root: {
+      type: "stack",
+      children: [
+        {
+          id: "first",
+          type: "list",
+          bind: "rows",
+          key: "id",
+          display: ["id", "name", "enabled"],
+          triggerFilterEvents,
+        },
+        ...(duplicate
+          ? [{
+            id: "second",
+            type: "list",
+            bind: "rows",
+            key: "id",
+            display: ["name"],
+          }]
+          : []),
+      ],
+    },
+  });
+  const lists = new ScreenLists(schema, [], layout, model.screen);
+  model.screen.elements.first!.list!.pageSize = 10;
+  return { data, model, layout, lists };
+}
+
+Deno.test("Model retains typed data and resets presentation state independently", () => {
+  const data = { name: "original" };
+  const model = new Model(data);
+  assertStrictEquals(model.data, data);
+  model.data.name = "edited";
+  assertEquals(data.name, "edited");
+  const instanceId = model.screen.instanceId;
+  model.screen.scroll.y = 123;
+  model.resetScreen();
+  assertEquals(model.screen.scroll.y, 0);
+  assertEquals(model.screen.version, 1);
+  assertEquals(model.screen.instanceId, instanceId);
+  assertNotEquals(new Model(data).screen.instanceId, instanceId);
+  model.data = { name: "refreshed" };
+  assertEquals(model.screen.instanceId, instanceId);
+});
+
+Deno.test("implicit IDs survive unrelated declarations and resolve duplicate groups", () => {
+  const declarations = [{ bind: "name", label: "Name" }, {
+    bind: "name",
+    label: "Name",
+  }, { bind: "name", label: "Other" }];
+  const resolve = (
+    items: Array<{ id?: string; bind: string; label: string }>,
+  ) =>
+    resolveElementIDs(
+      items,
+      (item) => ({ bind: item.bind, label: item.label }),
+    );
+  const original = resolve(declarations);
+  assertEquals(
+    resolve([{ bind: "extra", label: "Extra" }, ...declarations]).slice(1),
+    original,
+  );
+  assertEquals(new Set(original.map((item) => item.id)).size, 3);
+  assertEquals(original[0]!.id.slice(0, -1), original[1]!.id.slice(0, -1));
+  assertNotEquals(original[0]!.id.slice(0, -1), original[2]!.id.slice(0, -1));
+  const reserved = resolve([{
+    id: original[0]!.id,
+    bind: "reserved",
+    label: "Reserved",
+  }, ...declarations]);
+  assertEquals(new Set(reserved.map((item) => item.id)).size, 4);
+  assertThrows(
+    () =>
+      resolve([{ id: "same", bind: "a", label: "A" }, {
+        id: "same",
+        bind: "b",
+        label: "B",
+      }]),
+    TypeError,
+  );
+  const fields = buildFieldCatalog(z.object({ name: z.string() }));
+  assertEquals(buildControls(fields, declarations).length, 3);
+});
+
+Deno.test("independent list projections retain source order and stable pages", () => {
+  const { data, model, lists, layout } = fixture(true);
+  const source = data.rows;
+  const initial = structuredClone(source);
+  let shown = lists.present(data);
+  const request = {
+    id: "first",
+    revision: shown[0]!.revision,
+    operation: "page" as const,
+    page: 5,
+  };
+  lists.validateRequests([request], data);
+  lists.update(request);
+  shown = lists.present(data);
+  assertEquals(shown[0]!.rows[0], initial[40]);
+  assertEquals(shown[1]!.rows[0], initial[0]);
+  const repeated = new ScreenLists(schema, [], layout, model.screen);
+  assertEquals(repeated.present(data)[0]!.state.page, 5);
+  assertStrictEquals(data.rows, source);
+  assertEquals(data.rows, initial);
+  assertEquals(lists.presentModel(data), { rows: [] });
+});
+
+Deno.test("query processing uses typed values, resets pages, and reports array totals", () => {
+  const { data, model, lists } = fixture();
+  let shown = lists.present(data)[0]!;
+  lists.update({
+    id: "first",
+    revision: shown.revision,
+    operation: "page",
+    page: 5,
+  });
+  shown = lists.present(data)[0]!;
+  const query = {
+    search: "row",
+    filters: { enabled: "true", id: ">=100" },
+    sort: { column: "id", direction: "desc" as const },
+  };
+  const request = {
+    id: "first",
+    revision: shown.revision,
+    operation: "query" as const,
+    query,
+  };
+  lists.validateRequests([request], data);
+  assertEquals(lists.update(request), undefined);
+  shown = lists.present(data)[0]!;
+  assertEquals(shown.state.page, 1);
+  assertEquals((shown.rows[0] as { id: number }).id, 128);
+  assertEquals(shown.totalItems, 15);
+  assertEquals(shown.totalSourceItems, 130);
+  assert(shown.filtered);
+  assertEquals(model.screen.elements.first!.list!.query, query);
+  const clear = {
+    ...request,
+    revision: shown.revision,
+    query: emptyListQuery(),
+  };
+  lists.update(clear);
+  assertEquals(lists.present(data)[0]!.totalItems, 130);
+});
+
+Deno.test("mapped edits and selection resolve original rows after sorting and filtering", () => {
+  const { data, lists } = fixture();
+  const initial = lists.present(data)[0]!;
+  lists.update({
+    id: "first",
+    revision: initial.revision,
+    operation: "query",
+    query: {
+      search: "",
+      filters: { enabled: "true" },
+      sort: { column: "id", direction: "desc" },
+    },
+  });
+  const shown = lists.present(data)[0]!;
+  assertEquals(
+    lists.select({ id: "first", revision: shown.revision, index: 1 }, data)
+      .value,
+    126,
+  );
+  const candidate = structuredClone(data);
+  lists.applyEdits(
+    [{
+      id: "first",
+      revision: shown.revision,
+      rows: [{ index: 1, value: { ...candidate.rows[126]!, name: "Edited" } }],
+    }],
+    data,
+    candidate,
+  );
+  assertEquals(candidate.rows[126]!.name, "Edited");
+  assertEquals(candidate.rows[1]!.name, "Row 1");
+  assertEquals(data.rows[126]!.name, "Row 126");
+});
+
+Deno.test("stale mappings reject reordered and replaced sources even with identical values", () => {
+  for (
+    const mutation of [
+      (data: ReturnType<typeof fixture>["data"]) => data.rows.reverse(),
+      (data: ReturnType<typeof fixture>["data"]) =>
+        data.rows = structuredClone(data.rows),
+      (data: ReturnType<typeof fixture>["data"]) =>
+        data.rows[0]!.name = "Changed",
+    ]
+  ) {
+    const { data, lists } = fixture();
+    const shown = lists.present(data)[0]!;
+    mutation(data);
+    assertThrows(
+      () =>
+        lists.select({ id: "first", revision: shown.revision, index: 0 }, data),
+      StaleListView,
+    );
+    const fresh = lists.present(data)[0]!;
+    assertNotEquals(fresh.revision, shown.revision);
+  }
+});
+
+Deno.test("query events are opt-in and do not fire for repeat queries or capacity changes", () => {
+  const { data, lists } = fixture(false, true);
+  let shown = lists.present(data)[0]!;
+  const request = {
+    id: "first",
+    revision: shown.revision,
+    operation: "query" as const,
+    query: { ...emptyListQuery(), search: "Row 129" },
+  };
+  assertEquals(lists.update(request), {
+    id: "first",
+    bind: "rows",
+    query: request.query,
+    change: "search",
+  });
+  assertEquals(lists.update(request), undefined);
+  shown = lists.present(data)[0]!;
+  assertEquals(
+    lists.update({
+      id: "first",
+      revision: shown.revision,
+      operation: "capacity",
+      pageSize: 30,
+    }),
+    undefined,
+  );
+  assertEquals(lists.present(data)[0]!.totalItems, 1);
+});
+
+Deno.test("empty and implicit scalar lists retain columns and handle capacity anchors", () => {
+  const scalarSchema = z.object({ values: z.array(z.number()) });
+  const model = new Model({ values: [] as number[] });
+  const controls = buildControls(buildFieldCatalog(scalarSchema));
+  const lists = new ScreenLists(
+    scalarSchema,
+    controls,
+    undefined,
+    model.screen,
+  );
+  let shown = lists.present(model.data)[0]!;
+  assertEquals(shown.columns.length, 1);
+  assertEquals(shown.totalItems, 0);
+  assertEquals(shown.totalPages, 1);
+  model.data.values = Array.from({ length: 100 }, (_, index) => index);
+  shown = lists.present(model.data)[0]!;
+  lists.update({
+    id: shown.id,
+    revision: shown.revision,
+    operation: "capacity",
+    pageSize: 10,
+  });
+  shown = lists.present(model.data)[0]!;
+  lists.update({
+    id: shown.id,
+    revision: shown.revision,
+    operation: "page",
+    page: 5,
+  });
+  shown = lists.present(model.data)[0]!;
+  lists.update({
+    id: shown.id,
+    revision: shown.revision,
+    operation: "capacity",
+    pageSize: 15,
+  });
+  shown = lists.present(model.data)[0]!;
+  assert(shown.rows.includes(40));
+});

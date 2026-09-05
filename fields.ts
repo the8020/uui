@@ -1,11 +1,15 @@
+import { resolveElementIDs } from "./identifiers.ts";
+import { validateListOptions } from "./list_options.ts";
 import { z } from "@the8020/http";
 import { humanize } from "./humanize.ts";
 import type {
+  ControlDeclaration,
   ControlDescriptor,
   ControlKind,
   FieldDescriptor,
   FieldLength,
   FieldOption,
+  ListOptions,
 } from "./protocol.ts";
 import { MAX_FIELD_ROW_SPAN } from "./protocol.ts";
 
@@ -16,6 +20,7 @@ export interface FieldMetadata {
   group?: string;
   length?: FieldLength;
   rowSpan?: number;
+  list?: ListOptions;
   order?: number;
   readOnly?: boolean;
   hidden?: boolean;
@@ -39,6 +44,7 @@ export function field<T extends z.ZodType>(
 ): T {
   normalizeRowSpan(options.rowSpan);
   const configured = structuredClone(options);
+  if (configured.list !== undefined) validateListOptions(configured.list);
   normalizeRangeMetadata(
     configured,
     unwrap(schema).schema instanceof z.ZodNumber,
@@ -66,11 +72,12 @@ export function buildFieldCatalog(
 
 export function buildControls(
   fields: FieldDescriptor[],
-  overrides: ControlDescriptor[] = [],
+  overrides: ControlDeclaration[] = [],
+  reserved: ReadonlySet<string> = new Set(),
 ): ControlDescriptor[] {
   const byBind = new Map(fields.map((item) => [item.bind, item]));
-  const controls: ControlDescriptor[] = overrides.length === 0
-    ? fields.map((item) => ({ ...item, id: item.bind, bind: item.bind }))
+  const declarations: ControlDeclaration[] = overrides.length === 0
+    ? fields.map((item) => ({ ...item, bind: item.bind }))
     : overrides.map((item) => {
       const base = byBind.get(item.bind);
       if (base === undefined) {
@@ -83,8 +90,20 @@ export function buildControls(
         bind: item.bind,
       };
     });
+  const controls = resolveElementIDs(
+    declarations,
+    (item) => ({
+      bind: item.bind,
+      control: item.control,
+      label: item.label,
+      group: item.group,
+    }),
+    "control",
+    reserved,
+  );
   const ids = new Set<string>();
   for (const control of controls) {
+    if (control.list !== undefined) validateListOptions(control.list);
     if (control.id.length === 0 || ids.has(control.id)) {
       throw new TypeError(`duplicate or empty control ID ${control.id}`);
     }
@@ -151,6 +170,7 @@ function visitShape(
       options: configured.options ?? inferredOptions(unwrapped.schema),
       searchHelp: configured.searchHelp,
       semanticType: configured.semanticType,
+      list: configured.list,
     });
   }
 }
@@ -203,7 +223,9 @@ function normalizeRowSpan(value: number | undefined): number {
   return rowSpan;
 }
 
-function unwrap(schema: z.ZodType): { schema: z.ZodType; optional: boolean } {
+export function unwrap(
+  schema: z.ZodType,
+): { schema: z.ZodType; optional: boolean } {
   let current = schema;
   let optional = false;
   while (

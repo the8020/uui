@@ -17,6 +17,7 @@ Deno.test("home discovers canonical visible program manifests", async () => {
         "admin-db",
         "demo",
         "dev-core",
+        "jobs",
       ]
     ) {
       const source = new URL(`../../${repository}/programs`, import.meta.url)
@@ -67,6 +68,19 @@ Deno.test("home discovers canonical visible program manifests", async () => {
     );
     assertEquals(manifest.entrypoint, "program.ts");
     assertEquals(manifest.discoverable, false);
+    assertEquals(manifest.uui, true);
+    assertEquals(
+      programs.some((item) => item.id === "the8020/admin-core/programs"),
+      true,
+    );
+    assertEquals(
+      programs.some((item) => item.id === "the8020/jobs/jobs"),
+      true,
+    );
+    assertEquals(
+      programs.some((item) => item.id === "the8020/jobs/echo"),
+      false,
+    );
     assertEquals(validProgramID("the8020/demo/demo-form"), true);
     assertEquals(validProgramID("../core-ui/demo-form"), false);
     await assertRejects(
@@ -92,6 +106,62 @@ async function copyDirectory(source: string, destination: string) {
   }
 }
 
+Deno.test("program manifests parse TOML and reject invalid UUI flags", async () => {
+  const root = await Deno.makeTempDir({ prefix: "the8020-manifest-test-" });
+  const path = `${root}/program.toml`;
+  try {
+    for (
+      const [flag, expected] of [["", false], ["uui = false", false], [
+        "uui = true # Interactive",
+        true,
+      ]] as const
+    ) {
+      await Deno.writeTextFile(
+        path,
+        `schema = 1\ndescription = 'Example' # Description\n${flag}\n`,
+      );
+      const manifest = await readProgramManifest(path);
+      assertEquals(manifest.uui, expected);
+      assertEquals(manifest.description, "Example");
+    }
+    await Deno.writeTextFile(
+      path,
+      'schema = 1\ndescription = "Default entrypoint"\nentrypoint = ""\n',
+    );
+    assertEquals((await readProgramManifest(path)).entrypoint, "program.ts");
+    await Deno.writeTextFile(
+      path,
+      'schema = 1.0\ndescription = "Invalid schema type"\n',
+    );
+    await assertRejects(
+      () => readProgramManifest(path),
+      TypeError,
+      "invalid program manifest",
+    );
+    for (
+      const flag of [
+        'uui = "true"',
+        "uui = 1",
+        "uui = true\nuui = false",
+        "uui = yes",
+        "unknown = true",
+      ]
+    ) {
+      await Deno.writeTextFile(
+        path,
+        `schema = 1\ndescription = "Example"\n${flag}\n`,
+      );
+      await assertRejects(
+        () => readProgramManifest(path),
+        TypeError,
+        "invalid program manifest",
+      );
+    }
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
 Deno.test("dynamic invocation validates identity, containment, and default export", async () => {
   const root = await Deno.makeTempDir({ prefix: "the8020-program-test-" });
   try {
@@ -103,16 +173,20 @@ Deno.test("dynamic invocation validates identity, containment, and default expor
     );
     await Deno.writeTextFile(
       `${programRoot}/working/program.ts`,
-      "export default async function(input: unknown) { " +
-        "(globalThis as Record<string, unknown>).programTestInput = input; return 'done'; }\n",
+      "export default async function(...inputs: unknown[]) { " +
+        "(globalThis as Record<string, unknown>).programTestInput = inputs; return 'done'; }\n",
     );
     assertEquals(
-      await invokeProgram("example/testing/working", { answer: 42 }, root),
+      await invokeProgram("example/testing/working", [
+        { answer: 42 },
+        "second",
+        false,
+      ], root),
       "done",
     );
     assertEquals(
       (globalThis as Record<string, unknown>).programTestInput,
-      { answer: 42 },
+      [{ answer: 42 }, "second", false],
     );
 
     await Deno.mkdir(`${programRoot}/missing-default`, { recursive: true });

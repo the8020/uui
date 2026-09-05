@@ -1,3 +1,11 @@
+import { ListRenderer } from "./lists.ts";
+import {
+  type ListRequest,
+  type ListSelection,
+  screenElement,
+  type ScreenState,
+  type ScreenStateUpdate,
+} from "../../../screen_state.ts";
 import {
   BACK_EVENT,
   type PresentationSnapshot,
@@ -32,6 +40,7 @@ import {
 import { MessageCenter } from "./message_center.ts";
 import { mergeServerModel, PresentationHistory } from "./presentation.ts";
 import { windowTitleForHeading } from "./window_title.ts";
+import { BrowserDownloads } from "./downloads.ts";
 
 interface FocusState {
   element?: HTMLElement;
@@ -54,8 +63,8 @@ interface PresentationLayer {
   model: Record<string, unknown>;
   headerItems: HTMLElement[];
   focus?: FocusState;
-  scrollX: number;
-  scrollY: number;
+  viewState: ScreenState;
+  readonly lists: ListRenderer;
 }
 
 interface BootData {
@@ -69,6 +78,10 @@ interface BootData {
   buildVersion?: string;
 }
 
+const localScreenStates = new Map<
+  string,
+  { state: ScreenState; focus?: FocusState }
+>();
 const app = requiredElement<HTMLElement>("app");
 const modalLayers = requiredElement<HTMLElement>("modal-layers");
 const connectionState = requiredElement<HTMLElement>("connection-state");
@@ -159,6 +172,10 @@ const messageCenter = new MessageCenter({
   closeButton: messageDialogClose,
   dismissAllButton: messageToastDismissAll,
 });
+const downloads = new BrowserDownloads((command) => {
+  sendClient(command);
+});
+addEventListener("pagehide", () => downloads.close());
 
 renderIconText(screenBack, "[[icon=arrow_back]]", { decorativeIcons: true });
 renderIconText(programHeaderOverflowToggle, "[[icon=more_vert]]", {
@@ -247,6 +264,7 @@ async function connectAttempt(): Promise<void> {
   }
   let opened = false;
   socket = new WebSocket(websocketRouteURL(), ["the8020.uui.v1"]);
+  socket.binaryType = "arraybuffer";
   socket.addEventListener("open", () => {
     opened = true;
     reconnectAttempt = 0;
@@ -261,6 +279,7 @@ async function connectAttempt(): Promise<void> {
   });
   socket.addEventListener("message", (event) => receive(event.data));
   socket.addEventListener("close", (event) => {
+    downloads.close();
     if (!shouldReconnectWebSocket(ended, event.code)) {
       if (terminalRedirect !== undefined) {
         if (logoutFallback !== undefined) clearTimeout(logoutFallback);
@@ -288,7 +307,7 @@ async function establishRoute(reuse: boolean): Promise<void> {
   const request = async (): Promise<Response> => {
     const headers = new Headers();
     if (reuse && routeToken !== null) {
-      headers.set("X-80-20-Route", routeToken);
+      headers.set("the8020-route", routeToken);
     }
     return await fetch(establishmentURL(), {
       method: "POST",
@@ -305,7 +324,7 @@ async function establishRoute(reuse: boolean): Promise<void> {
   if (!response.ok) {
     throw new Error(`route establishment failed: ${response.status}`);
   }
-  const token = response.headers.get("X-80-20-Route");
+  const token = response.headers.get("the8020-route");
   if (token === null || token.length === 0) {
     throw new Error("route establishment returned no route token");
   }
@@ -349,6 +368,16 @@ function scheduleReconnect(): void {
 }
 
 function receive(raw: unknown): void {
+  if (raw instanceof ArrayBuffer) {
+    try {
+      downloads.bytes(new Uint8Array(raw));
+    } catch {
+      downloads.close();
+      socket?.close(1003, "invalid download frame");
+      showNotice("The server sent invalid download data.");
+    }
+    return;
+  }
   if (typeof raw !== "string") return;
   let message: UUIServerMessage;
   try {
@@ -375,6 +404,17 @@ function receive(raw: unknown): void {
   ) return;
   lastServerSequence = Math.max(lastServerSequence, message.serverSequence);
   switch (message.type) {
+    case "download.begin":
+    case "download.end":
+    case "download.error":
+      try {
+        downloads.receive(message);
+      } catch {
+        downloads.close();
+        socket?.close(1003, "invalid download message");
+        showNotice("The server sent an invalid download message.");
+      }
+      break;
     case "session.ready":
       break;
     case "session.resumed":
@@ -428,6 +468,7 @@ function receive(raw: unknown): void {
       showNotice(message.message ?? message.code ?? "Session error");
       break;
     case "session.end":
+      downloads.close();
       setInteractionPending(undefined);
       ended = true;
       messageCenter.dispose();
@@ -554,15 +595,11 @@ function reconcilePresentation(presentation: PresentationSnapshot): void {
   }
 
   captureActiveFocus();
+  for (const layer of layers.values()) captureLayerState(layer);
+  const previousInstance = layers.get(presentationHistory.visible()[0] ?? "")
+    ?.viewState.instanceId;
   const previousVisible = [...presentationHistory.visible()];
   const previousBase = previousVisible[0];
-  if (previousBase !== undefined) {
-    const layer = layers.get(previousBase);
-    if (layer !== undefined) {
-      layer.scrollX = scrollX;
-      layer.scrollY = scrollY;
-    }
-  }
   if (
     interactionSequence !== undefined &&
     presentation.activeSurfaceId !== null
@@ -616,8 +653,31 @@ function reconcilePresentation(presentation: PresentationSnapshot): void {
   updateInteractionState();
   synchronizeWindowTitle();
 
-  if (previousBase !== base.surfaceId) {
-    scrollTo(base.scrollX, base.scrollY);
+  if (
+    previousBase !== base.surfaceId ||
+    previousInstance !== base.viewState.instanceId ||
+    changed.has(base.surfaceId)
+  ) {
+    scrollTo({
+      left: base.viewState.scroll.x,
+      top: base.viewState.scroll.y,
+      behavior: "instant",
+    });
+  }
+  for (const surface of surfaces) {
+    const layer = layers.get(surface.surfaceId)!;
+    if (layer.kind === "modal") {
+      layer.root.scrollTo({
+        left: layer.viewState.scroll.x,
+        top: layer.viewState.scroll.y,
+        behavior: "instant",
+      });
+    }
+    for (const [target, id] of elementScrollTargets(layer)) {
+      const scroll = layer.viewState.elements[id]!.scroll;
+      target.scrollTo({ left: scroll.x, top: scroll.y, behavior: "instant" });
+    }
+    layer.lists.schedule();
   }
   if (activeSurfaceID !== null) {
     const active = layers.get(activeSurfaceID);
@@ -690,8 +750,8 @@ function createLayer(surface: PresentationSurfaceSnapshot): PresentationLayer {
     screenFingerprint: "",
     model: {},
     headerItems: [],
-    scrollX: 0,
-    scrollY: 0,
+    viewState: structuredClone(surface.screen.state),
+    lists: new ListRenderer(),
   };
   updateLayer(layer, surface);
   return layer;
@@ -704,7 +764,25 @@ function updateLayer(
   if (layer.kind !== surface.kind) {
     throw new TypeError("presentation surface kind changed");
   }
-  const sameScreen = layer.screenFingerprint !== "" &&
+  const sameInstance = layer.screenFingerprint !== "" &&
+    layer.viewState.instanceId === surface.screen.state.instanceId &&
+    layer.viewState.version === surface.screen.state.version;
+  if (!sameInstance) {
+    const local = localScreenStates.get(surface.screen.state.instanceId);
+    layer.viewState = local?.state.version === surface.screen.state.version
+      ? local.state
+      : structuredClone(surface.screen.state);
+    layer.focus = local?.state.version === surface.screen.state.version
+      ? local.focus
+      : undefined;
+  }
+  for (const [id, incoming] of Object.entries(surface.screen.state.elements)) {
+    const element = screenElement(layer.viewState, id);
+    element.list = incoming.list === undefined
+      ? undefined
+      : structuredClone(incoming.list);
+  }
+  const sameScreen = sameInstance &&
     layer.screen.id === surface.screen.id &&
     layer.screen.revision === surface.screen.revision;
   const nextModel = sameScreen
@@ -730,6 +808,7 @@ function updateLayer(
 
 function renderLayer(layer: PresentationLayer): void {
   const callbacks: RenderCallbacks = {
+    elementState: (id) => screenElement(layer.viewState, id),
     changed(bind, _value, control) {
       if (!layerIsActive(layer)) return;
       layer.dirty.mark(bind);
@@ -740,10 +819,19 @@ function renderLayer(layer: PresentationLayer): void {
     action(action, eventType = "action", value) {
       dispatchFromLayer(layer, action, eventType, value);
     },
-    page(bind, currentPage, page) {
-      requestPage(layer, bind, currentPage, page);
+    list(id) {
+      return layer.lists.render(id);
     },
   };
+  layer.lists.begin(
+    layer.screen.lists,
+    layer.viewState,
+    `${layer.surfaceId}-${layer.viewState.instanceId}`,
+    {
+      request: (updates) => requestLists(layer, updates),
+      select: (selection) => selectListRow(layer, selection),
+    },
+  );
   layer.customElements.begin();
   renderScreen(
     layer.root,
@@ -758,6 +846,10 @@ function renderLayer(layer: PresentationLayer): void {
     layer.model,
     callbacks,
   );
+  scopeDOMIDs(layer.root, `${layer.surfaceId}-${layer.viewState.instanceId}`);
+  for (const item of layer.headerItems) {
+    scopeDOMIDs(item, `${layer.surfaceId}-${layer.viewState.instanceId}`);
+  }
   if (layer.kind === "modal") {
     layer.headerRoot!.replaceChildren(...layer.headerItems);
     const heading = layer.root.querySelector<HTMLElement>(".screen-title");
@@ -797,6 +889,7 @@ function disposeLayer(surfaceId: string): void {
   }
   disposeFieldMessages(layer.root);
   for (const item of layer.headerItems) disposeFieldMessages(item);
+  layer.lists.dispose();
   layer.customElements.dispose();
   layer.shell.remove();
   layers.delete(surfaceId);
@@ -807,6 +900,7 @@ function disposeLayer(surfaceId: string): void {
 }
 
 function clearPresentation(): void {
+  localScreenStates.clear();
   presentationHistory.clear();
   for (const surfaceId of [...layers.keys()]) disposeLayer(surfaceId);
   activeSurfaceID = null;
@@ -831,31 +925,144 @@ function synchronizeWindowTitle(): void {
   document.title = windowTitleForHeading(heading?.textContent);
 }
 
-function requestPage(
+function requestLists(
   layer: PresentationLayer,
-  bind: string,
-  currentPage: number,
-  page: number,
+  updates: ListRequest[],
+): boolean {
+  if (!layerIsActive(layer)) return false;
+  if (updates.length === 0) return false;
+  sendInteraction(layer, {
+    type: "screen.list",
+    updates,
+    changes: changesForBindings(layer.model, layer.dirty.bindings()),
+  });
+  return true;
+}
+
+function selectListRow(
+  layer: PresentationLayer,
+  selection: ListSelection,
 ): void {
   if (!layerIsActive(layer)) return;
-  const pagination = layer.screen.pagination?.lists.find((item) =>
-    item.bind === bind
-  );
-  if (
-    pagination === undefined || pagination.page !== currentPage ||
-    !Number.isSafeInteger(page) || page < 1 || page > pagination.totalPages ||
-    page === currentPage
-  ) return;
   sendInteraction(layer, {
-    type: "screen.page",
-    bind,
-    currentPage,
-    page,
-    changes: changesForBindings(layer.model, [
-      ...layer.dirty.bindings(),
-      bind,
-    ]),
+    type: "screen.event",
+    action: "select",
+    eventType: "select",
+    selection,
+    changes: changesForBindings(layer.model, layer.dirty.bindings()),
   });
+}
+
+function captureLayerState(layer: PresentationLayer): void {
+  if (
+    layer.kind === "page" &&
+    presentationHistory.visible()[0] === layer.surfaceId && !layer.shell.hidden
+  ) {
+    layer.viewState.scroll = { x: scrollX, y: scrollY };
+  } else if (
+    layer.kind === "modal" && (layer.shell as HTMLDialogElement).open
+  ) {
+    layer.viewState.scroll = {
+      x: layer.root.scrollLeft,
+      y: layer.root.scrollTop,
+    };
+  }
+  layer.lists.capture();
+  for (const [target, id] of elementScrollTargets(layer)) {
+    layer.viewState.elements[id]!.scroll = {
+      x: target.scrollLeft,
+      y: target.scrollTop,
+    };
+  }
+  localScreenStates.delete(layer.viewState.instanceId);
+  localScreenStates.set(layer.viewState.instanceId, {
+    state: layer.viewState,
+    focus: layer.focus,
+  });
+  if (localScreenStates.size > 1000) {
+    localScreenStates.delete(localScreenStates.keys().next().value!);
+  }
+}
+
+function elementScrollTargets(
+  layer: PresentationLayer,
+): Array<[HTMLElement, string]> {
+  return [...layer.root.querySelectorAll<HTMLElement>("[data-element-id]")]
+    .flatMap((element) => {
+      const id = element.dataset.elementId!;
+      if (
+        !Object.hasOwn(layer.viewState.elements, id) ||
+        layer.viewState.elements[id]!.list !== undefined ||
+        element.closest("[hidden], [data-custom-element-id]") !== null ||
+        element.getClientRects().length === 0
+      ) return [];
+      return [
+        [
+          element.classList.contains("field")
+            ? element.querySelector<HTMLElement>("textarea") ?? element
+            : element,
+          id,
+        ] as [
+          HTMLElement,
+          string,
+        ],
+      ];
+    });
+}
+
+function screenStateUpdate(layer: PresentationLayer): ScreenStateUpdate {
+  captureLayerState(layer);
+  const ids = new Set(Object.keys(layer.screen.state.elements));
+  const elements = Object.fromEntries(
+    Object.entries(layer.viewState.elements).filter(([id]) => ids.has(id)).map((
+      [id, state],
+    ) => [id, {
+      scroll: structuredClone(state.scroll),
+      toolbarOpen: state.toolbarOpen,
+      ...(state.selectedTab === undefined
+        ? {}
+        : { selectedTab: state.selectedTab }),
+    }]),
+  );
+  return {
+    version: layer.viewState.version,
+    scroll: structuredClone(layer.viewState.scroll),
+    elements,
+  };
+}
+
+/** Scope framework DOM references while leaving custom-element internals alone. */
+function scopeDOMIDs(root: HTMLElement, prefix: string): void {
+  const nodes = [root, ...root.querySelectorAll<HTMLElement>("*")].filter((
+    node,
+  ) => node.closest("[data-custom-element-id]") === null);
+  const ids = new Map<string, string>();
+  for (const node of nodes) {
+    if (node.id && !node.id.startsWith(`${prefix}-`)) {
+      const id = `${prefix}-${node.id}`;
+      ids.set(node.id, id);
+      node.id = id;
+    }
+  }
+  for (const node of nodes) {
+    for (
+      const attribute of [
+        "for",
+        "aria-labelledby",
+        "aria-describedby",
+        "aria-controls",
+        "aria-details",
+      ]
+    ) {
+      const value = node.getAttribute(attribute);
+      if (value !== null) {
+        node.setAttribute(
+          attribute,
+          value.split(" ").map((id) => ids.get(id) ?? id).join(" "),
+        );
+      }
+    }
+  }
 }
 
 function setInteractionPending(sequence: number | undefined): void {
@@ -941,12 +1148,15 @@ function sendInteraction(
   payload: Record<string, unknown>,
 ): void {
   if (interactionSequence !== undefined) return;
+  rememberLayerFocus(layer);
   const sequence = sendClient(
     {
       ...payload,
       surfaceId: layer.surfaceId,
       screenId: layer.screen.id,
       screenRevision: layer.screen.revision,
+      instanceId: layer.viewState.instanceId,
+      screenState: screenStateUpdate(layer),
     },
     true,
     layer,

@@ -1,3 +1,4 @@
 schema = 1
+uui = true
 description = "Inspect UUI sessions"
 entrypoint = "program.ts"

@@ -11899,36 +11899,188 @@ WARNING: This link could potentially be dangerous`)) {
   }
 });
 
-// ui-config.json
-var ui_config_default = {
-  loginUrl: "/the8020/uui/login/",
-  logoutUrl: "/the8020/uui/login/logout",
-  postLoginUrl: "/the8020/uui/shell/",
-  sessionWebSocketPath: "/the8020/uui/session/connect",
-  protocolVersion: 2,
-  disconnectGraceMilliseconds: 12e4,
-  heartbeatIntervalMilliseconds: 3e4,
-  heartbeatTimeoutMilliseconds: 6e4,
-  reconnectInitialDelayMilliseconds: 250,
-  reconnectMaximumDelayMilliseconds: 1e4,
-  replayMessageLimit: 1e3,
-  replayByteLimit: 1e7,
-  maximumMessageBytes: 1e6,
-  homeProgram: "the8020/uui/home",
-  terminatedProgram: "the8020/uui/program-terminated"
-};
+// screen_state.ts
+function initialElementState() {
+  return {
+    scroll: {
+      x: 0,
+      y: 0
+    },
+    toolbarOpen: false
+  };
+}
+function screenElement(screen, id) {
+  if (!Object.hasOwn(screen.elements, id)) {
+    Object.defineProperty(screen.elements, id, {
+      value: initialElementState(),
+      enumerable: true,
+      writable: true,
+      configurable: true
+    });
+  }
+  return screen.elements[id];
+}
+var MAX_LIST_PAGE_SIZE = 500;
+var MAX_LIST_QUERY_LENGTH = 2e3;
 
-// protocol.ts
-var UUI_PROTOCOL_VERSION = ui_config_default.protocolVersion;
-var BACK_EVENT = "back";
-var UUI_MESSAGE_KINDS = [
-  "info",
+// list_values.ts
+function listValueText(value) {
+  if (value === null || value === void 0) return "";
+  if (value instanceof Date) return value.toISOString();
+  return typeof value === "object" ? JSON.stringify(value) : String(value);
+}
+var collator = new Intl.Collator("en", {
+  sensitivity: "base"
+});
+
+// services/shell/frontend/field_message.ts
+var DEFAULT_EDGE_PADDING = 10;
+var DEFAULT_GAP = 6;
+function fieldMessageIsOverflowing(clientWidth, scrollWidth) {
+  return Number.isFinite(clientWidth) && Number.isFinite(scrollWidth) && clientWidth > 0 && scrollWidth > clientWidth + 0.5;
+}
+function fieldMessagePopoverPosition(anchor, popoverWidth, popoverHeight, viewportWidth, viewportHeight, edgePadding = DEFAULT_EDGE_PADDING, gap = DEFAULT_GAP) {
+  const padding = Math.max(0, edgePadding);
+  const horizontalLimit = Math.max(padding, viewportWidth - padding - Math.max(0, popoverWidth));
+  const verticalLimit = Math.max(padding, viewportHeight - padding - Math.max(0, popoverHeight));
+  const below = anchor.bottom + Math.max(0, gap);
+  const above = anchor.top - Math.max(0, gap) - Math.max(0, popoverHeight);
+  return {
+    left: clamp(anchor.left, padding, horizontalLimit),
+    top: below <= verticalLimit ? below : above >= padding ? above : clamp(below, padding, verticalLimit)
+  };
+}
+function clamp(value, minimum, maximum) {
+  if (!Number.isFinite(value)) return minimum;
+  return Math.min(Math.max(value, minimum), maximum);
+}
+
+// humanize.ts
+function humanize(value) {
+  const words = value.replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2").replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[-_]+/g, " ").trim().split(/\s+/).filter((word) => word.length > 0).map((word) => /^[A-Z0-9]{2,}$/.test(word) ? word : word.toLowerCase());
+  const text2 = words.join(" ");
+  return text2.length === 0 ? value : text2[0].toUpperCase() + text2.slice(1);
+}
+
+// services/shell/frontend/icon_text.ts
+var MATERIAL_ICON_ASSETS = {
+  arrow_downward: "./assets/material-arrow-downward-24-61643262.svg",
+  arrow_upward: "./assets/material-arrow-upward-24-473799e3.svg",
+  filter_alt: "./assets/material-filter-alt-24-f934b1a5.svg",
+  arrow_back: "./assets/material-arrow-back-24-e083cc60.svg",
+  arrow_drop_down: "./assets/material-arrow-drop-down-24-e083cc60.svg",
+  close: "./assets/material-close-24-84ccef28.svg",
+  dark_mode: "./assets/material-dark-mode-24-bab57d17.svg",
+  edit: "./assets/material-edit-24-a4b3c9f6.svg",
+  error: "./assets/material-error-24-e083cc60.svg",
+  light_mode: "./assets/material-light-mode-24-e5b6e132.svg",
+  logout: "./assets/material-logout-24-84ccef28.svg",
+  menu: "./assets/material-menu-24-e083cc60.svg",
+  more_vert: "./assets/material-more-vert-24-e083cc60.svg",
+  refresh: "./assets/material-refresh-24-e083cc60.svg",
+  save: "./assets/material-save-24-e083cc60.svg",
+  tab_close: "./assets/material-tab-close-24-84ccef28.svg"
+};
+var SEMANTIC_COLORS = /* @__PURE__ */ new Set([
+  "text",
+  "muted",
+  "primary",
   "success",
   "warning",
-  "error"
-];
-var MAX_UUI_MESSAGE_BODY_LENGTH = 2e4;
-var MAX_FIELD_ROW_SPAN = 8;
+  "danger",
+  "error",
+  "info",
+  "brand"
+]);
+var ICON_PLACEHOLDER = /\[\[icon=([a-z][a-z0-9_]*)(?:\s+color=([^\]\s]+))?\]\]/g;
+var HEX_COLOR = /^(?:#[0-9a-fA-F]{3}|#[0-9a-fA-F]{4}|#[0-9a-fA-F]{6}|#[0-9a-fA-F]{8})$/;
+function parseIconText(value) {
+  const tokens = [];
+  let offset = 0;
+  for (const match2 of value.matchAll(ICON_PLACEHOLDER)) {
+    const index = match2.index ?? 0;
+    if (index > offset) pushText(tokens, value.slice(offset, index));
+    const placeholder = match2[0];
+    const name = match2[1];
+    const color = match2[2];
+    if (isMaterialIconName(name) && isIconColor(color)) {
+      tokens.push({
+        type: "icon",
+        name,
+        ...color === void 0 ? {} : {
+          color
+        }
+      });
+    } else {
+      pushText(tokens, placeholder);
+    }
+    offset = index + placeholder.length;
+  }
+  if (offset < value.length) pushText(tokens, value.slice(offset));
+  return tokens;
+}
+function renderIconText(target, value, options = {}) {
+  target.replaceChildren(...parseIconText(value).map((token) => token.type === "text" ? document.createTextNode(token.text) : createMaterialIcon(token.name, token.color, options)));
+}
+function createMaterialIcon(name, color, options = {}) {
+  const icon = document.createElement("span");
+  icon.className = "material-icon";
+  icon.dataset.materialIcon = name;
+  icon.style.setProperty("--material-icon-url", `url("${MATERIAL_ICON_ASSETS[name]}")`);
+  if (color !== void 0) {
+    if (SEMANTIC_COLORS.has(color)) {
+      icon.classList.add(`material-icon-color-${color === "error" ? "danger" : color}`);
+    } else {
+      icon.style.color = color;
+    }
+  }
+  if (options.decorativeIcons) {
+    icon.setAttribute("aria-hidden", "true");
+  } else {
+    icon.setAttribute("role", "img");
+    icon.setAttribute("aria-label", humanize(name));
+  }
+  return icon;
+}
+function isMaterialIconName(value) {
+  return Object.hasOwn(MATERIAL_ICON_ASSETS, value);
+}
+function isIconColor(value) {
+  return value === void 0 || SEMANTIC_COLORS.has(value) || HEX_COLOR.test(value);
+}
+function pushText(tokens, text2) {
+  const previous = tokens.at(-1);
+  if (previous?.type === "text") previous.text += text2;
+  else tokens.push({
+    type: "text",
+    text: text2
+  });
+}
+
+// services/shell/frontend/list_geometry.ts
+function listRowCapacity(viewport, chrome, preceding, overhead, rowHeight) {
+  const usable = Math.max(0, viewport - chrome - 24);
+  const before = preceding + overhead + rowHeight * 3 <= usable ? Math.max(0, preceding) : 0;
+  return Math.max(1, Math.min(MAX_LIST_PAGE_SIZE, Math.floor((usable - before - overhead) / Math.max(1, rowHeight))));
+}
+function listColumnWidths(lengths, available) {
+  const minimum = {
+    compact: 58,
+    short: 110,
+    medium: 164,
+    long: 260
+  };
+  const weight = {
+    compact: 0,
+    short: 1,
+    medium: 2,
+    long: 4
+  };
+  const widths = lengths.map((length) => minimum[length]);
+  const extra = Math.max(0, available - 38 - widths.reduce((a, b) => a + b, 0));
+  const totalWeight = lengths.reduce((total, length) => total + weight[length], 0);
+  return widths.map((width, index) => width + extra * (totalWeight === 0 ? 1 / Math.max(1, widths.length) : weight[lengths[index]] / totalWeight));
+}
 
 // services/shell/frontend/model.ts
 function getPath(model, path) {
@@ -12027,111 +12179,624 @@ var DirtyBindings = class {
   }
 };
 
+// services/shell/frontend/lists.ts
+var ListRenderer = class {
+  #controllers = /* @__PURE__ */ new Map();
+  #instance = "";
+  #snapshots = /* @__PURE__ */ new Map();
+  #state;
+  #callbacks;
+  #prefix = "";
+  #frame;
+  constructor() {
+    globalThis.addEventListener("resize", this.schedule);
+    globalThis.visualViewport?.addEventListener("resize", this.schedule);
+  }
+  begin(snapshots, state, prefix, callbacks) {
+    const instance = `${state.instanceId}:${state.version}`;
+    if (instance !== this.#instance) {
+      for (const controller of this.#controllers.values()) controller.dispose();
+      this.#controllers.clear();
+      this.#instance = instance;
+    }
+    this.#snapshots = new Map(snapshots.map((snapshot) => [
+      snapshot.id,
+      snapshot
+    ]));
+    this.#state = state;
+    this.#callbacks = callbacks;
+    this.#prefix = prefix;
+    for (const [id, controller] of this.#controllers) {
+      if (!this.#snapshots.has(id)) {
+        controller.dispose();
+        this.#controllers.delete(id);
+      }
+    }
+  }
+  render(id) {
+    const snapshot = this.#snapshots.get(id);
+    if (snapshot === void 0) throw new Error(`missing list snapshot ${id}`);
+    let controller = this.#controllers.get(id);
+    if (controller === void 0) {
+      controller = new ListController(this.schedule);
+      this.#controllers.set(id, controller);
+    }
+    const host = controller.render(snapshot, this.#state.elements[id], this.#prefix, this.#callbacks);
+    this.schedule();
+    return host;
+  }
+  capture() {
+    for (const controller of this.#controllers.values()) controller.capture();
+  }
+  schedule = () => {
+    if (this.#frame !== void 0) return;
+    this.#frame = requestAnimationFrame(() => {
+      this.#frame = void 0;
+      for (const controller of this.#controllers.values()) {
+        if (controller.flushDueQuery()) return;
+      }
+      const updates = [];
+      for (const controller of this.#controllers.values()) {
+        const update = controller.measure();
+        if (update !== void 0) updates.push(update);
+      }
+      if (updates.length > 0) this.#callbacks.request(updates);
+    });
+  };
+  dispose() {
+    if (this.#frame !== void 0) cancelAnimationFrame(this.#frame);
+    globalThis.removeEventListener("resize", this.schedule);
+    globalThis.visualViewport?.removeEventListener("resize", this.schedule);
+    for (const controller of this.#controllers.values()) controller.dispose();
+    this.#controllers.clear();
+  }
+};
+var ListController = class {
+  schedule;
+  host;
+  #resize;
+  #snapshot;
+  #state;
+  #callbacks;
+  #draft;
+  #draftPending;
+  #timer;
+  #openColumn;
+  #scroll;
+  #table;
+  #popover;
+  #anchor;
+  #measures;
+  #prefix;
+  #rendering;
+  #restoreScroll;
+  #filterFocus;
+  constructor(schedule) {
+    this.schedule = schedule;
+    this.host = document.createElement("div");
+    this.#draftPending = false;
+    this.#measures = [];
+    this.#prefix = "";
+    this.#rendering = false;
+    this.#restoreScroll = false;
+    this.flushQuery = () => {
+      if (this.#timer !== void 0) clearTimeout(this.#timer);
+      this.#timer = void 0;
+      this.flushDueQuery();
+    };
+    this.host.className = "data-list-container";
+    this.#resize = new ResizeObserver(schedule);
+    this.#resize.observe(this.host);
+  }
+  render(snapshot, state, prefix, callbacks) {
+    this.capture();
+    if (!this.#draftPending || JSON.stringify(snapshot.state.query) === JSON.stringify(this.#draft)) {
+      this.#draft = structuredClone(snapshot.state.query);
+      this.#draftPending = false;
+    }
+    this.#snapshot = snapshot;
+    this.#state = state;
+    this.#prefix = `${prefix}-list-${snapshot.id}`;
+    this.#callbacks = callbacks;
+    this.#rendering = true;
+    const focused = document.activeElement;
+    if (focused instanceof HTMLInputElement && this.#popover?.contains(focused)) {
+      this.#filterFocus = {
+        start: focused.selectionStart,
+        end: focused.selectionEnd
+      };
+    }
+    const previousPopover = this.#popover;
+    this.#popover = void 0;
+    if (previousPopover?.matches(":popover-open")) {
+      previousPopover.hidePopover();
+    }
+    this.host.replaceChildren();
+    this.host.dataset.listId = snapshot.id;
+    this.host.dataset.viewRevision = String(snapshot.revision);
+    this.host.id = this.#prefix;
+    this.#measures = [];
+    const toolbar = document.createElement("div");
+    toolbar.className = "data-list-toolbar";
+    toolbar.hidden = !state.toolbarOpen;
+    const actions = document.createElement("div");
+    actions.className = "data-list-tools-actions";
+    const search = document.createElement("input");
+    search.type = "search";
+    search.maxLength = MAX_LIST_QUERY_LENGTH;
+    search.id = `${this.#prefix}-search`;
+    search.className = "data-list-search";
+    search.placeholder = "Search\u2026";
+    search.setAttribute("aria-label", "Search list");
+    search.value = this.#draft.search;
+    search.addEventListener("input", () => {
+      this.#draft.search = search.value;
+      this.queueQuery();
+    });
+    search.addEventListener("change", this.flushQuery);
+    toolbar.append(actions, search);
+    this.host.append(toolbar);
+    this.#scroll = document.createElement("div");
+    this.#scroll.className = "data-list-scroll";
+    this.#restoreScroll = true;
+    this.#table = document.createElement("table");
+    this.#table.className = "data-list";
+    const colgroup = document.createElement("colgroup");
+    for (let index = 0; index <= snapshot.columns.length; index++) {
+      colgroup.append(document.createElement("col"));
+    }
+    this.#table.append(colgroup);
+    const head = this.#table.createTHead().insertRow();
+    for (const column of snapshot.columns) {
+      const cell = document.createElement("th");
+      cell.scope = "col";
+      cell.dataset.columnId = column.id;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "data-list-column-button";
+      button.id = `${this.#prefix}-column-${column.id}`;
+      button.setAttribute("aria-haspopup", "dialog");
+      const full = document.createElement("span");
+      full.className = "data-list-heading";
+      renderIconText(full, column.heading);
+      button.setAttribute("aria-label", full.textContent || column.key || "Value");
+      const short = document.createElement("span");
+      short.className = "data-list-heading data-list-short-heading";
+      short.hidden = true;
+      renderIconText(short, column.shortHeading ?? column.heading);
+      const measure = document.createElement("span");
+      measure.className = "data-list-heading-measure";
+      measure.setAttribute("aria-hidden", "true");
+      renderIconText(measure, column.heading);
+      button.append(full, short);
+      const sorting = snapshot.state.query.sort?.column === column.key ? snapshot.state.query.sort.direction : void 0;
+      cell.setAttribute("aria-sort", sorting === "asc" ? "ascending" : sorting === "desc" ? "descending" : "none");
+      if (sorting !== void 0) {
+        const icon = document.createElement("span");
+        renderIconText(icon, `[[icon=${sorting === "asc" ? "arrow_upward" : "arrow_downward"}]]`, {
+          decorativeIcons: true
+        });
+        button.append(icon);
+      }
+      if (snapshot.state.query.filters[column.key]) {
+        const icon = document.createElement("span");
+        renderIconText(icon, "[[icon=filter_alt]]", {
+          decorativeIcons: true
+        });
+        button.append(icon);
+        button.classList.add("has-filter");
+      }
+      button.addEventListener("click", () => this.openColumn(column, button));
+      cell.append(button, measure);
+      head.append(cell);
+      this.#measures.push({
+        column,
+        button,
+        measure,
+        full,
+        short
+      });
+    }
+    const toolsCell = document.createElement("th");
+    toolsCell.className = "data-list-tools-cell";
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "data-list-tools-toggle";
+    toggle.id = `${this.#prefix}-tools`;
+    toggle.textContent = state.toolbarOpen ? "\u2212" : "+";
+    toggle.setAttribute("aria-label", "List tools");
+    toggle.setAttribute("aria-expanded", String(state.toolbarOpen));
+    toggle.title = snapshot.state.query.search ? `List tools \u2014 search: ${snapshot.state.query.search}` : "List tools";
+    toggle.classList.toggle("has-filter", snapshot.state.query.search.trim() !== "");
+    toggle.addEventListener("click", () => {
+      state.toolbarOpen = !state.toolbarOpen;
+      toolbar.hidden = !state.toolbarOpen;
+      toggle.textContent = state.toolbarOpen ? "\u2212" : "+";
+      toggle.setAttribute("aria-expanded", String(state.toolbarOpen));
+      if (state.toolbarOpen) search.focus({
+        preventScroll: true
+      });
+      this.schedule();
+    });
+    toolsCell.append(toggle);
+    head.append(toolsCell);
+    const body = this.#table.createTBody();
+    snapshot.rows.forEach((item, index) => {
+      const row = body.insertRow();
+      row.tabIndex = 0;
+      row.dataset.rowIndex = String(index);
+      const select = () => callbacks.select({
+        id: snapshot.id,
+        revision: snapshot.revision,
+        index
+      });
+      row.addEventListener("click", select);
+      row.addEventListener("keydown", (event) => {
+        if (event.target === row && (event.key === "Enter" || event.key === " ")) {
+          event.preventDefault();
+          select();
+        }
+      });
+      for (const column of snapshot.columns) {
+        const cell = row.insertCell();
+        const text2 = document.createElement("span");
+        text2.className = "data-list-cell-text";
+        const value = listValueText(column.key === "" ? item : getPath(item, column.key));
+        renderIconText(text2, value);
+        cell.append(text2);
+        cell.title = value;
+        const reveal = (event) => {
+          if (text2.scrollWidth <= text2.clientWidth + 1) return;
+          event.preventDefault();
+          event.stopPropagation();
+          this.closePopover();
+          this.#openColumn = void 0;
+          const popover = this.makePopover(cell, "Complete value");
+          const content = document.createElement("div");
+          content.className = "data-list-complete-value";
+          content.textContent = value;
+          popover.append(content);
+          this.showPopover();
+          popover.focus({
+            preventScroll: true
+          });
+        };
+        cell.addEventListener("click", reveal);
+        cell.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") reveal(event);
+        });
+      }
+      row.insertCell().className = "data-list-tools-cell";
+    });
+    if (snapshot.rows.length === 0) {
+      const cell = body.insertRow().insertCell();
+      cell.colSpan = snapshot.columns.length + 1;
+      cell.className = "data-list-empty";
+      cell.textContent = snapshot.filtered ? "No matching items" : "No items";
+    }
+    this.#scroll.append(this.#table);
+    this.host.append(this.#scroll, this.pagination());
+    this.#rendering = false;
+    return this.host;
+  }
+  capture() {
+    const focused = document.activeElement;
+    if (focused instanceof HTMLInputElement && this.#popover?.contains(focused)) {
+      this.#filterFocus = {
+        start: focused.selectionStart,
+        end: focused.selectionEnd
+      };
+    }
+    if (this.#scroll?.isConnected && this.#scroll.getClientRects().length > 0 && this.#state !== void 0) {
+      this.#state.scroll = {
+        x: this.#scroll.scrollLeft,
+        y: this.#scroll.scrollTop
+      };
+    }
+  }
+  measure() {
+    if (!this.host.isConnected || this.host.getClientRects().length === 0 || this.host.closest("[hidden]")) return void 0;
+    if (!this.#restoreScroll) this.capture();
+    const snapshot = this.#snapshot;
+    this.host.dataset.narrow = String(this.host.clientWidth < 600);
+    const widths = listColumnWidths(snapshot.columns.map((column) => column.length), this.host.clientWidth);
+    const cols = this.#table.querySelectorAll("col");
+    widths.forEach((width, index) => cols[index].style.width = `${width}px`);
+    cols[widths.length].style.width = "38px";
+    this.#table.style.width = `${widths.reduce((sum, width) => sum + width, 38)}px`;
+    for (const item of this.#measures) {
+      const useShort = item.column.shortHeading !== void 0 && item.measure.offsetWidth > item.button.clientWidth - 26;
+      item.full.hidden = useShort;
+      item.short.hidden = !useShort;
+    }
+    for (const text2 of this.host.querySelectorAll(".data-list-cell-text")) {
+      const cell = text2.parentElement;
+      const truncated = text2.scrollWidth > text2.clientWidth + 1;
+      if (truncated) {
+        cell.tabIndex = 0;
+        cell.setAttribute("role", "button");
+        cell.setAttribute("aria-label", `Show complete value: ${cell.title}`);
+      } else {
+        cell.removeAttribute("tabindex");
+        cell.removeAttribute("role");
+        cell.removeAttribute("aria-label");
+      }
+    }
+    this.#scroll.scrollLeft = this.#state.scroll.x;
+    this.#restoreScroll = false;
+    if (this.#openColumn !== void 0 && !this.#popover?.matches(":popover-open")) {
+      const item = this.#measures.find((item2) => item2.column.key === this.#openColumn);
+      if (item !== void 0) this.openColumn(item.column, item.button, false);
+    }
+    if (this.#filterFocus !== void 0 && this.#popover?.matches(":popover-open")) {
+      const input = this.#popover.querySelector("input");
+      if (input !== null && input !== void 0) {
+        input.focus({
+          preventScroll: true
+        });
+        input.setSelectionRange(this.#filterFocus.start, this.#filterFocus.end);
+      }
+      this.#filterFocus = void 0;
+    }
+    if (this.#popover?.matches(":popover-open")) this.positionPopover();
+    const rowHeight = Number.parseFloat(getComputedStyle(this.host).getPropertyValue("--list-row-height")) || 36;
+    const bodyHeight = this.#table.tBodies[0]?.getBoundingClientRect().height ?? rowHeight;
+    const card = this.host.closest(".layout-list") ?? this.host;
+    const cardStyle = getComputedStyle(card);
+    const cardPadding = Number.parseFloat(cardStyle.paddingTop) + Number.parseFloat(cardStyle.paddingBottom);
+    const overhead = this.host.getBoundingClientRect().height - bodyHeight + (card === this.host ? 0 : cardPadding);
+    const modal = this.host.closest(".presentation-modal-body");
+    const viewport = globalThis.visualViewport?.height ?? innerHeight;
+    const chrome = modal === null ? document.querySelector(".navbar")?.getBoundingClientRect().height ?? 64 : (modal.parentElement?.querySelector(".uui-dialog-toolbar")?.getBoundingClientRect().height ?? 48) + 32;
+    const preceding = modal === null ? card.getBoundingClientRect().top + scrollY - chrome : card.getBoundingClientRect().top - modal.getBoundingClientRect().top + modal.scrollTop;
+    const pageSize = listRowCapacity(viewport, chrome, preceding, overhead, rowHeight);
+    if (pageSize !== snapshot.state.pageSize || !snapshot.state.measured) {
+      return {
+        id: snapshot.id,
+        revision: snapshot.revision,
+        operation: "capacity",
+        pageSize
+      };
+    }
+    return void 0;
+  }
+  pagination() {
+    const snapshot = this.#snapshot;
+    const navigation = document.createElement("nav");
+    navigation.className = "data-list-pagination";
+    navigation.setAttribute("aria-label", `Pages for ${snapshot.bind}`);
+    const summary = document.createElement("span");
+    summary.className = "data-list-page-summary";
+    const start = snapshot.totalItems === 0 ? 0 : (snapshot.state.page - 1) * snapshot.state.pageSize + 1;
+    const end = Math.min(snapshot.totalItems, snapshot.state.page * snapshot.state.pageSize);
+    summary.textContent = `${start}\u2013${end} of ${snapshot.totalItems}${snapshot.filtered ? ` (filtered, total ${snapshot.totalSourceItems})` : ""}`;
+    summary.title = summary.textContent;
+    const pages = document.createElement("span");
+    pages.className = "data-list-page-numbers";
+    for (const item of paginationItems(snapshot.state.page, snapshot.totalPages)) {
+      if (item === "ellipsis") {
+        const span = document.createElement("span");
+        span.className = "data-list-page-ellipsis";
+        span.textContent = "\u2026";
+        pages.append(span);
+        continue;
+      }
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = String(item);
+      button.setAttribute("aria-label", `Page ${item}`);
+      if (item === snapshot.state.page) {
+        button.setAttribute("aria-current", "page");
+        button.disabled = true;
+      }
+      button.addEventListener("click", () => this.#callbacks.request([
+        {
+          id: snapshot.id,
+          revision: snapshot.revision,
+          operation: "page",
+          page: item
+        }
+      ]));
+      pages.append(button);
+    }
+    navigation.append(summary, pages);
+    return navigation;
+  }
+  openColumn(column, anchor, focus = true) {
+    this.closePopover();
+    this.#openColumn = column.key;
+    const popover = this.makePopover(anchor, column.heading);
+    const title = document.createElement("strong");
+    renderIconText(title, column.heading);
+    popover.append(title);
+    for (const [label2, direction] of [
+      [
+        "[[icon=arrow_upward]] Ascending",
+        "asc"
+      ],
+      [
+        "[[icon=arrow_downward]] Descending",
+        "desc"
+      ],
+      [
+        "Clear sort",
+        null
+      ]
+    ]) {
+      const button = document.createElement("button");
+      button.type = "button";
+      renderIconText(button, label2);
+      button.addEventListener("click", () => {
+        this.#draft.sort = direction === null ? null : {
+          column: column.key,
+          direction
+        };
+        this.queueQuery(true);
+      });
+      popover.append(button);
+    }
+    const label = document.createElement("label");
+    label.textContent = "Filter";
+    const input = document.createElement("input");
+    input.id = `${this.#prefix}-filter-${column.id}`;
+    label.htmlFor = input.id;
+    input.type = "text";
+    input.maxLength = MAX_LIST_QUERY_LENGTH;
+    input.placeholder = column.semanticType === "number" ? "e.g. >= 10" : column.semanticType === "boolean" ? "true or false" : column.semanticType === "date" || column.semanticType === "datetime" ? "YYYY-MM-DD" : "Contains\u2026";
+    input.value = this.#draft.filters[column.key] ?? "";
+    input.addEventListener("input", () => {
+      this.#draft.filters[column.key] = input.value;
+      this.queueQuery();
+    });
+    input.addEventListener("change", this.flushQuery);
+    const clear = document.createElement("button");
+    clear.type = "button";
+    clear.textContent = "Clear filter";
+    clear.addEventListener("click", () => {
+      delete this.#draft.filters[column.key];
+      input.value = "";
+      this.queueQuery(true);
+    });
+    popover.append(label, input, clear);
+    this.showPopover();
+    if (focus) input.focus({
+      preventScroll: true
+    });
+  }
+  makePopover(anchor, label) {
+    const popover = document.createElement("div");
+    popover.className = "data-list-popover";
+    popover.popover = "auto";
+    popover.setAttribute("role", "dialog");
+    popover.tabIndex = -1;
+    popover.setAttribute("aria-label", label);
+    popover.addEventListener("toggle", (event) => {
+      if (event.newState === "closed" && !this.#rendering && this.#popover === popover) this.#openColumn = void 0;
+    });
+    popover.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        this.closePopover();
+        this.#openColumn = void 0;
+        anchor.focus({
+          preventScroll: true
+        });
+      }
+    });
+    this.host.append(popover);
+    this.#popover = popover;
+    this.#anchor = anchor;
+    return popover;
+  }
+  showPopover() {
+    if (this.#popover?.isConnected) {
+      this.#popover.showPopover();
+      this.positionPopover();
+    }
+  }
+  positionPopover() {
+    if (this.#popover === void 0 || this.#anchor === void 0) return;
+    const position = fieldMessagePopoverPosition(this.#anchor.getBoundingClientRect(), this.#popover.offsetWidth, this.#popover.offsetHeight, innerWidth, innerHeight);
+    this.#popover.style.top = `${position.top}px`;
+    this.#popover.style.left = `${position.left}px`;
+  }
+  closePopover() {
+    this.#popover?.remove();
+    this.#popover = void 0;
+  }
+  queueQuery(immediate = false) {
+    this.#draft.filters = Object.fromEntries(Object.entries(this.#draft.filters).filter(([, value]) => value.trim() !== "").sort(([a], [b]) => a.localeCompare(b)));
+    this.#draftPending = true;
+    if (this.#timer !== void 0) clearTimeout(this.#timer);
+    this.#timer = void 0;
+    if (immediate) this.flushQuery();
+    else this.#timer = setTimeout(this.flushQuery, 250);
+  }
+  flushQuery;
+  flushDueQuery() {
+    if (!this.#draftPending || this.#timer !== void 0 || !this.host.isConnected || this.host.closest("[hidden]")) return false;
+    return this.#callbacks.request([
+      {
+        id: this.#snapshot.id,
+        revision: this.#snapshot.revision,
+        operation: "query",
+        query: structuredClone(this.#draft)
+      }
+    ]);
+  }
+  dispose() {
+    if (this.#timer !== void 0) clearTimeout(this.#timer);
+    this.#resize.disconnect();
+    this.closePopover();
+    this.host.remove();
+  }
+};
+
+// ui-config.json
+var ui_config_default = {
+  loginUrl: "/the8020/uui/login/",
+  logoutUrl: "/the8020/uui/login/logout",
+  postLoginUrl: "/the8020/uui/shell/",
+  sessionWebSocketPath: "/the8020/uui/session/connect",
+  protocolVersion: 4,
+  disconnectGraceMilliseconds: 12e4,
+  heartbeatIntervalMilliseconds: 3e4,
+  heartbeatTimeoutMilliseconds: 6e4,
+  reconnectInitialDelayMilliseconds: 250,
+  reconnectMaximumDelayMilliseconds: 1e4,
+  replayMessageLimit: 1e3,
+  replayByteLimit: 1e7,
+  maximumMessageBytes: 1e6,
+  homeProgram: "the8020/uui/home",
+  terminatedProgram: "the8020/uui/program-terminated"
+};
+
+// download_protocol.ts
+var DOWNLOAD_CHUNK_BYTES = 64 * 1024;
+var DOWNLOAD_WINDOW_FRAMES = 16;
+var DOWNLOAD_TRANSFER_FRAMES = 4;
+var DOWNLOAD_MAX_TRANSFERS = 32;
+var DOWNLOAD_START_TIMEOUT = 3e4;
+function validDownloadID(value) {
+  return Number.isInteger(value) && Number(value) > 0 && Number(value) <= 4294967295;
+}
+var unsafeFilename = /[\/\\\x00-\x1f\x7f]/;
+function validateDownloadMetadata(value) {
+  if (!validDownloadID(value.downloadId)) {
+    throw new TypeError("Invalid download ID");
+  }
+  if (typeof value.filename !== "string" || value.filename.trim() === "" || value.filename.length > 255 || value.filename === "." || value.filename === ".." || unsafeFilename.test(value.filename)) throw new TypeError("Download filename must be a name without a path");
+  if (typeof value.contentType !== "string" || value.contentType.length > 200 || !/^[\w!#$&^.+-]+\/[\w!#$&^.+-]+(?:;[\x20-\x7e]*)?$/.test(value.contentType)) throw new TypeError("Invalid download content type");
+}
+function decodeDownloadChunk(frame) {
+  if (frame.byteLength <= 4 || frame.byteLength > DOWNLOAD_CHUNK_BYTES + 4) {
+    throw new TypeError("Invalid download frame size");
+  }
+  const downloadId = new DataView(frame.buffer, frame.byteOffset, frame.byteLength).getUint32(0);
+  if (!validDownloadID(downloadId)) throw new TypeError("Invalid download ID");
+  return {
+    downloadId,
+    bytes: frame.subarray(4)
+  };
+}
+
+// protocol.ts
+var UUI_PROTOCOL_VERSION = ui_config_default.protocolVersion;
+var BACK_EVENT = "back";
+var UUI_MESSAGE_KINDS = [
+  "info",
+  "success",
+  "warning",
+  "error"
+];
+var MAX_UUI_MESSAGE_BODY_LENGTH = 2e4;
+var MAX_FIELD_ROW_SPAN = 8;
+
 // services/shell/frontend/custom_elements.ts
 var import_addon_canvas = __toESM(require_addon_canvas());
 var import_addon_fit = __toESM(require_addon_fit());
 var import_xterm = __toESM(require_xterm());
-
-// humanize.ts
-function humanize(value) {
-  const words = value.replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2").replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[-_]+/g, " ").trim().split(/\s+/).filter((word) => word.length > 0).map((word) => /^[A-Z0-9]{2,}$/.test(word) ? word : word.toLowerCase());
-  const text2 = words.join(" ");
-  return text2.length === 0 ? value : text2[0].toUpperCase() + text2.slice(1);
-}
-
-// services/shell/frontend/icon_text.ts
-var MATERIAL_ICON_ASSETS = {
-  arrow_back: "./assets/material-arrow-back-24-e083cc60.svg",
-  arrow_drop_down: "./assets/material-arrow-drop-down-24-e083cc60.svg",
-  close: "./assets/material-close-24-84ccef28.svg",
-  dark_mode: "./assets/material-dark-mode-24-bab57d17.svg",
-  edit: "./assets/material-edit-24-a4b3c9f6.svg",
-  error: "./assets/material-error-24-e083cc60.svg",
-  light_mode: "./assets/material-light-mode-24-e5b6e132.svg",
-  logout: "./assets/material-logout-24-84ccef28.svg",
-  menu: "./assets/material-menu-24-e083cc60.svg",
-  more_vert: "./assets/material-more-vert-24-e083cc60.svg",
-  refresh: "./assets/material-refresh-24-e083cc60.svg",
-  save: "./assets/material-save-24-e083cc60.svg",
-  tab_close: "./assets/material-tab-close-24-84ccef28.svg"
-};
-var SEMANTIC_COLORS = /* @__PURE__ */ new Set([
-  "text",
-  "muted",
-  "primary",
-  "success",
-  "warning",
-  "danger",
-  "error",
-  "info",
-  "brand"
-]);
-var ICON_PLACEHOLDER = /\[\[icon=([a-z][a-z0-9_]*)(?:\s+color=([^\]\s]+))?\]\]/g;
-var HEX_COLOR = /^(?:#[0-9a-fA-F]{3}|#[0-9a-fA-F]{4}|#[0-9a-fA-F]{6}|#[0-9a-fA-F]{8})$/;
-function parseIconText(value) {
-  const tokens = [];
-  let offset = 0;
-  for (const match2 of value.matchAll(ICON_PLACEHOLDER)) {
-    const index = match2.index ?? 0;
-    if (index > offset) pushText(tokens, value.slice(offset, index));
-    const placeholder = match2[0];
-    const name = match2[1];
-    const color = match2[2];
-    if (isMaterialIconName(name) && isIconColor(color)) {
-      tokens.push({
-        type: "icon",
-        name,
-        ...color === void 0 ? {} : {
-          color
-        }
-      });
-    } else {
-      pushText(tokens, placeholder);
-    }
-    offset = index + placeholder.length;
-  }
-  if (offset < value.length) pushText(tokens, value.slice(offset));
-  return tokens;
-}
-function renderIconText(target, value, options = {}) {
-  target.replaceChildren(...parseIconText(value).map((token) => token.type === "text" ? document.createTextNode(token.text) : createMaterialIcon(token.name, token.color, options)));
-}
-function createMaterialIcon(name, color, options = {}) {
-  const icon = document.createElement("span");
-  icon.className = "material-icon";
-  icon.dataset.materialIcon = name;
-  icon.style.setProperty("--material-icon-url", `url("${MATERIAL_ICON_ASSETS[name]}")`);
-  if (color !== void 0) {
-    if (SEMANTIC_COLORS.has(color)) {
-      icon.classList.add(`material-icon-color-${color === "error" ? "danger" : color}`);
-    } else {
-      icon.style.color = color;
-    }
-  }
-  if (options.decorativeIcons) {
-    icon.setAttribute("aria-hidden", "true");
-  } else {
-    icon.setAttribute("role", "img");
-    icon.setAttribute("aria-label", humanize(name));
-  }
-  return icon;
-}
-function isMaterialIconName(value) {
-  return Object.hasOwn(MATERIAL_ICON_ASSETS, value);
-}
-function isIconColor(value) {
-  return value === void 0 || SEMANTIC_COLORS.has(value) || HEX_COLOR.test(value);
-}
-function pushText(tokens, text2) {
-  const previous = tokens.at(-1);
-  if (previous?.type === "text") previous.text += text2;
-  else tokens.push({
-    type: "text",
-    text: text2
-  });
-}
-
-// services/shell/frontend/custom_elements.ts
 var CustomElementRenderer = class {
   #entries = /* @__PURE__ */ new Map();
   begin() {
@@ -12563,28 +13228,6 @@ function preferLaterExpansion(candidate, current) {
   return false;
 }
 
-// services/shell/frontend/field_message.ts
-var DEFAULT_EDGE_PADDING = 10;
-var DEFAULT_GAP = 6;
-function fieldMessageIsOverflowing(clientWidth, scrollWidth) {
-  return Number.isFinite(clientWidth) && Number.isFinite(scrollWidth) && clientWidth > 0 && scrollWidth > clientWidth + 0.5;
-}
-function fieldMessagePopoverPosition(anchor, popoverWidth, popoverHeight, viewportWidth, viewportHeight, edgePadding = DEFAULT_EDGE_PADDING, gap = DEFAULT_GAP) {
-  const padding = Math.max(0, edgePadding);
-  const horizontalLimit = Math.max(padding, viewportWidth - padding - Math.max(0, popoverWidth));
-  const verticalLimit = Math.max(padding, viewportHeight - padding - Math.max(0, popoverHeight));
-  const below = anchor.bottom + Math.max(0, gap);
-  const above = anchor.top - Math.max(0, gap) - Math.max(0, popoverHeight);
-  return {
-    left: clamp(anchor.left, padding, horizontalLimit),
-    top: below <= verticalLimit ? below : above >= padding ? above : clamp(below, padding, verticalLimit)
-  };
-}
-function clamp(value, minimum, maximum) {
-  if (!Number.isFinite(value)) return minimum;
-  return Math.min(Math.max(value, minimum), maximum);
-}
-
 // services/shell/frontend/renderer.ts
 function renderScreenHeader(snapshot, model, callbacks) {
   const items = [];
@@ -12636,12 +13279,8 @@ function renderScreen(root, snapshot, model, callbacks, custom) {
     values.push(control);
     byBind.set(control.bind, values);
   }
-  const pagination = new Map((snapshot.pagination?.lists ?? []).map((item) => [
-    item.bind,
-    item
-  ]));
   if (isLayout(snapshot.layout)) {
-    article.append(renderLayout(snapshot.layout.root, controls, byBind, snapshot.actions, model, pagination, callbacks, customElements, custom));
+    article.append(renderLayout(snapshot.layout.root, controls, byBind, snapshot.actions, model, callbacks, customElements, custom));
   } else {
     const stack = element("div", "layout-stack");
     const rendered = [];
@@ -12655,8 +13294,9 @@ function renderScreen(root, snapshot, model, callbacks, custom) {
     stack.append(...renderImplicitFieldGroups(rendered));
     article.append(stack);
   }
-  if (snapshot.actions.length > 0 && (!isLayout(snapshot.layout) || !containsNodeType(snapshot.layout.root, "actions"))) {
-    article.append(renderActions(snapshot.actions, callbacks));
+  const remainingActions = snapshot.actions.filter((action) => !isLayout(snapshot.layout) || !placesAction(snapshot.layout.root, action.id));
+  if (remainingActions.length > 0) {
+    article.append(renderActions(remainingActions, callbacks));
   }
   root.append(article);
 }
@@ -12668,9 +13308,10 @@ function changesForBindings(model, bindings) {
     value: structuredClone(getPath(model, bind))
   }));
 }
-function renderLayout(node, controls, byBind, actions, model, pagination, callbacks, customElements, custom, suppressTitle = false) {
+function renderLayout(node, controls, byBind, actions, model, callbacks, customElements, custom, suppressTitle = false) {
   const region = element(node.type === "section" ? "section" : "div", `layout-${node.type}`);
   region.dataset.layoutId = node.id;
+  region.dataset.elementId = node.id;
   if (node.responsive === "stack") region.dataset.responsive = "stack";
   if (node.primary) region.dataset.regionPriority = "primary";
   if (node.secondary) region.dataset.regionPriority = "secondary";
@@ -12699,11 +13340,7 @@ function renderLayout(node, controls, byBind, actions, model, pagination, callba
     region.setAttribute("role", "group");
   }
   if (node.type === "list" && node.bind) {
-    region.append(renderList(node, model, pagination.get(node.bind), callbacks));
-  }
-  if (node.type === "actions") {
-    const selected = node.actions === void 0 ? actions : node.actions.map((id) => actions.find((action) => action.id === id)).filter((action) => action !== void 0);
-    region.append(renderActions(selected, callbacks));
+    region.append(callbacks.list(node.id));
   }
   if (node.type === "custom" && node.customElement !== void 0) {
     const descriptor = customElements.get(node.customElement);
@@ -12731,18 +13368,24 @@ function renderLayout(node, controls, byBind, actions, model, pagination, callba
       region.append(...renderImplicitFieldGroups(renderedControls));
     }
   }
+  if (node.type === "actions" || node.actions !== void 0) {
+    const selected = node.actions === void 0 ? actions : node.actions.map((id) => actions.find((action) => action.id === id)).filter((action) => action !== void 0);
+    region.append(renderActions(selected, callbacks));
+  }
   if (node.type === "tabs" && node.children !== void 0) {
     const tabs = element("div", "tabs");
     const tabList = element("div", "tab-list");
     tabList.setAttribute("role", "tablist");
     const panels = element("div", "tab-panels");
-    const selectedIndex = Math.max(0, node.children.findIndex((child) => child.id === node.selectedTab));
+    const state = callbacks.elementState(node.id);
+    const selectedTab = state.selectedTab ?? node.selectedTab;
+    const selectedIndex = Math.max(0, node.children.findIndex((child) => child.id === selectedTab));
     node.children.forEach((child, index) => {
       const button = document.createElement("button");
       button.type = "button";
       button.role = "tab";
       renderIconText(button, child.title ?? child.id);
-      const panel = renderLayout(child, controls, byBind, actions, model, pagination, callbacks, customElements, custom, true);
+      const panel = renderLayout(child, controls, byBind, actions, model, callbacks, customElements, custom, true);
       const tabID = `tab-${node.id}-${child.id}`;
       const panelID = `panel-${node.id}-${child.id}`;
       button.id = tabID;
@@ -12753,6 +13396,7 @@ function renderLayout(node, controls, byBind, actions, model, pagination, callba
       panel.hidden = index !== selectedIndex;
       button.setAttribute("aria-selected", String(index === selectedIndex));
       button.addEventListener("click", () => {
+        state.selectedTab = child.id;
         for (const item of panels.children) {
           item.hidden = item !== panel;
         }
@@ -12767,7 +13411,7 @@ function renderLayout(node, controls, byBind, actions, model, pagination, callba
     region.append(tabs);
   } else {
     for (const child of node.children ?? []) {
-      region.append(renderLayout(child, controls, byBind, actions, model, pagination, callbacks, customElements, custom));
+      region.append(renderLayout(child, controls, byBind, actions, model, callbacks, customElements, custom));
     }
   }
   if (node.type === "grid") {
@@ -12788,12 +13432,28 @@ function renderActions(actions, callbacks) {
 function renderAction(action, callbacks) {
   const button = document.createElement("button");
   button.type = "button";
+  button.id = `action-${action.id}`;
+  button.dataset.elementId = action.id;
   renderIconText(button, action.label);
   button.className = `button button-${action.kind ?? "secondary"}`;
   button.addEventListener("click", () => callbacks.action(action.id));
   return button;
 }
 function renderImplicitFieldGroups(items) {
+  if (items.some((item) => item.control.control === "list")) {
+    const result2 = [];
+    let fields = [];
+    for (const item of items) {
+      if (item.control.control === "list") {
+        result2.push(...renderImplicitFieldGroups(fields), item.element);
+        fields = [];
+      } else fields.push(item);
+    }
+    return [
+      ...result2,
+      ...renderImplicitFieldGroups(fields)
+    ];
+  }
   const grouped = /* @__PURE__ */ new Map();
   for (const item of items) {
     const name = item.control.group ?? "";
@@ -12808,7 +13468,7 @@ function renderImplicitFieldGroups(items) {
     if (name.length > 0) {
       const title = element("h2", "group-title");
       renderIconText(title, humanize(name));
-      title.id = `implicit-group-title-${result.length}`;
+      title.id = `implicit-group-title-${values[0].control.id}`;
       card.setAttribute("aria-labelledby", title.id);
       card.append(title);
     }
@@ -12850,96 +13510,24 @@ function synchronizeSiblingFieldRows(fields) {
     item.classList.add("field-group-fields-exact-rows");
   }
 }
-function containsNodeType(node, type) {
-  return node.type === type || (node.children ?? []).some((child) => containsNodeType(child, type));
-}
-function renderList(node, model, pagination, callbacks) {
-  const rows = getPath(model, node.bind);
-  const container = element("div", "data-list-container");
-  const scroll = element("div", "data-list-scroll");
-  const table2 = document.createElement("table");
-  table2.className = "data-list";
-  if (!Array.isArray(rows) || rows.length === 0) {
-    const empty = document.createElement("caption");
-    renderIconText(empty, "No items");
-    table2.append(empty);
-    scroll.append(table2);
-    container.append(scroll);
-    return container;
-  }
-  const columns = node.display ?? Object.keys(rows[0]);
-  const head = document.createElement("thead");
-  const headRow = document.createElement("tr");
-  for (const column of columns) {
-    const cell = document.createElement("th");
-    cell.scope = "col";
-    renderIconText(cell, node.headings?.[column] ?? humanize(column));
-    headRow.append(cell);
-  }
-  head.append(headRow);
-  const body = document.createElement("tbody");
-  for (const item of rows) {
-    const row = document.createElement("tr");
-    row.tabIndex = 0;
-    const value = node.key === void 0 ? item : getPath(item, node.key);
-    const select = () => callbacks.action("select", "select", value);
-    row.addEventListener("click", select);
-    row.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") select();
-    });
-    for (const column of columns) {
-      const cell = document.createElement("td");
-      renderIconText(cell, displayValue(getPath(item, column)));
-      row.append(cell);
-    }
-    body.append(row);
-  }
-  table2.append(head, body);
-  scroll.append(table2);
-  container.append(scroll);
-  if (pagination !== void 0 && pagination.totalPages > 1) {
-    container.append(renderPagination(pagination, callbacks));
-  }
-  return container;
-}
-function renderPagination(pagination, callbacks) {
-  const navigation = element("nav", "data-list-pagination");
-  navigation.setAttribute("aria-label", `Pages for ${pagination.bind}`);
-  const start = (pagination.page - 1) * pagination.pageSize + 1;
-  const end = Math.min(pagination.totalItems, pagination.page * pagination.pageSize);
-  const summary = element("span", "data-list-page-summary");
-  renderIconText(summary, `${start}\u2013${end} of ${pagination.totalItems}`);
-  navigation.append(summary);
-  const pages = element("span", "data-list-page-numbers");
-  for (const item of paginationItems(pagination.page, pagination.totalPages)) {
-    if (item === "ellipsis") {
-      const ellipsis = element("span", "data-list-page-ellipsis");
-      renderIconText(ellipsis, "\u2026");
-      ellipsis.setAttribute("aria-hidden", "true");
-      pages.append(ellipsis);
-      continue;
-    }
-    const button = document.createElement("button");
-    button.type = "button";
-    renderIconText(button, String(item));
-    button.setAttribute("aria-label", `Page ${item}`);
-    if (item === pagination.page) {
-      button.setAttribute("aria-current", "page");
-      button.disabled = true;
-    } else {
-      button.addEventListener("click", () => callbacks.page(pagination.bind, pagination.page, item));
-    }
-    pages.append(button);
-  }
-  navigation.append(pages);
-  return navigation;
+function placesAction(node, id) {
+  return node.type === "actions" || node.actions?.includes(id) === true || (node.children ?? []).some((child) => placesAction(child, id));
 }
 function renderControl(control, model, callbacks) {
   if (control.hidden) return void 0;
+  if (control.control === "list") {
+    const card = element("div", "layout-list has-group-title");
+    card.dataset.elementId = control.id;
+    const title = element("h2", "group-title");
+    renderIconText(title, control.label ?? control.bind);
+    card.append(title, callbacks.list(control.id));
+    return card;
+  }
   if (control.control === "radio") {
     return renderRadioControl(control, model, callbacks);
   }
   const wrapper = element("div", "field");
+  wrapper.dataset.elementId = control.id;
   wrapper.dataset.group = control.group ?? "";
   wrapper.dataset.fieldLength = control.length ?? "medium";
   wrapper.dataset.fieldRowSpan = String(control.rowSpan ?? 1);
@@ -12971,17 +13559,17 @@ function renderControl(control, model, callbacks) {
     } else if (control.control === "file") {
       input.disabled = true;
     } else {
+      if (control.control === "range") {
+        input.min = String(control.minimum ?? 0);
+        input.max = String(control.maximum ?? 100);
+        input.step = String(control.step ?? 1);
+        input.dataset.valueSuffix = control.valueSuffix ?? "";
+      }
       input.value = value == null ? "" : String(value);
     }
   }
   input.id = `control-${control.id}`;
   input.dataset.bind = control.bind;
-  if (control.control === "range" && input instanceof HTMLInputElement) {
-    input.min = String(control.minimum ?? 0);
-    input.max = String(control.maximum ?? 100);
-    input.step = String(control.step ?? 1);
-    input.dataset.valueSuffix = control.valueSuffix ?? "";
-  }
   if ("placeholder" in input) input.placeholder = control.placeholder ?? "";
   input.required = control.required ?? false;
   input.disabled ||= control.readOnly ?? false;
@@ -13228,11 +13816,6 @@ function inputType(kind) {
 }
 function hasEditAffordance(control, input) {
   return !input.disabled && control.control !== "file";
-}
-function displayValue(value) {
-  if (value === null || value === void 0) return "";
-  if (typeof value === "object") return JSON.stringify(value);
-  return String(value);
 }
 function element(tag, className) {
   const value = document.createElement(tag);
@@ -26045,7 +26628,320 @@ function windowTitleForHeading(heading2) {
   return title === "" ? GENERIC_WINDOW_TITLE : `${GENERIC_WINDOW_TITLE} ${title}`;
 }
 
+// services/shell/frontend/downloads.ts
+var completedFrames = [];
+var BrowserDownloads = class {
+  send;
+  open;
+  #transfers;
+  #outstanding;
+  #next;
+  constructor(send2, open = openBrowserDownload) {
+    this.send = send2;
+    this.open = open;
+    this.#transfers = /* @__PURE__ */ new Map();
+    this.#outstanding = 0;
+    this.#next = 0;
+  }
+  receive(command) {
+    if (command.type === "download.begin") {
+      this.#begin(command);
+      return;
+    }
+    const transfer = this.#transfers.get(command.downloadId);
+    if (transfer === void 0) return;
+    if (command.type === "download.error") {
+      this.#cancel(transfer, new Error(command.message), false);
+      return;
+    }
+    transfer.ended = true;
+    this.#outstanding -= transfer.requested;
+    transfer.requested = 0;
+    this.#deliver(transfer);
+    this.#refill();
+  }
+  bytes(frame) {
+    const { downloadId, bytes } = decodeDownloadChunk(frame);
+    const transfer = this.#transfers.get(downloadId);
+    if (transfer === void 0) return;
+    if (transfer.ended || transfer.requested === 0) {
+      throw new Error("Download bytes arrived without credit");
+    }
+    transfer.requested--;
+    transfer.queue.push(bytes);
+    this.#deliver(transfer);
+  }
+  close() {
+    for (const transfer of this.#transfers.values()) transfer.ready = false;
+    for (const transfer of [
+      ...this.#transfers.values()
+    ]) {
+      this.#cancel(transfer, new Error("UUI connection closed"), false);
+    }
+    for (const frame of completedFrames.splice(0)) frame.remove();
+  }
+  #begin(metadata) {
+    validateDownloadMetadata(metadata);
+    if (this.#transfers.has(metadata.downloadId)) {
+      throw new Error("Duplicate download ID");
+    }
+    if (this.#transfers.size >= DOWNLOAD_MAX_TRANSFERS) {
+      this.send({
+        type: "download.cancel",
+        downloadId: metadata.downloadId,
+        error: "Too many active downloads"
+      });
+      return;
+    }
+    let controller;
+    const stream = new ReadableStream({
+      start(value) {
+        controller = value;
+      },
+      pull: () => {
+        const transfer2 = this.#transfers.get(metadata.downloadId);
+        if (transfer2 === void 0) return;
+        return new Promise((resolve) => {
+          transfer2.pull = resolve;
+          this.#deliver(transfer2);
+        });
+      },
+      cancel: () => {
+        const transfer2 = this.#transfers.get(metadata.downloadId);
+        if (transfer2 !== void 0) this.#cancel(transfer2);
+      }
+    }, {
+      highWaterMark: 0
+    });
+    const transfer = {
+      ...metadata,
+      controller,
+      abort: new AbortController(),
+      queue: [],
+      requested: 0,
+      consumed: 0,
+      ready: false,
+      ended: false
+    };
+    this.#transfers.set(metadata.downloadId, transfer);
+    void this.open(metadata, stream, transfer.abort.signal).then((cleanup) => {
+      if (!this.#transfers.has(metadata.downloadId)) {
+        cleanup();
+        return;
+      }
+      transfer.cleanup = cleanup;
+      transfer.ready = true;
+      this.send({
+        type: "download.credit",
+        downloadId: metadata.downloadId,
+        frames: 0,
+        consumed: 0
+      });
+      this.#refill();
+    }, (error2) => {
+      this.#cancel(transfer, error2 instanceof Error ? error2 : new Error(String(error2)));
+    });
+  }
+  #deliver(transfer) {
+    if (transfer.pull === void 0) return;
+    const bytes = transfer.queue.shift();
+    if (bytes !== void 0) {
+      this.#outstanding--;
+      transfer.consumed++;
+      const resolve = transfer.pull;
+      transfer.pull = void 0;
+      transfer.controller.enqueue(bytes);
+      this.send({
+        type: "download.credit",
+        downloadId: transfer.downloadId,
+        frames: 0,
+        consumed: transfer.consumed
+      });
+      resolve();
+      this.#refill();
+    } else if (transfer.ended) {
+      transfer.controller.close();
+      transfer.pull();
+      transfer.pull = void 0;
+      this.send({
+        type: "download.done",
+        downloadId: transfer.downloadId
+      });
+      this.#remove(transfer);
+    }
+  }
+  #refill() {
+    const transfers = [
+      ...this.#transfers.values()
+    ].filter((item) => item.ready && !item.ended);
+    const grants = /* @__PURE__ */ new Map();
+    let skipped = 0;
+    while (transfers.length > 0 && skipped < transfers.length && this.#outstanding < DOWNLOAD_WINDOW_FRAMES) {
+      const transfer = transfers[this.#next++ % transfers.length];
+      if (transfer.requested + transfer.queue.length >= DOWNLOAD_TRANSFER_FRAMES) {
+        skipped++;
+        continue;
+      }
+      skipped = 0;
+      transfer.requested++;
+      this.#outstanding++;
+      grants.set(transfer, (grants.get(transfer) ?? 0) + 1);
+    }
+    for (const [transfer, frames] of grants) {
+      this.send({
+        type: "download.credit",
+        downloadId: transfer.downloadId,
+        frames,
+        consumed: transfer.consumed
+      });
+    }
+  }
+  #remove(transfer) {
+    this.#transfers.delete(transfer.downloadId);
+    this.#outstanding -= transfer.requested + transfer.queue.length;
+    transfer.queue.length = 0;
+    transfer.requested = 0;
+    transfer.cleanup?.();
+    this.#refill();
+  }
+  #cancel(transfer, error2, notify = true) {
+    if (!this.#transfers.has(transfer.downloadId)) return;
+    transfer.controller.error(error2 ?? new DOMException("Download cancelled", "AbortError"));
+    transfer.abort.abort();
+    transfer.pull?.();
+    transfer.pull = void 0;
+    if (notify) {
+      this.send({
+        type: "download.cancel",
+        downloadId: transfer.downloadId,
+        ...error2 ? {
+          error: error2.message.slice(0, 1e3)
+        } : {}
+      });
+    }
+    this.#remove(transfer);
+  }
+};
+async function openBrowserDownload(metadata, stream, signal) {
+  if (!globalThis.isSecureContext) {
+    throw new Error("Open UUI over HTTPS to download files");
+  }
+  if (!navigator.serviceWorker) {
+    throw new Error("This browser cannot stream downloads");
+  }
+  const workerURL = new URL("./download-worker.js", location.href);
+  const registration = await navigator.serviceWorker.register(workerURL, {
+    updateViaCache: "none"
+  });
+  signal.throwIfAborted();
+  const worker = registration.active ?? registration.installing ?? registration.waiting;
+  if (worker === null) throw new Error("Could not start the download worker");
+  await new Promise((resolve, reject) => {
+    const changed = () => {
+      if (worker.state === "activated") finish();
+      else if (worker.state === "redundant") {
+        finish(new Error("Download worker stopped"));
+      }
+    };
+    const aborted = () => finish(new DOMException("Download cancelled", "AbortError"));
+    const finish = (error2) => {
+      worker.removeEventListener("statechange", changed);
+      signal.removeEventListener("abort", aborted);
+      clearTimeout(timer);
+      error2 ? reject(error2) : resolve();
+    };
+    const timer = setTimeout(() => finish(new Error("Download worker startup timed out")), DOWNLOAD_START_TIMEOUT);
+    worker.addEventListener("statechange", changed);
+    signal.addEventListener("abort", aborted, {
+      once: true
+    });
+    changed();
+  });
+  signal.throwIfAborted();
+  const token = crypto.randomUUID();
+  const channel = new MessageChannel();
+  const frame = document.createElement("iframe");
+  frame.hidden = true;
+  let completed = false;
+  let cleanupRequested = false;
+  let cleaned = false;
+  const cleanup = () => {
+    cleanupRequested = true;
+    if (cleaned || !completed && !signal.aborted) return;
+    cleaned = true;
+    signal.removeEventListener("abort", cleanup);
+    channel.port1.close();
+    if (!signal.aborted && frame.isConnected) {
+      completedFrames.push(frame);
+      if (completedFrames.length > DOWNLOAD_MAX_TRANSFERS) {
+        completedFrames.shift().remove();
+      }
+    } else frame.remove();
+    worker.postMessage({
+      type: "download.forget",
+      token
+    });
+  };
+  try {
+    await new Promise((resolve, reject) => {
+      const abort = () => finish(new DOMException("Download cancelled", "AbortError"));
+      const finish = (error2) => {
+        clearTimeout(timer);
+        signal.removeEventListener("abort", abort);
+        error2 ? reject(error2) : resolve();
+      };
+      const timer = setTimeout(() => finish(new Error("Download startup timed out")), DOWNLOAD_START_TIMEOUT);
+      signal.addEventListener("abort", abort, {
+        once: true
+      });
+      channel.port1.onmessage = (event) => {
+        if (event.data.complete) {
+          completed = true;
+          if (cleanupRequested) cleanup();
+          return;
+        }
+        if (event.data.error !== void 0) {
+          finish(new Error(event.data.error));
+          return;
+        }
+        const expected = new URL(`./__downloads/${token}`, workerURL).href;
+        if (event.data.url !== expected) {
+          finish(new Error("Invalid download destination"));
+          return;
+        }
+        frame.src = expected;
+        document.body.append(frame);
+        finish();
+      };
+      try {
+        worker.postMessage({
+          type: "download.register",
+          token,
+          stream,
+          filename: metadata.filename,
+          contentType: metadata.contentType
+        }, [
+          stream,
+          channel.port2
+        ]);
+      } catch {
+        finish(new Error("This browser cannot stream downloads"));
+      }
+    });
+    signal.addEventListener("abort", cleanup, {
+      once: true
+    });
+    return cleanup;
+  } catch (error2) {
+    completed = true;
+    frame.remove();
+    cleanup();
+    throw error2;
+  }
+}
+
 // services/shell/frontend/main.ts
+var localScreenStates = /* @__PURE__ */ new Map();
 var app = requiredElement("app");
 var modalLayers = requiredElement("modal-layers");
 var connectionState = requiredElement("connection-state");
@@ -26101,6 +26997,10 @@ var messageCenter = new MessageCenter({
   closeButton: messageDialogClose,
   dismissAllButton: messageToastDismissAll
 });
+var downloads = new BrowserDownloads((command) => {
+  sendClient(command);
+});
+addEventListener("pagehide", () => downloads.close());
 renderIconText(screenBack, "[[icon=arrow_back]]", {
   decorativeIcons: true
 });
@@ -26179,6 +27079,7 @@ async function connectAttempt() {
   socket = new WebSocket(websocketRouteURL(), [
     "the8020.uui.v1"
   ]);
+  socket.binaryType = "arraybuffer";
   socket.addEventListener("open", () => {
     opened = true;
     reconnectAttempt = 0;
@@ -26193,6 +27094,7 @@ async function connectAttempt() {
   });
   socket.addEventListener("message", (event) => receive(event.data));
   socket.addEventListener("close", (event) => {
+    downloads.close();
     if (!shouldReconnectWebSocket(ended, event.code)) {
       if (terminalRedirect !== void 0) {
         if (logoutFallback !== void 0) clearTimeout(logoutFallback);
@@ -26220,7 +27122,7 @@ async function establishRoute(reuse) {
   const request = async () => {
     const headers = new Headers();
     if (reuse && routeToken !== null) {
-      headers.set("X-80-20-Route", routeToken);
+      headers.set("the8020-route", routeToken);
     }
     return await fetch(establishmentURL(), {
       method: "POST",
@@ -26237,7 +27139,7 @@ async function establishRoute(reuse) {
   if (!response.ok) {
     throw new Error(`route establishment failed: ${response.status}`);
   }
-  const token = response.headers.get("X-80-20-Route");
+  const token = response.headers.get("the8020-route");
   if (token === null || token.length === 0) {
     throw new Error("route establishment returned no route token");
   }
@@ -26272,6 +27174,16 @@ function scheduleReconnect() {
   setTimeout(connect, delay);
 }
 function receive(raw) {
+  if (raw instanceof ArrayBuffer) {
+    try {
+      downloads.bytes(new Uint8Array(raw));
+    } catch {
+      downloads.close();
+      socket?.close(1003, "invalid download frame");
+      showNotice("The server sent invalid download data.");
+    }
+    return;
+  }
   if (typeof raw !== "string") return;
   let message;
   try {
@@ -26288,6 +27200,17 @@ function receive(raw) {
   if (message.protocol !== boot.protocol || !shouldAcceptServerMessage(message.type, message.serverSequence, lastServerSequence)) return;
   lastServerSequence = Math.max(lastServerSequence, message.serverSequence);
   switch (message.type) {
+    case "download.begin":
+    case "download.end":
+    case "download.error":
+      try {
+        downloads.receive(message);
+      } catch {
+        downloads.close();
+        socket?.close(1003, "invalid download message");
+        showNotice("The server sent an invalid download message.");
+      }
+      break;
     case "session.ready":
       break;
     case "session.resumed":
@@ -26338,6 +27261,7 @@ function receive(raw) {
       showNotice(message.message ?? message.code ?? "Session error");
       break;
     case "session.end":
+      downloads.close();
       setInteractionPending(void 0);
       ended = true;
       messageCenter.dispose();
@@ -26420,17 +27344,12 @@ function reconcilePresentation(presentation) {
     return;
   }
   captureActiveFocus();
+  for (const layer of layers.values()) captureLayerState(layer);
+  const previousInstance = layers.get(presentationHistory.visible()[0] ?? "")?.viewState.instanceId;
   const previousVisible = [
     ...presentationHistory.visible()
   ];
   const previousBase = previousVisible[0];
-  if (previousBase !== void 0) {
-    const layer = layers.get(previousBase);
-    if (layer !== void 0) {
-      layer.scrollX = scrollX;
-      layer.scrollY = scrollY;
-    }
-  }
   if (interactionSequence !== void 0 && presentation.activeSurfaceId !== null) {
     completeInteraction(interactionSequence);
   }
@@ -26470,8 +27389,31 @@ function reconcilePresentation(presentation) {
   activeSurfaceID = presentation.activeSurfaceId;
   updateInteractionState();
   synchronizeWindowTitle();
-  if (previousBase !== base2.surfaceId) {
-    scrollTo(base2.scrollX, base2.scrollY);
+  if (previousBase !== base2.surfaceId || previousInstance !== base2.viewState.instanceId || changed.has(base2.surfaceId)) {
+    scrollTo({
+      left: base2.viewState.scroll.x,
+      top: base2.viewState.scroll.y,
+      behavior: "instant"
+    });
+  }
+  for (const surface of surfaces) {
+    const layer = layers.get(surface.surfaceId);
+    if (layer.kind === "modal") {
+      layer.root.scrollTo({
+        left: layer.viewState.scroll.x,
+        top: layer.viewState.scroll.y,
+        behavior: "instant"
+      });
+    }
+    for (const [target, id] of elementScrollTargets(layer)) {
+      const scroll = layer.viewState.elements[id].scroll;
+      target.scrollTo({
+        left: scroll.x,
+        top: scroll.y,
+        behavior: "instant"
+      });
+    }
+    layer.lists.schedule();
   }
   if (activeSurfaceID !== null) {
     const active = layers.get(activeSurfaceID);
@@ -26544,8 +27486,8 @@ function createLayer(surface) {
     screenFingerprint: "",
     model: {},
     headerItems: [],
-    scrollX: 0,
-    scrollY: 0
+    viewState: structuredClone(surface.screen.state),
+    lists: new ListRenderer()
   };
   updateLayer(layer, surface);
   return layer;
@@ -26554,7 +27496,17 @@ function updateLayer(layer, surface) {
   if (layer.kind !== surface.kind) {
     throw new TypeError("presentation surface kind changed");
   }
-  const sameScreen = layer.screenFingerprint !== "" && layer.screen.id === surface.screen.id && layer.screen.revision === surface.screen.revision;
+  const sameInstance = layer.screenFingerprint !== "" && layer.viewState.instanceId === surface.screen.state.instanceId && layer.viewState.version === surface.screen.state.version;
+  if (!sameInstance) {
+    const local = localScreenStates.get(surface.screen.state.instanceId);
+    layer.viewState = local?.state.version === surface.screen.state.version ? local.state : structuredClone(surface.screen.state);
+    layer.focus = local?.state.version === surface.screen.state.version ? local.focus : void 0;
+  }
+  for (const [id, incoming] of Object.entries(surface.screen.state.elements)) {
+    const element2 = screenElement(layer.viewState, id);
+    element2.list = incoming.list === void 0 ? void 0 : structuredClone(incoming.list);
+  }
+  const sameScreen = sameInstance && layer.screen.id === surface.screen.id && layer.screen.revision === surface.screen.revision;
   const nextModel = sameScreen ? mergeServerModel(surface.screen.model, layer.model, layer.dirty.bindings()) : structuredClone(surface.screen.model);
   if (!sameScreen) layer.dirty.clear();
   const fingerprint = JSON.stringify({
@@ -26571,6 +27523,7 @@ function updateLayer(layer, surface) {
 }
 function renderLayer(layer) {
   const callbacks = {
+    elementState: (id) => screenElement(layer.viewState, id),
     changed(bind, _value, control) {
       if (!layerIsActive(layer)) return;
       layer.dirty.mark(bind);
@@ -26581,14 +27534,22 @@ function renderLayer(layer) {
     action(action, eventType = "action", value) {
       dispatchFromLayer(layer, action, eventType, value);
     },
-    page(bind, currentPage, page) {
-      requestPage(layer, bind, currentPage, page);
+    list(id) {
+      return layer.lists.render(id);
     }
   };
+  layer.lists.begin(layer.screen.lists, layer.viewState, `${layer.surfaceId}-${layer.viewState.instanceId}`, {
+    request: (updates) => requestLists(layer, updates),
+    select: (selection) => selectListRow(layer, selection)
+  });
   layer.customElements.begin();
   renderScreen(layer.root, layer.screen, layer.model, callbacks, layer.customElements);
   for (const item of layer.headerItems) disposeFieldMessages(item);
   layer.headerItems = renderScreenHeader(layer.screen, layer.model, callbacks);
+  scopeDOMIDs(layer.root, `${layer.surfaceId}-${layer.viewState.instanceId}`);
+  for (const item of layer.headerItems) {
+    scopeDOMIDs(item, `${layer.surfaceId}-${layer.viewState.instanceId}`);
+  }
   if (layer.kind === "modal") {
     layer.headerRoot.replaceChildren(...layer.headerItems);
     const heading2 = layer.root.querySelector(".screen-title");
@@ -26625,6 +27586,7 @@ function disposeLayer(surfaceId) {
   }
   disposeFieldMessages(layer.root);
   for (const item of layer.headerItems) disposeFieldMessages(item);
+  layer.lists.dispose();
   layer.customElements.dispose();
   layer.shell.remove();
   layers.delete(surfaceId);
@@ -26634,6 +27596,7 @@ function disposeLayer(surfaceId) {
   }
 }
 function clearPresentation() {
+  localScreenStates.clear();
   presentationHistory.clear();
   for (const surfaceId of [
     ...layers.keys()
@@ -26652,20 +27615,114 @@ function synchronizeWindowTitle() {
   const heading2 = top === void 0 ? void 0 : layers.get(top)?.root.querySelector(".screen > h1.screen-title");
   document.title = windowTitleForHeading(heading2?.textContent);
 }
-function requestPage(layer, bind, currentPage, page) {
-  if (!layerIsActive(layer)) return;
-  const pagination = layer.screen.pagination?.lists.find((item) => item.bind === bind);
-  if (pagination === void 0 || pagination.page !== currentPage || !Number.isSafeInteger(page) || page < 1 || page > pagination.totalPages || page === currentPage) return;
+function requestLists(layer, updates) {
+  if (!layerIsActive(layer)) return false;
+  if (updates.length === 0) return false;
   sendInteraction(layer, {
-    type: "screen.page",
-    bind,
-    currentPage,
-    page,
-    changes: changesForBindings(layer.model, [
-      ...layer.dirty.bindings(),
-      bind
-    ])
+    type: "screen.list",
+    updates,
+    changes: changesForBindings(layer.model, layer.dirty.bindings())
   });
+  return true;
+}
+function selectListRow(layer, selection) {
+  if (!layerIsActive(layer)) return;
+  sendInteraction(layer, {
+    type: "screen.event",
+    action: "select",
+    eventType: "select",
+    selection,
+    changes: changesForBindings(layer.model, layer.dirty.bindings())
+  });
+}
+function captureLayerState(layer) {
+  if (layer.kind === "page" && presentationHistory.visible()[0] === layer.surfaceId && !layer.shell.hidden) {
+    layer.viewState.scroll = {
+      x: scrollX,
+      y: scrollY
+    };
+  } else if (layer.kind === "modal" && layer.shell.open) {
+    layer.viewState.scroll = {
+      x: layer.root.scrollLeft,
+      y: layer.root.scrollTop
+    };
+  }
+  layer.lists.capture();
+  for (const [target, id] of elementScrollTargets(layer)) {
+    layer.viewState.elements[id].scroll = {
+      x: target.scrollLeft,
+      y: target.scrollTop
+    };
+  }
+  localScreenStates.delete(layer.viewState.instanceId);
+  localScreenStates.set(layer.viewState.instanceId, {
+    state: layer.viewState,
+    focus: layer.focus
+  });
+  if (localScreenStates.size > 1e3) {
+    localScreenStates.delete(localScreenStates.keys().next().value);
+  }
+}
+function elementScrollTargets(layer) {
+  return [
+    ...layer.root.querySelectorAll("[data-element-id]")
+  ].flatMap((element2) => {
+    const id = element2.dataset.elementId;
+    if (!Object.hasOwn(layer.viewState.elements, id) || layer.viewState.elements[id].list !== void 0 || element2.closest("[hidden], [data-custom-element-id]") !== null || element2.getClientRects().length === 0) return [];
+    return [
+      [
+        element2.classList.contains("field") ? element2.querySelector("textarea") ?? element2 : element2,
+        id
+      ]
+    ];
+  });
+}
+function screenStateUpdate(layer) {
+  captureLayerState(layer);
+  const ids = new Set(Object.keys(layer.screen.state.elements));
+  const elements = Object.fromEntries(Object.entries(layer.viewState.elements).filter(([id]) => ids.has(id)).map(([id, state]) => [
+    id,
+    {
+      scroll: structuredClone(state.scroll),
+      toolbarOpen: state.toolbarOpen,
+      ...state.selectedTab === void 0 ? {} : {
+        selectedTab: state.selectedTab
+      }
+    }
+  ]));
+  return {
+    version: layer.viewState.version,
+    scroll: structuredClone(layer.viewState.scroll),
+    elements
+  };
+}
+function scopeDOMIDs(root, prefix) {
+  const nodes = [
+    root,
+    ...root.querySelectorAll("*")
+  ].filter((node) => node.closest("[data-custom-element-id]") === null);
+  const ids = /* @__PURE__ */ new Map();
+  for (const node of nodes) {
+    if (node.id && !node.id.startsWith(`${prefix}-`)) {
+      const id = `${prefix}-${node.id}`;
+      ids.set(node.id, id);
+      node.id = id;
+    }
+  }
+  for (const node of nodes) {
+    for (const attribute2 of [
+      "for",
+      "aria-labelledby",
+      "aria-describedby",
+      "aria-controls",
+      "aria-details"
+    ]) {
+      const value = node.getAttribute(attribute2);
+      if (value !== null) {
+        node.setAttribute(attribute2, value.split(" ").map((id) => ids.get(id) ?? id).join(" "));
+      }
+    }
+  }
 }
 function setInteractionPending(sequence) {
   interactionSequence = sequence;
@@ -26721,11 +27778,14 @@ function requestLayerBack(surfaceId) {
 }
 function sendInteraction(layer, payload) {
   if (interactionSequence !== void 0) return;
+  rememberLayerFocus(layer);
   const sequence = sendClient({
     ...payload,
     surfaceId: layer.surfaceId,
     screenId: layer.screen.id,
-    screenRevision: layer.screen.revision
+    screenRevision: layer.screen.revision,
+    instanceId: layer.viewState.instanceId,
+    screenState: screenStateUpdate(layer)
   }, true, layer);
   if (sequence !== void 0) {
     messageCenter.beginRoundtrip();

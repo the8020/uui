@@ -7,6 +7,14 @@
     "title": "Available programs",
     "bind": "programs",
     "key": "id",
-    "display": ["id", "description"]
+    "display": [
+      "id",
+      "description"
+    ],
+    "columnOptions": {
+      "description": {
+        "length": "long"
+      }
+    }
   }
 }

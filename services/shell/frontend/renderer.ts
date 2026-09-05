@@ -3,8 +3,8 @@ import type {
   CustomElementDescriptor,
   ScreenAction,
   ScreenChange,
+  ScreenElementState,
   ScreenEventType,
-  ScreenListPage,
   ScreenSnapshot,
 } from "/p/the8020/uui/protocol.ts";
 import type { LayoutDocument, LayoutNode } from "/p/the8020/uui/layout.ts";
@@ -15,7 +15,7 @@ import {
   fieldMessagePopoverPosition,
 } from "./field_message.ts";
 import { createMaterialIcon, renderIconText } from "./icon_text.ts";
-import { getPath, paginationItems, setPath } from "./model.ts";
+import { getPath, setPath } from "./model.ts";
 
 export interface RenderCallbacks {
   changed(bind: string, value: unknown, control: ControlDescriptor): void;
@@ -24,7 +24,8 @@ export interface RenderCallbacks {
     eventType?: ScreenEventType,
     value?: unknown,
   ): void;
-  page(bind: string, currentPage: number, page: number): void;
+  list(id: string): HTMLElement;
+  elementState(id: string): ScreenElementState;
 }
 
 export function renderScreenHeader(
@@ -112,9 +113,6 @@ export function renderScreen(
     values.push(control);
     byBind.set(control.bind, values);
   }
-  const pagination = new Map(
-    (snapshot.pagination?.lists ?? []).map((item) => [item.bind, item]),
-  );
   if (isLayout(snapshot.layout)) {
     article.append(
       renderLayout(
@@ -123,7 +121,6 @@ export function renderScreen(
         byBind,
         snapshot.actions,
         model,
-        pagination,
         callbacks,
         customElements,
         custom,
@@ -139,12 +136,11 @@ export function renderScreen(
     stack.append(...renderImplicitFieldGroups(rendered));
     article.append(stack);
   }
-  if (
-    snapshot.actions.length > 0 &&
-    (!isLayout(snapshot.layout) ||
-      !containsNodeType(snapshot.layout.root, "actions"))
-  ) {
-    article.append(renderActions(snapshot.actions, callbacks));
+  const remainingActions = snapshot.actions.filter((action) =>
+    !isLayout(snapshot.layout) || !placesAction(snapshot.layout.root, action.id)
+  );
+  if (remainingActions.length > 0) {
+    article.append(renderActions(remainingActions, callbacks));
   }
   root.append(article);
 }
@@ -165,7 +161,6 @@ function renderLayout(
   byBind: Map<string, ControlDescriptor[]>,
   actions: ScreenAction[],
   model: Record<string, unknown>,
-  pagination: ReadonlyMap<string, ScreenListPage>,
   callbacks: RenderCallbacks,
   customElements: Map<string, CustomElementDescriptor>,
   custom: CustomElementCallbacks,
@@ -176,6 +171,7 @@ function renderLayout(
     `layout-${node.type}`,
   );
   region.dataset.layoutId = node.id;
+  region.dataset.elementId = node.id;
   if (node.responsive === "stack") region.dataset.responsive = "stack";
   if (node.primary) region.dataset.regionPriority = "primary";
   if (node.secondary) region.dataset.regionPriority = "secondary";
@@ -213,15 +209,8 @@ function renderLayout(
   }
   if (node.type === "list" && node.bind) {
     region.append(
-      renderList(node, model, pagination.get(node.bind), callbacks),
+      callbacks.list(node.id),
     );
-  }
-  if (node.type === "actions") {
-    const selected = node.actions === undefined
-      ? actions
-      : node.actions.map((id) => actions.find((action) => action.id === id)!)
-        .filter((action) => action !== undefined);
-    region.append(renderActions(selected, callbacks));
   }
   if (node.type === "custom" && node.customElement !== undefined) {
     const descriptor = customElements.get(node.customElement);
@@ -246,14 +235,23 @@ function renderLayout(
       region.append(...renderImplicitFieldGroups(renderedControls));
     }
   }
+  if (node.type === "actions" || node.actions !== undefined) {
+    const selected = node.actions === undefined
+      ? actions
+      : node.actions.map((id) => actions.find((action) => action.id === id)!)
+        .filter((action) => action !== undefined);
+    region.append(renderActions(selected, callbacks));
+  }
   if (node.type === "tabs" && node.children !== undefined) {
     const tabs = element("div", "tabs");
     const tabList = element("div", "tab-list");
     tabList.setAttribute("role", "tablist");
     const panels = element("div", "tab-panels");
+    const state = callbacks.elementState(node.id);
+    const selectedTab = state.selectedTab ?? node.selectedTab;
     const selectedIndex = Math.max(
       0,
-      node.children.findIndex((child) => child.id === node.selectedTab),
+      node.children.findIndex((child) => child.id === selectedTab),
     );
     node.children.forEach((child, index) => {
       const button = document.createElement("button");
@@ -266,7 +264,6 @@ function renderLayout(
         byBind,
         actions,
         model,
-        pagination,
         callbacks,
         customElements,
         custom,
@@ -282,6 +279,7 @@ function renderLayout(
       panel.hidden = index !== selectedIndex;
       button.setAttribute("aria-selected", String(index === selectedIndex));
       button.addEventListener("click", () => {
+        state.selectedTab = child.id;
         for (const item of panels.children) {
           (item as HTMLElement).hidden = item !== panel;
         }
@@ -303,7 +301,6 @@ function renderLayout(
           byBind,
           actions,
           model,
-          pagination,
           callbacks,
           customElements,
           custom,
@@ -339,6 +336,8 @@ function renderAction(
 ): HTMLButtonElement {
   const button = document.createElement("button");
   button.type = "button";
+  button.id = `action-${action.id}`;
+  button.dataset.elementId = action.id;
   renderIconText(button, action.label);
   button.className = `button button-${action.kind ?? "secondary"}`;
   button.addEventListener("click", () => callbacks.action(action.id));
@@ -351,6 +350,17 @@ interface RenderedControl {
 }
 
 function renderImplicitFieldGroups(items: RenderedControl[]): HTMLElement[] {
+  if (items.some((item) => item.control.control === "list")) {
+    const result: HTMLElement[] = [];
+    let fields: RenderedControl[] = [];
+    for (const item of items) {
+      if (item.control.control === "list") {
+        result.push(...renderImplicitFieldGroups(fields), item.element);
+        fields = [];
+      } else fields.push(item);
+    }
+    return [...result, ...renderImplicitFieldGroups(fields)];
+  }
   const grouped = new Map<string, RenderedControl[]>();
   for (const item of items) {
     const name = item.control.group ?? "";
@@ -370,7 +380,7 @@ function renderImplicitFieldGroups(items: RenderedControl[]): HTMLElement[] {
     if (name.length > 0) {
       const title = element("h2", "group-title");
       renderIconText(title, humanize(name));
-      title.id = `implicit-group-title-${result.length}`;
+      title.id = `implicit-group-title-${values[0]!.control.id}`;
       card.setAttribute("aria-labelledby", title.id);
       card.append(title);
     }
@@ -421,107 +431,10 @@ function synchronizeSiblingFieldRows(fields: HTMLElement[]): void {
   }
 }
 
-function containsNodeType(node: LayoutNode, type: LayoutNode["type"]): boolean {
-  return node.type === type ||
-    (node.children ?? []).some((child) => containsNodeType(child, type));
-}
-
-function renderList(
-  node: LayoutNode,
-  model: unknown,
-  pagination: ScreenListPage | undefined,
-  callbacks: RenderCallbacks,
-): HTMLElement {
-  const rows = getPath(model, node.bind!) as unknown;
-  const container = element("div", "data-list-container");
-  const scroll = element("div", "data-list-scroll");
-  const table = document.createElement("table");
-  table.className = "data-list";
-  if (!Array.isArray(rows) || rows.length === 0) {
-    const empty = document.createElement("caption");
-    renderIconText(empty, "No items");
-    table.append(empty);
-    scroll.append(table);
-    container.append(scroll);
-    return container;
-  }
-  const columns = node.display ??
-    Object.keys(rows[0] as Record<string, unknown>);
-  const head = document.createElement("thead");
-  const headRow = document.createElement("tr");
-  for (const column of columns) {
-    const cell = document.createElement("th");
-    cell.scope = "col";
-    renderIconText(cell, node.headings?.[column] ?? humanize(column));
-    headRow.append(cell);
-  }
-  head.append(headRow);
-  const body = document.createElement("tbody");
-  for (const item of rows) {
-    const row = document.createElement("tr");
-    row.tabIndex = 0;
-    const value = node.key === undefined ? item : getPath(item, node.key);
-    const select = (): void => callbacks.action("select", "select", value);
-    row.addEventListener("click", select);
-    row.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") select();
-    });
-    for (const column of columns) {
-      const cell = document.createElement("td");
-      renderIconText(cell, displayValue(getPath(item, column)));
-      row.append(cell);
-    }
-    body.append(row);
-  }
-  table.append(head, body);
-  scroll.append(table);
-  container.append(scroll);
-  if (pagination !== undefined && pagination.totalPages > 1) {
-    container.append(renderPagination(pagination, callbacks));
-  }
-  return container;
-}
-
-function renderPagination(
-  pagination: ScreenListPage,
-  callbacks: RenderCallbacks,
-): HTMLElement {
-  const navigation = element("nav", "data-list-pagination");
-  navigation.setAttribute("aria-label", `Pages for ${pagination.bind}`);
-  const start = (pagination.page - 1) * pagination.pageSize + 1;
-  const end = Math.min(
-    pagination.totalItems,
-    pagination.page * pagination.pageSize,
-  );
-  const summary = element("span", "data-list-page-summary");
-  renderIconText(summary, `${start}–${end} of ${pagination.totalItems}`);
-  navigation.append(summary);
-  const pages = element("span", "data-list-page-numbers");
-  for (const item of paginationItems(pagination.page, pagination.totalPages)) {
-    if (item === "ellipsis") {
-      const ellipsis = element("span", "data-list-page-ellipsis");
-      renderIconText(ellipsis, "…");
-      ellipsis.setAttribute("aria-hidden", "true");
-      pages.append(ellipsis);
-      continue;
-    }
-    const button = document.createElement("button");
-    button.type = "button";
-    renderIconText(button, String(item));
-    button.setAttribute("aria-label", `Page ${item}`);
-    if (item === pagination.page) {
-      button.setAttribute("aria-current", "page");
-      button.disabled = true;
-    } else {
-      button.addEventListener(
-        "click",
-        () => callbacks.page(pagination.bind, pagination.page, item),
-      );
-    }
-    pages.append(button);
-  }
-  navigation.append(pages);
-  return navigation;
+function placesAction(node: LayoutNode, id: string): boolean {
+  // An explicit actions region retains ownership of the screen's action layout.
+  return node.type === "actions" || node.actions?.includes(id) === true ||
+    (node.children ?? []).some((child) => placesAction(child, id));
 }
 
 export function renderControl(
@@ -530,10 +443,19 @@ export function renderControl(
   callbacks: RenderCallbacks,
 ): HTMLElement | undefined {
   if (control.hidden) return undefined;
+  if (control.control === "list") {
+    const card = element("div", "layout-list has-group-title");
+    card.dataset.elementId = control.id;
+    const title = element("h2", "group-title");
+    renderIconText(title, control.label ?? control.bind);
+    card.append(title, callbacks.list(control.id));
+    return card;
+  }
   if (control.control === "radio") {
     return renderRadioControl(control, model, callbacks);
   }
   const wrapper = element("div", "field");
+  wrapper.dataset.elementId = control.id;
   wrapper.dataset.group = control.group ?? "";
   wrapper.dataset.fieldLength = control.length ?? "medium";
   wrapper.dataset.fieldRowSpan = String(control.rowSpan ?? 1);
@@ -565,19 +487,18 @@ export function renderControl(
     } else if (control.control === "file") {
       input.disabled = true;
     } else {
+      if (control.control === "range") {
+        // Configure bounds before assigning a value outside the native 0–100 range.
+        input.min = String(control.minimum ?? 0);
+        input.max = String(control.maximum ?? 100);
+        input.step = String(control.step ?? 1);
+        input.dataset.valueSuffix = control.valueSuffix ?? "";
+      }
       input.value = value == null ? "" : String(value);
     }
   }
   input.id = `control-${control.id}`;
   input.dataset.bind = control.bind;
-  if (
-    control.control === "range" && input instanceof HTMLInputElement
-  ) {
-    input.min = String(control.minimum ?? 0);
-    input.max = String(control.maximum ?? 100);
-    input.step = String(control.step ?? 1);
-    input.dataset.valueSuffix = control.valueSuffix ?? "";
-  }
   if ("placeholder" in input) input.placeholder = control.placeholder ?? "";
   input.required = control.required ?? false;
   input.disabled ||= control.readOnly ?? false;
@@ -905,12 +826,6 @@ function hasEditAffordance(
   input: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
 ): boolean {
   return !input.disabled && control.control !== "file";
-}
-
-function displayValue(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  if (typeof value === "object") return JSON.stringify(value);
-  return String(value);
 }
 
 function element<K extends keyof HTMLElementTagNameMap>(

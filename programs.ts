@@ -1,3 +1,7 @@
+// The public loader is imported under other packages' and the runtime's maps.
+// deno-lint-ignore no-import-prefix
+import { parse } from "npm:smol-toml@1.8.0";
+
 export interface DiscoveredProgram {
   id: string;
   description: string;
@@ -9,6 +13,7 @@ export interface ProgramManifest {
   entrypoint: string;
   defaultLayout?: string;
   discoverable: boolean;
+  uui: boolean;
 }
 
 export interface TerminatedProgramInput {
@@ -60,7 +65,7 @@ export async function discoverPrograms(
             if (error instanceof Deno.errors.NotFound) continue;
             throw error;
           }
-          if (!manifest.discoverable) continue;
+          if (!manifest.discoverable || !manifest.uui) continue;
           result.push({
             id: `${namespace.name}/${repository.name}/${program.name}`,
             description: manifest.description,
@@ -76,9 +81,12 @@ export async function discoverPrograms(
 
 export async function invokeProgram(
   id: string,
-  input?: unknown,
+  inputs: unknown[] = [],
   packagesRoot = "/workspace/packages",
 ): Promise<unknown> {
+  if (!Array.isArray(inputs)) {
+    throw new TypeError("program inputs must be an array of arguments");
+  }
   if (!validProgramID(id)) {
     throw new TypeError("program ID must be namespace/repository/program");
   }
@@ -108,7 +116,7 @@ export async function invokeProgram(
     if (typeof module.default !== "function") {
       throw new TypeError(`program ${id} must default-export a function`);
     }
-    return await module.default(input);
+    return await module.default(...inputs);
   } catch (error) {
     if (error instanceof ProgramExecutionError) throw error;
     throw new ProgramExecutionError(id, entrypoint, error);
@@ -118,13 +126,42 @@ export async function invokeProgram(
 export async function readProgramManifest(
   path: string,
 ): Promise<ProgramManifest> {
-  const source = await Deno.readTextFile(path);
-  const schema = integerValue(source, "schema");
-  const description = stringValue(source, "description");
-  const entrypoint = stringValue(source, "entrypoint") || "program.ts";
-  const defaultLayout = stringValue(source, "default_layout");
+  const text = await Deno.readTextFile(path);
+  let source: Record<string, unknown>;
+  try {
+    source = parse(text, { integersAsBigInt: true });
+  } catch (cause) {
+    throw new TypeError(`invalid program manifest ${path}`, { cause });
+  }
+  const {
+    schema,
+    description,
+    entrypoint: declaredEntrypoint = "program.ts",
+    default_layout: defaultLayout,
+    discoverable = true,
+    uui = false,
+  } = source;
+  const entrypoint = declaredEntrypoint === ""
+    ? "program.ts"
+    : declaredEntrypoint;
   if (
-    schema !== 1 || description.length === 0 || !safeRelativePath(entrypoint)
+    schema !== 1n || typeof description !== "string" ||
+    description.trim().length === 0 || typeof entrypoint !== "string" ||
+    !safeRelativePath(entrypoint) || typeof discoverable !== "boolean" ||
+    typeof uui !== "boolean" ||
+    (defaultLayout !== undefined &&
+      (typeof defaultLayout !== "string" ||
+        (defaultLayout !== "" && !safeRelativePath(defaultLayout)))) ||
+    Object.keys(source).some((key) =>
+      ![
+        "schema",
+        "description",
+        "entrypoint",
+        "default_layout",
+        "discoverable",
+        "uui",
+      ].includes(key)
+    )
   ) {
     throw new TypeError(`invalid program manifest ${path}`);
   }
@@ -133,7 +170,8 @@ export async function readProgramManifest(
     description,
     entrypoint,
     defaultLayout: defaultLayout || undefined,
-    discoverable: booleanValue(source, "discoverable") ?? true,
+    discoverable,
+    uui,
   };
 }
 
@@ -155,28 +193,6 @@ function safeRelativePath(value: string): boolean {
 
 function beneath(path: string, root: string): boolean {
   return path === root || path.startsWith(`${root}/`);
-}
-
-function integerValue(source: string, key: string): number {
-  const match = source.match(
-    new RegExp(`^\\s*${key}\\s*=\\s*(\\d+)\\s*$`, "m"),
-  );
-  return match === null ? 0 : Number(match[1]);
-}
-
-function stringValue(source: string, key: string): string {
-  const match = source.match(
-    new RegExp(`^\\s*${key}\\s*=\\s*("(?:[^"\\\\]|\\\\.)*")\\s*$`, "m"),
-  );
-  if (match === null) return "";
-  return JSON.parse(match[1]!);
-}
-
-function booleanValue(source: string, key: string): boolean | undefined {
-  const match = source.match(
-    new RegExp(`^\\s*${key}\\s*=\\s*(true|false)\\s*$`, "m"),
-  );
-  return match === null ? undefined : match[1] === "true";
 }
 
 function errorMessage(value: unknown): string {

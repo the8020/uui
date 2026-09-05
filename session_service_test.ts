@@ -1,4 +1,6 @@
-import { assertEquals } from "@std/assert";
+import { Model } from "./model.ts";
+import { assert, assertEquals, assertRejects } from "@std/assert";
+import { download, type DownloadHandle } from "./mod.ts";
 import {
   type RequestMetadata,
   type WebSocketInboundEvent,
@@ -40,11 +42,12 @@ const metadata: RequestMetadata = {
     workerExecutionId: "worker-execution-test",
     persistentExecutionId: "persistent-1",
   },
+  user: { userId: "user:admin", username: "admin" },
   auth: {
     authenticated: true,
     realm: "user",
     userId: "user-1",
-    username: "Admin",
+    username: "admin",
   },
 };
 
@@ -157,7 +160,7 @@ Deno.test("intentional termination does not report the interrupted program as fa
     await callScreen({
       id: "interrupted",
       schema: z.object({}),
-      model: {},
+      model: new Model({}),
       title: "Interrupted screen",
     });
   }, {
@@ -215,7 +218,7 @@ Deno.test("initial UUI connection replays its generated screen in sequence", asy
     await callScreen({
       id: "initial",
       schema: z.object({}),
-      model: {},
+      model: new Model({}),
       title: "Initial screen",
     });
   }, { metadataStore, completePersistent: () => Promise.resolve() });
@@ -250,6 +253,12 @@ Deno.test("initial UUI connection replays its generated screen in sequence", asy
       surfaceId: surface.surfaceId,
       screenId: surface.screen.id,
       screenRevision: surface.screen.revision,
+      instanceId: surface.screen.state.instanceId,
+      screenState: {
+        version: surface.screen.state.version,
+        scroll: surface.screen.state.scroll,
+        elements: {},
+      },
       action: "done",
       eventType: "action",
       changes: [],
@@ -274,7 +283,7 @@ Deno.test("a session streams messages while its screen roundtrip is pending", as
     const screen = callScreen({
       id: "async-message",
       schema: z.object({}),
-      model: {},
+      model: new Model({}),
       title: "Async message",
     });
     await messageReady;
@@ -326,6 +335,12 @@ Deno.test("a session streams messages while its screen roundtrip is pending", as
       surfaceId: surface.surfaceId,
       screenId: surface.screen.id,
       screenRevision: surface.screen.revision,
+      instanceId: surface.screen.state.instanceId,
+      screenState: {
+        version: surface.screen.state.version,
+        scroll: surface.screen.state.scroll,
+        elements: {},
+      },
       action: "done",
       eventType: "action",
       changes: [],
@@ -350,7 +365,7 @@ Deno.test("reload and resync retain a stacked presentation and its hidden contin
   };
   const schema = z.object({ value: z.string() });
   const show = (id: string) =>
-    callScreen({ id, title: id, schema, model: { value: id } });
+    callScreen({ id, title: id, schema, model: new Model({ value: id }) });
   const service = defineSessionService(async () => {
     const pageA = show("page-a");
     await presentModal(async () => {
@@ -646,6 +661,108 @@ Deno.test("session heartbeat uses package constants and closes timed-out clients
   }
 });
 
+Deno.test("public download starts in the background, uses the session socket, and never replays on reconnect", async () => {
+  const metadataStore = new MemorySessionMetadataStore();
+  const originalNow = Date.now;
+  const now = Date.now();
+  let handle: DownloadHandle | undefined;
+  let reads = 0;
+  let cleaned = false;
+  async function* bytes() {
+    try {
+      while (true) {
+        reads++;
+        yield new Uint8Array([reads]);
+      }
+    } finally {
+      cleaned = true;
+    }
+  }
+  const service = defineSessionService(async ({ signal }) => {
+    try {
+      while (!signal.aborted) {
+        const event = await callScreen({
+          id: "download-test",
+          schema: z.object({}),
+          model: new Model({}),
+          header: { actions: [{ id: "export", label: "Export" }] },
+        });
+        if (event.action === "export") {
+          handle = download({ filename: "table.csv", body: bytes() });
+        }
+      }
+    } catch (error) {
+      if (!signal.aborted) throw error;
+    }
+  }, { metadataStore, completePersistent: () => Promise.resolve() });
+  try {
+    // Establishing and connecting within one clock tick must still resume once.
+    Date.now = () => now;
+    await service.fetch(
+      new Request("https://example.test/connect", { method: "POST" }),
+      context(metadata),
+    );
+    const socket = new TestSocket();
+    socket.message(connectMessage(0));
+    await service.connectWebSocket(
+      new Request("https://example.test/connect"),
+      context(metadata),
+      socket,
+    );
+    await until(() => serverMessages(socket, "presentation.show").length === 1);
+    const first = serverMessages(socket, "presentation.show")[0]!;
+    socket.message(screenEvent(first, "export", 10));
+    await until(() =>
+      handle !== undefined &&
+      serverMessages(socket, "presentation.show").length > 1 &&
+      serverMessages(socket, "presentation.show").at(-1)?.presentation
+          .activeSurfaceId !== null
+    );
+    assertEquals(
+      reads,
+      0,
+      "source must wait for browser demand while the next screen is available",
+    );
+    const begin = serverMessages(socket, "download.begin")[0]!;
+    socket.message({
+      type: "download.credit",
+      protocol: UUI_PROTOCOL_VERSION,
+      clientSequence: 1,
+      sessionId: first.sessionId,
+      downloadId: begin.downloadId,
+      frames: 4,
+      consumed: 0,
+    });
+    await until(() =>
+      socket.sent.filter((item) => item instanceof Uint8Array).length === 4
+    );
+    assertEquals(
+      reads,
+      4,
+      "download controls are independent of screen event sequence deduplication",
+    );
+    socket.remoteClose();
+    await assertRejects(() => handle!.done, DOMException, "connection closed");
+    await until(() => cleaned);
+    const next = new TestSocket();
+    next.message(connectMessage(0));
+    await service.connectWebSocket(
+      new Request("https://example.test/connect"),
+      context(metadata),
+      next,
+    );
+    await until(() => serverMessages(next, "session.resumed").length > 0);
+    assertEquals(next.sent.some((item) => item instanceof Uint8Array), false);
+    assertEquals(serverMessages(next, "download.begin").length, 0);
+    assertEquals(serverMessages(next, "download.end").length, 0);
+    assertEquals(serverMessages(next, "download.error").length, 0);
+    assert(serverMessages(next, "presentation.show").length > 0);
+  } finally {
+    Date.now = originalNow;
+    await metadataStore.clear();
+  }
+});
+
 class MemorySessionMetadataStore implements SessionMetadataStore {
   readonly #records = new Map<string, SessionMetadata>();
 
@@ -747,7 +864,9 @@ function serverMessages<T extends UUIServerMessage["type"]>(
   socket: TestSocket,
   type: T,
 ): Array<Extract<UUIServerMessage, { type: T }>> {
-  return socket.sent.map((item) => JSON.parse(String(item)) as UUIServerMessage)
+  return socket.sent.filter((item) => typeof item === "string").map((item) =>
+    JSON.parse(String(item)) as UUIServerMessage
+  )
     .filter((item): item is Extract<UUIServerMessage, { type: T }> =>
       item.type === type
     );
@@ -771,6 +890,12 @@ function screenEvent(
     surfaceId: surface.surfaceId,
     screenId: surface.screen.id,
     screenRevision: surface.screen.revision,
+    instanceId: surface.screen.state.instanceId,
+    screenState: {
+      version: surface.screen.state.version,
+      scroll: surface.screen.state.scroll,
+      elements: {},
+    },
     action,
     eventType: "action",
     changes: [],

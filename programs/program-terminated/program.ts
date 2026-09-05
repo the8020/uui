@@ -4,6 +4,7 @@ import {
   copyText,
   endSession,
   field,
+  Model,
   type TerminatedProgramInput,
   z,
 } from "/p/the8020/uui/mod.ts";
@@ -71,14 +72,16 @@ export default async function programTerminated(
   assertInput(input);
   const dump = await buildShortDump(input);
   const model = { ...dump, copyStatus: "" };
+  const screenModel = new Model(model);
   while (true) {
+    screenModel.data = model;
     const event = await callScreen({
       id: "program-terminated",
       title: "[[icon=error color=error]] Program terminated",
       description:
         `Uncaught exception of type '${model.exceptionType}' was raised in '${model.location}' and terminated the current program.`,
       schema: TerminationScreen,
-      model,
+      model: screenModel,
       layout,
       controls: [
         { id: "exception-type", bind: "exceptionType" },

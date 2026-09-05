@@ -1,6 +1,14 @@
 import { assertEquals } from "@std/assert";
-import { type KernelInvoke, kernelInvokeSymbol } from "@the8020/kernel";
-import service from "./service.ts";
+import {
+  kernelDatabaseBackendSymbol,
+  type KernelInvoke,
+  kernelInvokeSymbol,
+} from "@the8020/kernel";
+(globalThis as unknown as Record<symbol, unknown>)[
+  kernelDatabaseBackendSymbol
+] = "sqlite";
+const { default: service } = await import("./service.ts");
+const { hashPassword } = await import("/p/the8020/users/src/password.ts");
 
 const context = {
   signal: new AbortController().signal,
@@ -18,28 +26,59 @@ const context = {
       workerId: "wrk-test",
       workerExecutionId: "execution-test",
     },
+    user: { userId: "user:system", username: "system" },
     auth: { authenticated: false },
   },
 };
 
-Deno.test("login page and kernel-issued authentication cookie", async () => {
+Deno.test("public login page, users-package login, and stale-cookie logout", async () => {
   const calls: string[] = [];
+  const passwordHash = await hashPassword("private");
   (globalThis as unknown as Record<symbol, unknown>)[kernelInvokeSymbol] =
     ((operation, input) => {
       calls.push(operation);
-      return Promise.resolve(
-        operation === "auth.login"
-          ? input.username === "Admin"
+      if (operation === "database.execute") {
+        return Promise.resolve(
+          input.return_rows
             ? {
-              authenticated: true,
-              setCookie: "the8020_auth=opaque; HttpOnly; Path=/; SameSite=Lax",
+              columns: [
+                "username",
+                "passwordHash",
+                "enabled",
+                "authVersion",
+                "createdAt",
+                "updatedAt",
+              ],
+              rows: [[
+                "admin",
+                passwordHash,
+                1,
+                1,
+                "2026-01-01T00:00:00Z",
+                "2026-01-01T00:00:00Z",
+              ]],
             }
-            : { authenticated: false }
-          : { setCookie: "the8020_auth=; Max-Age=0; HttpOnly; Path=/" },
-      );
+            : {
+              columns: [],
+              rows: [],
+              affected_rows: { type: "bigint", value: "1" },
+            },
+        );
+      }
+      return Promise.resolve({
+        success: true,
+        result: input.operation === "crypto.token.sign"
+          ? { token: "issued-token" }
+          : null,
+      });
     }) satisfies KernelInvoke;
   try {
-    const page = await service.fetch(new Request("https://service/"), context);
+    const page = await service.fetch(
+      new Request("https://service/", {
+        headers: { cookie: "the8020_auth=expired" },
+      }),
+      context,
+    );
     assertEquals(page.status, 200);
     const markup = await page.text();
     assertEquals(markup.includes('type="password"'), true);
@@ -96,7 +135,10 @@ Deno.test("login page and kernel-issued authentication cookie", async () => {
       new Request("https://service/", {
         method: "POST",
         body: new URLSearchParams({ username: "Invalid", password: "wrong" }),
-        headers: { "content-type": "application/x-www-form-urlencoded" },
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          cookie: "the8020_auth=expired",
+        },
       }),
       context,
     );
@@ -108,23 +150,33 @@ Deno.test("login page and kernel-issued authentication cookie", async () => {
     const login = await service.fetch(
       new Request("https://service/", {
         method: "POST",
-        body: new URLSearchParams({ username: "Admin", password: "private" }),
-        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ username: "admin", password: "private" }),
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          cookie: "the8020_auth=expired",
+        },
       }),
       context,
     );
     assertEquals(login.status, 303);
     assertEquals(login.headers.get("location"), "/the8020/uui/shell/");
-    assertEquals(login.headers.get("set-cookie")?.includes("opaque"), true);
+    assertEquals(
+      login.headers.get("set-cookie")?.includes("issued-token"),
+      true,
+    );
     const logout = await service.fetch(
-      new Request("https://service/logout"),
+      new Request("https://service/logout", {
+        headers: { cookie: "the8020_auth=expired" },
+      }),
       context,
     );
     assertEquals(logout.status, 303);
+    assertEquals(logout.headers.get("set-cookie")?.includes("Max-Age=0"), true);
     assertEquals(calls, [
-      "auth.login",
-      "auth.login",
-      "auth.logoutCurrent",
+      "database.execute",
+      "runtime.operation",
+      "database.execute",
+      "runtime.operation",
     ]);
   } finally {
     delete (globalThis as unknown as Record<symbol, unknown>)[

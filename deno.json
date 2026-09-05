@@ -4,7 +4,12 @@
     "noImplicitOverride": true,
     "noUncheckedIndexedAccess": true,
     "useUnknownInCatchVariables": true,
-    "lib": ["deno.ns", "dom", "dom.iterable", "esnext"]
+    "lib": [
+      "deno.ns",
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ]
   },
   "fmt": {
     "exclude": [
@@ -30,11 +35,15 @@
     "hono": "jsr:@hono/hono@4.9.8",
     "kysely": "npm:kysely@0.29.4",
     "markdown-it": "npm:markdown-it@14.1.0",
-    "zod": "npm:zod@4.1.5"
+    "zod": "npm:zod@4.1.5",
+    "@the8020/context": "file:///opt/runtime/context/mod.ts"
   },
   "tasks": {
-    "check": "deno fmt --check . && deno lint . && deno check --import-map=deno.local.json mod.ts tables/sessions.ts services/login/service.ts services/shell/service.ts services/session/service.ts programs/home/program.ts programs/program-terminated/program.ts programs/sessions/program.ts services/shell/frontend/main.ts",
-    "test": "deno test --import-map=deno.local.json --allow-read=.,../admin-core,../admin-db,../demo,../dev-core,../kernel/defaults/config/runtime,/tmp --allow-write=/tmp .",
-    "test:presentation-browser": "deno run -A --import-map=deno.local.json presentation_browser_e2e.ts"
+    "check": "deno fmt --check . && deno lint . && deno check --import-map=deno.local.json mod.ts tables/sessions.ts services/login/service.ts services/shell/service.ts services/session/service.ts programs/home/program.ts programs/program-terminated/program.ts programs/sessions/program.ts services/shell/frontend/main.ts presentation_browser_e2e.ts download_browser_e2e.ts",
+    "test": "deno test --import-map=deno.local.json --allow-read=.,../admin-core,../admin-db,../demo,../dev-core,../jobs,../kernel/defaults/config/runtime,/tmp --allow-write=/tmp .",
+    "test:presentation-browser": "deno run -A --import-map=deno.local.json presentation_browser_e2e.ts",
+    "test:download-browser": "deno run -A --import-map=deno.local.json download_browser_e2e.ts",
+    "test:lists-browser": "deno run -A --import-map=deno.local.json presentation_browser_e2e.ts --lists",
+    "test:programs-browser": "deno run -A --import-map=deno.local.json presentation_browser_e2e.ts --programs"
   }
 }

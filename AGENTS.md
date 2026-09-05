@@ -1,3 +1,125 @@
+Parent DOX: [8020 workspace](../AGENTS.md).
+
+Framework source:
+[agent0ai/dox/AGENTS.md](https://github.com/agent0ai/dox/blob/765ae4ac02cc884eefcd41a3d0f71941721adb89/AGENTS.md).
+
+# DOX framework
+
+- DOX is highly performant AGENTS.md hierarchy installed here
+- Agent must follow DOX instructions across any edits
+
+## Core Contract
+
+- AGENTS.md files are binding work contracts for their subtrees
+- Work products, source materials, instructions, records, assets, and durable
+  docs must stay understandable from the nearest applicable AGENTS.md plus every
+  parent AGENTS.md above it
+
+## Read Before Editing
+
+1. Read the root AGENTS.md
+2. Identify every file or folder you expect to touch
+3. Walk from the repository root to each target path
+4. Read every AGENTS.md found along each route
+5. If a parent AGENTS.md lists a child AGENTS.md whose scope contains the path,
+   read that child and continue from there
+6. Use the nearest AGENTS.md as the local contract and parent docs for repo-wide
+   rules
+7. If docs conflict, the closer doc controls local work details, but no child
+   doc may weaken DOX
+
+Do not rely on memory. Re-read the applicable DOX chain in the current session
+before editing.
+
+## Update After Editing
+
+Every meaningful change requires a DOX pass before the task is done.
+
+Update the closest owning AGENTS.md when a change affects:
+
+- purpose, scope, ownership, or responsibilities
+- durable structure, contracts, workflows, or operating rules
+- required inputs, outputs, permissions, constraints, side effects, or artifacts
+- user preferences about behavior, communication, process, organization, or
+  quality
+- AGENTS.md creation, deletion, move, rename, or index contents
+
+Update parent docs when parent-level structure, ownership, workflow, or child
+index changes. Update child docs when parent changes alter local rules. Remove
+stale or contradictory text immediately. Small edits that do not change behavior
+or contracts may leave docs unchanged, but the DOX pass still must happen.
+
+## Hierarchy
+
+- Root AGENTS.md is the DOX rail: project-wide instructions, global preferences,
+  durable workflow rules, and the top-level Child DOX Index
+- Child AGENTS.md files own domain-specific instructions and their own Child DOX
+  Index
+- Each parent explains what its direct children cover and what stays owned by
+  the parent
+- The closer a doc is to the work, the more specific and practical it must be
+
+## Child Doc Shape
+
+- Create a child AGENTS.md when a folder becomes a durable boundary with its own
+  purpose, rules, responsibilities, workflow, materials, or quality standards
+- Work Guidance must reflect the current standards of the project or user
+  instructions; if there are no specific standards or instructions yet, leave it
+  empty
+- Verification must reflect an existing check; if no verification framework
+  exists yet, leave it empty and update it when one exists
+
+Default section order:
+
+- Purpose
+- Ownership
+- Local Contracts
+- Work Guidance
+- Verification
+- Child DOX Index
+
+## Style
+
+- Keep docs concise, current, and operational
+- Document stable contracts, not diary entries
+- Put broad rules in parent docs and concrete details in child docs
+- Prefer direct bullets with explicit names
+- Do not duplicate rules across many files unless each scope needs a local
+  version
+- Delete stale notes instead of explaining history
+- Trim obvious statements, repeated rules, misplaced detail, and warnings for
+  risks that no longer exist
+
+## Closeout
+
+1. Re-check changed paths against the DOX chain
+2. Update nearest owning docs and any affected parents or children
+3. Refresh every affected Child DOX Index
+4. Remove stale or contradictory text
+5. Run existing verification when relevant
+6. Report any docs intentionally left unchanged and why
+
+## User Preferences
+
+When the user requests a durable behavior change, record it here or in the
+relevant child AGENTS.md
+
+## Child DOX Index
+
+This root retains repository-wide contracts and files outside the child scopes
+below.
+
+- [frontend/AGENTS.md](frontend/AGENTS.md): Provide shared browser Markdown
+  rendering outside service-owned source trees.
+- [programs/AGENTS.md](programs/AGENTS.md): Own standard Home, Program
+  terminated, and session administration programs.
+- [services/AGENTS.md](services/AGENTS.md): Declare and expose the login, shell,
+  and persistent session services.
+- [src/AGENTS.md](src/AGENTS.md): Own shared short-dump shaping and focused
+  standard-program tests.
+- [tables/AGENTS.md](tables/AGENTS.md): Describe bounded persistent metadata for
+  UUI application sessions.
+
 # Purpose
 
 - Provide the first-party 80|20 Unified User Interface services and standard
@@ -24,14 +146,24 @@
   programs selected by package-local `ui-config.json`. Home rescans the mounted
   package tree before each render and on Refresh; Program terminated defensively
   presents bounded exception, stack, source context, and copyable dump data.
+- `program.toml` declares `uui` as an optional boolean defaulting to false. Home
+  includes only programs with `uui = true` and `discoverable = true`, and
+  returns silently after invocation. Hidden helpers retain their UUI flag. The
+  program loader parses real TOML, rejects invalid flags and duplicate keys, and
+  invokes default exports with a positional argument array.
+  `the8020/admin-core/programs` owns the complete catalog and delegates custom
+  execution inputs to `the8020/jobs/run-program`.
 - `ui-config.json` is the sole current UUI configuration source. It owns login,
   post-login, and session routes; protocol version; disconnect grace;
   heartbeat/reconnect timing; replay/message limits; and Home/Program terminated
   IDs. These values are static package constants with no kernel settings,
   environment overrides, persisted overrides, or request-metadata transport.
   Browser requests never choose redirects.
-- Login/logout call the typed kernel API; passwords and opaque authentication
-  cookies never enter UUI messages or browser boot data.
+- Login/logout explicitly call `/p/the8020/users/mod.ts`; passwords and
+  authentication cookies never enter UUI messages or browser boot data.
+- The shell reads the canonical effective user from generic request metadata.
+  Generic `@the8020/context` identifies the outer UUI service; UUI session IDs
+  and session metadata remain package-owned.
 - The public login page is fixed to the shell's dark palette and uses the same
   elevated field-group card, title tab, underline fields, and primary action
   treatment. Its unboxed `80|20` wordmark sits opposite `Sign in` on the card's
@@ -83,7 +215,22 @@
   non-empty Markdown bounded to 20,000 characters. Notification frames use the
   ordinary sequenced/replayable session transport and never require a client
   event to be emitted. There is no compatibility alias.
-- Browser startup performs normal `POST /connect`, reads `X-80-20-Route`, and
+- Programs import `download({ filename, contentType?, body })` from the public
+  UUI surface. A byte stream or lazy async iterable starts a session-owned
+  background transfer and returns optional `done`/`cancel` controls. Background
+  producers retain the initiating async context, outlive individual screens, and
+  report failures through the message center. Connection loss/session end
+  cancels them. Download control messages and binary frames share the existing
+  authenticated WebSocket, never enter replay, and use consumption-based credit
+  bounded across concurrent transfers. The shell's local service worker exposes
+  each transferred stream as a one-use native download; it intercepts only its
+  reserved path and does not cache application assets or fetch backend file
+  bytes. The native frame stays alive until the service worker reports response
+  consumption; transferable-stream prefetch alone cannot end its lifetime. A
+  bounded tail of completed frames remains until connection/page cleanup because
+  native attachment registration has no DOM completion event. See `README.md`
+  for the API, limits, and browser requirements.
+- Browser startup performs normal `POST /connect`, reads `the8020-route`, and
   stores it only in `sessionStorage` under the WebSocket URL. It
   opens/reconnects the standard `the8020.uui.v1` WebSocket with the same opaque
   token as the `route` query parameter; invalid/lost routes are cleared and
@@ -93,8 +240,8 @@
   failures stay inside the bounded reconnect loop rather than escaping as
   unhandled browser errors.
 - Programs obtain the current authenticated identity on demand through
-  `kernel.auth.currentUser()` instead of receiving identity or infrastructure
-  dependencies through their function parameters.
+  `currentUser()` from `/p/the8020/users/mod.ts` instead of receiving identity
+  or infrastructure dependencies through their function parameters.
 - Programs are plain default-exported functions with ordinary TypeScript call
   stacks, classes, and closures; there is no program wrapper or decorator.
   `callScreen()` remains presentation-neutral and defaults to the root page.
@@ -132,6 +279,10 @@
   while retaining the production compiler options.
 - Layouts and future overrides are serializable data without executable code;
   user-specific layout variants are not persisted in this phase.
+- Layout regions may place their ordered `actions` alongside their controls,
+  including buttons inside field groups. Those buttons are omitted from the
+  fallback screen action bar; an explicit `actions` region still owns screen
+  action placement as before.
 - The versioned protocol publishes one atomic `presentation.show` snapshot with
   stable surface IDs, the visible base page, ordered modal snapshots, its
   one-based logical page depth, and the active surface ID. Page depth lets a
@@ -154,7 +305,7 @@
 - The shell window title is `80|20 <top visible heading>`, using normalized
   heading text from the active page or modal; before a presentation exists or
   after it closes, the title is the generic `80|20`.
-- Sending any `screen.event` or `screen.page` enters one shell-owned in-flight
+- Sending any `screen.event` or `screen.list` enters one shell-owned in-flight
   interaction state for the top surface. It immediately makes presentation and
   applicable header controls inert, disables Back, rejects additional event
   sends in JavaScript, and activates a transparent page- or modal-local pointer
@@ -162,11 +313,57 @@
   overlay and loading indicator. An early `server.ack` does not unlock stale
   content; an atomic presentation with an active surface, a session
   error/resync, or session end releases it.
-- List pagination renders only the server-described page and bounded page-number
-  controls. A page click sends `screen.page` on the existing session WebSocket
-  with the visible list slice and all dirty bindings; it does not dispatch a
-  program event, and a replacement snapshot clears edits only after the Worker
-  has merged and validated them.
+- `Model(data)` retains the business-data reference and owns typed screen state.
+  `callScreen()` validates and edits `model.data`; reusing the wrapper preserves
+  a logical screen identity, query/page state, scroll, and toolbar expansion.
+  Programs or navigation frames retain wrappers across refreshes and returns.
+  `resetScreen()` explicitly increments a reset version and clears presentation
+  state. Never attach one Model to multiple pending calls.
+- Normalize element identities before constructing a screen: reserve every
+  explicit ID across controls, actions, custom descriptors, and layout regions;
+  reject duplicates; hash stable declaration metadata for omitted IDs. Collision
+  ordinals belong only to the collision group, never a global sibling position.
+  Identical duplicates cannot retain individual identity when those duplicates
+  themselves move or disappear; explicit IDs resolve that ambiguity. Binding
+  references resolve to control IDs centrally, and each descriptor has one
+  placement. Column IDs are list-local; framework DOM IDs also include surface
+  and Model identity. Initializer internals keep their own ownership.
+- Protocol version 4 puts Model state and independent list snapshots in each
+  screen. Wire business list bindings contain empty arrays; displayed values
+  live exclusively in `screen.lists`. `ScreenLists` owns search/filter, stable
+  typed sort, pagination, and displayed-to-source mappings for explicit and
+  inferred lists. Views never reorder or truncate the source array. Mapping
+  validation checks the exact source identity, row order/content, and view
+  revision before applying a selection or edit. Stale views reject and publish a
+  fresh snapshot; invalid dirty edits change neither business nor screen state.
+- `screen.list` carries bounded page, query, or browser-measured capacity
+  requests on the existing WebSocket. Queries reset only their list to page 1.
+  Default queries remain inside the pending call; `triggerFilterEvents: true`
+  resolves a typed `list-query` event after valid edits/metadata and the query
+  are merged. Repeated queries, pages, capacity, and redraws emit no query
+  event. Processing and counts cover only the supplied array. Database search,
+  providers, and a `table()` search helper remain deferred.
+- Capture scroll and toolbar metadata with existing interactions, including
+  Back, paging, queries, and capacity. Never send standalone or periodic scroll
+  updates. Browser-local positions survive redraw and surface/instance returns;
+  reload needs only the last synchronized position. Persistence ends with the
+  live Worker. A new Model starts at the top even on an existing surface.
+- Browser lists measure a bounded row capacity from page/modal and card
+  geometry, including toolbar, headers, footer, and horizontal scrollbar. The
+  first snapshot has one measurement row; there is no fixed 25-row default.
+  Resizing and visibility/toolbar changes may remeasure; scrolling may not.
+  Capacity changes keep the former first row within the new page when possible.
+  Tab selection is element state, so measuring a revealed list retains its tab.
+  Rows have a fixed height, nowrap ellipsis, and keyboard-accessible full
+  values.
+- List headers use full/short headings and semantic widths from schema and
+  declarative `columnOptions`. Readable widths overflow horizontally. Header
+  popovers expose full headings, typed filters, sort, and clear actions; icons
+  use the vendored `[[icon=...]]` registry. The rightmost List tools disclosure
+  opens the search toolbar. Drafts, focus/caret, expansion, and horizontal
+  scroll survive updates. A complete summary and clearing controls remain
+  present for single-page and empty results. No export action is implemented by
+  this task.
 - Root-page overscroll containment must not be inherited by nested horizontal
   overflow regions. Paginated lists retain horizontal overflow for narrow
   viewports while vertical wheel and touch movement chains to the page scroller.
@@ -209,7 +406,7 @@
   viewport edge gutter.
 - The session disclosure menu owns a Messages action whose badge counts all
   messages received since the current screen interaction began. A new
-  `screen.event`, `screen.page`, or route begins a fresh collection. At most the
+  `screen.event`, `screen.list`, or route begins a fresh collection. At most the
   last 100 messages are retained in the browser and at most the last 10 are
   drawn as toasts. Toasts are anchored below the session disclosure at equal
   width, overlap downward by `0.5rem`, and keep the oldest card on top. Lower
@@ -369,6 +566,12 @@
 
 # Verification
 
+- `deno task test:programs-browser` drives the actual Programs catalog and
+  shared execution form through Chromium against deterministic kernel/job
+  fixtures. It checks all-program visibility, metadata, preselection, input
+  validation, retained inputs, captured job output, current-session UUI
+  execution, Back, and mobile sizing. Package tests cover Home filtering and
+  silent returns.
 - Deno checks cover all services/programs, including login template/error
   injection and constrained static asset routing. UUI and frontend tests cover
   discovery and containment failures, dynamic/default-export loading, static and
@@ -388,35 +591,43 @@
   only canonical current command IDs: base `kernel.status` establishes the
   command socket, then package command polling establishes the service plane;
   the suite must never depend on removed legacy command aliases. The nodes share
-  authentication through the system database; CDP commands are bounded and the
-  test injects a UUI-subprotocol-only socket handle to force a deterministic
-  brief reconnect without altering package timing constants. Kernel-restart
-  recovery distinguishes the replacement live session from recoverable stale
-  metadata and cleans the stale record through the package-owned sessions
-  program. The suite then covers login/cookie sharing, persistent
-  Canvas-rendered xterm Bash consoles in both a real development sandbox and an
-  ordinary runtime sandbox, `xterm-256color`/`clear`, exact bottom-row fitting,
-  visibly rendered mouse selection, confirmed source and factory reset controls,
-  development activation preview statistics, required-message validation,
-  independent package commits, and clean overlay reset, per-session theme
-  persistence and future-tab theme inheritance, dark and light reload
-  initialization before first paint, responsive two/four-group layouts, semantic
-  field lengths, reserved hinted/unhinted supporting-message alignment,
-  accessible full-hint popovers, and source-ordered multi-row field placement
-  including its message slot at desktop/tablet/mobile widths, persistent
-  standard Back navigation, header action/control rendering, one-row
-  right-to-left responsive hiding, synchronized browser titles, vertical
-  overflow disclosure, and mobile viewport-edge clamping; an open disclosure
-  remains open across responsive refits while overflow is still required. It
-  also covers modal stacking/focus/inertness, modal-local headers, Escape and
-  browser-Back routing, page-over-modal suspension, later-page reload and exact
-  continuation restoration, dirty background redraws, immediate rapid-event
-  suppression and delayed loading feedback, direct home-list invocation, the
-  summary-only core-admin package list and selected package manifest/Git/content
-  detail with vertically spaced content cards and service clickthrough, live
-  database catalog list/detail/synchronization through the DB package, the
-  core-admin service/sandbox lists and linked details, the package-owned UUI
-  session list/detail with exact-Worker inspection, bounded log, stale cleanup,
+  the signing key and users-package authentication database; CDP commands are
+  bounded and the test injects a UUI-subprotocol-only socket handle to force a
+  deterministic brief reconnect without altering package timing constants.
+  Targeted service edits converge between nodes; invalid index publication
+  preserves healthy fragments, and ordinary local package commands repair a boot
+  with broken service defaults. Signed routes cover cross-node HTTP and browser
+  WebSocket forwarding, case-insensitive platform headers, stripped forged
+  internal metadata, unavailable-node failure without replay, and stale
+  execution rejection. Forwarding checks release the original WebSocket before
+  another request, respecting UUI's strict single-request concurrency, then
+  resume the same browser execution. Kernel-restart recovery distinguishes the
+  replacement live session from recoverable stale metadata and cleans the stale
+  record through the package-owned sessions program. The suite then covers
+  login/cookie sharing, persistent Canvas-rendered xterm Bash consoles in both a
+  real development sandbox and an ordinary runtime sandbox,
+  `xterm-256color`/`clear`, exact bottom-row fitting, visibly rendered mouse
+  selection, confirmed source and factory reset controls, development activation
+  preview statistics, required-message validation, independent package commits,
+  and clean overlay reset, per-session theme persistence and future-tab theme
+  inheritance, dark and light reload initialization before first paint,
+  responsive two/four-group layouts, semantic field lengths, reserved
+  hinted/unhinted supporting-message alignment, accessible full-hint popovers,
+  and source-ordered multi-row field placement including its message slot at
+  desktop/tablet/mobile widths, persistent standard Back navigation, header
+  action/control rendering, one-row right-to-left responsive hiding,
+  synchronized browser titles, vertical overflow disclosure, and mobile
+  viewport-edge clamping; an open disclosure remains open across responsive
+  refits while overflow is still required. It also covers modal
+  stacking/focus/inertness, modal-local headers, Escape and browser-Back
+  routing, page-over-modal suspension, later-page reload and exact continuation
+  restoration, dirty background redraws, immediate rapid-event suppression and
+  delayed loading feedback, direct home-list invocation, the summary-only
+  core-admin package list and selected package manifest/Git/content detail with
+  vertically spaced content cards and service clickthrough, live database
+  catalog list/detail/synchronization through the DB package, the core-admin
+  service/sandbox lists and linked details, the package-owned UUI session
+  list/detail with exact-Worker inspection, bounded log, stale cleanup,
   termination, and session-service clickthrough, authorized service
   enable/disable and capacity changes including percentage sliders, nested
   demos, dirty reconnect, reload resume, semantic and asynchronous messages,
@@ -427,10 +638,11 @@
   roundtrip clearing, TypeError/ValueError short dumps, source context,
   clipboard copy, Home recovery, per-tab Worker isolation, single-Worker
   failure, and logout; administrative polling is throttled, startup failures
-  include service/log diagnostics, enabled `IDLE` services are accepted before
-  first-request lazy provisioning, staged rootfs fixtures dereference symlinks
-  only through a component-wise resolver contained by the source root, and
-  process cleanup is time-bounded.
+  include service/log diagnostics; fresh-node bootstrap allows two minutes for
+  table evaluation and ordinary per-package index jobs. Enabled `IDLE` services
+  are accepted before first-request lazy provisioning, staged rootfs fixtures
+  dereference symlinks only through a component-wise resolver contained by the
+  source root, and process cleanup is time-bounded.
 - `presentation_browser_e2e.ts` is the focused presentation-stack browser
   harness. It serves the built shell, connects it to the real UUI session engine
   over a local WebSocket, and verifies page/modal stacking, exact hidden layer
@@ -440,8 +652,24 @@
   `deno task test:presentation-browser`; it is not part of the ordinary
   unit-test glob. Pass `--browser=/path/to/chromium` when Chromium is not at the
   default path.
+- `download_browser_e2e.ts` connects the real session service and built shell
+  over a local WebSocket. `deno task test:download-browser` verifies concurrent
+  native Chromium downloads, partial disk writes before production completes,
+  byte-exact results, interactive screens, producer errors, native cancellation,
+  generator cleanup, reconnect without download replay, and zero backend file
+  requests. `downloads_test.ts` covers shared flow-control bounds, large source
+  chunks, async context, completion, cancellation, and protocol validation.
+- The download browser harness also opens the real demo form and verifies its
+  text file, default 100,000-row calculation CSV, slider-selected export size,
+  and field-group action placement without duplicate footer buttons at desktop
+  and mobile widths.
 - Browser E2E distinguishes selectable untruncated messages from responsive
   overflow triggers and verifies that full-message popovers stay beside their
   field while remaining inside the viewport.
 
-# Child DOX Index
+- `lists_test.ts`, `list_values_test.ts`, and `uui_test.ts` cover projections,
+  source mappings, identities, typed semantics, atomic edits/query events, and
+  page-five retention across selection and data refresh.
+- `deno task test:lists-browser` exercises real Chromium search/filter/sort,
+  focus/caret, empty counts, local/synchronized scroll, reload/reconnect,
+  capacities, overflow, and same-surface plus nested page/modal returns.

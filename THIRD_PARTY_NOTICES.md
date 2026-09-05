@@ -68,13 +68,17 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 The UUI shell includes the 24px filled `arrow_back`, `arrow_drop_down`, `close`,
 `dark_mode`, `edit`, `error`, `light_mode`, `logout`, `menu`, `more_vert`,
-`refresh`, `save`, and outlined `tab_close` SVGs from Google Material Icons and
-Material Symbols. The `edit` icon is vendored from
-`google/material-design-icons` at Git object
+`refresh`, `save`, `filter_alt`, `arrow_upward`, `arrow_downward`, and outlined
+`tab_close` SVGs from Google Material Icons and Material Symbols. The `edit`
+icon is vendored from `google/material-design-icons` at Git object
 `a4b3c9f6b79b1a46ddff7e9a29b4e2a7e9c077bb`; the other optimized icons are
 vendored from Git objects `e083cc60a0828fdd3b404cea0cb8a5b900e9c23e` and
 `84ccef280841abfac506afc4ad4a2782f6d0a1d0`. They are provided under the Apache
-License, Version 2.0.
+License, Version 2.0. The added list icons are the filled 24px assets from
+`google/material-design-icons/src/action/filter_alt/materialicons/24px.svg` and
+`src/navigation/{arrow_upward,arrow_downward}/materialicons/24px.svg`. Their
+vendored filenames carry the content-hash prefixes `f934b1a5`, `473799e3`, and
+`61643262`, respectively.
 
 Apache License Version 2.0, January 2004 http://www.apache.org/licenses/
 
@@ -256,3 +260,34 @@ Unless required by applicable law or agreed to in writing, software distributed
 under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
 CONDITIONS OF ANY KIND, either express or implied. See the License for the
 specific language governing permissions and limitations under the License.
+
+## smol-toml
+
+Program manifest parsing uses
+[smol-toml](https://github.com/squirrelchat/smol-toml) 1.8.0 in the Worker under
+the BSD 3-Clause License:
+
+Copyright (c) Squirrel Chat et al., All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+3. Neither the name of the copyright holder nor the names of its contributors
+   may be used to endorse or promote products derived from this software without
+   specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.

@@ -13,6 +13,17 @@
       "screen",
       "nodeId",
       "updatedAt"
-    ]
+    ],
+    "columnOptions": {
+      "sessionId": {
+        "shortHeading": "Session"
+      },
+      "nodeId": {
+        "shortHeading": "Node"
+      },
+      "updatedAt": {
+        "shortHeading": "Updated"
+      }
+    }
   }
 }
