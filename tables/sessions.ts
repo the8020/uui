@@ -5,7 +5,7 @@ const Sessions = table("the8020__uui__sessions", {
   serviceId: t.text(),
   persistentExecutionId: t.text(),
   nodeId: t.text(),
-  runtimeGroupId: t.text(),
+
   sandboxId: t.text(),
   workerId: t.text(),
   authenticatedUserId: t.text(),

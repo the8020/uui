@@ -2,6 +2,8 @@ import {
   kernelDatabaseBackendSymbol,
   type KernelInvoke,
   kernelInvokeSymbol,
+  type LogPage,
+  type LogQuery,
   type ProgramSummary,
 } from "@the8020/kernel";
 import { installContextProvider } from "../kernel/defaults/config/runtime/deno/context/runtime.ts";
@@ -18,6 +20,10 @@ interface BrowserDriver {
 
 const interactiveId = "example/testing/interactive";
 const backgroundId = "example/testing/background";
+const nodeId = "nod-0123456789";
+const sandboxId = "sbx-0123456789";
+const workerId = "wrk-0123456789";
+const contextId = "ctx-0123456789";
 let submitted: JobInput | undefined;
 
 export async function runProgramsBrowser(root: string): Promise<void> {
@@ -80,10 +86,42 @@ export async function runProgramsBrowser(root: string): Promise<void> {
       return Promise.resolve({
         success: true,
         result: {
-          nodes: [{ node: { id: "node-a", enabled: true } }],
-          local_node_id: "node-a",
+          nodes: [{ node: { id: nodeId, enabled: true } }],
+          local_node_id: nodeId,
         },
       });
+    }
+    if (name === "logs.query") {
+      const query = input.input as LogQuery;
+      assert(
+        query.node_id === result.nodeId &&
+          query.job_id === result.executionId &&
+          query.context_id === result.contextId &&
+          query.from === result.createdAt && query.limit === 100,
+        "job log query lost its execution reference or page bound",
+      );
+      const page: LogPage = {
+        state: "ok",
+        records: [{
+          time: result.createdAt,
+          level: "INFO",
+          source: "deno",
+          component: "worker",
+          node_id: result.nodeId,
+          sandbox_id: result.sandboxId,
+          worker_id: result.workerId,
+          context_id: result.contextId,
+          job_id: result.executionId,
+          object: `program:${result.programId}`,
+          username: result.username,
+          message: "Captured browser result",
+          segment: "segment-00000000000000000001-all.log",
+          offset: 0,
+        }],
+        more: false,
+        scanned_bytes: 256,
+      };
+      return Promise.resolve({ success: true, result: page });
     }
     throw new Error(`Unexpected browser fixture operation ${name}`);
   }) satisfies KernelInvoke;
@@ -93,12 +131,10 @@ export async function runProgramsBrowser(root: string): Promise<void> {
     id: "the8020/uui/session",
     username: "robot",
     userId: "user:robot",
-    nodeId: "node-a",
-    runtimeGroupId: "rgp-test",
-    sandboxId: "sbx-test",
-    workerId: "wrk-test",
-    executionId: "exec-test",
-    requestId: "request-test",
+    nodeId,
+    sandboxId,
+    workerId,
+    contextId,
   }));
   const { jobStore } = await import("/p/the8020/jobs/src/store.ts");
   const { runProgram } = await import("/p/the8020/jobs/src/admin.ts");
@@ -110,24 +146,28 @@ export async function runProgramsBrowser(root: string): Promise<void> {
     submitted = structuredClone(input);
     const now = new Date().toISOString();
     result = {
-      id: "run-browser",
+      id: "jhr-0123456789",
       scheduleId: "",
-      occurrenceId: "occ-browser",
+      occurrenceId: "occ-0123456789",
       name: input.name,
       programId: input.programId,
       username: input.username,
       targetNode: input.node,
-      nodeId: "node-a",
+      nodeId,
       state: "succeeded",
       scheduledAt: now,
       createdAt: now,
       startedAt: now,
       finishedAt: now,
       input,
-      executionId: "exec-browser",
+      executionId: "job-0123456789",
+      sandboxId,
+      workerId,
+      contextId,
+      parentContextId: "",
+      logPosition: "",
       packageCommit: "abc123",
       result: input.arguments,
-      logs: [{ level: "info", message: "Captured browser result" }],
       failure: "",
       truncated: false,
     };
@@ -263,6 +303,12 @@ export async function verifyProgramsBrowser(
       "document.querySelector('[data-bind=\"output\"]').value.includes('browser job')",
     ),
     "captured job result missing",
+  );
+  assert(
+    await page.evaluate<boolean>(
+      "document.querySelector('[data-bind=\"logs\"]').value.includes('Captured browser result') && document.querySelector('[data-bind=\"logs\"]').value.includes('user:robot')",
+    ),
+    "filtered job logs or execution user missing",
   );
   await button(page, "Back");
   await title(page, `Program ${backgroundId}`);

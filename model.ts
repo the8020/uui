@@ -1,3 +1,4 @@
+import { newId } from "@the8020/kernel";
 import { type ScreenState } from "./screen_state.ts";
 
 /** A retained screen instance. Data is the caller's original object, not a copy. */
@@ -11,7 +12,7 @@ export class Model<T extends object> {
     }
     this.data = data;
     this.screen = {
-      instanceId: `model-${crypto.randomUUID()}`,
+      instanceId: newId("mdl"),
       version: 0,
       scroll: { x: 0, y: 0 },
       elements: {},

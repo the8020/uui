@@ -13,7 +13,7 @@ const { hashPassword } = await import("/p/the8020/users/src/password.ts");
 const context = {
   signal: new AbortController().signal,
   meta: {
-    requestId: "request-test",
+    contextId: "request-test",
     serviceId: "the8020/uui/login",
     serviceGeneration: 1,
     canonicalBasePath: "/the8020/uui/login",
@@ -21,10 +21,9 @@ const context = {
     client: { ipAddress: "203.0.113.4", networkScope: "public" as const },
     execution: {
       nodeId: "node-test",
-      runtimeGroupId: "rgp-test",
+
       sandboxId: "sbx-test",
       workerId: "wrk-test",
-      workerExecutionId: "execution-test",
     },
     user: { userId: "user:system", username: "system" },
     auth: { authenticated: false },

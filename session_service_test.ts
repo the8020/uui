@@ -1,4 +1,5 @@
 import { Model } from "./model.ts";
+import { isId } from "@the8020/kernel";
 import { assert, assertEquals, assertRejects } from "@std/assert";
 import { download, type DownloadHandle } from "./mod.ts";
 import {
@@ -26,7 +27,7 @@ import type {
 import { defineSessionService, workerFunctions } from "./session_service.ts";
 
 const metadata: RequestMetadata = {
-  requestId: "request-1",
+  contextId: "request-1",
   serviceId: "the8020/uui/session",
   serviceGeneration: 1,
   canonicalBasePath: "/the8020/uui/session",
@@ -36,10 +37,10 @@ const metadata: RequestMetadata = {
   persistentKeepAliveMilliseconds: 120_000,
   execution: {
     nodeId: "node-test",
-    runtimeGroupId: "rgp-test",
+
     sandboxId: "sbx-test",
     workerId: "wrk-test",
-    workerExecutionId: "worker-execution-test",
+
     persistentExecutionId: "persistent-1",
   },
   user: { userId: "user:admin", username: "admin" },
@@ -80,13 +81,14 @@ Deno.test("ordinary persistent UUI service owns metadata and exact Worker admini
     first.message(connectMessage(0));
     const accepted = await service.connectWebSocket(
       new Request("https://example.test/connect"),
-      context({ ...metadata, requestId: "request-2" }),
+      context({ ...metadata, contextId: "request-2" }),
       first,
     );
     assertEquals(accepted.status, 204);
     await until(() => first.sent.length > 0);
     const ready = JSON.parse(String(first.sent[0]));
     assertEquals(ready.type, "session.ready");
+    assert(isId(ready.sessionId, "uis"));
     assertEquals(ready.resumeToken, "");
 
     assertEquals(metadataStore.size, 1);
@@ -118,7 +120,7 @@ Deno.test("ordinary persistent UUI service owns metadata and exact Worker admini
       new Request("https://example.test/connect"),
       context({
         ...metadata,
-        requestId: "request-3",
+        contextId: "request-3",
         client: { ipAddress: "172.17.0.1", networkScope: "private" },
       }),
       second,
@@ -152,6 +154,39 @@ Deno.test("ordinary persistent UUI service owns metadata and exact Worker admini
   }
 });
 
+Deno.test("session ID registration failure cannot overwrite metadata or retain a Worker slot", async () => {
+  let creates = 0, updates = 0, removals = 0, invocations = 0;
+  const service = defineSessionService(() => {
+    invocations++;
+    return Promise.resolve();
+  }, {
+    metadataStore: {
+      create() {
+        creates++;
+        return Promise.reject(new Error("duplicate session ID"));
+      },
+      put() {
+        updates++;
+        return Promise.resolve();
+      },
+      remove() {
+        removals++;
+        return Promise.resolve();
+      },
+    },
+  });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const response = await service.fetch(
+      new Request("https://example.test/connect", { method: "POST" }),
+      context(metadata),
+    );
+    assertEquals(response.status, 500);
+    assertEquals((await response.json()).error, "session_metadata_failed");
+  }
+  assertEquals(creates, 2);
+  assertEquals([updates, removals, invocations], [0, 0, 0]);
+});
+
 Deno.test("intentional termination does not report the interrupted program as failed", async () => {
   const metadataStore = new MemorySessionMetadataStore();
   let sessionId = "";
@@ -175,7 +210,7 @@ Deno.test("intentional termination does not report the interrupted program as fa
       new Request("https://example.test/connect", { method: "POST" }),
       context({
         ...metadata,
-        requestId: "request-intentional-termination",
+        contextId: "request-intentional-termination",
         persistentExecutionId: "persistent-intentional-termination",
       }),
     );
@@ -187,7 +222,7 @@ Deno.test("intentional termination does not report the interrupted program as fa
       new Request("https://example.test/connect"),
       context({
         ...metadata,
-        requestId: "request-intentional-termination-socket",
+        contextId: "request-intentional-termination-socket",
         persistentExecutionId: "persistent-intentional-termination",
       }),
       socket,
@@ -233,7 +268,7 @@ Deno.test("initial UUI connection replays its generated screen in sequence", asy
     socket.message(connectMessage(0));
     await service.connectWebSocket(
       new Request("https://example.test/connect"),
-      context({ ...metadata, requestId: "request-initial-screen" }),
+      context({ ...metadata, contextId: "request-initial-screen" }),
       socket,
     );
     await until(() => socket.sent.length >= 2);
@@ -276,7 +311,7 @@ Deno.test("a session streams messages while its screen roundtrip is pending", as
   const messageReady = new Promise<void>((resolve) => releaseMessage = resolve);
   const asyncMetadata = {
     ...metadata,
-    requestId: "request-async-message-establish",
+    contextId: "request-async-message-establish",
     persistentExecutionId: "persistent-async-message",
   };
   const service = defineSessionService(async () => {
@@ -302,7 +337,7 @@ Deno.test("a session streams messages while its screen roundtrip is pending", as
     socket.message(connectMessage(0));
     await service.connectWebSocket(
       new Request("https://example.test/connect"),
-      context({ ...asyncMetadata, requestId: "request-async-message-socket" }),
+      context({ ...asyncMetadata, contextId: "request-async-message-socket" }),
       socket,
     );
     await until(() => socket.sent.length >= 2);
@@ -360,7 +395,7 @@ Deno.test("reload and resync retain a stacked presentation and its hidden contin
   const metadataStore = new MemorySessionMetadataStore();
   const stackedMetadata = {
     ...metadata,
-    requestId: "request-stacked-establish",
+    contextId: "request-stacked-establish",
     persistentExecutionId: "persistent-stacked",
   };
   const schema = z.object({ value: z.string() });
@@ -392,7 +427,7 @@ Deno.test("reload and resync retain a stacked presentation and its hidden contin
     first.message(connectMessage(0));
     await service.connectWebSocket(
       new Request("https://example.test/connect"),
-      context({ ...stackedMetadata, requestId: "request-stacked-first" }),
+      context({ ...stackedMetadata, contextId: "request-stacked-first" }),
       first,
     );
     await until(() => serverMessages(first, "session.ready").length === 1);
@@ -407,7 +442,7 @@ Deno.test("reload and resync retain a stacked presentation and its hidden contin
     reloaded.message(connectMessage(0));
     await service.connectWebSocket(
       new Request("https://example.test/connect"),
-      context({ ...stackedMetadata, requestId: "request-stacked-reload" }),
+      context({ ...stackedMetadata, contextId: "request-stacked-reload" }),
       reloaded,
     );
     await until(() =>
@@ -429,7 +464,7 @@ Deno.test("reload and resync retain a stacked presentation and its hidden contin
     pageReload.message(connectMessage(0));
     await service.connectWebSocket(
       new Request("https://example.test/connect"),
-      context({ ...stackedMetadata, requestId: "request-page-reload" }),
+      context({ ...stackedMetadata, contextId: "request-page-reload" }),
       pageReload,
     );
     await until(() =>
@@ -494,7 +529,7 @@ Deno.test("session logout ends the persistent execution and redirects", async ()
   let sessionId = "";
   const logoutMetadata = {
     ...metadata,
-    requestId: "request-logout-establish",
+    contextId: "request-logout-establish",
     persistentExecutionId: "persistent-logout",
   };
   const service = defineSessionService(
@@ -526,7 +561,7 @@ Deno.test("session logout ends the persistent execution and redirects", async ()
     socket.message(connectMessage(0));
     await service.connectWebSocket(
       new Request("https://example.test/connect"),
-      context({ ...logoutMetadata, requestId: "request-logout-socket" }),
+      context({ ...logoutMetadata, contextId: "request-logout-socket" }),
       socket,
     );
     await until(() => socket.sent.length > 0);
@@ -616,7 +651,7 @@ Deno.test("session heartbeat uses package constants and closes timed-out clients
   try {
     const heartbeatMetadata = {
       ...metadata,
-      requestId: "request-heartbeat-establish",
+      contextId: "request-heartbeat-establish",
       persistentExecutionId: "persistent-heartbeat",
     };
     assertEquals(
@@ -631,7 +666,7 @@ Deno.test("session heartbeat uses package constants and closes timed-out clients
     socket.message(connectMessage(0));
     await service.connectWebSocket(
       new Request("https://example.test/connect"),
-      context({ ...heartbeatMetadata, requestId: "request-heartbeat-socket" }),
+      context({ ...heartbeatMetadata, contextId: "request-heartbeat-socket" }),
       socket,
     );
     await until(() => socket.sent.length > 0);
@@ -775,6 +810,13 @@ class MemorySessionMetadataStore implements SessionMetadataStore {
   get(sessionId: string): SessionMetadata | undefined {
     const value = this.#records.get(sessionId);
     return value === undefined ? undefined : structuredClone(value);
+  }
+
+  create(metadata: SessionMetadata): Promise<void> {
+    if (this.#records.has(metadata.sessionId)) {
+      return Promise.reject(new Error("duplicate session ID"));
+    }
+    return this.put(metadata);
   }
 
   put(metadata: SessionMetadata): Promise<void> {

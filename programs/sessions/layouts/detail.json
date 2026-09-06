@@ -14,7 +14,7 @@
       "serviceId",
       "persistentExecutionId",
       "nodeId",
-      "runtimeGroupId",
+
       "sandboxId",
       "workerId",
       "currentScreen",

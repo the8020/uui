@@ -876,12 +876,14 @@ textarea {
 
 .presentation-modal-header .field {
   --field-grid-label-height: 0.85rem;
+  --field-grid-control-height: 30px;
   width: min(18rem, 100%);
 }
 
 .presentation-modal-header .field input:not([type="checkbox"]):not([type="radio"]),
 .presentation-modal-header .field textarea,
 .presentation-modal-header .field select {
+  height: 30px;
   min-height: 30px;
 }
 
@@ -1121,12 +1123,9 @@ textarea {
 
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: var(--field-grid-row-height);
   align-items: stretch;
   gap: var(--field-grid-gap);
-}
-
-.field-group-fields-exact-rows {
-  grid-auto-rows: var(--field-grid-row-height);
 }
 
 .field {
@@ -1134,26 +1133,27 @@ textarea {
   grid-column: var(--field-grid-mobile-column);
   grid-row: var(--field-grid-mobile-row);
   min-width: 0;
+  min-height: 0;
   gap: 0;
   padding: 0;
 }
 
-.field-group-fields-exact-rows > .field:not(.field-radio) {
+.field-group-fields > .field:not(.field-radio) {
   grid-template-rows:
     var(--field-grid-label-height) minmax(0, 1fr)
     var(--field-grid-message-slot-height);
 }
 
-.field-group-fields-exact-rows > .field:not(.field-radio) .field-input-shell {
+.field-group-fields > .field:not(.field-radio) .field-input-shell {
   align-self: end;
 }
 
-.field-group-fields-exact-rows > .field[data-control-kind="textarea"] .field-input-shell {
+.field-group-fields > .field[data-control-kind="textarea"] .field-input-shell {
   align-self: stretch;
   min-height: 0;
 }
 
-.field-group-fields-exact-rows > .field[data-control-kind="textarea"] textarea {
+.field-group-fields > .field[data-control-kind="textarea"] textarea {
   height: 100%;
   min-height: 0;
 }
@@ -1183,7 +1183,9 @@ textarea {
 .field input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
 .field textarea,
 .field select {
+  display: block;
   width: 100%;
+  height: var(--field-grid-control-height, 38px);
   min-height: var(--field-grid-control-height, 38px);
   border: 0;
   border-bottom: 1px solid var(--border);
@@ -1415,6 +1417,8 @@ textarea {
 
 .field-radio {
   display: grid;
+  grid-template-rows: minmax(0, 1fr) var(--field-grid-message-slot-height,
+    1.15rem);
   gap: 0;
   border: 0;
   padding: 0;
@@ -1422,12 +1426,18 @@ textarea {
 
 .field-radio .field-input-shell {
   display: grid;
-  align-content: center;
-  min-height: var(--field-grid-control-height, 38px);
-  gap: 10px;
+  min-height: 0;
   border-bottom: 1px solid var(--border);
   padding-block: 0.35rem;
   transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.field-radio-options {
+  display: grid;
+  align-content: start;
+  min-height: 0;
+  gap: 10px;
+  overflow: auto;
 }
 
 .field-radio .field-edit-icon {
@@ -1467,7 +1477,6 @@ textarea {
 }
 
 .field textarea {
-  min-height: 6rem;
   resize: none;
 }
 
@@ -1668,6 +1677,7 @@ textarea {
 
 .program-header .field {
   --field-grid-label-height: 0.85rem;
+  --field-grid-control-height: 30px;
 
   width: 12rem;
 }
@@ -1688,6 +1698,7 @@ textarea {
 .program-header .field input:not([type="checkbox"]):not([type="radio"]),
 .program-header .field textarea,
 .program-header .field select {
+  height: 30px;
   min-height: 30px;
 }
 
@@ -1738,6 +1749,8 @@ textarea {
 
 .data-list-container {
   --list-row-height: 36px;
+  --list-header-height: 37px;
+  --list-tools-width: 24px;
 
   min-width: 0;
 }
@@ -1749,27 +1762,39 @@ textarea {
   font-size: 0.86rem;
 }
 
+.data-list-viewport {
+  position: relative;
+}
+
 .data-list-scroll {
   overflow-x: auto;
   overscroll-behavior-x: auto;
   overscroll-behavior-y: auto;
+  min-height: calc(
+    var(--list-table-chrome, var(--list-header-height)) +
+    var(--list-reserved-rows, 1) * var(--list-row-height) +
+    var(--list-scrollbar-height, 0px)
+  );
 }
 
 .data-list-toolbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 16px;
-  padding: 0 0 12px;
+  gap: 8px;
+  height: var(--list-header-height);
 }
 
 .data-list-toolbar[hidden],
-.data-list-heading[hidden] {
+.data-list-heading[hidden],
+.data-list-icon-button[hidden] {
   display: none;
 }
 
 .data-list-tools-actions {
-  flex: 1 1 auto;
+  display: flex;
+  flex: 1 0 auto;
+  gap: 4px;
 }
 
 .data-list-search,
@@ -1786,6 +1811,8 @@ textarea {
 
 .data-list-search {
   width: min(18rem, 100%);
+  height: var(--list-row-height);
+  padding-block: 0;
   font-size: 0.86rem;
 }
 
@@ -1795,7 +1822,7 @@ textarea {
   align-items: center;
   gap: 4px;
   width: 100%;
-  height: 36px;
+  height: var(--list-row-height);
   min-width: 0;
   border: 0;
   padding: 0 7px;
@@ -1838,21 +1865,27 @@ textarea {
   white-space: nowrap;
 }
 
-.data-list th:not(.data-list-tools-cell) {
-  /* Keep invisible heading measurements inside the horizontal scroll region. */
+.data-list th {
+  /* Full-heading measurements must not create overflow beyond their column. */
   position: relative;
+  overflow: hidden;
 }
 
-.data-list-tools-cell {
-  position: sticky;
-  right: 0;
-  width: 38px;
-  background: var(--surface);
+.data-list th:last-child .data-list-column-button {
+  padding-inline-end: calc(7px + var(--list-tools-width));
 }
 
 .data-list-tools-toggle {
-  justify-content: center;
+  position: absolute;
+  z-index: 1;
+  inset: 0 0 auto auto;
+  justify-content: flex-end;
+  width: var(--list-tools-width);
+  padding: 0;
+  background: var(--surface);
+  color: var(--muted);
   font-size: 1.25rem;
+  font-weight: 800;
 }
 
 .data-list-popover {
@@ -1882,7 +1915,8 @@ textarea {
   overflow-wrap: anywhere;
 }
 
-.data-list-popover button {
+.data-list-popover button,
+.data-list-tools-actions button {
   display: flex;
   align-items: center;
   gap: 0.45em;
@@ -1897,17 +1931,61 @@ textarea {
 }
 
 .data-list-popover button:hover,
-.data-list-popover button:focus-visible {
+.data-list-popover button:focus-visible,
+.data-list-tools-actions button:hover,
+.data-list-tools-actions button:focus-visible,
+.data-list-sort-option.is-selected {
   background: var(--primary-soft);
   color: var(--primary);
 }
 
-.data-list-popover label {
+.data-list-sorts {
+  display: flex;
+  gap: 8px;
+}
+
+.data-list-sort-option {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  border-radius: 5px;
+}
+
+.data-list-sort-option > button:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.data-list-sort-icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.data-list-sort-icon[data-direction="asc"] {
+  scale: 1 -1;
+}
+
+.data-list-icon-button {
+  flex: 0 0 auto;
+  justify-content: center;
+  width: var(--list-row-height);
+  height: var(--list-row-height);
+}
+
+.data-list-filter {
+  position: relative;
   margin-top: 8px;
-  color: var(--muted);
-  font-size: 0.7rem;
-  font-weight: 800;
-  text-transform: uppercase;
+}
+
+.data-list-filter input {
+  width: 100%;
+  height: var(--list-row-height);
+  padding-inline-end: var(--list-row-height);
+}
+
+.data-list-filter .data-list-icon-button {
+  position: absolute;
+  inset: 0 0 auto auto;
 }
 
 .data-list-complete-value {
@@ -1926,6 +2004,14 @@ textarea {
   justify-content: space-between;
   gap: 16px;
   padding-top: 14px;
+}
+
+.data-list-pagination[hidden] {
+  display: none;
+}
+
+.data-list-container:has(> .data-list-pagination[hidden]) {
+  padding-bottom: var(--list-pagination-reserve, 0px);
 }
 
 .data-list-page-summary {
@@ -1989,6 +2075,10 @@ textarea {
   text-align: left;
 }
 
+.data-list th {
+  height: var(--list-header-height);
+}
+
 .data-list td {
   height: var(--list-row-height);
 }
@@ -2006,6 +2096,7 @@ textarea {
 .data-list-empty {
   padding: 8px 7px !important;
   color: var(--muted);
+  line-height: 19px;
 }
 
 .data-list-container[data-narrow="true"] .data-list-pagination {

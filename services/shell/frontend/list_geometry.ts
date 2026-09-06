@@ -9,19 +9,27 @@ export function listRowCapacity(
   preceding: number,
   overhead: number,
   rowHeight: number,
+  totalItems: number,
+  paginationHeight: number,
 ): number {
   const usable = Math.max(0, viewport - chrome - 24);
-  // A list further down the page gets a full viewport once scrolled into view.
-  const before = preceding + overhead + rowHeight * 3 <= usable
-    ? Math.max(0, preceding)
-    : 0;
-  return Math.max(
-    1,
-    Math.min(
-      MAX_LIST_PAGE_SIZE,
-      Math.floor((usable - before - overhead) / Math.max(1, rowHeight)),
-    ),
-  );
+  const capacity = (chromeHeight: number): number => {
+    // A list further down the page gets a full viewport once scrolled into view.
+    const before = preceding + chromeHeight + rowHeight * 3 <= usable
+      ? Math.max(0, preceding)
+      : 0;
+    return Math.max(
+      1,
+      Math.min(
+        MAX_LIST_PAGE_SIZE,
+        Math.floor((usable - before - chromeHeight) / Math.max(1, rowHeight)),
+      ),
+    );
+  };
+  const withoutPagination = capacity(overhead);
+  return totalItems > withoutPagination
+    ? capacity(overhead + paginationHeight)
+    : withoutPagination;
 }
 
 export function listColumnWidths(
@@ -31,7 +39,7 @@ export function listColumnWidths(
   const minimum = { compact: 58, short: 110, medium: 164, long: 260 };
   const weight = { compact: 0, short: 1, medium: 2, long: 4 };
   const widths = lengths.map((length) => minimum[length]);
-  const extra = Math.max(0, available - 38 - widths.reduce((a, b) => a + b, 0));
+  const extra = Math.max(0, available - widths.reduce((a, b) => a + b, 0));
   const totalWeight = lengths.reduce(
     (total, length) => total + weight[length],
     0,

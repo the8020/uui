@@ -123,7 +123,7 @@ interface BoundSession {
   readonly channel: SessionChannel;
   readonly downloads: DownloadManager;
   readonly root: PresentationSurface;
-  readonly models: Set<object>;
+  readonly models: Set<Model<object>>;
   readonly surfaces: PresentationSurface[];
   surfaceSequence: number;
   revision: number;
@@ -187,7 +187,7 @@ export function bindSession(value: SessionChannel): () => void {
           value.send({ type: "notification.show", level: "error", message }),
       ),
       root,
-      models: new Set<object>(),
+      models: new Set<Model<object>>(),
       surfaces: [root],
       surfaceSequence: 1,
       revision: 0,
@@ -263,6 +263,13 @@ export async function callScreen<T extends z.ZodRawShape>(
     throw new TypeError(
       "a Model may be attached to only one pending callScreen",
     );
+  }
+  for (const model of state.models) {
+    if (model.screen.instanceId === options.model.screen.instanceId) {
+      throw new TypeError(
+        "Model identity is already attached to a pending screen",
+      );
+    }
   }
   const initial = options.schema.safeParse(options.model.data);
   if (!initial.success) throw initial.error;

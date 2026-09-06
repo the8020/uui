@@ -5,7 +5,7 @@ import {
   type RequestMetadata,
   type WebSocketSession,
 } from "@the8020/http";
-import { kernel } from "@the8020/kernel";
+import { kernel, newId } from "@the8020/kernel";
 import uiConfig from "./ui-config.json" with { type: "json" };
 import {
   invokeProgram,
@@ -153,7 +153,7 @@ async function establish(
     throw new HTTPError(503, { error: "worker_execution_slot_occupied" });
   }
 
-  const sessionId = randomSessionID();
+  const sessionId = newId("uis");
   const metadataStore = options.metadataStore ?? await defaultMetadataStore();
   const input = new AsyncQueue<UUIClientMessage>();
   const controller = new AbortController();
@@ -196,7 +196,7 @@ async function establish(
   sessions.set(executionId, record);
   log(record, "lifecycle", "created");
   try {
-    await writeMetadata(record);
+    await writeMetadata(record, true);
   } catch (error) {
     sessions.delete(executionId);
     record.unbind();
@@ -566,7 +566,7 @@ function sessionRecordStatus(record: SessionRecord): Record<string, unknown> {
     authenticated_user_id: record.auth.userId ?? "",
     service_id: record.serviceId,
     node_id: record.placement.nodeId,
-    runtime_group_id: record.placement.runtimeGroupId,
+
     sandbox_id: record.placement.sandboxId,
     worker_id: record.placement.workerId,
     state: record.socket === undefined ? "DISCONNECTED" : "CONNECTED",
@@ -597,13 +597,16 @@ function updateMetadata(record: SessionRecord): void {
   });
 }
 
-async function writeMetadata(record: SessionRecord): Promise<void> {
+async function writeMetadata(
+  record: SessionRecord,
+  create = false,
+): Promise<void> {
   const metadata: SessionMetadata = {
     sessionId: record.sessionId,
     serviceId: record.serviceId,
     persistentExecutionId: record.executionId,
     nodeId: record.placement.nodeId,
-    runtimeGroupId: record.placement.runtimeGroupId,
+
     sandboxId: record.placement.sandboxId,
     workerId: record.placement.workerId,
     authenticatedUserId: record.auth.userId ?? "",
@@ -621,7 +624,8 @@ async function writeMetadata(record: SessionRecord): Promise<void> {
     currentScreenId: currentScreenID(record) ?? null,
     terminationFailure: record.terminationFailure ?? null,
   };
-  await record.metadataStore.put(metadata);
+  if (create) await record.metadataStore.create(metadata);
+  else await record.metadataStore.put(metadata);
 }
 
 async function removeMetadata(record: SessionRecord): Promise<void> {
@@ -682,21 +686,6 @@ function textMessage(value: string | Uint8Array, maximum: number): string {
 }
 
 class OversizedMessageError extends Error {}
-
-function randomSessionID(): string {
-  const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
-  let suffix = "";
-  const bytes = new Uint8Array(32);
-  while (suffix.length < 8) {
-    crypto.getRandomValues(bytes);
-    for (const value of bytes) {
-      if (value >= 252) continue;
-      suffix += alphabet[value % alphabet.length];
-      if (suffix.length === 8) break;
-    }
-  }
-  return `uis-${suffix}`;
-}
 
 async function runConfiguredSession(context: UUISessionContext): Promise<void> {
   const programs = {

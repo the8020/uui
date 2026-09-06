@@ -308,13 +308,6 @@ function renderLayout(
       );
     }
   }
-  if (node.type === "grid") {
-    synchronizeSiblingFieldRows([
-      ...region.querySelectorAll<HTMLElement>(
-        ":scope > :is(.layout-field-group, .layout-detail) > .field-group-fields",
-      ),
-    ]);
-  }
   return region;
 }
 
@@ -387,20 +380,11 @@ function renderImplicitFieldGroups(items: RenderedControl[]): HTMLElement[] {
     card.append(renderFieldGrid(values));
     result.push(card);
   }
-  synchronizeSiblingFieldRows(
-    result.flatMap((card) => [
-      ...card.querySelectorAll<HTMLElement>(":scope > .field-group-fields"),
-    ]),
-  );
   return result;
 }
 
 function renderFieldGrid(items: RenderedControl[]): HTMLElement {
   const fields = element("div", "field-group-fields");
-  if (items.some((item) => (item.control.rowSpan ?? 1) > 1)) {
-    fields.dataset.hasRowSpan = "true";
-    fields.classList.add("field-group-fields-exact-rows");
-  }
   const positions = fieldGridPositions(
     items.map((item) => ({
       length: item.control.length ?? "medium",
@@ -422,13 +406,6 @@ function renderFieldGrid(items: RenderedControl[]): HTMLElement {
   });
   fields.append(...items.map((item) => item.element));
   return fields;
-}
-
-function synchronizeSiblingFieldRows(fields: HTMLElement[]): void {
-  if (!fields.some((item) => item.dataset.hasRowSpan === "true")) return;
-  for (const item of fields) {
-    item.classList.add("field-group-fields-exact-rows");
-  }
 }
 
 function placesAction(node: LayoutNode, id: string): boolean {
@@ -555,7 +532,9 @@ function renderRadioControl(
   group.dataset.controlKind = "radio";
   const legend = document.createElement("legend");
   renderIconText(legend, control.label ?? control.id);
-  const inputShell = element("div", "field-input-shell field-radio-options");
+  const inputShell = element("div", "field-input-shell");
+  const options = element("div", "field-radio-options");
+  inputShell.append(options);
   const current = getPath(model, control.bind);
   for (const [index, option] of (control.options ?? []).entries()) {
     const label = document.createElement("label");
@@ -578,7 +557,7 @@ function renderRadioControl(
     const text = document.createElement("span");
     renderIconText(text, option.label);
     label.append(input, text);
-    inputShell.append(label);
+    options.append(label);
   }
   if (!(control.readOnly ?? false)) {
     group.classList.add("field-has-edit-affordance");

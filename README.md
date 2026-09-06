@@ -153,19 +153,35 @@ query resets only that list to page 1. Counts refer to the supplied array:
 suffix. Empty results retain headings, tools, filters, and `0–0 of 0` feedback.
 
 Column headings open keyboard-accessible sort/filter popovers. The rightmost
-**List tools** disclosure reveals quick search. Compact headings keep the full
-heading accessible and available in the popover. Rows stay one line at a fixed
-height; truncated cells expose complete text on click or keyboard activation.
-Readable column widths overflow horizontally while vertical movement chains to
-the page or modal. The toolbar reserves room for future actions; exports are not
-implemented here.
+**List tools** disclosure reveals quick search and icon-only clear-all actions
+for applied sorts and filters. Clear all filters removes both quick search and
+column filters while preserving sort; clear all sorts preserves filters. The
+toolbar has the same height as the column header. Its disclosure overlays the
+header's right edge without reserving a table column or body space; it stays
+visible during horizontal scrolling. Compact headings keep the full heading
+accessible and available in the popover. Its two `Sort` buttons share one row,
+with ascending/descending bars matching the header indicator. The selected sort
+has a trailing `X`; nonempty filters have an `X` inside the field. Selecting or
+clearing sort, clearing a filter, or pressing Enter in the filter field confirms
+and closes the popover. Typing filters still applies after a short debounce
+without losing focus.
+
+Rows stay one line at a fixed height; truncated cells expose complete text on
+click or keyboard activation. Readable column widths overflow horizontally only
+when they exceed the available width, while vertical movement chains to the page
+or modal. Exports are not implemented here.
 
 The first presentation supplies one row for measurement. The browser reports
 capacity from the actual page/modal viewport and list geometry; the Worker
 bounds it to 1–500 rows. Resize, toolbar, and visibility changes can update
 capacity; scrolling does not. Changing capacity retains the former first row
 within the new page when possible. Lists below other content receive a usable
-viewport budget after being scrolled into view.
+viewport budget after being scrolled into view. The body reserves space for the
+unfiltered source total up to the measured page capacity, keeping the list,
+containing card, and pagination in place on shorter pages and filtered or empty
+results. Reload uses the same source total even when only a few rows are shown;
+genuinely small sources reserve only their own rows, with one row for an empty
+source.
 
 ### Optional query events
 

@@ -1,4 +1,4 @@
-import { kernel, WorkerInvokeError } from "@the8020/kernel";
+import { isId, kernel, WorkerInvokeError } from "@the8020/kernel";
 import {
   BACK_EVENT,
   callScreen,
@@ -45,7 +45,7 @@ const DetailScreen = z.object({
     readOnly: true,
   }),
   nodeId: field(z.string(), { label: "Node", readOnly: true }),
-  runtimeGroupId: field(z.string(), { label: "Runtime group", readOnly: true }),
+
   sandboxId: field(z.string(), { label: "Sandbox", readOnly: true }),
   workerId: field(z.string(), { label: "Worker", readOnly: true }),
   currentScreen: field(z.string(), { label: "Current screen", readOnly: true }),
@@ -118,7 +118,7 @@ async function sessionDetail(metadata: SessionMetadata): Promise<void> {
       serviceId: metadata.serviceId,
       persistentExecutionId: metadata.persistentExecutionId,
       nodeId: metadata.nodeId,
-      runtimeGroupId: metadata.runtimeGroupId,
+
       sandboxId: metadata.sandboxId,
       workerId: metadata.workerId,
       currentScreen: metadata.currentScreenId ?? "",
@@ -221,7 +221,7 @@ function formatNetworkScope(
 }
 
 async function removeMetadata(sessionId: string): Promise<void> {
-  if (!/^uis-[a-z0-9]{8}$/.test(sessionId)) {
+  if (!isId(sessionId, "uis")) {
     throw new TypeError("invalid session ID");
   }
   await Sessions.delete().where(Sessions.sessionId, "=", sessionId).execute();

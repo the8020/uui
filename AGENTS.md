@@ -190,6 +190,11 @@ below.
   passwords, cookies, route tokens, replay buffers, or unbounded messages. Clean
   termination removes the record after signaling generic persistent completion;
   abnormal loss may leave recoverable stale metadata.
+- Session IDs use the shared `newId("uis")` helper with ten random lowercase
+  alphanumeric characters. Initial metadata creation is an insert protected by
+  the database primary key; an ID collision fails creation and releases the
+  local binding without replacing or deleting another session's metadata. Later
+  metadata updates belong only to that registered session.
 - `the8020/uui/sessions` lists bounded database metadata rows, validates a
   selected record against its exact Worker with `kernel.worker.invoke()`, passes
   the selected persistent-execution identity, and calls package-owned inspect,
@@ -319,6 +324,10 @@ below.
   Programs or navigation frames retain wrappers across refreshes and returns.
   `resetScreen()` explicitly increments a reset version and clears presentation
   state. Never attach one Model to multiple pending calls.
+- A Model creates its `mdl-*` screen identity through the shared operational ID
+  helper and retains it for the wrapper's lifetime. IDs are scoped to the UUI
+  session; registering a screen rejects a collision with any pending Model
+  without replacing the original screen or its continuation.
 - Normalize element identities before constructing a screen: reserve every
   explicit ID across controls, actions, custom descriptors, and layout regions;
   reject duplicates; hash stable declaration metadata for omitted IDs. Collision
@@ -355,15 +364,20 @@ below.
   Capacity changes keep the former first row within the new page when possible.
   Tab selection is element state, so measuring a revealed list retains its tab.
   Rows have a fixed height, nowrap ellipsis, and keyboard-accessible full
-  values.
+  values. Reserve body space from the unfiltered source total up to one page's
+  capacity, including after reload; short pages and filtered results retain the
+  card height and pagination position.
 - List headers use full/short headings and semantic widths from schema and
-  declarative `columnOptions`. Readable widths overflow horizontally. Header
-  popovers expose full headings, typed filters, sort, and clear actions; icons
-  use the vendored `[[icon=...]]` registry. The rightmost List tools disclosure
-  opens the search toolbar. Drafts, focus/caret, expansion, and horizontal
-  scroll survive updates. A complete summary and clearing controls remain
-  present for single-page and empty results. No export action is implemented by
-  this task.
+  declarative `columnOptions`. Only genuinely wider columns overflow
+  horizontally; fractional sizing and invisible heading measurements must not
+  create scrollbars. Header popovers expose full headings, typed filters, sort,
+  and clear actions; icons use the vendored `[[icon=...]]` registry. The
+  rightmost List tools disclosure opens the search toolbar. Drafts, focus/caret,
+  expansion, and horizontal scroll survive updates. The pagination footer is
+  hidden for single-page and empty results; sources that fit on one page reserve
+  no footer space. Clearing controls appear only for active queries. The
+  [browser contract](services/shell/frontend/AGENTS.md) owns list control layout
+  and confirmation behavior. No export action is implemented.
 - Root-page overscroll containment must not be inherited by nested horizontal
   overflow regions. Paginated lists retain horizontal overflow for narrow
   viewports while vertical wheel and touch movement chains to the page scroller.
@@ -473,48 +487,48 @@ below.
   and restricts long and medium field starts to half-row and quarter-row
   boundaries respectively. Bounded field row spans reserve their complete grid
   rectangle at every breakpoint; later fields use only legal space at or after
-  their source-order position, leaving holes instead of backfilling. Spanning
-  controls stretch to one exact row metric shared by sibling groups: an `N`-row
-  field consumes `N` standard label, control, and supporting-message row heights
-  plus `N - 1` 20px row gaps, aligning its underline and reserved message slot
-  with the `N`th ordinary field. Every field reserves the same
-  supporting-message slot even when empty. Hints occupy exactly one ellipsized
-  line in that slot; truncated hints open the complete text in a
-  keyboard-accessible, light-dismiss popover. The renderer and semantic
-  message-kind styling form the shared field message concept so later validation
-  errors can use the same slot without changing geometry. Textarea resizing is
-  disabled so it cannot escape the planned grid. Field items have zero outer
-  padding and field-group grids use a 20px row and column gap. Direct field
-  labels and legends reuse list-column-header typography: muted, uppercase,
-  `0.7em`, weight `800`, and `0.06em` tracking. They always occupy exactly one
-  fixed-height line and ellipsize overflow, including in groups without row
-  spans; radio option labels retain ordinary body typography. Numeric range
-  controls render a native slider with its synchronized bounded value suffix on
-  the left and, when editable, the same exact-right-edge pencil used by other
-  editable fields. The painted track is centered over the thumb's actual
-  center-travel width, so its fill endpoint and thumb center coincide at
-  minimum, midpoint, and maximum. Pencil clearance belongs to the surrounding
-  field shell and never pads or shortens the native range input's travel area;
-  values use the ordinary numeric binding path. Every field control, including
-  checkboxes, switches, radios, and ranges, uses the shared flat underline
-  treatment. Read-only and editable controls retain identical color, opacity,
-  and value styling; the pencil is the steady-state visual indicator of
-  editability. Editable controls alone receive the muted vendored Material
-  `edit` SVG aligned visually and geometrically to the exact field end; textarea
-  and radio pencils keep the same underline-relative bottom offset, while select
-  chevrons and native input affordances remain immediately before the pencil.
-  Password controls retain this shared layout while masking their current
-  browser value; programs must start sensitive edit models empty and never
-  redisplay stored values. Interactive hover feedback changes paint-only
-  properties such as color, border, background, and shadow; it never transforms
-  or repositions a pointer hitbox. Neutral elevation shadows are dark-tinted in
-  light mode and black in dark mode; dark-mode surfaces never use text-derived
-  light shadows. Theme state is browser-only: `sessionStorage` keeps the current
-  UUI session override through redraw/reconnect/reload, while `localStorage`
-  supplies the default for future tabs. Shell markup defaults to dark, and a
-  CSP-nonced initializer in the head resolves the browser-only stored or
-  operating-system preference before CSS and first paint; theme state never
-  enters UUI messages, service requests, kernel APIs, or backend storage.
+  their source-order position, leaving holes instead of backfilling. All fields
+  use one exact row metric shared by sibling groups, including groups containing
+  only default one-row controls: an `N`-row field consumes `N` standard label,
+  control, and supporting-message row heights plus `N - 1` 20px row gaps,
+  aligning its underline and reserved message slot with the `N`th ordinary
+  field. Every field reserves the same supporting-message slot even when empty.
+  Hints occupy exactly one ellipsized line in that slot; truncated hints open
+  the complete text in a keyboard-accessible, light-dismiss popover. The
+  renderer and semantic message-kind styling form the shared field message
+  concept so later validation errors can use the same slot without changing
+  geometry. Textarea resizing is disabled so it cannot escape the planned grid.
+  Field items have zero outer padding and field-group grids use a 20px row and
+  column gap. Direct field labels and legends reuse list-column-header
+  typography: muted, uppercase, `0.7em`, weight `800`, and `0.06em` tracking.
+  They always occupy exactly one fixed-height line and ellipsize overflow,
+  including in groups without row spans; radio option labels retain ordinary
+  body typography. Numeric range controls render a native slider with its
+  synchronized bounded value suffix on the left and, when editable, the same
+  exact-right-edge pencil used by other editable fields. The painted track is
+  centered over the thumb's actual center-travel width, so its fill endpoint and
+  thumb center coincide at minimum, midpoint, and maximum. Pencil clearance
+  belongs to the surrounding field shell and never pads or shortens the native
+  range input's travel area; values use the ordinary numeric binding path. Every
+  field control, including checkboxes, switches, radios, and ranges, uses the
+  shared flat underline treatment. Read-only and editable controls retain
+  identical color, opacity, and value styling; the pencil is the steady-state
+  visual indicator of editability. Editable controls alone receive the muted
+  vendored Material `edit` SVG aligned visually and geometrically to the exact
+  field end; textarea and radio pencils keep the same underline-relative bottom
+  offset, while select chevrons and native input affordances remain immediately
+  before the pencil. Password controls retain this shared layout while masking
+  their current browser value; programs must start sensitive edit models empty
+  and never redisplay stored values. Interactive hover feedback changes
+  paint-only properties such as color, border, background, and shadow; it never
+  transforms or repositions a pointer hitbox. Neutral elevation shadows are
+  dark-tinted in light mode and black in dark mode; dark-mode surfaces never use
+  text-derived light shadows. Theme state is browser-only: `sessionStorage`
+  keeps the current UUI session override through redraw/reconnect/reload, while
+  `localStorage` supplies the default for future tabs. Shell markup defaults to
+  dark, and a CSP-nonced initializer in the head resolves the browser-only
+  stored or operating-system preference before CSS and first paint; theme state
+  never enters UUI messages, service requests, kernel APIs, or backend storage.
 - Untruncated field messages remain ordinary selectable text. Only genuine
   overflow adds the underline, help cursor, button semantics, and locally
   anchored full-message popover; responsive width changes update that state.
@@ -537,12 +551,11 @@ below.
   backend-provided CSS.
 - `THIRD_PARTY_NOTICES.md` records the MIT/BSD notices for the bundled xterm and
   Markdown renderer dependencies, copied essential xterm styles, plus the
-  Apache-2.0 license for the individually vendored Google Material `arrow_back`,
-  `arrow_drop_down`, `dark_mode`, `edit`, `error`, `light_mode`, `menu`,
-  `more_vert`, `refresh`, `save`, `close`, `logout`, and `tab_close` SVGs.
-  Session menu rows place a fixed-width leading icon or message-count badge
-  before a left-aligned label. The theme menu action shows the icon and visible
-  label for the theme it will switch to and retains its accessible label.
+  Apache-2.0 license and source paths for the individually vendored Google
+  Material SVGs. Session menu rows place a fixed-width leading icon or
+  message-count badge before a left-aligned label. The theme menu action shows
+  the icon and visible label for the theme it will switch to and retains its
+  accessible label.
 - Reload resume synchronizes the Worker-acknowledged client sequence before a
   new event is emitted, preventing post-reload actions from being mistaken for
   duplicates.
@@ -566,12 +579,17 @@ below.
 
 # Verification
 
+- `deno task test:presentation-browser` covers page/modal restoration and exact
+  field heights and underlines across desktop, tablet, and mobile widths,
+  including default one-row textareas and explicit multiple-row controls.
 - `deno task test:programs-browser` drives the actual Programs catalog and
   shared execution form through Chromium against deterministic kernel/job
   fixtures. It checks all-program visibility, metadata, preselection, input
   validation, retained inputs, captured job output, current-session UUI
-  execution, Back, and mobile sizing. Package tests cover Home filtering and
-  silent returns.
+  execution, Back, and mobile sizing. Job fixtures retain canonical execution
+  references and serve bounded `logs.query` pages separately from run metadata;
+  browser assertions verify rendered log messages and execution usernames.
+  Package tests cover Home filtering and silent returns.
 - Deno checks cover all services/programs, including login template/error
   injection and constrained static asset routing. UUI and frontend tests cover
   discovery and containment failures, dynamic/default-export loading, static and
@@ -590,44 +608,50 @@ below.
   batch-evaluate and synchronize all tables before services start. The nodes use
   only canonical current command IDs: base `kernel.status` establishes the
   command socket, then package command polling establishes the service plane;
-  the suite must never depend on removed legacy command aliases. The nodes share
-  the signing key and users-package authentication database; CDP commands are
-  bounded and the test injects a UUI-subprotocol-only socket handle to force a
-  deterministic brief reconnect without altering package timing constants.
-  Targeted service edits converge between nodes; invalid index publication
-  preserves healthy fragments, and ordinary local package commands repair a boot
-  with broken service defaults. Signed routes cover cross-node HTTP and browser
-  WebSocket forwarding, case-insensitive platform headers, stripped forged
-  internal metadata, unavailable-node failure without replay, and stale
-  execution rejection. Forwarding checks release the original WebSocket before
-  another request, respecting UUI's strict single-request concurrency, then
-  resume the same browser execution. Kernel-restart recovery distinguishes the
-  replacement live session from recoverable stale metadata and cleans the stale
-  record through the package-owned sessions program. The suite then covers
-  login/cookie sharing, persistent Canvas-rendered xterm Bash consoles in both a
-  real development sandbox and an ordinary runtime sandbox,
-  `xterm-256color`/`clear`, exact bottom-row fitting, visibly rendered mouse
-  selection, confirmed source and factory reset controls, development activation
-  preview statistics, required-message validation, independent package commits,
-  and clean overlay reset, per-session theme persistence and future-tab theme
-  inheritance, dark and light reload initialization before first paint,
-  responsive two/four-group layouts, semantic field lengths, reserved
-  hinted/unhinted supporting-message alignment, accessible full-hint popovers,
-  and source-ordered multi-row field placement including its message slot at
-  desktop/tablet/mobile widths, persistent standard Back navigation, header
-  action/control rendering, one-row right-to-left responsive hiding,
-  synchronized browser titles, vertical overflow disclosure, and mobile
-  viewport-edge clamping; an open disclosure remains open across responsive
-  refits while overflow is still required. It also covers modal
-  stacking/focus/inertness, modal-local headers, Escape and browser-Back
-  routing, page-over-modal suspension, later-page reload and exact continuation
-  restoration, dirty background redraws, immediate rapid-event suppression and
-  delayed loading feedback, direct home-list invocation, the summary-only
-  core-admin package list and selected package manifest/Git/content detail with
-  vertically spaced content cards and service clickthrough, live database
-  catalog list/detail/synchronization through the DB package, the core-admin
-  service/sandbox lists and linked details, the package-owned UUI session
-  list/detail with exact-Worker inspection, bounded log, stale cleanup,
+  the suite must never depend on removed legacy command aliases. Browser input
+  helpers wait for reactive field roundtrips before the next edit or action. The
+  nodes share the signing key and users-package authentication database; CDP
+  commands are bounded and the test injects a UUI-subprotocol-only socket handle
+  to force a deterministic brief reconnect without altering package timing
+  constants. Targeted service edits converge between nodes; invalid index
+  publication preserves healthy fragments, and ordinary local package commands
+  repair a boot with broken service defaults. Signed routes cover cross-node
+  HTTP and browser WebSocket forwarding, case-insensitive platform headers,
+  stripped forged internal metadata, unavailable-node failure without replay,
+  and stale execution rejection. Forwarding checks release the original
+  WebSocket before another request, respecting UUI's strict single-request
+  concurrency, then resume the same browser execution. Kernel-restart recovery
+  distinguishes the replacement live session from recoverable stale metadata and
+  cleans the stale record through the package-owned sessions program. The suite
+  then covers a real managed job's result and bounded persisted log view,
+  including its execution username and canonical node/sandbox/Worker/context/job
+  identities. It opens that job's real archived-sandbox screen and checks
+  first/recent log pages with the original invocation and username after normal
+  completed-job native cleanup. It also covers login/cookie sharing, persistent
+  Canvas-rendered xterm Bash consoles in both a real development sandbox and an
+  ordinary runtime sandbox, `xterm-256color`/`clear`, exact bottom-row fitting,
+  visibly rendered mouse selection, confirmed source and factory reset controls
+  with preserved source-reset identity and a fresh canonical sandbox identity
+  after factory reset, development activation preview statistics,
+  required-message validation, independent package commits, and clean overlay
+  reset, per-session theme persistence and future-tab theme inheritance, dark
+  and light reload initialization before first paint, responsive two/four-group
+  layouts, semantic field lengths, reserved hinted/unhinted supporting-message
+  alignment, accessible full-hint popovers, and source-ordered multi-row field
+  placement including its message slot at desktop/tablet/mobile widths,
+  persistent standard Back navigation, header action/control rendering, one-row
+  right-to-left responsive hiding, synchronized browser titles, vertical
+  overflow disclosure, and mobile viewport-edge clamping; an open disclosure
+  remains open across responsive refits while overflow is still required. It
+  also covers modal stacking/focus/inertness, modal-local headers, Escape and
+  browser-Back routing, page-over-modal suspension, later-page reload and exact
+  continuation restoration, dirty background redraws, immediate rapid-event
+  suppression and delayed loading feedback, direct home-list invocation, the
+  summary-only core-admin package list and selected package manifest/Git/content
+  detail with vertically spaced content cards and service clickthrough, live
+  database catalog list/detail/synchronization through the DB package, the
+  core-admin service/sandbox lists and linked details, the package-owned UUI
+  session list/detail with exact-Worker inspection, bounded log, stale cleanup,
   termination, and session-service clickthrough, authorized service
   enable/disable and capacity changes including percentage sliders, nested
   demos, dirty reconnect, reload resume, semantic and asynchronous messages,
@@ -672,4 +696,7 @@ below.
   page-five retention across selection and data refresh.
 - `deno task test:lists-browser` exercises real Chromium search/filter/sort,
   focus/caret, empty counts, local/synchronized scroll, reload/reconnect,
-  capacities, overflow, and same-surface plus nested page/modal returns.
+  capacities, fractional widths, long-heading containment, inline query
+  confirmation, conditional toolbar actions, stable card/footer geometry on
+  short or filtered pages and reload, and same-surface plus nested page/modal
+  returns.

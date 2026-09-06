@@ -9,7 +9,7 @@ export interface SessionMetadata {
   serviceId: string;
   persistentExecutionId: string;
   nodeId: string;
-  runtimeGroupId: string;
+
   sandboxId: string;
   workerId: string;
   authenticatedUserId: string;
@@ -30,6 +30,7 @@ export interface SessionMetadata {
 }
 
 export interface SessionMetadataStore {
+  create(metadata: SessionMetadata): Promise<void>;
   put(metadata: SessionMetadata): Promise<void>;
   remove(sessionId: string): Promise<void>;
 }

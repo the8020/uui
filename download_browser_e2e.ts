@@ -90,6 +90,11 @@ const session = defineSessionService(async ({ signal }) => {
   }
 }, {
   metadataStore: {
+    create(value) {
+      if (sessionId !== undefined) throw new Error("duplicate session ID");
+      sessionId = value.sessionId;
+      return Promise.resolve();
+    },
     put(value) {
       sessionId = value.sessionId;
       return Promise.resolve();
@@ -112,7 +117,7 @@ const server = Deno.serve({
   const isSession = url.pathname.startsWith("/the8020/uui/session/");
   const prefix = isSession ? "/the8020/uui/session" : "/the8020/uui/shell";
   const metadata: RequestMetadata = {
-    requestId: crypto.randomUUID(),
+    contextId: crypto.randomUUID(),
     serviceId: isSession ? "the8020/uui/session" : "the8020/uui/shell",
     serviceGeneration: 1,
     canonicalBasePath: prefix + "/",
@@ -122,10 +127,9 @@ const server = Deno.serve({
     persistentKeepAliveMilliseconds: 600_000,
     execution: {
       nodeId: "node",
-      runtimeGroupId: "group",
+
       sandboxId: "sandbox",
       workerId: "worker",
-      workerExecutionId: "execution",
     },
     user: { userId: "user", username: "Browser test" },
     auth: {

@@ -1142,14 +1142,31 @@ Deno.test({
     const unbind = bindSession(test);
     const schema = z.object({ value: z.string() });
     const channel = new ScreenChannel();
+    const rootModel = new Model({ value: "root" });
     try {
       const root = callScreen({
         id: "root",
         schema,
-        model: new Model({ value: "root" }),
+        model: rootModel,
         channel,
       });
       await flushMicrotasks();
+      const collision = new Model({ value: "collision" });
+      collision.screen.instanceId = rootModel.screen.instanceId;
+      await assertRejects(
+        () =>
+          presentModal(() =>
+            callScreen({
+              id: "colliding-model",
+              schema,
+              model: collision,
+            })
+          ),
+        TypeError,
+        "Model identity is already attached",
+      );
+      await flushMicrotasks();
+      assertEquals(topScreen(lastPresentation(test)).model, rootModel.data);
       await assertRejects(
         () =>
           presentModal(() =>

@@ -30,7 +30,7 @@ const Schema = z.object({
   note: field(z.string(), { label: "Note" }),
   records: z.array(Row),
 });
-const records = Array.from({ length: 250 }, (_, id) => ({
+const records = Array.from({ length: 251 }, (_, id) => ({
   id,
   name: `Record ${String(id).padStart(3, "0")} — ${
     "Complete descriptive text ".repeat(5)
@@ -88,7 +88,12 @@ export async function runListsProgram(): Promise<void> {
                   length: "compact",
                 },
                 active: { shortHeading: "Y/N", length: "compact" },
-                created: { semanticType: "date", length: "short" },
+                created: {
+                  semanticType: "date",
+                  length: "short",
+                  heading: "Original record creation date and time",
+                  shortHeading: "Created",
+                },
               },
             },
             {
@@ -194,12 +199,19 @@ export async function verifyListsFlow(
   const primary = '[data-list-id="primary"]';
   const secondary = '[data-list-id="secondary"]';
   const state = () => listBrowserProbe.model.screen.elements.primary!.list!;
-  const idle = () =>
-    wait(
-      page,
-      `document.querySelector('.screen-title')?.textContent === 'List browser' && !document.documentElement.hasAttribute('data-interaction-pending') && !document.querySelector('dialog.presentation-modal[open]') && !document.querySelector('.presentation-page-layer:not([hidden])')?.inert && document.querySelector('${primary} tbody tr')`,
-      "interactive list",
+  const idle = async () => {
+    const ready = () =>
+      wait(
+        page,
+        `document.querySelector('.presentation-page-layer:not([hidden]) .screen-title')?.textContent === 'List browser' && !document.documentElement.hasAttribute('data-interaction-pending') && !document.querySelector('dialog.presentation-modal[open]') && !document.querySelector('.presentation-page-layer:not([hidden])')?.inert && document.querySelector('${primary} tbody tr')`,
+        "interactive list",
+      );
+    await ready();
+    await page.evaluate(
+      "new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
     );
+    await ready();
+  };
   await page.command("Emulation.setDeviceMetricsOverride", {
     width: 1440,
     height: 960,
@@ -210,17 +222,53 @@ export async function verifyListsFlow(
   await idle();
   await delay(120);
   const desktopCapacity = state().pageSize;
+  await paginationVisibility(page, primary, true);
   assert(
     desktopCapacity > 3 && desktopCapacity < 25,
     `measured desktop capacity ${desktopCapacity}`,
   );
   await geometry(page, primary);
+  await noHorizontalOverflow(page, primary);
+  await noHorizontalOverflow(page, secondary);
+  await toolsOverlay(page, primary);
+  await fullWidthRows(page, primary);
+  // Fractional card widths must fit without rounding the table beyond its viewport.
+  await page.evaluate(
+    `document.querySelector('${secondary}').style.width = '701.75px'`,
+  );
+  await delay(100);
+  await noHorizontalOverflow(page, secondary);
+  await page.evaluate(
+    `document.querySelector('${secondary}').style.removeProperty('width')`,
+  );
+  await delay(100);
   await screenshot(page, "desktop");
   assert(
     listBrowserProbe.model.screen.elements.delayed!.list!.measured === false,
     "hidden list waits for visibility",
   );
   const original = JSON.stringify(listBrowserProbe.model.data.records);
+
+  // Source-sized bodies retain the card and footer on a short last page and reload.
+  const fullPage = await listFrame(page, primary);
+  const lastPage = Math.ceil(records.length / state().pageSize);
+  await click(page, `${primary} button[aria-label="Page ${lastPage}"]`);
+  await until(() => state().page === lastPage, "last page");
+  await idle();
+  assert(
+    await page.evaluate<number>(
+      `document.querySelectorAll('${primary} tr[data-row-index]').length`,
+    ) < state().pageSize,
+    "last page has fewer rows",
+  );
+  await sameListFrame(page, primary, fullPage, "last page");
+  await page.command("Page.reload");
+  await idle();
+  await delay(120);
+  assert(state().page === lastPage, "reload retains last page");
+  await sameListFrame(page, primary, fullPage, "last page after reload");
+  await click(page, `${primary} button[aria-label="Page 1"]`);
+  await idle();
 
   // Real page controls, mapped selection, direct same-surface return, and data replacement.
   await click(page, `${primary} button[aria-label="Page 3"]`);
@@ -280,8 +328,13 @@ export async function verifyListsFlow(
   );
 
   // Search coalescing, dirty edits, no-match recovery, focus, caret, and toolbar state.
-  await click(page, `${primary} [aria-label="List tools"]`);
+  await pointerClick(page, `${primary} [aria-label="List tools"]`);
   await idle();
+  await delay(100);
+  await toolbarGeometry(page, primary);
+  await toolsOverlay(page, primary);
+  await toolActions(page, primary, false, false);
+  const expandedFrame = await listFrame(page, primary);
   await input(page, '[data-bind="note"]', "Saved with search");
   const eventCount = listBrowserProbe.events.length;
   await input(page, `${primary} input[type="search"]`, "not");
@@ -303,7 +356,7 @@ export async function verifyListsFlow(
   assert(
     await page.evaluate<string>(
       `document.querySelector('${primary} .data-list-page-summary').textContent`,
-    ) === "0–0 of 0 (filtered, total 250)",
+    ) === "0–0 of 0 (filtered, total 251)",
     "empty counts",
   );
   assert(
@@ -318,6 +371,23 @@ export async function verifyListsFlow(
     ),
     "empty query keeps controls open",
   );
+  await sameListFrame(page, primary, expandedFrame, "empty search");
+  await paginationVisibility(page, primary, false);
+  await noHorizontalOverflow(page, primary);
+  await toolActions(page, primary, false, true);
+  await page.command("Page.reload");
+  await idle();
+  await delay(120);
+  await sameListFrame(
+    page,
+    primary,
+    expandedFrame,
+    "empty search after reload",
+  );
+  await button(page, "Clear all filters", primary);
+  await until(() => state().query.search === "", "clear all search filters");
+  await idle();
+  await toolActions(page, primary, false, false);
   await input(page, `${primary} input[type="search"]`, "hidden-navigation");
   await until(
     () => state().query.search === "hidden-navigation",
@@ -344,29 +414,168 @@ export async function verifyListsFlow(
   await until(() => state().query.search === "", "clear resumed query");
   await idle();
 
-  // Keyboard header popover, numeric comparisons, sort arrows, and fixed-size rows.
+  // Header popovers, numeric comparisons, sort bars, and fixed-size rows.
   await click(page, `${primary} th:nth-child(3) button`);
+  await popoverControls(page, primary, false, false);
   await input(page, `${primary} .data-list-popover input`, ">= 10");
+  await page.evaluate(
+    `document.querySelector('${primary} .data-list-popover input').setSelectionRange(1, 4)`,
+  );
   await until(() => state().query.filters.amount === ">= 10", "numeric filter");
   await idle();
   await delay(60);
   assert(
     await page.evaluate<boolean>(
-      `document.activeElement?.matches('${primary} .data-list-popover input') === true`,
+      `(() => { const e=document.activeElement; return e?.matches('${primary} .data-list-popover input') && e.selectionStart === 1 && e.selectionEnd === 4; })()`,
     ),
     "filter input remains focused and open",
   );
-  await button(page, "Descending", `${primary} .data-list-popover`);
+  await popoverControls(page, primary, false, true);
+  await button(page, "Sort descending", `${primary} .data-list-popover`);
   await until(
     () => state().query.sort?.direction === "desc",
     "descending sort",
   );
   await idle();
+  await popoverClosed(page, primary);
+  await toolActions(page, primary, true, true);
   assert(
     await page.evaluate<boolean>(
-      `document.querySelector('${primary} th:nth-child(3)').getAttribute('aria-sort') === 'descending' && document.querySelector('${primary} th:nth-child(3) .material-icon') !== null`,
+      `document.querySelector('${primary} th:nth-child(3)').getAttribute('aria-sort') === 'descending' && document.querySelector('${primary} th:nth-child(3) .data-list-sort-icon[data-direction="desc"] [data-material-icon="sort"]') !== null`,
     ),
     "sort/filter indicators",
+  );
+  await click(page, `${primary} th:nth-child(3) button`);
+  await popoverControls(page, primary, true, true);
+  await screenshot(page, "popover");
+  await button(page, "Clear sort", `${primary} .data-list-popover`);
+  await until(() => state().query.sort === null, "inline clear sort");
+  await idle();
+  await popoverClosed(page, primary);
+  await toolActions(page, primary, false, true);
+  assert(
+    state().query.filters.amount === ">= 10",
+    "clear sort preserves filter",
+  );
+  await click(page, `${primary} th:nth-child(3) button`);
+  await button(page, "Sort ascending", `${primary} .data-list-popover`);
+  await until(() => state().query.sort?.direction === "asc", "ascending sort");
+  await idle();
+  await popoverClosed(page, primary);
+  assert(
+    await page.evaluate<boolean>(
+      `document.querySelector('${primary} th:nth-child(3) .data-list-sort-icon[data-direction="asc"] [data-material-icon="sort"]') !== null`,
+    ),
+    "ascending sort bars in header",
+  );
+  await button(page, "Clear all sorts", primary);
+  await until(() => state().query.sort === null, "clear all sorts");
+  await idle();
+  assert(
+    state().query.filters.amount === ">= 10",
+    "clear all sorts preserves filters",
+  );
+  await click(page, `${primary} th:nth-child(3) button`);
+  const beforeClear = interactions();
+  await typeInput(page, `${primary} .data-list-popover input`, ">= 15");
+  await pointerClick(
+    page,
+    `${primary} .data-list-filter [aria-label="Clear filter"]`,
+  );
+  await until(
+    () => state().query.filters.amount === undefined,
+    "inline clear filter",
+  );
+  await idle();
+  assert(
+    interactions() === beforeClear + 1,
+    "clear filter confirms once without first applying its draft",
+  );
+  await popoverClosed(page, primary);
+  await toolActions(page, primary, false, false);
+
+  // Enter confirms a pending filter; its source total reserves space after reload.
+  await click(page, `${primary} th:nth-child(1) button`);
+  await input(page, `${primary} .data-list-popover input`, ">= 248");
+  await enter(page);
+  await until(
+    () => state().query.filters.id === ">= 248",
+    "Enter applies filter",
+  );
+  await idle();
+  await popoverClosed(page, primary);
+  assert(
+    await page.evaluate<number>(
+      `document.querySelectorAll('${primary} tr[data-row-index]').length`,
+    ) === 3,
+    "filter shows three rows",
+  );
+  await sameListFrame(page, primary, expandedFrame, "three filtered rows");
+  await paginationVisibility(page, primary, false);
+  await page.command("Page.reload");
+  await idle();
+  await delay(120);
+  await sameListFrame(
+    page,
+    primary,
+    expandedFrame,
+    "three filtered rows after reload",
+  );
+  await click(page, `${primary} th:nth-child(3) button`);
+  await input(page, `${primary} .data-list-popover input`, ">= 10");
+  await enter(page);
+  await until(
+    () => state().query.filters.amount === ">= 10",
+    "second column filter",
+  );
+  await idle();
+  await input(page, `${primary} input[type="search"]`, "Record");
+  await until(
+    () => state().query.search === "Record",
+    "search with column filters",
+  );
+  await idle();
+  await click(page, `${primary} th:nth-child(3) button`);
+  await button(page, "Sort descending", `${primary} .data-list-popover`);
+  await until(
+    () => state().query.sort?.direction === "desc",
+    "sort filtered results",
+  );
+  await idle();
+  const beforeClearAll = interactions();
+  await typeInput(page, `${primary} input[type="search"]`, "Record 25");
+  await pointerClick(
+    page,
+    `${primary} .data-list-tools-actions [aria-label="Clear all filters"]`,
+  );
+  await until(
+    () =>
+      state().query.search === "" &&
+      Object.keys(state().query.filters).length === 0,
+    "clear all column and search filters",
+  );
+  await idle();
+  assert(
+    interactions() === beforeClearAll + 1,
+    "clear all filters confirms once without a blur-triggered draft query",
+  );
+  await toolActions(page, primary, true, false);
+  assert(
+    state().query.sort?.direction === "desc",
+    "clear all filters preserves sort",
+  );
+  await sameListFrame(page, primary, expandedFrame, "cleared filters");
+  await click(page, `${primary} th:nth-child(3) button`);
+  await input(page, `${primary} .data-list-popover input`, ">= 10");
+  await until(
+    () => state().query.filters.amount === ">= 10",
+    "restored numeric filter",
+  );
+  await idle();
+  await wait(
+    page,
+    `document.activeElement?.matches('${primary} .data-list-popover input') === true`,
+    "restored filter focus",
   );
   await escape(page);
   await delay(60);
@@ -416,6 +625,12 @@ export async function verifyListsFlow(
   await idle();
   await geometry(page, primary);
   await screenshot(page, "mobile");
+  await toolsOverlay(page, primary);
+  await toolbarGeometry(page, primary);
+  await toolActions(page, primary, true, true);
+  await click(page, `${primary} th:nth-child(3) button`);
+  await popoverControls(page, primary, true, true);
+  await escape(page);
   assert(
     await page.evaluate<boolean>(
       "document.documentElement.scrollWidth <= innerWidth",
@@ -438,6 +653,7 @@ export async function verifyListsFlow(
     `document.querySelector('${primary} .data-list-scroll').scrollLeft = 120`,
   );
   await delay(50);
+  await toolsOverlay(page, primary);
   listBrowserProbe.channel.redraw();
   await delay(100);
   assert(
@@ -512,7 +728,7 @@ export async function verifyListsFlow(
   await button(page, "Nested page");
   await wait(
     page,
-    "document.querySelector('.presentation-page-layer:not([hidden]) .screen-title')?.textContent === 'Nested page' && document.querySelector('[data-list-id] tbody tr:nth-child(2)') !== null",
+    "document.querySelector('.presentation-page-layer:not([hidden]) .screen-title')?.textContent === 'Nested page' && document.querySelector('.presentation-page-layer:not([hidden]) [data-list-id] tbody tr:nth-child(2)') !== null && !document.documentElement.hasAttribute('data-interaction-pending')",
     "inferred nested list",
   );
   await button(page, "Modal list");
@@ -564,6 +780,72 @@ export async function verifyListsFlow(
     ),
     "explicit reset closes tools",
   );
+
+  // A genuinely small source reserves only its own rows, including after filtering.
+  listBrowserProbe.model.data.records = records.slice(0, 7);
+  listBrowserProbe.channel.redraw();
+  await wait(
+    page,
+    `document.querySelector('${primary} .data-list-page-summary').textContent === '1–7 of 7'`,
+    "small source",
+  );
+  await idle();
+  await click(page, `${primary} [aria-label="List tools"]`);
+  await idle();
+  await delay(100);
+  const smallFrame = await listFrame(page, primary);
+  await paginationVisibility(page, primary, false, false);
+  assert(
+    smallFrame.viewport < expandedFrame.viewport,
+    "small sources do not reserve a full page",
+  );
+  await click(page, `${primary} th:nth-child(1) button`);
+  await input(page, `${primary} .data-list-popover input`, ">= 4");
+  await enter(page);
+  await until(() => state().query.filters.id === ">= 4", "small source filter");
+  await idle();
+  await sameListFrame(page, primary, smallFrame, "small filtered source");
+  await page.command("Page.reload");
+  await idle();
+  await delay(120);
+  await sameListFrame(
+    page,
+    primary,
+    smallFrame,
+    "small filtered source after reload",
+  );
+  await paginationVisibility(page, primary, false, false);
+
+  // At the boundary, the footer must not force an otherwise unnecessary page.
+  await button(page, "Clear all filters", primary);
+  await until(
+    () => state().query.filters.id === undefined,
+    "clear small source filter",
+  );
+  await idle();
+  const boundaryRows = state().pageSize;
+  listBrowserProbe.model.data.records = records.slice(0, boundaryRows);
+  listBrowserProbe.channel.redraw();
+  await wait(
+    page,
+    `document.querySelectorAll('${primary} tbody tr[data-row-index]').length === ${boundaryRows}`,
+    "single-page boundary capacity",
+  );
+  await idle();
+  await paginationVisibility(page, primary, false, false);
+  const settledInteractions = interactions();
+  await delay(250);
+  assert(interactions() === settledInteractions, "footer capacity settles");
+
+  listBrowserProbe.model.data.records = [];
+  listBrowserProbe.channel.redraw();
+  await wait(
+    page,
+    `document.querySelector('${primary} .data-list-empty')?.textContent === 'No items'`,
+    "empty source",
+  );
+  await idle();
+  await paginationVisibility(page, primary, false, false);
 }
 
 async function screenshot(page: BrowserDriver, name: string): Promise<void> {
@@ -595,6 +877,261 @@ async function geometry(page: BrowserDriver, selector: string): Promise<void> {
     `fixed row heights: ${JSON.stringify(result)}`,
   );
   assert(result.wraps.every((value) => value === "nowrap"), "rows do not wrap");
+}
+
+async function toolsOverlay(
+  page: BrowserDriver,
+  selector: string,
+): Promise<void> {
+  const layout = await page.evaluate<
+    {
+      headerOnly: boolean;
+      rightGap: number;
+      width: number;
+      fitsHeader: boolean;
+      padding: string;
+    }
+  >(`(() => { const h=document.querySelector(${
+    JSON.stringify(selector)
+  }); const t=h.querySelector('[aria-label="List tools"]'); const r=t.getBoundingClientRect(); const s=h.querySelector('.data-list-scroll').getBoundingClientRect(); const head=h.querySelector('thead').getBoundingClientRect(); return { headerOnly:!t.closest('table'), rightGap:s.right-r.right, width:r.width, fitsHeader:r.top>=head.top && r.bottom<=head.bottom, padding:getComputedStyle(t).padding }; })()`);
+  assert(
+    layout.headerOnly && Math.abs(layout.rightGap) < 1 && layout.width <= 24 &&
+      layout.fitsHeader && layout.padding === "0px",
+    `tools overlay uses only the header's right edge: ${
+      JSON.stringify(layout)
+    }`,
+  );
+}
+
+async function fullWidthRows(
+  page: BrowserDriver,
+  selector: string,
+): Promise<void> {
+  const layout = await page.evaluate<
+    {
+      columns: number;
+      cells: number[];
+      dataAtEnd: boolean;
+      rightGap: number;
+      x: number;
+      y: number;
+    }
+  >(`(() => { const h=document.querySelector(${
+    JSON.stringify(selector)
+  }); const table=h.querySelector('table'); const rows=[...table.querySelectorAll('tbody tr[data-row-index]')]; const row=rows[0]; const end=row.lastElementChild; const r=row.getBoundingClientRect(); return { columns:table.querySelectorAll('th[data-column-id]').length, cells:rows.map(r=>r.cells.length), dataAtEnd:end.querySelector('.data-list-cell-text')!==null, rightGap:table.getBoundingClientRect().right-end.getBoundingClientRect().right, x:r.right-2, y:r.top+r.height/2 }; })()`);
+  assert(
+    layout.cells.every((count) => count === layout.columns) &&
+      layout.dataAtEnd && Math.abs(layout.rightGap) < 1,
+    `rows contain only data columns through the right edge: ${
+      JSON.stringify(layout)
+    }`,
+  );
+  await page.command("Input.dispatchMouseEvent", {
+    type: "mouseMoved",
+    x: layout.x,
+    y: layout.y,
+  });
+  await delay(150);
+  assert(
+    await page.evaluate<boolean>(
+      `(() => { const row=document.querySelector(${
+        JSON.stringify(selector + ' tbody tr[data-row-index="0"]')
+      }); const cell=row.lastElementChild; return row.matches(':hover') && cell.contains(document.elementFromPoint(${layout.x},${layout.y})) && getComputedStyle(cell).backgroundColor==='rgba(0, 0, 0, 0)' && getComputedStyle(row).backgroundColor!=='rgba(0, 0, 0, 0)'; })()`,
+    ),
+    "row highlight reaches the rightmost data cell without an opaque tools strip",
+  );
+}
+
+interface ListFrame {
+  host: number;
+  card: number;
+  pagination: number;
+  viewport: number;
+}
+function listFrame(page: BrowserDriver, selector: string): Promise<ListFrame> {
+  return page.evaluate(
+    `(() => { const h=document.querySelector(${
+      JSON.stringify(selector)
+    }); const scroll=h.querySelector('.data-list-scroll').getBoundingClientRect(); return { host:h.getBoundingClientRect().height, card:h.closest('.layout-list').getBoundingClientRect().height, pagination:scroll.bottom+scrollY, viewport:scroll.height }; })()`,
+  );
+}
+async function paginationVisibility(
+  page: BrowserDriver,
+  selector: string,
+  visible: boolean,
+  reservesSpace = true,
+): Promise<void> {
+  const geometry = await page.evaluate<{ visible: boolean; footer: number }>(
+    `(() => { const host=document.querySelector(${
+      JSON.stringify(selector)
+    }); const footer=host.querySelector('.data-list-pagination'); return { visible:footer.getClientRects().length>0, footer:host.getBoundingClientRect().bottom-host.querySelector('.data-list-scroll').getBoundingClientRect().bottom }; })()`,
+  );
+  assert(
+    geometry.visible === visible,
+    "pagination only appears for multiple pages",
+  );
+  if (!reservesSpace) {
+    assert(
+      Math.abs(geometry.footer) < 0.5,
+      "single-page source has no footer space",
+    );
+  }
+}
+async function sameListFrame(
+  page: BrowserDriver,
+  selector: string,
+  expected: ListFrame,
+  name: string,
+): Promise<void> {
+  const actual = await listFrame(page, selector);
+  assert(
+    Object.keys(expected).every((key) =>
+      Math.abs(
+        actual[key as keyof ListFrame] - expected[key as keyof ListFrame],
+      ) < 1
+    ),
+    `${name} retains list/card height and pagination position: ${
+      JSON.stringify({ expected, actual })
+    }`,
+  );
+}
+async function toolbarGeometry(
+  page: BrowserDriver,
+  selector: string,
+): Promise<void> {
+  assert(
+    await page.evaluate<boolean>(
+      `(() => { const h=document.querySelector(${
+        JSON.stringify(selector)
+      }); const t=h.querySelector('.data-list-toolbar'); const input=t.querySelector('input'); return Math.abs(t.getBoundingClientRect().height-h.querySelector('thead').getBoundingClientRect().height)<1 && getComputedStyle(input).paddingTop==='0px' && getComputedStyle(input).paddingBottom==='0px' && t.scrollWidth<=t.clientWidth; })()`,
+    ),
+    "toolbar matches column header height without search padding or overflow",
+  );
+}
+async function toolActions(
+  page: BrowserDriver,
+  selector: string,
+  sorts: boolean,
+  filters: boolean,
+): Promise<void> {
+  const actions = await page.evaluate<
+    Array<{ label: string; title: string; icon: string; text: string }>
+  >(`(() => { const h=document.querySelector(${
+    JSON.stringify(selector)
+  }); return [...h.querySelectorAll('.data-list-tools-actions button')].map(b=>({label:b.getAttribute('aria-label'),title:b.title,icon:b.querySelector('.material-icon')?.dataset.materialIcon,text:b.textContent})); })()`);
+  assert(
+    actions.length === Number(sorts) + Number(filters) &&
+      actions.every((action) =>
+        action.text === "" && action.title === action.label
+      ) &&
+      actions.some((a) =>
+          a.label === "Clear all sorts" && a.icon === "filter_list_off"
+        ) === sorts &&
+      actions.some((a) =>
+          a.label === "Clear all filters" && a.icon === "filter_alt_off"
+        ) === filters,
+    `conditional icon-only toolbar actions with tooltips: ${
+      JSON.stringify(actions)
+    }`,
+  );
+}
+async function popoverControls(
+  page: BrowserDriver,
+  selector: string,
+  sorted: boolean,
+  filtered: boolean,
+): Promise<void> {
+  const controls = await page.evaluate<
+    {
+      row: boolean;
+      filter: boolean;
+      clearSort: number;
+      clearFilter: boolean;
+      inline: boolean;
+    }
+  >(`(() => { const p=document.querySelector(${
+    JSON.stringify(selector + " .data-list-popover:popover-open")
+  }); const sorts=[...p.querySelectorAll('.data-list-sort-option > button:first-child')]; const input=p.querySelector('input'); const clear=p.querySelector('.data-list-filter button'); const field=input.getBoundingClientRect(); const x=clear.getBoundingClientRect(); return { row:sorts.length===2 && sorts.every(b=>b.textContent==='Sort' && b.querySelector('[data-material-icon="sort"]')) && Math.abs(sorts[0].getBoundingClientRect().top-sorts[1].getBoundingClientRect().top)<1 && sorts[0].getBoundingClientRect().right<=sorts[1].getBoundingClientRect().left, filter:p.querySelector('label')===null && input.placeholder.startsWith('Filter') && input.getAttribute('aria-label').startsWith('Filter'), clearSort:p.querySelectorAll('.data-list-sort-option.is-selected button[aria-label="Clear sort"]').length, clearFilter:!clear.hidden, inline:clear.hidden || (x.left>=field.left && x.right<=field.right && x.top>=field.top && x.bottom<=field.bottom) }; })()`);
+  assert(
+    controls.row && controls.filter && controls.clearSort === Number(sorted) &&
+      controls.clearFilter === filtered && controls.inline,
+    `inline popover controls: ${JSON.stringify(controls)}`,
+  );
+}
+async function popoverClosed(
+  page: BrowserDriver,
+  selector: string,
+): Promise<void> {
+  assert(
+    await page.evaluate<boolean>(
+      `document.querySelector(${
+        JSON.stringify(selector + " .data-list-popover:popover-open")
+      }) === null`,
+    ),
+    "confirming sort/filter closes the popover",
+  );
+}
+async function enter(page: BrowserDriver): Promise<void> {
+  for (const type of ["keyDown", "keyUp"]) {
+    await page.command("Input.dispatchKeyEvent", {
+      type,
+      key: "Enter",
+      code: "Enter",
+      windowsVirtualKeyCode: 13,
+    });
+  }
+}
+async function pointerClick(
+  page: BrowserDriver,
+  selector: string,
+): Promise<void> {
+  const point = await page.evaluate<{ x: number; y: number }>(
+    `(() => { const e=document.querySelector(${
+      JSON.stringify(selector)
+    }); e.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'}); const r=e.getBoundingClientRect(); const point={ x:(r.left+r.right)/2, y:(r.top+r.bottom)/2 }; if (!e.contains(document.elementFromPoint(point.x,point.y))) throw new Error('Pointer target is covered'); return point; })()`,
+  );
+  for (const type of ["mousePressed", "mouseReleased"]) {
+    await page.command("Input.dispatchMouseEvent", {
+      type,
+      ...point,
+      button: "left",
+      clickCount: 1,
+    });
+  }
+}
+async function typeInput(
+  page: BrowserDriver,
+  selector: string,
+  value: string,
+): Promise<void> {
+  await page.evaluate(
+    `(() => { const input=document.querySelector(${
+      JSON.stringify(selector)
+    }); input.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'}); input.focus({preventScroll:true}); input.select(); })()`,
+  );
+  await page.command("Input.insertText", { text: value });
+}
+async function noHorizontalOverflow(
+  page: BrowserDriver,
+  selector: string,
+): Promise<void> {
+  const widths = await page.evaluate<
+    {
+      viewport: number;
+      content: number;
+      table: number;
+      available: number;
+      headings: number[];
+    }
+  >(
+    `(() => { const s=document.querySelector(${
+      JSON.stringify(selector + " .data-list-scroll")
+    }); return { viewport:s.clientWidth, content:s.scrollWidth, table:s.querySelector('table').getBoundingClientRect().width, available:s.getBoundingClientRect().width, headings:[...s.querySelectorAll('.data-list-heading-measure')].map(e=>e.getBoundingClientRect().right-s.getBoundingClientRect().left) }; })()`,
+  );
+  assert(
+    widths.content <= widths.viewport && widths.table <= widths.available,
+    `fitting columns have no horizontal scrollbar: ${JSON.stringify(widths)}`,
+  );
 }
 async function input(
   page: BrowserDriver,

@@ -17,7 +17,7 @@ interface KernelProcess {
 interface UISession {
   session_id: string;
   node_id: string;
-  runtime_group_id: string;
+
   worker_id: string;
   sandbox_id: string;
   state: string;
@@ -861,6 +861,10 @@ try {
   );
 
   if (afterKernelRestart.some((item) => item.session_id === priorSessionID)) {
+    assert(
+      /^uis-[a-z0-9]{10}$/.test(priorSessionID),
+      "stale cleanup must exercise the canonical generated session ID",
+    );
     await clickRow(first, "the8020/uui/sessions");
     await waitForScreen(first, "UUI sessions");
     await clickRow(first, priorSessionID);
@@ -880,6 +884,110 @@ try {
     await clickButton(first, "Back");
     await waitForScreen(first, "Welcome to 80|20");
   }
+
+  await clickRow(first, "the8020/jobs/jobs");
+  await waitForScreen(first, "Jobs");
+  await clickButton(first, "Run program");
+  await waitForScreen(first, "Run program");
+  await setValue(first, '[data-bind="name"]', "Unified logging browser proof");
+  await setValue(first, '[data-bind="programId"]', "the8020/jobs/echo");
+  await setValue(first, '[data-bind="arguments"]', '["unified browser log"]');
+  await clickButton(first, "Run");
+  await waitForScreen(first, "Run Unified logging browser proof");
+  await waitFor(
+    async () => {
+      if (
+        await first.evaluate<boolean>(
+          `document.querySelector('[data-bind="state"]')?.value === "succeeded" &&
+          document.querySelector('[data-bind="logs"]')?.value?.includes("Job finished") === true`,
+        )
+      ) return true;
+      await clickButton(first, "Refresh");
+      await waitForScreen(first, "Run Unified logging browser proof");
+      return false;
+    },
+    "persisted job messages in the unified log view",
+    30_000,
+    500,
+  );
+  const jobLogText = await first.evaluate<string>(
+    `document.querySelector('[data-bind="logs"]')?.value ?? ""`,
+  );
+  assert(
+    jobLogText.includes("Job started") && jobLogText.includes("user:admin") &&
+      /nod-[a-z0-9]{10}/.test(jobLogText) &&
+      /sbx-[a-z0-9]{10}/.test(jobLogText) &&
+      /wrk-[a-z0-9]{10}/.test(jobLogText) &&
+      /ctx-[a-z0-9]{10}/.test(jobLogText) &&
+      /job-[a-z0-9]{10}/.test(jobLogText),
+    "selected job logs lost the execution user or canonical identities",
+  );
+  const jobOutput = await first.evaluate<string>(
+    `document.querySelector('[data-bind="output"]')?.value ?? ""`,
+  );
+  assert(
+    jobOutput.includes("unified browser log"),
+    `selected job result is unavailable alongside its logs: ${
+      jobOutput.slice(0, 2048)
+    }`,
+  );
+  const archivedJobSandbox = jobLogText.match(/sbx-[a-z0-9]{10}/)?.[0];
+  const archivedJobContext = jobLogText.match(/ctx-[a-z0-9]{10}/)?.[0];
+  assert(
+    archivedJobSandbox !== undefined && archivedJobContext !== undefined,
+    "completed browser job has no sandbox/context log reference",
+  );
+  await clickButton(first, "Back");
+  await waitForScreen(first, "Jobs");
+  await clickButton(first, "Back");
+  await waitForScreen(first, "Welcome to 80|20");
+  console.log(
+    "Logging browser E2E passed: selected job result and persisted console messages retain the execution user and canonical identities.",
+  );
+
+  // Normal completed-job cleanup archives its sandbox. Retrieve the original
+  // console output through the real archived-sandbox screen after that cleanup.
+  await clickRow(first, "the8020/admin-core/sandboxes");
+  await waitForScreen(first, "Sandboxes");
+  await clickButton(first, "History");
+  await waitForScreen(first, "Sandbox history");
+  await clickRow(first, archivedJobSandbox);
+  await waitForScreen(first, `Archived sandbox ${archivedJobSandbox}`);
+  await clickButton(first, "Recent logs");
+  await waitForPage(
+    first,
+    `(() => {
+      const output = document.querySelector('[data-bind="logs"]');
+      if (output === null || output.closest("[inert]") !== null) return false;
+      const logs = output.value ?? "";
+      return document.querySelector('[data-bind="sandboxId"]')?.value === ${
+      JSON.stringify(archivedJobSandbox)
+    } && logs.split("\\n").some((line) => line.includes("Job finished") &&
+        line.includes("user:admin") && line.includes(${
+      JSON.stringify(archivedJobContext)
+    }));
+    })()`,
+    "archived sandbox retains its completed job's contextual console output",
+  );
+  await clickButton(first, "First logs");
+  await waitForPage(
+    first,
+    `(() => {
+      const output = document.querySelector('[data-bind="logs"]');
+      return output !== null && output.closest("[inert]") === null &&
+        output.value.includes(${JSON.stringify(archivedJobSandbox)});
+    })()`,
+    "archived sandbox first log page",
+  );
+  await clickButton(first, "Back");
+  await waitForScreen(first, "Sandbox history");
+  await clickButton(first, "Back");
+  await waitForScreen(first, "Sandboxes");
+  await clickButton(first, "Back");
+  await waitForScreen(first, "Welcome to 80|20");
+  console.log(
+    "Logging browser E2E passed: deleted job sandbox history retrieves bounded first/recent log pages with the original execution context and username.",
+  );
 
   await clickRow(first, "the8020/dev-core/development-test");
   await waitForScreen(first, "Development test", 120_000);
@@ -1429,7 +1537,8 @@ try {
     first,
     `document.querySelector('[data-bind="state"]')?.value === "READY" &&
       document.querySelector('[data-bind="status"]')?.value === "Development sandbox factory reset" &&
-      document.querySelector('[data-bind="sandboxId"]')?.value === ${
+      /^sbx-[a-z0-9]{10}$/.test(document.querySelector('[data-bind="sandboxId"]')?.value ?? "") &&
+      document.querySelector('[data-bind="sandboxId"]')?.value !== ${
       JSON.stringify(beforeFactoryReset)
     } && document.querySelector('[data-bind="confirmDestructive"]')?.checked === false`,
     "confirmed development factory reset",
@@ -1466,7 +1575,9 @@ try {
       first,
       `document.querySelector('[data-bind="state"]')?.value === "READY" &&
         document.querySelector('[data-bind="status"]')?.value === "Development sandbox started" &&
-        document.querySelector('[data-bind="sandboxId"]')?.value?.startsWith("dev-") === true &&
+        document.querySelector('[data-bind="sandboxId"]')?.value === ${
+        JSON.stringify(beforeRestart)
+      } &&
         document.querySelector(".sandbox-console-status")?.textContent === "Terminal connected"`,
       "development sandbox restart after stop",
       60_000,
@@ -2011,7 +2122,6 @@ try {
       const failure = document.querySelector('[data-bind="failure"]')?.closest('.field');
       if (!(fields instanceof HTMLElement) || !(failure instanceof HTMLElement)) return false;
       const container = fields.getBoundingClientRect();
-      const failureBounds = failure.getBoundingClientRect();
       const startsOnHalf = (field) => {
         const ratio = (field.getBoundingClientRect().left - container.left) / container.width;
         return Math.abs(ratio) < 0.02 || Math.abs(ratio - 0.5) < 0.02;
@@ -2019,8 +2129,7 @@ try {
       const longFields = [...fields.querySelectorAll('[data-field-length="long"]')];
       const label = failure.querySelector('label');
       const value = failure.querySelector('.field-input-shell');
-      return Math.abs((failureBounds.left - container.left) / container.width - 0.5) < 0.02 &&
-        longFields.every((field) => field instanceof HTMLElement && startsOnHalf(field)) &&
+      return longFields.every((field) => field instanceof HTMLElement && startsOnHalf(field)) &&
         getComputedStyle(failure).rowGap === '0px' &&
         label instanceof HTMLElement && value instanceof HTMLElement &&
         Math.abs(value.getBoundingClientRect().top - label.getBoundingClientRect().bottom) < 1;
@@ -2369,8 +2478,8 @@ try {
       const enabledStyle = getComputedStyle(enabled);
       const enabledShellStyle = getComputedStyle(enabledShell);
       return biography.closest('.field')?.dataset.fieldRowSpan === '2' &&
-        accountGrid.classList.contains('field-group-fields-exact-rows') &&
-        profileGrid.classList.contains('field-group-fields-exact-rows') &&
+        getComputedStyle(accountGrid).gridAutoRows !== 'auto' &&
+        getComputedStyle(profileGrid).gridAutoRows === getComputedStyle(accountGrid).gridAutoRows &&
         aligned(accountGrid.getBoundingClientRect().top, profileGrid.getBoundingClientRect().top) &&
         aligned(biography.getBoundingClientRect().bottom, primaryEmail.getBoundingClientRect().bottom) &&
         aligned(biographyPencil.getBoundingClientRect().bottom, primaryPencil.getBoundingClientRect().bottom) &&
@@ -3862,19 +3971,9 @@ async function waitForServices(
 }
 
 async function latestKernelLog(root: string): Promise<string> {
-  const directory = `${root}/node/kernel/logs`;
   try {
-    const candidates: Array<{ path: string; modified: number }> = [];
-    for await (const entry of Deno.readDir(directory)) {
-      if (!entry.isFile || !entry.name.endsWith(".log")) continue;
-      const path = `${directory}/${entry.name}`;
-      const info = await Deno.stat(path);
-      candidates.push({ path, modified: info.mtime?.getTime() ?? 0 });
-    }
-    candidates.sort((left, right) => right.modified - left.modified);
-    if (candidates.length === 0) return "kernel log: unavailable";
-    const source = await Deno.readTextFile(candidates[0]!.path);
-    return `kernel log tail:\n${source.slice(-8_000)}`;
+    const page = await admin(root, ["kernel.logs", "--tail", "--limit", "30"]);
+    return `kernel log tail:\n${JSON.stringify(page).slice(-8_000)}`;
   } catch (error) {
     return `kernel log: ${error instanceof Error ? error.message : error}`;
   }
@@ -3911,26 +4010,26 @@ async function uiSessions(root: string): Promise<UISession[]> {
   try {
     const result = await admin(root, [
       "db.sql",
-      `SELECT "sessionId", "nodeId", "runtimeGroupId", "workerId", "sandboxId", "state", "persistentExecutionId", "terminationFailure" FROM "the8020__uui__sessions" ORDER BY "sessionId" LIMIT 200`,
+      `SELECT "sessionId", "nodeId", "workerId", "sandboxId", "state", "persistentExecutionId", "terminationFailure" FROM "the8020__uui__sessions" ORDER BY "sessionId" LIMIT 200`,
     ]);
     const rows = result.rows as unknown[][] | undefined;
     return (rows ?? []).flatMap((row) => {
       if (
-        row.length !== 8 ||
-        row.slice(0, 7).some((value) => typeof value !== "string") ||
-        row[7] !== null && typeof row[7] !== "string"
+        row.length !== 7 ||
+        row.slice(0, 6).some((value) => typeof value !== "string") ||
+        row[6] !== null && typeof row[6] !== "string"
       ) {
         return [];
       }
       return [{
         session_id: row[0] as string,
         node_id: row[1] as string,
-        runtime_group_id: row[2] as string,
-        worker_id: row[3] as string,
-        sandbox_id: row[4] as string,
-        state: row[5] as string,
-        persistent_execution_id: row[6] as string,
-        termination_failure: row[7] as string | null,
+
+        worker_id: row[2] as string,
+        sandbox_id: row[3] as string,
+        state: row[4] as string,
+        persistent_execution_id: row[5] as string,
+        termination_failure: row[6] as string | null,
       }];
     });
   } catch {
@@ -4016,6 +4115,14 @@ async function setValue(
     return true;
   })()`);
   assert(changed, `missing input ${selector}`);
+  await waitForPage(
+    page,
+    `(() => {
+      const input = document.querySelector(${JSON.stringify(selector)});
+      return input !== null && input.closest("[inert]") === null;
+    })()`,
+    `reactive input update for ${selector}`,
+  );
 }
 
 async function setChecked(
@@ -4270,6 +4377,7 @@ async function waitForScreen(
       connection: document.querySelector('#connection-state')?.textContent,
       exception: document.querySelector('[data-bind="exceptionType"]')?.value,
       message: document.querySelector('[data-bind="message"]')?.value,
+      notice: document.querySelector('.message-toast-top')?.textContent?.slice(0, 1000),
     })`);
     throw new Error(
       `${error instanceof Error ? error.message : String(error)}; screen: ${

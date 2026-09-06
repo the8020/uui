@@ -6,6 +6,11 @@ import type {
 import Sessions from "./tables/sessions.ts";
 
 class DatabaseSessionMetadataStore implements SessionMetadataStore {
+  async create(metadata: SessionMetadata): Promise<void> {
+    // An ID collision must never update another session's owner or placement.
+    await db.insertInto(Sessions.table).values(metadata).execute();
+  }
+
   async put(metadata: SessionMetadata): Promise<void> {
     await db.insertInto(Sessions.table).values(metadata).onConflict((
       conflict,
@@ -14,7 +19,7 @@ class DatabaseSessionMetadataStore implements SessionMetadataStore {
         serviceId: metadata.serviceId,
         persistentExecutionId: metadata.persistentExecutionId,
         nodeId: metadata.nodeId,
-        runtimeGroupId: metadata.runtimeGroupId,
+
         sandboxId: metadata.sandboxId,
         workerId: metadata.workerId,
         authenticatedUserId: metadata.authenticatedUserId,

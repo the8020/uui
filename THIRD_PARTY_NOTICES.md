@@ -68,17 +68,24 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 The UUI shell includes the 24px filled `arrow_back`, `arrow_drop_down`, `close`,
 `dark_mode`, `edit`, `error`, `light_mode`, `logout`, `menu`, `more_vert`,
-`refresh`, `save`, `filter_alt`, `arrow_upward`, `arrow_downward`, and outlined
-`tab_close` SVGs from Google Material Icons and Material Symbols. The `edit`
-icon is vendored from `google/material-design-icons` at Git object
+`refresh`, `save`, `filter_alt`, `filter_alt_off`, `filter_list_off`, `sort`,
+`arrow_upward`, `arrow_downward`, and outlined `tab_close` SVGs from Google
+Material Icons and Material Symbols. The `edit` icon is vendored from
+`google/material-design-icons` at Git object
 `a4b3c9f6b79b1a46ddff7e9a29b4e2a7e9c077bb`; the other optimized icons are
 vendored from Git objects `e083cc60a0828fdd3b404cea0cb8a5b900e9c23e` and
 `84ccef280841abfac506afc4ad4a2782f6d0a1d0`. They are provided under the Apache
-License, Version 2.0. The added list icons are the filled 24px assets from
+License, Version 2.0. The list icons are the filled 24px assets from
 `google/material-design-icons/src/action/filter_alt/materialicons/24px.svg` and
 `src/navigation/{arrow_upward,arrow_downward}/materialicons/24px.svg`. Their
 vendored filenames carry the content-hash prefixes `f934b1a5`, `473799e3`, and
-`61643262`, respectively.
+`61643262`, respectively. The `sort`, `filter_list_off`, and `filter_alt_off`
+icons come from `src/content/sort/materialicons/24px.svg`,
+`src/content/filter_list_off/materialicons/24px.svg`, and
+`src/action/filter_alt_off/materialicons/24px.svg` in the same Google
+repository, with SHA-256 filename prefixes `49248279`, `facdda9f`, and
+`f4842a13`. Ascending sort vertically reflects the unmodified `sort` asset in
+CSS.
 
 Apache License Version 2.0, January 2004 http://www.apache.org/licenses/
 

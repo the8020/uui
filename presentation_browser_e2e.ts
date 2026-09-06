@@ -331,6 +331,7 @@ try {
 }
 
 async function runProgram(): Promise<void> {
+  await runFieldGeometry();
   const screenModel = new Model({});
   sendMessage("Modal design probe");
   while (true) {
@@ -360,6 +361,93 @@ async function runProgram(): Promise<void> {
       },
     });
     if (event.action === "open-flow") await runModalB();
+  }
+}
+
+async function runFieldGeometry(): Promise<void> {
+  for (const rowSpan of [1, 2] as const) {
+    await callScreen({
+      id: `fields-${rowSpan}-row`,
+      title: `Fields: ${rowSpan} row`,
+      schema: z.object({
+        liveState: field(z.string(), {
+          label: "Live validation",
+          length: "long",
+          readOnly: true,
+        }),
+        messageLog: field(z.string(), {
+          label: "Bounded message log",
+          control: "textarea",
+          length: "long",
+          readOnly: true,
+          ...(rowSpan === 2 ? { rowSpan } : {}),
+        }),
+        followingText: field(z.string(), { length: "long" }),
+        editableLog: field(z.string(), {
+          control: "textarea",
+          rowSpan,
+          description: "One reserved message line",
+        }),
+        enabled: field(z.boolean(), { control: "checkbox" }),
+        active: field(z.boolean(), { control: "switch" }),
+        level: field(z.number(), { control: "range" }),
+        select: field(z.string(), {
+          control: "select",
+          options: [{ label: "One", value: "one" }],
+        }),
+        radio: field(z.string(), {
+          control: "radio",
+          rowSpan,
+          options: ["one", "two", "three"].map((value) => ({
+            label: value,
+            value,
+          })),
+        }),
+        quantity: z.number(),
+        date: field(z.string(), { control: "date" }),
+        datetime: field(z.string(), { control: "datetime" }),
+      }),
+      model: new Model({
+        liveState: "LIVE",
+        messageLog: JSON.stringify(
+          { messages: ["Message".repeat(100)] },
+          null,
+          2,
+        ),
+        followingText: "Second ordinary row",
+        editableLog: "Editable\nmessage\nlog",
+        enabled: true,
+        active: true,
+        level: 30,
+        select: "one",
+        radio: "one",
+        quantity: 10,
+        date: "2026-09-05",
+        datetime: "2026-09-05T09:30",
+      }),
+      layout: {
+        schema: 1,
+        id: "field-geometry",
+        root: {
+          type: "detail",
+          controls: [
+            "liveState",
+            "messageLog",
+            "followingText",
+            "editableLog",
+            "enabled",
+            "active",
+            "level",
+            "select",
+            "radio",
+            "quantity",
+            "date",
+            "datetime",
+          ],
+        },
+      },
+      actions: [{ id: "next", label: "Next" }],
+    });
   }
 }
 
@@ -563,6 +651,7 @@ function contentType(path: string): string {
 }
 
 async function verifyPresentationFlow(page: BrowserPage): Promise<void> {
+  await verifyFieldGeometry(page);
   await waitForPage(
     page,
     `document.querySelector('.screen-title')?.textContent?.trim() === 'Presentation page A' &&
@@ -785,6 +874,63 @@ async function verifyPresentationFlow(page: BrowserPage): Promise<void> {
       window.__restoredProbe === document.querySelector('[data-custom-element-id="probe"]')`,
     "modal close returns to page A without recreating its custom element",
   );
+}
+
+async function verifyFieldGeometry(page: BrowserPage): Promise<void> {
+  for (const rowSpan of [1, 2]) {
+    await waitForPage(
+      page,
+      `document.querySelector('.screen-title')?.textContent === 'Fields: ${rowSpan} row'`,
+      `${rowSpan}-row field screen`,
+    );
+    for (const width of [1280, 820, 390]) {
+      await page.command("Emulation.setDeviceMetricsOverride", {
+        width,
+        height: 900,
+        deviceScaleFactor: 1,
+        mobile: false,
+      });
+      const failures = await page.evaluate<unknown[]>(`(() => {
+        const close = (a, b) => Math.abs(a - b) < 0.5;
+        return [...document.querySelectorAll('.field-group-fields > .field')].flatMap(field => {
+          const gridStyle = getComputedStyle(field.parentElement);
+          const rows = Number(field.dataset.fieldRowSpan);
+          const height = rows * parseFloat(gridStyle.gridAutoRows) + (rows - 1) * parseFloat(gridStyle.rowGap);
+          const bounds = field.getBoundingClientRect();
+          const label = field.querySelector(':scope > :is(label,legend)').getBoundingClientRect();
+          const shell = field.querySelector('.field-input-shell').getBoundingClientRect();
+          const message = field.querySelector('.field-message').getBoundingClientRect();
+          const textarea = field.querySelector('textarea');
+          const input = field.querySelector('input:not([type=checkbox]):not([type=radio]):not([type=range]), select');
+          const valid = close(bounds.height, height) && close(shell.bottom, message.top) &&
+            close(message.bottom, bounds.bottom) &&
+            (!textarea || close(textarea.getBoundingClientRect().height, height - label.height - message.height)) &&
+            (!input || close(input.getBoundingClientRect().bottom, shell.bottom));
+          return valid ? [] : [{ kind: field.dataset.controlKind, rows, height, field: bounds.toJSON(), shell: shell.toJSON(), message: message.toJSON() }];
+        });
+      })()`);
+      assert(
+        failures.length === 0,
+        `fields clamp to their declared rows at ${width}px: ${
+          JSON.stringify(failures)
+        }`,
+      );
+      if (width === 1280) {
+        assert(
+          await page.evaluate<boolean>(`(() => {
+            const log = document.querySelector('[data-bind=messageLog]').getBoundingClientRect();
+            const aligned = document.querySelector('[data-bind=${
+            rowSpan === 1 ? "liveState" : "followingText"
+          }]').getBoundingClientRect();
+            return Math.abs(log.bottom - aligned.bottom) < 0.5;
+          })()`),
+          `${rowSpan}-row textarea underline aligns with its ordinary field row`,
+        );
+      }
+    }
+    await clickButton(page, "Next");
+  }
+  await page.command("Emulation.clearDeviceMetricsOverride");
 }
 
 async function openPage(port: number, url: string): Promise<BrowserPage> {

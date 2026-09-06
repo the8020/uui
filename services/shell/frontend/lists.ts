@@ -10,7 +10,7 @@ import {
 } from "../../../screen_state.ts";
 import { listValueText } from "../../../list_values.ts";
 import { fieldMessagePopoverPosition } from "./field_message.ts";
-import { renderIconText } from "./icon_text.ts";
+import { type MaterialIconName, renderIconText } from "./icon_text.ts";
 import { listColumnWidths, listRowCapacity } from "./list_geometry.ts";
 import { getPath, paginationItems } from "./model.ts";
 
@@ -121,6 +121,7 @@ class ListController {
   #openColumn: string | undefined;
   #scroll!: HTMLElement;
   #table!: HTMLTableElement;
+  #pagination!: HTMLElement;
   #popover: HTMLElement | undefined;
   #anchor: HTMLElement | undefined;
   #measures: Array<
@@ -179,13 +180,32 @@ class ListController {
     this.host.replaceChildren();
     this.host.dataset.listId = snapshot.id;
     this.host.dataset.viewRevision = String(snapshot.revision);
+    this.reserveRows(snapshot.state.pageSize);
     this.host.id = this.#prefix;
     this.#measures = [];
     const toolbar = document.createElement("div");
     toolbar.className = "data-list-toolbar";
+    toolbar.id = `${this.#prefix}-toolbar`;
     toolbar.hidden = !state.toolbarOpen;
     const actions = document.createElement("div");
     actions.className = "data-list-tools-actions";
+    if (snapshot.state.query.sort !== null) {
+      actions.append(
+        this.iconButton("Clear all sorts", "filter_list_off", () => {
+          this.#draft.sort = null;
+          this.queueQuery(true);
+        }),
+      );
+    }
+    if (snapshot.filtered) {
+      actions.append(
+        this.iconButton("Clear all filters", "filter_alt_off", () => {
+          this.#draft.search = "";
+          this.#draft.filters = {};
+          this.queueQuery(true);
+        }),
+      );
+    }
     const search = document.createElement("input");
     search.type = "search";
     search.maxLength = MAX_LIST_QUERY_LENGTH;
@@ -198,7 +218,12 @@ class ListController {
       this.#draft.search = search.value;
       this.queueQuery();
     });
-    search.addEventListener("change", this.flushQuery);
+    search.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.isComposing) {
+        event.preventDefault();
+        this.flushQuery();
+      }
+    });
     toolbar.append(actions, search);
     this.host.append(toolbar);
     this.#scroll = document.createElement("div");
@@ -207,7 +232,7 @@ class ListController {
     this.#table = document.createElement("table");
     this.#table.className = "data-list";
     const colgroup = document.createElement("colgroup");
-    for (let index = 0; index <= snapshot.columns.length; index++) {
+    for (let index = 0; index < snapshot.columns.length; index++) {
       colgroup.append(document.createElement("col"));
     }
     this.#table.append(colgroup);
@@ -249,13 +274,7 @@ class ListController {
           : "none",
       );
       if (sorting !== undefined) {
-        const icon = document.createElement("span");
-        renderIconText(
-          icon,
-          `[[icon=${sorting === "asc" ? "arrow_upward" : "arrow_downward"}]]`,
-          { decorativeIcons: true },
-        );
-        button.append(icon);
+        button.append(this.sortIcon(sorting));
       }
       if (snapshot.state.query.filters[column.key]) {
         const icon = document.createElement("span");
@@ -268,8 +287,6 @@ class ListController {
       head.append(cell);
       this.#measures.push({ column, button, measure, full, short });
     }
-    const toolsCell = document.createElement("th");
-    toolsCell.className = "data-list-tools-cell";
     const toggle = document.createElement("button");
     toggle.type = "button";
     toggle.className = "data-list-tools-toggle";
@@ -277,6 +294,7 @@ class ListController {
     toggle.textContent = state.toolbarOpen ? "−" : "+";
     toggle.setAttribute("aria-label", "List tools");
     toggle.setAttribute("aria-expanded", String(state.toolbarOpen));
+    toggle.setAttribute("aria-controls", toolbar.id);
     toggle.title = snapshot.state.query.search
       ? `List tools — search: ${snapshot.state.query.search}`
       : "List tools";
@@ -292,8 +310,6 @@ class ListController {
       if (state.toolbarOpen) search.focus({ preventScroll: true });
       this.schedule();
     });
-    toolsCell.append(toggle);
-    head.append(toolsCell);
     const body = this.#table.createTBody();
     snapshot.rows.forEach((item, index) => {
       const row = body.insertRow();
@@ -343,16 +359,19 @@ class ListController {
           if (event.key === "Enter" || event.key === " ") reveal(event);
         });
       }
-      row.insertCell().className = "data-list-tools-cell";
     });
     if (snapshot.rows.length === 0) {
       const cell = body.insertRow().insertCell();
-      cell.colSpan = snapshot.columns.length + 1;
+      cell.colSpan = snapshot.columns.length;
       cell.className = "data-list-empty";
       cell.textContent = snapshot.filtered ? "No matching items" : "No items";
     }
     this.#scroll.append(this.#table);
-    this.host.append(this.#scroll, this.pagination());
+    const viewport = document.createElement("div");
+    viewport.className = "data-list-viewport";
+    viewport.append(toggle, this.#scroll);
+    this.#pagination = this.pagination();
+    this.host.append(viewport, this.#pagination);
     this.#rendering = false;
     return this.host;
   }
@@ -388,13 +407,13 @@ class ListController {
     this.host.dataset.narrow = String(this.host.clientWidth < 600);
     const widths = listColumnWidths(
       snapshot.columns.map((column) => column.length),
-      this.host.clientWidth,
+      // clientWidth rounds up fractional card widths and can create overflow.
+      this.#scroll.getBoundingClientRect().width,
     );
     const cols = this.#table.querySelectorAll("col");
     widths.forEach((width, index) => cols[index]!.style.width = `${width}px`);
-    cols[widths.length]!.style.width = "38px";
     this.#table.style.width = `${
-      widths.reduce((sum, width) => sum + width, 38)
+      widths.reduce((sum, width) => sum + width, 0)
     }px`;
     for (const item of this.#measures) {
       const useShort = item.column.shortHeading !== undefined &&
@@ -443,14 +462,23 @@ class ListController {
     const rowHeight = Number.parseFloat(
       getComputedStyle(this.host).getPropertyValue("--list-row-height"),
     ) || 36;
-    const bodyHeight = this.#table.tBodies[0]?.getBoundingClientRect().height ??
-      rowHeight;
+    const tableChrome = this.#table.getBoundingClientRect().height -
+      (this.#table.tBodies[0]?.getBoundingClientRect().height ?? rowHeight);
+    const scrollbar = this.#scroll.offsetHeight - this.#scroll.clientHeight;
     const card = this.host.closest<HTMLElement>(".layout-list") ?? this.host;
     const cardStyle = getComputedStyle(card);
     const cardPadding = Number.parseFloat(cardStyle.paddingTop) +
       Number.parseFloat(cardStyle.paddingBottom);
-    const overhead = this.host.getBoundingClientRect().height - bodyHeight +
+    // Measure footer chrome even when hidden, then decide whether the source
+    // needs it. Its own visibility must never change the capacity calculation.
+    this.#pagination.hidden = false;
+    const paginationHeight = this.#pagination.getBoundingClientRect().height;
+    // Reserved blank space is body space, never overhead in the next measurement.
+    const overhead = this.host.getBoundingClientRect().height -
+      this.#scroll.getBoundingClientRect().height - paginationHeight +
+      tableChrome + scrollbar +
       (card === this.host ? 0 : cardPadding);
+    this.#pagination.hidden = snapshot.totalPages <= 1;
     const modal = this.host.closest<HTMLElement>(".presentation-modal-body");
     const viewport = globalThis.visualViewport?.height ?? innerHeight;
     const chrome = modal === null
@@ -467,7 +495,18 @@ class ListController {
       preceding,
       overhead,
       rowHeight,
+      snapshot.totalSourceItems,
+      paginationHeight,
     );
+    // Use the full source count even when the first view after reload is short
+    // or empty. Leave rows at their natural height and reserve space below them.
+    this.host.style.setProperty("--list-table-chrome", `${tableChrome}px`);
+    this.host.style.setProperty("--list-scrollbar-height", `${scrollbar}px`);
+    this.host.style.setProperty(
+      "--list-pagination-reserve",
+      `${snapshot.totalSourceItems > pageSize ? paginationHeight : 0}px`,
+    );
+    this.reserveRows(pageSize);
     if (pageSize !== snapshot.state.pageSize || !snapshot.state.measured) {
       return {
         id: snapshot.id,
@@ -479,10 +518,18 @@ class ListController {
     return undefined;
   }
 
+  private reserveRows(pageSize: number): void {
+    this.host.style.setProperty(
+      "--list-reserved-rows",
+      String(Math.max(1, Math.min(this.#snapshot.totalSourceItems, pageSize))),
+    );
+  }
+
   private pagination(): HTMLElement {
     const snapshot = this.#snapshot;
     const navigation = document.createElement("nav");
     navigation.className = "data-list-pagination";
+    navigation.hidden = snapshot.totalPages <= 1;
     navigation.setAttribute("aria-label", `Pages for ${snapshot.bind}`);
     const summary = document.createElement("span");
     summary.className = "data-list-page-summary";
@@ -538,60 +585,112 @@ class ListController {
     anchor: HTMLElement,
     focus = true,
   ): void {
+    const filterFocus = focus ? undefined : this.#filterFocus;
     this.closePopover();
+    this.#filterFocus = filterFocus;
     this.#openColumn = column.key;
     const popover = this.makePopover(anchor, column.heading);
     const title = document.createElement("strong");
     renderIconText(title, column.heading);
     popover.append(title);
+    const sorts = document.createElement("div");
+    sorts.className = "data-list-sorts";
     for (
-      const [label, direction] of [["[[icon=arrow_upward]] Ascending", "asc"], [
-        "[[icon=arrow_downward]] Descending",
-        "desc",
-      ], ["Clear sort", null]] as const
+      const direction of ["asc", "desc"] as const
     ) {
+      const option = document.createElement("div");
+      option.className = "data-list-sort-option";
+      const selected = this.#draft.sort?.column === column.key &&
+        this.#draft.sort.direction === direction;
+      option.classList.toggle("is-selected", selected);
       const button = document.createElement("button");
       button.type = "button";
-      renderIconText(button, label);
+      button.textContent = "Sort";
+      button.append(this.sortIcon(direction));
+      button.setAttribute(
+        "aria-label",
+        `Sort ${direction === "asc" ? "ascending" : "descending"}`,
+      );
+      button.setAttribute("aria-pressed", String(selected));
       button.addEventListener("click", () => {
-        this.#draft.sort = direction === null
-          ? null
-          : { column: column.key, direction };
-        this.queueQuery(true);
+        this.#draft.sort = { column: column.key, direction };
+        this.confirmQuery();
       });
-      popover.append(button);
+      option.append(button);
+      if (selected) {
+        option.append(this.iconButton("Clear sort", "close", () => {
+          this.#draft.sort = null;
+          this.confirmQuery();
+        }));
+      }
+      sorts.append(option);
     }
-    const label = document.createElement("label");
-    label.textContent = "Filter";
+    const field = document.createElement("div");
+    field.className = "data-list-filter";
     const input = document.createElement("input");
     input.id = `${this.#prefix}-filter-${column.id}`;
-    label.htmlFor = input.id;
+    input.setAttribute("aria-label", `Filter ${title.textContent}`);
     input.type = "text";
     input.maxLength = MAX_LIST_QUERY_LENGTH;
     input.placeholder = column.semanticType === "number"
-      ? "e.g. >= 10"
+      ? "Filter: e.g. >= 10"
       : column.semanticType === "boolean"
-      ? "true or false"
+      ? "Filter: true or false"
       : column.semanticType === "date" || column.semanticType === "datetime"
-      ? "YYYY-MM-DD"
-      : "Contains…";
+      ? "Filter: YYYY-MM-DD"
+      : "Filter: contains…";
     input.value = this.#draft.filters[column.key] ?? "";
     input.addEventListener("input", () => {
       this.#draft.filters[column.key] = input.value;
+      clear.hidden = input.value.trim() === "";
       this.queueQuery();
     });
-    input.addEventListener("change", this.flushQuery);
-    const clear = document.createElement("button");
-    clear.type = "button";
-    clear.textContent = "Clear filter";
-    clear.addEventListener("click", () => {
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.isComposing) {
+        event.preventDefault();
+        this.confirmQuery();
+      }
+    });
+    const clear = this.iconButton("Clear filter", "close", () => {
       delete this.#draft.filters[column.key];
       input.value = "";
-      this.queueQuery(true);
+      this.confirmQuery();
     });
-    popover.append(label, input, clear);
+    clear.hidden = input.value.trim() === "";
+    field.append(input, clear);
+    popover.append(sorts, field);
     this.showPopover();
     if (focus) input.focus({ preventScroll: true });
+  }
+
+  private sortIcon(direction: "asc" | "desc"): HTMLElement {
+    const icon = document.createElement("span");
+    icon.className = "data-list-sort-icon";
+    icon.dataset.direction = direction;
+    renderIconText(icon, "[[icon=sort]]", { decorativeIcons: true });
+    return icon;
+  }
+
+  private iconButton(
+    label: string,
+    icon: MaterialIconName,
+    action: () => void,
+  ): HTMLButtonElement {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "data-list-icon-button";
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    renderIconText(button, `[[icon=${icon}]]`, { decorativeIcons: true });
+    button.addEventListener("click", action);
+    return button;
+  }
+
+  private confirmQuery(): void {
+    const anchor = this.#anchor;
+    this.closePopover();
+    anchor?.focus({ preventScroll: true });
+    this.queueQuery(true);
   }
 
   private makePopover(anchor: HTMLElement, label: string): HTMLElement {
@@ -612,7 +711,6 @@ class ListController {
         event.preventDefault();
         event.stopPropagation();
         this.closePopover();
-        this.#openColumn = undefined;
         anchor.focus({ preventScroll: true });
       }
     });
@@ -641,6 +739,8 @@ class ListController {
     this.#popover.style.left = `${position.left}px`;
   }
   private closePopover(): void {
+    this.#openColumn = undefined;
+    this.#filterFocus = undefined;
     this.#popover?.remove();
     this.#popover = undefined;
   }

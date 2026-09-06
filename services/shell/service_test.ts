@@ -4,7 +4,7 @@ import service from "./service.ts";
 const context = {
   signal: new AbortController().signal,
   meta: {
-    requestId: "request-shell",
+    contextId: "request-shell",
     serviceId: "the8020/uui/shell",
     serviceGeneration: 1,
     canonicalBasePath: "/the8020/uui/shell",
@@ -12,10 +12,9 @@ const context = {
     client: { ipAddress: "203.0.113.4", networkScope: "public" as const },
     execution: {
       nodeId: "node-test",
-      runtimeGroupId: "rgp-test",
+
       sandboxId: "sbx-test",
       workerId: "wrk-test",
-      workerExecutionId: "execution-test",
     },
     user: { userId: "user:admin", username: "admin" },
     auth: {
@@ -511,11 +510,11 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   );
   assertMatch(
     cssBody,
-    /\.field-group-fields-exact-rows\s*\{[^}]*grid-auto-rows:\s*var\(--field-grid-row-height\);/s,
+    /\.field-group-fields\s*\{[^}]*grid-auto-rows:\s*var\(--field-grid-row-height\);/s,
   );
   assertMatch(
     cssBody,
-    /\.field-group-fields-exact-rows\s*>\s*\.field:not\(\.field-radio\)\s*\{[^}]*grid-template-rows:\s*var\(--field-grid-label-height\) minmax\(0, 1fr\)\s*var\(--field-grid-message-slot-height\);/s,
+    /\.field-group-fields\s*>\s*\.field:not\(\.field-radio\)\s*\{[^}]*grid-template-rows:\s*var\(--field-grid-label-height\) minmax\(0, 1fr\)\s*var\(--field-grid-message-slot-height\);/s,
   );
   assertMatch(
     cssBody,
@@ -539,11 +538,11 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   );
   assertMatch(
     cssBody,
-    /\.field-group-fields-exact-rows[\s\S]*?>\s*\.field\[data-control-kind="textarea"\] textarea\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*0;/s,
+    /\.field-group-fields[\s\S]*?>\s*\.field\[data-control-kind="textarea"\] textarea\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*0;/s,
   );
   assertMatch(
     cssBody,
-    /\.field textarea\s*\{[^}]*min-height:\s*6rem;[^}]*resize:\s*none;/s,
+    /\.field textarea\s*\{[^}]*resize:\s*none;/s,
   );
   assertMatch(
     cssBody,
