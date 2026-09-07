@@ -1,6 +1,6 @@
 import { Model } from "./model.ts";
 import { isId } from "@the8020/kernel";
-import { assert, assertEquals, assertRejects } from "@std/assert";
+import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
 import { download, type DownloadHandle } from "./mod.ts";
 import {
   type RequestMetadata,
@@ -10,11 +10,14 @@ import {
 } from "@the8020/http";
 import {
   callScreen,
+  currentBrowser,
   presentModal,
   presentPage,
   sendMessage,
 } from "./session.ts";
 import {
+  type BrowserContext,
+  parseClientMessage,
   type PresentationShowMessage,
   UUI_PROTOCOL_VERSION,
   type UUIClientMessage,
@@ -51,6 +54,93 @@ const metadata: RequestMetadata = {
     username: "admin",
   },
 };
+
+Deno.test("browser context is validated, available before the first screen, and refreshed on reattachment", async () => {
+  const initial: BrowserContext = {
+    origin: "https://dev.example.test:8443",
+    language: "en-GB",
+    timeZone: "Europe/London",
+  };
+  const resumed = { ...initial, origin: "https://[::1]:9443", language: "cs" };
+  const metadataStore = new MemorySessionMetadataStore();
+  let invocations = 0;
+  const service = defineSessionService(async () => {
+    invocations++;
+    assertEquals(currentBrowser(), initial);
+    assert(Object.isFrozen(currentBrowser()));
+    await presentPage(async () => {
+      await Promise.resolve();
+      assertEquals(currentBrowser(), initial);
+      await callScreen({
+        id: "browser-context",
+        title: currentBrowser()!.origin,
+        schema: z.object({}),
+        model: new Model({}),
+      });
+    });
+  }, { metadataStore, completePersistent: () => Promise.resolve() });
+  try {
+    for (
+      const browser of [
+        { ...initial, origin: "javascript:alert(1)" },
+        { ...initial, origin: "https://user:password@dev.example.test" },
+        { ...initial, origin: "https://dev.example.test/path" },
+        { ...initial, language: "x".repeat(129) },
+        { ...initial, timeZone: "UTC\ninvalid" },
+      ]
+    ) {
+      const rejected = await service.fetch(
+        new Request("https://example.test/connect", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(browser),
+        }),
+        context(metadata),
+      );
+      assertEquals(rejected.status, 400);
+      assertThrows(() => parseClientMessage({ ...connectMessage(0), browser }));
+    }
+    assertEquals(invocations, 0);
+    const response = await service.fetch(
+      new Request("https://example.test/connect", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(initial),
+      }),
+      context(metadata),
+    );
+    assertEquals(response.status, 204);
+    assertEquals(currentBrowser(), initial);
+    const first = new TestSocket();
+    first.message({ ...connectMessage(0), browser: initial });
+    await service.connectWebSocket(
+      new Request("https://example.test/connect"),
+      context(metadata),
+      first,
+    );
+    await until(() => serverMessages(first, "presentation.show").length === 1);
+    assertEquals(
+      serverMessages(first, "presentation.show")[0]!.presentation.surfaces.at(
+        -1,
+      )!.screen.title,
+      initial.origin,
+    );
+    first.remoteClose();
+    const second = new TestSocket();
+    second.message({ ...connectMessage(0), browser: resumed });
+    await service.connectWebSocket(
+      new Request("https://example.test/connect"),
+      context(metadata),
+      second,
+    );
+    await until(() => serverMessages(second, "session.resumed").length === 1);
+    assertEquals(currentBrowser(), resumed);
+    assertEquals(invocations, 1);
+  } finally {
+    await metadataStore.clear();
+  }
+  assertThrows(() => currentBrowser(), Error, "not bound");
+});
 
 Deno.test("ordinary persistent UUI service owns metadata and exact Worker administration", async () => {
   let activeSocket: TestSocket | undefined;

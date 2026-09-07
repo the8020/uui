@@ -4,6 +4,7 @@ import type {
   MountCustomElement,
 } from "../../../custom_element.ts";
 import { validBrowserAssetURL } from "../../../browser_assets.ts";
+import { renderIconText } from "./icon_text.ts";
 
 interface Style {
   element: HTMLLinkElement;
@@ -100,6 +101,8 @@ class Entry {
       host: this.host,
       config: mountedConfig,
       signal: this.#lifetime.signal,
+      renderText: (target, text) =>
+        renderIconText(target, text, { decorativeIcons: true }),
       send: (action, value) => {
         if (!this.#lifetime.signal.aborted && this.#active) {
           this.send(action, value);

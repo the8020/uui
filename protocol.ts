@@ -64,6 +64,34 @@ export interface SessionConnectMessage {
   protocol: number;
   resumeToken: string | null;
   lastServerSequence: number;
+  browser?: BrowserContext;
+}
+
+/** Browser-reported presentation metadata, never authentication or routing authority. */
+export interface BrowserContext {
+  readonly origin: string;
+  readonly language: string;
+  readonly timeZone: string;
+}
+
+export function parseBrowserContext(value: unknown): BrowserContext {
+  if (
+    !isRecord(value) || typeof value.origin !== "string" ||
+    value.origin.length > 2048 || typeof value.language !== "string" ||
+    value.language.length > 128 || typeof value.timeZone !== "string" ||
+    value.timeZone.length > 128 ||
+    /\p{Cc}/u.test(value.language + value.timeZone)
+  ) throw new TypeError("invalid browser context");
+  const origin = new URL(value.origin);
+  if (
+    !["http:", "https:"].includes(origin.protocol) ||
+    origin.origin !== value.origin
+  ) throw new TypeError("browser origin must be an HTTP(S) origin");
+  return Object.freeze({
+    origin: value.origin,
+    language: value.language,
+    timeZone: value.timeZone,
+  });
 }
 
 export interface ClientMessageBase {
@@ -338,7 +366,12 @@ export function parseClientMessage(value: unknown): UUIClientMessage {
       value.resumeToken !== null && typeof value.resumeToken !== "string" ||
       !isSequence(value.lastServerSequence)
     ) throw new TypeError("invalid session.connect message");
-    return value as unknown as SessionConnectMessage;
+    return {
+      ...value,
+      ...(value.browser === undefined
+        ? {}
+        : { browser: parseBrowserContext(value.browser) }),
+    } as unknown as SessionConnectMessage;
   }
   if (
     !isSequence(value.clientSequence) || typeof value.sessionId !== "string" ||

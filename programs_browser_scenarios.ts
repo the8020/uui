@@ -1086,20 +1086,24 @@ async function verifyDevelopment(page: BrowserDriver): Promise<void> {
   );
   assert(
     await page.evaluate<boolean>(
-      `!document.querySelector('[data-bind="sandboxId"]') && !document.querySelector('[data-bind="confirmDestructive"]')`,
+      `document.querySelector('[data-bind="sandboxId"]')?.value === 'sbx-development01' &&
+       document.querySelector('[data-bind="user"]')?.value === 'robot' &&
+       ![...document.querySelectorAll('button')].some(e => e.textContent.trim() === 'Advanced') &&
+       ['restart', 'reset-source', 'factory-reset'].every(id =>
+         document.querySelector('[data-element-id="sandbox-fields"] [data-element-id="' + id + '"]'))`,
     ),
-    "development internals appear before Advanced",
+    "development settings and actions must share the group below the terminal",
   );
   await page.evaluate(
     `window.__developmentConsole = document.querySelector('.sandbox-console')`,
   );
-  await button(page, "Advanced");
-  await title(page, "Advanced development settings");
   assert(
-    await fieldValue(page, "ssh") === "ssh robot@localhost -p 22",
-    "development SSH command missing",
+    await page.evaluate<boolean>(
+      "document.querySelector('.screen-description code')?.textContent === 'ssh -p 22 -- robot@' + location.hostname && !document.querySelector('.screen-description a')",
+    ),
+    "development SSH subtitle must use the authenticated username and browser host",
   );
-  await screenshot(page, "development-advanced");
+  await screenshot(page, "development");
   await button(page, "Reset source");
   await title(page, "Reset source?");
   await button(page, "Reset source");

@@ -14,6 +14,7 @@ export {
   type ChannelScreenExit,
   type ClientScreenEvent,
   copyText,
+  currentBrowser,
   currentSessionId,
   download,
   endSession,

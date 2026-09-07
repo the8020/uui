@@ -1603,8 +1603,6 @@ async function verifyUUI(
     "development console reconnect after UUI activation",
     60_000,
   );
-  await clickButton(first, "Advanced");
-  await waitForScreen(first, "Advanced development settings");
   const beforeSourceReset = await first.evaluate<string>(
     `document.querySelector('[data-bind="sandboxId"]').value`,
   );
@@ -1625,8 +1623,6 @@ async function verifyUUI(
     "confirmed development source reset",
     60_000,
   );
-  await clickButton(first, "Advanced");
-  await waitForScreen(first, "Advanced development settings");
   const beforeFactoryReset = await first.evaluate<string>(
     `document.querySelector('[data-bind="sandboxId"]').value`,
   );
@@ -1645,8 +1641,6 @@ async function verifyUUI(
     "confirmed development factory reset",
     60_000,
   );
-  await clickButton(first, "Advanced");
-  await waitForScreen(first, "Advanced development settings");
   const beforeRestart = await first.evaluate<string>(
     `document.querySelector('[data-bind="sandboxId"]').value`,
   );

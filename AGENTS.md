@@ -164,6 +164,14 @@ below.
 - The shell reads the canonical effective user from generic request metadata.
   Generic `@the8020/context` identifies the outer UUI service; UUI session IDs
   and session metadata remain package-owned.
+- The browser sends its HTTP(S) origin, language, and time zone as JSON during
+  HTTP establishment and as `browser` in each `session.connect` handshake. The
+  session service validates and freezes these values before starting the
+  program, retains them in its Worker-local session binding, and refreshes them
+  on reattachment. `currentBrowser()` returns this read-only context, or
+  `undefined` for channels without browser metadata. It is browser-reported
+  presentation input, separate from trusted runtime identity and observed IP. Do
+  not persist it in session rows or put it in generic kernel context.
 - The public login page is fixed to the shell's dark palette and uses the same
   elevated field-group card, title tab, underline fields, and primary action
   treatment. Its unboxed `80|20` wordmark sits opposite `Sign in` on the card's
@@ -617,6 +625,11 @@ below.
   `custom_element.ts` mount contract. Styles finish loading before mount;
   asynchronous removal aborts the signal and disposes late instances. Preserved
   elements receive updates and presentation activity without DOM replacement.
+- Custom-element hosts expose `renderText(target, text)` for the shared plain
+  text/Material icon renderer. `uui-content-fullscreen` is a generic CSS hook
+  for filling the content viewport; the shell measures `--uui-content-top` from
+  its global bar and suppresses background scrolling while expanded. Components
+  own their toggle, sizing, accessible labels, and cleanup on deactivation.
 - `packageAssetURL(packageId, path)` addresses only that package's explicit
   `public/` directory through the authenticated shell. Real-path confinement
   rejects traversal and symlinks outside the publication directory. Programs
@@ -696,9 +709,10 @@ below.
   message logs, sandbox clickthrough, and cancelling session termination.
   Database coverage includes compact/Advanced/field views, related tables, table
   help in SQL, executing the prepared SELECT, and row filtering with return
-  navigation. Development coverage checks Advanced, reset confirmation,
-  activation validation, related packages, retained draft messages, and console
-  DOM preservation without starting a real sandbox.
+  navigation. Development coverage checks the combined settings group, SSH
+  subtitle, reset confirmation, activation validation, related packages,
+  retained draft messages, and console DOM preservation without starting a real
+  sandbox.
 - Deno checks cover all services/programs, including login template/error
   injection and constrained static asset routing. UUI and frontend tests cover
   discovery and containment failures, dynamic/default-export loading, static and
@@ -807,12 +821,13 @@ below.
   protocol endpoints, and teardown. This test extension adds no
   component-specific behavior to the UUI frontend or production services.
 - `download_browser_e2e.ts` connects the real session service and built shell
-  over a local WebSocket. `deno task test:download-browser` verifies concurrent
-  native Chromium downloads, partial disk writes before production completes,
-  byte-exact results, interactive screens, producer errors, native cancellation,
-  generator cleanup, reconnect without download replay, and zero backend file
-  requests. `downloads_test.ts` covers shared flow-control bounds, large source
-  chunks, async context, completion, cancellation, and protocol validation.
+  over a local WebSocket and checks browser context before the first screen.
+  `deno task test:download-browser` verifies concurrent native Chromium
+  downloads, partial disk writes before production completes, byte-exact
+  results, interactive screens, producer errors, native cancellation, generator
+  cleanup, reconnect without download replay, and zero backend file requests.
+  `downloads_test.ts` covers shared flow-control bounds, large source chunks,
+  async context, completion, cancellation, and protocol validation.
 - The download browser harness also opens the real demo form and verifies its
   text file, default 100,000-row calculation CSV, slider-selected export size,
   and field-group action placement without duplicate footer buttons at desktop

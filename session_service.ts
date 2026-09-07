@@ -13,6 +13,8 @@ import {
   type TerminatedProgramInput,
 } from "./programs.ts";
 import {
+  type BrowserContext,
+  parseBrowserContext,
   parseClientMessage,
   type PresentationShowMessage,
   UUI_PROTOCOL_VERSION,
@@ -60,6 +62,7 @@ interface SessionRecord {
   serviceId: string;
   placement: RequestMetadata["execution"];
   client: RequestMetadata["client"];
+  browser?: BrowserContext;
   sessionId: string;
   auth: RequestMetadata["auth"];
   config: SessionConfiguration;
@@ -122,7 +125,18 @@ export function defineSessionService(
   service.post(
     "/connect",
     { summary: "Establish a persistent UUI execution" },
-    ({ meta }) => establish(meta, handler, options),
+    async ({ meta, request }) => {
+      let browser: BrowserContext | undefined;
+      const body = await request.text();
+      if (body !== "") {
+        try {
+          browser = parseBrowserContext(JSON.parse(body));
+        } catch {
+          throw new HTTPError(400, { error: "invalid_browser_context" });
+        }
+      }
+      return establish(meta, handler, options, browser);
+    },
   );
   service.websocket("/connect", async ({ meta, socket }) => {
     await connect(meta, socket);
@@ -134,6 +148,7 @@ async function establish(
   meta: RequestMetadata,
   handler: (context: UUISessionContext) => Promise<void>,
   options: SessionServiceOptions,
+  browser?: BrowserContext,
 ): Promise<Response> {
   if (!meta.auth.authenticated || meta.auth.userId === undefined) {
     throw new HTTPError(401, { error: "authentication_required" });
@@ -147,6 +162,7 @@ async function establish(
     if (existing.auth.userId !== meta.auth.userId) {
       throw new HTTPError(403, { error: "session_owner_mismatch" });
     }
+    if (browser !== undefined) existing.browser = browser;
     return new Response(null, { status: 204 });
   }
   if (sessions.size > 0) {
@@ -160,6 +176,9 @@ async function establish(
   const record = {} as SessionRecord;
   const unbind = bindSession({
     sessionId,
+    get browser() {
+      return record.browser;
+    },
     send: (message) => workerMessage(record, message),
     receive: () => input.shift(),
   });
@@ -171,6 +190,7 @@ async function establish(
       serviceId: meta.serviceId,
       placement: structuredClone(meta.execution),
       client: structuredClone(meta.client),
+      browser,
       sessionId,
       auth: structuredClone(meta.auth),
       config: sessionConfiguration(),
@@ -271,6 +291,7 @@ async function connect(
   record.hasConnected = true;
   record.socket = socket;
   record.client = structuredClone(meta.client);
+  if (message.browser !== undefined) record.browser = message.browser;
   record.lastConnectionAt = Date.now();
   record.lastPongAt = record.lastConnectionAt;
   log(record, "lifecycle", resumed ? "resumed" : "connected");

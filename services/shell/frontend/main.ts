@@ -8,6 +8,7 @@ import {
 } from "../../../screen_state.ts";
 import {
   BACK_EVENT,
+  type BrowserContext,
   type PresentationSnapshot,
   type PresentationSurfaceKind,
   type PresentationSurfaceSnapshot,
@@ -83,6 +84,13 @@ const localScreenStates = new Map<
   { state: ScreenState; focus?: FocusState }
 >();
 const app = requiredElement<HTMLElement>("app");
+const navbar = document.querySelector<HTMLElement>(".navbar")!;
+new ResizeObserver(() => {
+  document.documentElement.style.setProperty(
+    "--uui-content-top",
+    `${navbar.getBoundingClientRect().height}px`,
+  );
+}).observe(navbar);
 const modalLayers = requiredElement<HTMLElement>("modal-layers");
 const connectionState = requiredElement<HTMLElement>("connection-state");
 const connectionIndicator = requiredElement<HTMLElement>(
@@ -282,6 +290,7 @@ async function connectAttempt(): Promise<void> {
       protocol: boot.protocol,
       resumeToken: currentSessionID === "" ? null : routeToken,
       lastServerSequence,
+      browser: browserContext(),
     });
     for (const item of pending.values()) socket?.send(item.encoded);
   });
@@ -314,6 +323,7 @@ async function connectAttempt(): Promise<void> {
 async function establishRoute(reuse: boolean): Promise<void> {
   const request = async (): Promise<Response> => {
     const headers = new Headers();
+    headers.set("content-type", "application/json");
     if (reuse && routeToken !== null) {
       headers.set("the8020-route", routeToken);
     }
@@ -321,6 +331,7 @@ async function establishRoute(reuse: boolean): Promise<void> {
       method: "POST",
       credentials: "same-origin",
       headers,
+      body: JSON.stringify(browserContext()),
     });
   };
   let response = await request();
@@ -348,6 +359,14 @@ async function establishRoute(reuse: boolean): Promise<void> {
     throw new Error("route establishment returned no route token");
   }
   if (token !== routeToken) replaceRoute(token);
+}
+
+function browserContext(): BrowserContext {
+  return {
+    origin: location.origin,
+    language: navigator.language,
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  };
 }
 
 function replaceRoute(token: string | undefined): void {

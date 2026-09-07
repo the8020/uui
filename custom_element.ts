@@ -5,6 +5,8 @@ export interface CustomElementContext {
   readonly config: Record<string, unknown>;
   /** Aborted on removal or replacement, including while mount is pending. */
   readonly signal: AbortSignal;
+  /** Render plain text and the shell's [[icon=...]] markup into an owned element. */
+  renderText(target: HTMLElement, text: string): void;
   /** Send an ordinary screen action through the owning surface's interaction gate. */
   send(action: string, value?: unknown): void;
 }

@@ -8,6 +8,7 @@ import type {
 } from "@the8020/http";
 import {
   callScreen,
+  currentBrowser,
   defineSessionService,
   download,
   type DownloadHandle,
@@ -38,6 +39,10 @@ const sockets = new Set<BrowserSocket>();
 const session = defineSessionService(async ({ signal }) => {
   const model = new Model({});
   try {
+    assertEquals(
+      currentBrowser()?.origin,
+      `http://127.0.0.1:${server.addr.port}`,
+    );
     while (!signal.aborted) {
       const event = await callScreen({
         id: "download-browser-test",
@@ -529,7 +534,7 @@ try {
     const group = document.querySelector('[data-layout-id="downloads"]');
     const slider = group.querySelector('input[type="range"]');
     return {
-      buttons: Array.from(group.querySelectorAll('button')).map(button => button.textContent.trim()),
+      buttons: Array.from(group.querySelectorAll('.screen-actions button')).map(button => button.textContent.trim()),
       value: slider.value, min: slider.min, max: slider.max, step: slider.step,
       downloadButtons: Array.from(document.querySelectorAll('button')).filter(button => button.textContent.startsWith('Download ')).length,
       remainingActions: Array.from(document.querySelectorAll('.screen > .screen-actions button')).map(button => button.textContent.trim()),
@@ -620,7 +625,7 @@ try {
       `(() => {
     const group = document.querySelector('[data-layout-id="downloads"]');
     const bounds = group.getBoundingClientRect();
-    return [group.querySelector('input'), ...group.querySelectorAll('button')].every(element => {
+    return [group.querySelector('input'), ...group.querySelectorAll('button')].filter(element => element.getClientRects().length > 0).every(element => {
       const rect = element.getBoundingClientRect();
       return rect.left >= bounds.left && rect.right <= bounds.right && rect.top >= bounds.top && rect.bottom <= bounds.bottom;
     }) && document.documentElement.scrollWidth <= innerWidth;

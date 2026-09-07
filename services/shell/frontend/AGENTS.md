@@ -29,6 +29,13 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
   redirected response ends reconnecting, clears the route, and navigates to its
   final URL before checking status or route headers. Preserve retry behavior for
   transport failures and route replacement only for a direct `409`.
+- Send browser origin, language, and time zone in the HTTP establishment body
+  and each WebSocket `session.connect`. The package session binding owns these
+  presentation values; authenticated identity remains runtime-owned.
+- The generic custom-element context exposes `renderText` for shared text and
+  icons. `uui-content-fullscreen` fills only the content viewport, using the
+  measured global-bar height in `--uui-content-top`, and locks background
+  scrolling. The component owns its toggle, geometry, and deactivation cleanup.
 - Scalar fields expose a focusable pencil or read-only Chevron Right button;
   button clicks and focused-field F4 send the shared `field-help` event with
   dirty bindings. `fieldHelp: false` suppresses it. Keep read-only text

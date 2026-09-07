@@ -22,8 +22,10 @@ import {
 } from "./lists_browser_scenarios.ts";
 import {
   BACK_EVENT,
+  type BrowserContext,
   callScreen,
   field,
+  parseBrowserContext,
   parseClientMessage,
   presentModal,
   presentPage,
@@ -170,6 +172,7 @@ interface PackageBrowserFixture {
 
 class LocalSessionChannel implements SessionChannel {
   readonly sessionId = "presentation-browser-e2e";
+  browser?: BrowserContext;
   readonly #messages: UUIClientMessage[] = [];
   readonly #receivers: Array<{
     resolve(message: UUIClientMessage): void;
@@ -722,6 +725,7 @@ async function serve(request: Request): Promise<Response> {
     });
   }
   if (request.method === "POST" && url.pathname === "/session") {
+    channel.browser = parseBrowserContext(await request.json());
     return new Response(null, {
       status: 204,
       headers: { "the8020-route": routeToken },
@@ -747,6 +751,8 @@ async function serve(request: Request): Promise<Response> {
         return;
       }
       if (message.type === "session.connect") {
+        assertEquals(message.browser?.origin, url.origin);
+        channel.browser = message.browser;
         connectionSequence++;
         if (connectionSequence === 1) {
           for (const outbound of initialOutbounds.splice(0)) {

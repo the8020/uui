@@ -873,6 +873,18 @@ textarea {
   padding: clamp(18px, 3vw, 32px) 0 40px;
 }
 
+/* Program-owned elements can fill the content viewport below shell controls. */
+.uui-content-fullscreen {
+  position: fixed;
+  z-index: 19;
+  inset: var(--uui-content-top) 0 0;
+  margin: 0;
+}
+
+body:has(.uui-content-fullscreen) {
+  overflow: hidden;
+}
+
 #app {
   min-width: 0;
 }

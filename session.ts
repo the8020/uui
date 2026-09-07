@@ -20,6 +20,7 @@ import {
   type DownloadOptions,
 } from "./downloads.ts";
 import type {
+  BrowserContext,
   ControlDeclaration,
   ControlDescriptor,
   CustomElementDeclaration,
@@ -109,6 +110,7 @@ export interface CallScreenOptions<T extends z.ZodRawShape> {
 
 export interface SessionChannel {
   readonly sessionId: string;
+  readonly browser?: BrowserContext;
   send(message: UUIWorkerOutbound | Uint8Array): void;
   receive(): Promise<UUIClientMessage>;
 }
@@ -985,6 +987,14 @@ export function currentSessionId(): string {
     throw new Error("UUI session channel is not bound");
   }
   return boundSession.channel.sessionId;
+}
+
+/** Latest browser handshake metadata; absent for channels without a browser. */
+export function currentBrowser(): BrowserContext | undefined {
+  if (boundSession === undefined) {
+    throw new Error("UUI session channel is not bound");
+  }
+  return boundSession.channel.browser;
 }
 
 function applyChanges<T extends z.ZodRawShape>(
