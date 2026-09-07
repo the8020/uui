@@ -2,28 +2,35 @@ Parent DOX: [uui/services/shell/frontend DOX](../AGENTS.md).
 
 # Purpose
 
-- Hold individually vendored Material SVG icons used by the shell registry.
+- Hold the complete local Google Material Symbols font and its icon catalogue.
 
 # Ownership
 
-- Own the hashed `material-*.svg` assets; the parent icon-text renderer owns
-  registry lookup and validation.
+- Own the hashed `material-symbols-*.woff2` font and `material_symbols.json`,
+  generated from the same complete upstream font. The parent icon-text renderer
+  owns name lookup, codepoint rendering, and color validation.
 
 # Local Contracts
 
-- Ship only registered individual assets and keep source/license notices in the
-  repository's THIRD_PARTY_NOTICES.md current.
+- Every name in the vendored collection is available through `[[icon=name]]`,
+  including names beginning with digits. No hand-maintained subset is allowed.
+- Keep the font source, hash, and Apache-2.0 notice in
+  `../../../../THIRD_PARTY_NOTICES.md` current.
 - Unknown icon names and invalid colors remain literal text through the shared
   renderer.
 
 # Work Guidance
 
-- Extend the existing SVG/registry system when adding icons.
+- Run `python3 vendor_material_symbols.py` from the UUI root with `fonttools`
+  installed to regenerate the pinned font, catalogue, and CSS URL. This is an
+  asset maintenance dependency only; rebuild the shell afterward.
 
 # Verification
 
-- The parent `icon_text_test.ts` and UUI `deno task test` verify
-  registry/rendering behavior.
+- The parent `icon_text_test.ts` and UUI `deno task test` verify full catalogue
+  parsing; the presentation browser harness checks that every catalogue entry
+  renders a glyph from the local font. The shell service test verifies MIME,
+  immutable caching, and the font hash.
 
 # Child DOX Index
 

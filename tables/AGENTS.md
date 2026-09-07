@@ -19,6 +19,8 @@ Parent DOX: [uui DOX](../AGENTS.md).
   updates are separate store operations; creation never upserts another owner.
 - Never persist credentials, routing tokens, replay buffers, or unbounded
   messages; authentication sessions belong to the users package.
+- User, service, sandbox, and Worker references reuse their owning semantic
+  fields through `t.from()` without changing physical text columns.
 
 # Work Guidance
 

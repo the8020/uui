@@ -1,330 +1,233 @@
-import { CanvasAddon } from "@xterm/addon-canvas";
-import { FitAddon } from "@xterm/addon-fit";
-import { Terminal } from "@xterm/xterm";
-import type { CustomElementDescriptor } from "/p/the8020/uui/protocol.ts";
-import { renderIconText } from "./icon_text.ts";
+import type { CustomElementDescriptor } from "../../../protocol.ts";
+import type {
+  CustomElementInstance,
+  MountCustomElement,
+} from "../../../custom_element.ts";
+import { validBrowserAssetURL } from "../../../browser_assets.ts";
 
-interface CustomElementInstance {
-  readonly element: HTMLElement;
-  update(config: Record<string, unknown>): void;
-  dispose(): void;
+interface Style {
+  element: HTMLLinkElement;
+  ready: Promise<void>;
+  cancel(): void;
+  references: number;
+}
+const styles = new Map<string, Style>();
+
+function acquireStyle(url: string): { ready: Promise<void>; release(): void } {
+  let style = styles.get(url);
+  if (!style) {
+    const element = document.createElement("link");
+    element.rel = "stylesheet";
+    element.href = url;
+    let cancel = () => {};
+    const ready = new Promise<void>((resolve, reject) => {
+      cancel = () =>
+        reject(new DOMException("Stylesheet released", "AbortError"));
+      element.onload = () => resolve();
+      element.onerror = () =>
+        reject(new Error(`Unable to load stylesheet ${url}`));
+    });
+    style = { element, ready, cancel, references: 0 };
+    styles.set(url, style);
+    document.head.append(element);
+  }
+  style.references++;
+  const retained = style;
+  let released = false;
+  return {
+    ready: retained.ready,
+    release() {
+      if (released) return;
+      released = true;
+      if (--retained.references !== 0) return;
+      retained.cancel();
+      retained.element.remove();
+      styles.delete(url);
+    },
+  };
 }
 
-interface Entry {
-  initializer: string;
-  instance: CustomElementInstance;
-  used: boolean;
+class Entry {
+  readonly host = document.createElement("div");
+  readonly signature: string;
+  readonly #lifetime = new AbortController();
+  readonly #styles: ReturnType<typeof acquireStyle>[] = [];
+  #config: Record<string, unknown>;
+  #instance?: CustomElementInstance;
+  #active: boolean;
+  used = true;
+  failed = false;
+
+  constructor(
+    descriptor: CustomElementDescriptor,
+    active: boolean,
+    readonly send: (action: string, value?: unknown) => void,
+  ) {
+    this.signature = assetSignature(descriptor);
+    this.#config = descriptor.config;
+    this.#active = active;
+    this.host.className = "custom-element-host";
+    this.host.dataset.customElementId = descriptor.id;
+    this.host.setAttribute("aria-busy", "true");
+    void this.#mount(descriptor).catch((error) => this.#fail(error));
+  }
+
+  async #mount(descriptor: CustomElementDescriptor): Promise<void> {
+    if (
+      !validBrowserAssetURL(descriptor.module, "module") ||
+      !(descriptor.styles ?? []).every((url) =>
+        validBrowserAssetURL(url, "style")
+      )
+    ) {
+      throw new TypeError("Invalid custom element assets");
+    }
+    this.#styles.push(...(descriptor.styles ?? []).map(acquireStyle));
+    const [module] = await whileMounted(
+      Promise.all([
+        import(descriptor.module) as Promise<{ default?: MountCustomElement }>,
+        ...this.#styles.map((style) => style.ready),
+      ]),
+      this.#lifetime.signal,
+    );
+    if (this.#lifetime.signal.aborted) return;
+    if (typeof module.default !== "function") {
+      throw new TypeError(
+        "Custom element module must default-export a mount function",
+      );
+    }
+    const mountedConfig = this.#config;
+    const instance = await module.default({
+      host: this.host,
+      config: mountedConfig,
+      signal: this.#lifetime.signal,
+      send: (action, value) => {
+        if (!this.#lifetime.signal.aborted && this.#active) {
+          this.send(action, value);
+        }
+      },
+    });
+    if (!instance || typeof instance !== "object") {
+      throw new TypeError(
+        "Custom element mount must return its lifecycle object",
+      );
+    }
+    if (this.#lifetime.signal.aborted) {
+      instance.dispose?.();
+      this.host.replaceChildren();
+      return;
+    }
+    this.#instance = instance;
+    if (this.#config !== mountedConfig) instance.update?.(this.#config);
+    instance.setActive?.(this.#active);
+    this.host.removeAttribute("aria-busy");
+  }
+
+  update(config: Record<string, unknown>): void {
+    this.#config = config;
+    try {
+      this.#instance?.update?.(config);
+    } catch (error) {
+      this.#fail(error);
+    }
+    this.used = true;
+  }
+
+  setActive(active: boolean): void {
+    if (active === this.#active) return;
+    this.#active = active;
+    try {
+      this.#instance?.setActive?.(active);
+    } catch (error) {
+      this.#fail(error);
+    }
+  }
+
+  dispose(): void {
+    if (this.#lifetime.signal.aborted) return;
+    this.#lifetime.abort();
+    try {
+      this.#instance?.dispose?.();
+    } catch (error) {
+      console.error(error);
+    }
+    this.#instance = undefined;
+    for (const style of this.#styles) style.release();
+    this.host.replaceChildren();
+  }
+
+  #fail(error: unknown): void {
+    if (this.#lifetime.signal.aborted) return;
+    this.dispose();
+    this.failed = true;
+    this.host.removeAttribute("aria-busy");
+    this.host.classList.add("custom-element-error");
+    this.host.textContent = "Unable to load this component.";
+    console.error("Custom element failed", error);
+  }
+}
+
+function assetSignature(descriptor: CustomElementDescriptor): string {
+  return JSON.stringify([descriptor.module, descriptor.styles ?? []]);
+}
+
+function whileMounted<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    pending.then(resolve, reject).finally(() =>
+      signal.removeEventListener("abort", abort)
+    );
+    if (signal.aborted) abort();
+  });
 }
 
 export class CustomElementRenderer {
   readonly #entries = new Map<string, Entry>();
+  #active = false;
+  #send: (action: string, value?: unknown) => void = () => {};
 
-  begin(): void {
+  begin(send: (action: string, value?: unknown) => void): void {
+    this.#send = send;
     for (const entry of this.#entries.values()) entry.used = false;
   }
 
   render(descriptor: CustomElementDescriptor): HTMLElement {
     let entry = this.#entries.get(descriptor.id);
     if (
-      entry !== undefined &&
-      (!descriptor.preserve || entry.initializer !== descriptor.initializer)
+      entry &&
+      (entry.failed || !descriptor.preserve ||
+        entry.signature !== assetSignature(descriptor))
     ) {
-      entry.instance.dispose();
+      entry.dispose();
       this.#entries.delete(descriptor.id);
       entry = undefined;
     }
-    if (entry === undefined) {
-      entry = {
-        initializer: descriptor.initializer,
-        instance: initialize(descriptor.initializer, descriptor.config),
-        used: true,
-      };
+    if (!entry) {
+      entry = new Entry(
+        descriptor,
+        this.#active,
+        (action, value) => this.#send(action, value),
+      );
       this.#entries.set(descriptor.id, entry);
-    } else {
-      entry.instance.update(descriptor.config);
-      entry.used = true;
-    }
-    entry.instance.element.dataset.customElementId = descriptor.id;
-    return entry.instance.element;
+    } else entry.update(descriptor.config);
+    return entry.host;
   }
 
   end(): void {
     for (const [id, entry] of this.#entries) {
       if (entry.used) continue;
-      entry.instance.dispose();
+      entry.dispose();
       this.#entries.delete(id);
     }
   }
 
+  setActive(active: boolean): void {
+    this.#active = active;
+    for (const entry of this.#entries.values()) entry.setActive(active);
+  }
+
   dispose(): void {
-    for (const entry of this.#entries.values()) entry.instance.dispose();
+    for (const entry of this.#entries.values()) entry.dispose();
     this.#entries.clear();
   }
-}
-
-function initialize(
-  initializer: string,
-  config: Record<string, unknown>,
-): CustomElementInstance {
-  if (initializer === "sandbox-console.v1") {
-    return new SandboxConsole(config);
-  }
-  const element = document.createElement("div");
-  element.className = "custom-element-error";
-  renderIconText(
-    element,
-    `Unsupported custom element initializer: ${initializer}`,
-  );
-  return { element, update() {}, dispose() {} };
-}
-
-interface ConsoleConfiguration {
-  websocketPath: string;
-  target: { kind: "runtime" | "development"; sandboxId: string };
-  arguments: string[];
-  environment: string[];
-  workingDirectory: string;
-}
-
-class SandboxConsole implements CustomElementInstance {
-  readonly element = document.createElement("div");
-  readonly #terminal = new Terminal({
-    cursorBlink: true,
-    convertEol: false,
-    scrollback: 5_000,
-    fontFamily:
-      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-    fontSize: 14,
-    theme: {
-      background: "#0d1117",
-      foreground: "#e6edf3",
-      cursor: "#58a6ff",
-      selectionBackground: "rgba(88, 166, 255, 0.62)",
-      selectionInactiveBackground: "rgba(88, 166, 255, 0.42)",
-    },
-  });
-  readonly #fit = new FitAddon();
-  readonly #encoder = new TextEncoder();
-  readonly #status = document.createElement("div");
-  readonly #viewport = document.createElement("div");
-  readonly #resizeObserver: ResizeObserver;
-  #socket: WebSocket | undefined;
-  #reconnectTimer: ReturnType<typeof setTimeout> | undefined;
-  #path = "";
-  #configuration: ConsoleConfiguration | undefined;
-  #signature = "";
-  #enabled = false;
-  #disposed = false;
-
-  constructor(config: Record<string, unknown>) {
-    this.element.className = "sandbox-console";
-    this.#status.className = "sandbox-console-status";
-    this.#viewport.className = "sandbox-console-viewport";
-    this.element.append(this.#status, this.#viewport);
-    this.#terminal.loadAddon(this.#fit);
-    this.#terminal.open(this.#viewport);
-    try {
-      this.#terminal.loadAddon(new CanvasAddon());
-    } catch {
-      // xterm's DOM renderer remains available when Canvas2D is unavailable.
-    }
-    this.#terminal.onData((data) => {
-      if (this.#socket?.readyState === WebSocket.OPEN) {
-        this.#socket.send(this.#encoder.encode(data));
-      }
-    });
-    this.#terminal.onSelectionChange(() => {
-      this.element.dataset.hasSelection = this.#terminal.hasSelection()
-        ? "true"
-        : "false";
-    });
-    this.#terminal.onResize(({ cols, rows }) => this.#sendResize(cols, rows));
-    this.#resizeObserver = new ResizeObserver(() => this.#fitTerminal());
-    this.#resizeObserver.observe(this.element);
-    this.element.addEventListener("click", () => this.#terminal.focus());
-    this.update(config);
-  }
-
-  update(config: Record<string, unknown>): void {
-    const enabled = config.enabled === true;
-    const parsed = parseConsoleConfiguration(config);
-    if (parsed === undefined) {
-      this.#enabled = false;
-      delete this.element.dataset.consoleTarget;
-      renderIconText(this.#status, "Terminal configuration is invalid");
-      this.#disconnect();
-      return;
-    }
-    const signature = JSON.stringify(parsed);
-    const changed = signature !== this.#signature;
-    this.#path = parsed.websocketPath;
-    this.#configuration = parsed;
-    this.#signature = signature;
-    this.#enabled = enabled;
-    this.element.dataset.consoleTarget =
-      `${parsed.target.kind}:${parsed.target.sandboxId}`;
-    if (!enabled) {
-      renderIconText(this.#status, "Start the sandbox to open a terminal");
-      this.#disconnect();
-      return;
-    }
-    if (changed) this.#disconnect();
-    this.#connect();
-    queueMicrotask(() => this.#fitTerminal());
-  }
-
-  dispose(): void {
-    this.#disposed = true;
-    this.#enabled = false;
-    this.#resizeObserver.disconnect();
-    this.#disconnect();
-    this.#terminal.dispose();
-  }
-
-  #connect(): void {
-    if (
-      this.#disposed || !this.#enabled || this.#socket !== undefined ||
-      this.#reconnectTimer !== undefined
-    ) return;
-    renderIconText(this.#status, "Connecting terminal…");
-    const url = new URL(this.#path, location.href);
-    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-    const socket = new WebSocket(
-      url,
-      "the8020.console.v1",
-    );
-    socket.binaryType = "arraybuffer";
-    this.#socket = socket;
-    socket.addEventListener("open", () => {
-      const configuration = this.#configuration;
-      if (configuration === undefined) {
-        socket.close(1008, "console configuration unavailable");
-        return;
-      }
-      renderIconText(this.#status, "Terminal connected");
-      this.#fitTerminal();
-      socket.send(JSON.stringify({
-        type: "open",
-        target: configuration.target,
-        arguments: configuration.arguments,
-        environment: configuration.environment,
-        workingDirectory: configuration.workingDirectory,
-        columns: this.#terminal.cols,
-        rows: this.#terminal.rows,
-      }));
-      this.#terminal.focus();
-    });
-    socket.addEventListener("message", (event) => {
-      if (event.data instanceof ArrayBuffer) {
-        this.#terminal.write(new Uint8Array(event.data));
-        return;
-      }
-      if (event.data instanceof Blob) {
-        void event.data.arrayBuffer().then((data) =>
-          this.#terminal.write(new Uint8Array(data))
-        );
-        return;
-      }
-      if (typeof event.data !== "string") return;
-      try {
-        const message = JSON.parse(event.data) as {
-          type?: unknown;
-          message?: unknown;
-        };
-        if (message.type === "error" && typeof message.message === "string") {
-          this.#enabled = false;
-          renderIconText(this.#status, message.message);
-          this.#terminal.writeln(`\r\n\x1b[31m${message.message}\x1b[0m`);
-          socket.close(1008, "console open failed");
-        }
-      } catch {
-        renderIconText(this.#status, "Terminal protocol error");
-      }
-    });
-    socket.addEventListener("close", () => {
-      if (this.#socket !== socket) return;
-      this.#socket = undefined;
-      if (!this.#enabled || this.#disposed) return;
-      renderIconText(this.#status, "Terminal disconnected; reconnecting…");
-      this.#reconnectTimer = setTimeout(() => {
-        this.#reconnectTimer = undefined;
-        this.#connect();
-      }, 1_000);
-    });
-    socket.addEventListener("error", () => socket.close());
-  }
-
-  #disconnect(): void {
-    if (this.#reconnectTimer !== undefined) {
-      clearTimeout(this.#reconnectTimer);
-      this.#reconnectTimer = undefined;
-    }
-    const socket = this.#socket;
-    this.#socket = undefined;
-    socket?.close(1000, "terminal element disconnected");
-  }
-
-  #fitTerminal(): void {
-    if (!this.element.isConnected || this.element.clientWidth === 0) return;
-    try {
-      this.#fit.fit();
-    } catch {
-      return;
-    }
-  }
-
-  #sendResize(cols: number, rows: number): void {
-    if (this.#socket?.readyState !== WebSocket.OPEN) return;
-    this.#socket.send(JSON.stringify({
-      type: "resize",
-      columns: cols,
-      rows,
-    }));
-  }
-}
-
-function safeWebSocketPath(value: string): boolean {
-  if (!value.startsWith("/") || value.startsWith("//")) return false;
-  try {
-    const url = new URL(value, location.href);
-    return url.origin === location.origin &&
-      (url.protocol === "http:" || url.protocol === "https:");
-  } catch {
-    return false;
-  }
-}
-
-function parseConsoleConfiguration(
-  value: Record<string, unknown>,
-): ConsoleConfiguration | undefined {
-  const websocketPath = typeof value.websocketPath === "string"
-    ? value.websocketPath
-    : "";
-  if (!safeWebSocketPath(websocketPath)) return undefined;
-  const target = value.target;
-  if (
-    target === null || typeof target !== "object" || Array.isArray(target)
-  ) return undefined;
-  const candidate = target as Record<string, unknown>;
-  if (
-    candidate.kind !== "runtime" && candidate.kind !== "development" ||
-    typeof candidate.sandboxId !== "string" || candidate.sandboxId.length === 0
-  ) return undefined;
-  if (
-    !Array.isArray(value.arguments) || value.arguments.length === 0 ||
-    !value.arguments.every((item) => typeof item === "string") ||
-    !Array.isArray(value.environment) ||
-    !value.environment.every((item) => typeof item === "string") ||
-    typeof value.workingDirectory !== "string"
-  ) return undefined;
-  return {
-    websocketPath,
-    target: {
-      kind: candidate.kind,
-      sandboxId: candidate.sandboxId,
-    },
-    arguments: [...value.arguments],
-    environment: [...value.environment],
-    workingDirectory: value.workingDirectory,
-  };
 }

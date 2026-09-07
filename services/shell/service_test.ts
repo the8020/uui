@@ -1,5 +1,8 @@
 import { assertEquals, assertMatch } from "@std/assert";
 import service from "./service.ts";
+import materialSymbols from "./frontend/assets/material_symbols.json" with {
+  type: "json",
+};
 
 const context = {
   signal: new AbortController().signal,
@@ -72,7 +75,7 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   );
   assertEquals(body.includes('id="message-history-list"'), true);
   assertEquals(
-    body.includes('<link rel="stylesheet" href="markdown.css">'),
+    body.includes('<link rel="stylesheet" href="markdown.css?v='),
     true,
   );
   assertEquals(body.includes('id="session-logout"'), true);
@@ -104,7 +107,7 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
     "window.__the8020InitialThemeApplied",
   );
   const stylesheetOffset = body.indexOf(
-    '<link rel="stylesheet" href="styles.css">',
+    '<link rel="stylesheet" href="styles.css?v=',
   );
   assertEquals(
     initializerOffset >= 0 && initializerOffset < stylesheetOffset,
@@ -303,7 +306,7 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   assertEquals(cssBody.includes("@media (max-width: 860px)"), false);
   assertMatch(
     cssBody,
-    /\.material-icon\s*\{[^}]*--material-icon-size:\s*1\.2em;[^}]*width:\s*var\(--material-icon-size\);[^}]*height:\s*var\(--material-icon-size\);[^}]*flex:\s*0 0 var\(--material-icon-size\);[^}]*background-color:\s*currentColor;[^}]*mask:\s*var\(--material-icon-url\) center \/ contain no-repeat;[^}]*vertical-align:\s*middle;/s,
+    /\.material-icon\s*\{[^}]*--material-icon-size:\s*1\.2em;[^}]*width:\s*var\(--material-icon-size\);[^}]*height:\s*var\(--material-icon-size\);[^}]*flex:\s*0 0 var\(--material-icon-size\);[^}]*vertical-align:\s*middle;/s,
   );
   assertMatch(
     cssBody,
@@ -455,11 +458,11 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   );
   assertMatch(
     cssBody,
-    /\.field-edit-icon\s*\{[^}]*inset-inline-end:\s*0;[^}]*mask-size:\s*1\.2rem 1\.2rem;[^}]*pointer-events:\s*none;/s,
+    /\.field-help-button \.field-edit-icon\s*\{[^}]*--material-icon-size:\s*1\.2rem;[^}]*pointer-events:\s*none;/s,
   );
   assertMatch(
     cssBody,
-    /\.field\[data-control-kind="textarea"\] \.field-edit-icon\s*\{[^}]*inset-block-start:\s*auto;[^}]*inset-block-end:\s*calc\(19px - 0\.45rem\);/s,
+    /\.field\[data-control-kind="textarea"\] \.field-help-button\s*\{[^}]*inset-block-start:\s*auto;[^}]*inset-block-end:\s*calc\(19px - 0\.9rem\);/s,
   );
   assertEquals(cssBody.includes("::-webkit-inner-spin-button"), false);
   assertMatch(
@@ -478,8 +481,8 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
     cssBody,
     /\.group-title::after\s*\{[^}]*inset-block:\s*50% 0;[^}]*inset-inline-start:\s*0;[^}]*border-inline-start:\s*1px solid var\(--group-border-color\);/s,
   );
-  assertEquals(cssBody.includes("./assets/material-"), false);
-  assertEquals(cssBody.includes("@font-face"), false);
+  assertEquals(cssBody.includes(`./assets/${materialSymbols.font}`), true);
+  assertEquals(cssBody.includes("@font-face"), true);
   assertEquals(cssBody.includes("transition: transform"), false);
   assertEquals(cssBody.includes("transform: translateY"), false);
   assertEquals(
@@ -522,15 +525,15 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   );
   assertMatch(
     cssBody,
-    /\.field-message-text\s*\{[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;[^}]*user-select:\s*text;[^}]*white-space:\s*nowrap;[^}]*cursor:\s*text;/s,
+    /\.overflow-text-content\s*\{[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*clip;[^}]*white-space:\s*nowrap;[^}]*user-select:\s*text;/s,
   );
   assertMatch(
     cssBody,
-    /\.field-message-trigger\s*\{[^}]*text-decoration:\s*underline dotted;[^}]*user-select:\s*none;[^}]*cursor:\s*help;/s,
+    /\.overflow-reveal\s*\{[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/s,
   );
   assertMatch(
     cssBody,
-    /\.field-message-popover\s*\{[^}]*position:\s*fixed;[^}]*inset:\s*auto;[^}]*max-width:\s*min\(28rem, calc\(100vw - 20px\)\);[^}]*margin:\s*0;[^}]*overflow-wrap:\s*anywhere;/s,
+    /\.uui-popover\s*\{[^}]*position:\s*fixed;[^}]*inset:\s*auto;[^}]*max-height:\s*min\(24rem, calc\(100dvh - 20px\)\);[^}]*overflow:\s*auto;/s,
   );
   assertMatch(
     cssBody,
@@ -576,36 +579,6 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   assertEquals(markdownCSSBody.includes(".markdown table"), true);
   assertEquals(markdownCSSBody.includes(".markdown blockquote"), true);
 
-  const staticAssets = [
-    ["material-edit-24-a4b3c9f6.svg", 400, "M3 17.25V21h3.75"],
-    ["material-error-24-e083cc60.svg", 400, "M12 2C6.48"],
-    ["material-light-mode-24-e5b6e132.svg", 1_000, "M12 7c-2.76"],
-    ["material-dark-mode-24-bab57d17.svg", 400, "M12 3c-4.97"],
-    ["material-arrow-back-24-e083cc60.svg", 300, "M20 11H7.83"],
-    ["material-arrow-drop-down-24-e083cc60.svg", 250, "M7 10l5 5"],
-    ["material-more-vert-24-e083cc60.svg", 400, "M12 8c1.1"],
-    ["material-menu-24-e083cc60.svg", 300, "M3 18h18"],
-    ["material-refresh-24-e083cc60.svg", 500, "M17.65 6.35"],
-    ["material-save-24-e083cc60.svg", 500, "M17 3H5"],
-    ["material-close-24-84ccef28.svg", 400, "M19 6.41"],
-    ["material-logout-24-84ccef28.svg", 400, "m17 7"],
-    ["material-tab-close-24-84ccef28.svg", 700, "m476-420"],
-  ] as const;
-  for (const [name, maximumLength, marker] of staticAssets) {
-    const asset = await service.fetch(
-      new Request(`https://service/assets/${name}`),
-      context,
-    );
-    assertEquals(asset.status, 200);
-    assertEquals(asset.headers.get("content-type"), "image/svg+xml");
-    assertEquals(
-      asset.headers.get("cache-control"),
-      "public, max-age=31536000, immutable",
-    );
-    const assetBody = await asset.text();
-    assertEquals(assetBody.length < maximumLength, true);
-    assertEquals(assetBody.includes(marker), true);
-  }
   const rejectedAsset = await service.fetch(
     new Request("https://service/assets/not-an-icon.txt"),
     context,
@@ -626,4 +599,26 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
     context,
   );
   assertEquals(rejectedTraversal.status, 404);
+});
+
+Deno.test("shell serves the complete local icon font with its content hash and immutable caching", async () => {
+  const asset = await service.fetch(
+    new Request(`https://service/assets/${materialSymbols.font}`),
+    context,
+  );
+  assertEquals(asset.status, 200);
+  assertEquals(asset.headers.get("content-type"), "font/woff2");
+  assertEquals(
+    asset.headers.get("cache-control"),
+    "public, max-age=31536000, immutable",
+  );
+  const fontBytes = new Uint8Array(await asset.arrayBuffer());
+  assertEquals(new TextDecoder().decode(fontBytes.slice(0, 4)), "wOF2");
+  assertEquals(
+    Array.from(
+      new Uint8Array(await crypto.subtle.digest("SHA-256", fontBytes)),
+      (byte) => byte.toString(16).padStart(2, "0"),
+    ).join(""),
+    materialSymbols.sha256,
+  );
 });

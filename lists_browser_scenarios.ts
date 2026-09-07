@@ -10,6 +10,7 @@ import {
   type UUIClientMessage,
   z,
 } from "./mod.ts";
+import { field as sharedField, money } from "/p/the8020/db/fields.ts";
 
 interface BrowserDriver {
   evaluate<T>(expression: string): Promise<T>;
@@ -18,10 +19,15 @@ interface BrowserDriver {
     params?: Record<string, unknown>,
   ): Promise<T>;
 }
+const columnDescription = "The **available amount** for this record. " +
+  "Use the exact amount when comparing records.\n\n".repeat(40);
 const Row = z.object({
   id: z.number(),
   name: z.string(),
-  amount: z.number(),
+  amount: sharedField(money(), {
+    label: "Total number of available items",
+    description: columnDescription,
+  }).nullable(),
   active: z.boolean(),
   created: z.string(),
   navigation: z.string(),
@@ -33,9 +39,9 @@ const Schema = z.object({
 const records = Array.from({ length: 251 }, (_, id) => ({
   id,
   name: `Record ${String(id).padStart(3, "0")} — ${
-    "Complete descriptive text ".repeat(5)
+    "Complete descriptive text **with Markdown** ".repeat(5)
   }`,
-  amount: id % 17,
+  amount: `${id % 17}.00`,
   active: id % 2 === 0,
   created: `2026-09-${String(id % 28 + 1).padStart(2, "0")}`,
   navigation: `hidden-navigation-${id}`,
@@ -83,7 +89,6 @@ export async function runListsProgram(): Promise<void> {
                   length: "long",
                 },
                 amount: {
-                  heading: "Total number of available items",
                   shortHeading: "N",
                   length: "compact",
                 },
@@ -102,7 +107,8 @@ export async function runListsProgram(): Promise<void> {
               title: "Independent list",
               bind: "records",
               key: "id",
-              display: ["id", "name"],
+              display: ["navigation", "name"],
+              columnOptions: { navigation: { length: "compact" } },
               triggerFilterEvents: true,
             },
             {
@@ -221,7 +227,203 @@ export async function verifyListsFlow(
   await until(() => state()?.measured === true, "initial capacity");
   await idle();
   await delay(120);
+  // A truncated value keeps row activation; only its ellipsis opens local help.
+  const nameCell = `${primary} tr[data-row-index="0"] td:nth-child(2)`;
+  const reveal = `${nameCell} .overflow-reveal`;
+  await wait(
+    page,
+    `!document.querySelector('${reveal}').hidden`,
+    "overflow button",
+  );
+  assert(
+    await page.evaluate<boolean>(`(() => {
+    const button = document.querySelector('${reveal}');
+    const pencil = document.querySelector('.field-help-button');
+    const style = getComputedStyle(button);
+    return style.backgroundColor === getComputedStyle(pencil).backgroundColor &&
+      style.borderWidth === '0px' && style.boxShadow === 'none' &&
+      style.fontSize === getComputedStyle(button.parentElement).fontSize;
+  })()`),
+    "ellipsis inherits its font and the pencil's transparent, borderless style",
+  );
+  const revealEventCount = listBrowserProbe.events.length;
+  const hover = async (selector: string): Promise<string> => {
+    const point = await page.evaluate<{ x: number; y: number }>(`(() => {
+      const rect = document.querySelector('${selector}').getBoundingClientRect();
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    })()`);
+    await page.command("Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      ...point,
+    });
+    await delay(150);
+    return await page.evaluate<string>(
+      `getComputedStyle(document.querySelector('${selector}')).backgroundColor`,
+    );
+  };
+  const pencilHover = await hover(".field-help-button");
+  assert(
+    await hover(reveal) === pencilHover,
+    "ellipsis hover matches the pencil's subtle background",
+  );
+  assert(
+    await page.evaluate<boolean>(`(() => {
+    const style = getComputedStyle(document.querySelector('${reveal}'));
+    return style.borderWidth === '0px' && style.outlineStyle === 'none' && style.boxShadow === 'none';
+  })()`),
+    "pointer hover adds no border, outline or shadow",
+  );
+  await click(page, reveal);
+  await wait(
+    page,
+    `document.querySelector('.overflow-popover:popover-open')?.textContent.includes('Complete descriptive text')`,
+    "full value popover",
+  );
+  assert(
+    listBrowserProbe.events.length === revealEventCount,
+    "ellipsis must not select the row",
+  );
+  assert(
+    await page.evaluate<boolean>(`(() => {
+    const button = document.querySelector('${reveal}').getBoundingClientRect();
+    const row = document.querySelector('${nameCell}').getBoundingClientRect();
+    const popover = document.querySelector('.overflow-popover:popover-open');
+    const bounds = popover.getBoundingClientRect();
+    return Math.abs(bounds.right - button.right) < 1 &&
+      Math.abs(bounds.top - row.bottom - 5) < 2 &&
+      popover.querySelector('strong')?.textContent === 'with Markdown';
+  })()`),
+    "cell help opens below the row to the left and renders Markdown",
+  );
+  await screenshot(page, "overflow-value");
+  await escape(page);
+  assert(
+    await page.evaluate<boolean>(
+      `document.activeElement === document.querySelector('${reveal}')`,
+    ),
+    "Escape restores ellipsis focus",
+  );
+  await page.command("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    text: "\r",
+    key: "Enter",
+    code: "Enter",
+    windowsVirtualKeyCode: 13,
+  });
+  await page.command("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: "Enter",
+    code: "Enter",
+    windowsVirtualKeyCode: 13,
+  });
+  await wait(
+    page,
+    `document.querySelector('.overflow-popover:popover-open') !== null`,
+    "keyboard ellipsis",
+  );
+  assert(
+    listBrowserProbe.events.length === revealEventCount,
+    "keyboard reveal must not select the row",
+  );
+  await escape(page);
+  await click(page, `${nameCell} .data-list-cell-text`);
+  await wait(
+    page,
+    `document.querySelector('.screen-title')?.textContent === 'Selected row'`,
+    "truncated text selects its row",
+  );
+  const truncatedSelection = listBrowserProbe.events.at(-1);
+  assert(
+    truncatedSelection?.eventType === "select" &&
+      truncatedSelection.value === 0,
+    "truncated cell resolves the original row",
+  );
+  await click(page, "#screen-back");
+  await idle();
+  assert(
+    await page.evaluate<boolean>(
+      `document.querySelector('${primary} tr[data-row-index="0"] td:first-child .overflow-reveal').hidden`,
+    ),
+    "fitting values have no ellipsis button",
+  );
+  assert(
+    await page.evaluate<boolean>(
+      `document.querySelector('${primary} th:nth-child(3)').textContent.includes('Total number of available items')`,
+    ),
+    "list heading comes from the shared field in its row structure",
+  );
+  await click(page, `${primary} th:nth-child(3) button`);
+  const description = ".data-list-column-description";
+  assert(
+    await page.evaluate<boolean>(`(() => {
+    const host = document.querySelector('${description}');
+    const text = host.querySelector('.overflow-text-content');
+    return text.textContent.startsWith('The available amount') && text.textContent.length <= 100 &&
+      text.getBoundingClientRect().height <= parseFloat(getComputedStyle(text).lineHeight) * 3 + 1 &&
+      !host.querySelector('.overflow-reveal').hidden &&
+      host.previousElementSibling.tagName === 'STRONG' &&
+      host.nextElementSibling.classList.contains('data-list-sorts');
+  })()`),
+    "shared field description appears between the column title and query controls with a bounded preview",
+  );
+  await screenshot(page, "column-description");
+  await click(page, `${description} .overflow-reveal`);
+  assert(
+    await page.evaluate<boolean>(`(() => {
+    const popover = document.querySelector('${description} .overflow-popover');
+    const rect = popover.getBoundingClientRect();
+    const parent = document.querySelector('.data-list-popover');
+    popover.scrollTop = popover.scrollHeight;
+    return parent.matches(':popover-open') && popover.matches(':popover-open') &&
+      popover.querySelector('strong')?.textContent === 'available amount' &&
+      popover.scrollTop > 0 && rect.height <= 384 && rect.top >= 10 && rect.bottom <= innerHeight - 10;
+  })()`),
+    "nested description keeps column controls open and scrolls full Markdown within viewport bounds",
+  );
+  await escape(page);
+  assert(
+    await page.evaluate<boolean>(
+      `document.querySelector('.data-list-popover').matches(':popover-open') && document.activeElement === document.querySelector('${description} .overflow-reveal')`,
+    ),
+    "Escape closes only the nested description and returns focus",
+  );
+  await page.evaluate(
+    `document.querySelector('.data-list-popover').style.width = '300px'`,
+  );
+  await delay(150);
+  assert(
+    await page.evaluate<boolean>(
+      `document.activeElement === document.querySelector('${description} .overflow-reveal')`,
+    ),
+    "responsive overflow measurement preserves the focused ellipsis",
+  );
+  await escape(page);
   const desktopCapacity = state().pageSize;
+  // Every displayed column can overflow without making a row unreachable.
+  await page.evaluate(
+    `document.querySelector('${secondary}').style.width = '420px'`,
+  );
+  await wait(
+    page,
+    `[...document.querySelectorAll('${secondary} tr[data-row-index="0"] .overflow-reveal')].every(button => !button.hidden)`,
+    "all columns overflow",
+  );
+  await pointerClick(
+    page,
+    `${secondary} tr[data-row-index="0"] td:first-child .data-list-cell-text`,
+  );
+  await wait(
+    page,
+    `document.querySelector('.screen-title')?.textContent === 'Selected row'`,
+    "row with all columns truncated remains reachable",
+  );
+  await click(page, "#screen-back");
+  await idle();
+  await page.evaluate(
+    `document.querySelector('${secondary}').style.removeProperty('width')`,
+  );
+  await page.evaluate("scrollTo({ top: 0, behavior: 'instant' })");
+  await delay(100);
   await paginationVisibility(page, primary, true);
   assert(
     desktopCapacity > 3 && desktopCapacity < 25,
@@ -662,10 +864,13 @@ export async function verifyListsFlow(
     ) > 100,
     "horizontal scroll survives redraw",
   );
-  await click(page, `${primary} tr[data-row-index="0"] td:nth-child(2)`);
+  await click(
+    page,
+    `${primary} tr[data-row-index="0"] td:nth-child(2) .overflow-reveal`,
+  );
   await wait(
     page,
-    `document.querySelector('${primary} .data-list-complete-value')?.textContent?.includes('Complete descriptive text')`,
+    `document.querySelector('${primary} .overflow-popover:popover-open')?.textContent?.includes('Complete descriptive text')`,
     "complete truncated value",
   );
   await escape(page);
@@ -936,9 +1141,9 @@ async function fullWidthRows(
     await page.evaluate<boolean>(
       `(() => { const row=document.querySelector(${
         JSON.stringify(selector + ' tbody tr[data-row-index="0"]')
-      }); const cell=row.lastElementChild; return row.matches(':hover') && cell.contains(document.elementFromPoint(${layout.x},${layout.y})) && getComputedStyle(cell).backgroundColor==='rgba(0, 0, 0, 0)' && getComputedStyle(row).backgroundColor!=='rgba(0, 0, 0, 0)'; })()`,
+      }); const cell=row.lastElementChild; return row.matches(':hover') && cell.contains(document.elementFromPoint(${layout.x},${layout.y})) && getComputedStyle(cell).backgroundColor==='rgba(0, 0, 0, 0)' && getComputedStyle(row).backgroundColor==='rgba(0, 0, 0, 0)' && getComputedStyle(row).color===getComputedStyle(cell).color && getComputedStyle(row).color!==getComputedStyle(row.closest('.data-list')).color; })()`,
     ),
-    "row highlight reaches the rightmost data cell without an opaque tools strip",
+    "row hover highlights text through the rightmost cell with no background fill",
   );
 }
 

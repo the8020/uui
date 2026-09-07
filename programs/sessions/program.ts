@@ -4,6 +4,8 @@ import {
   callScreen,
   field,
   Model,
+  presentModal,
+  presentPage,
   sendMessage,
   z,
 } from "/p/the8020/uui/mod.ts";
@@ -11,25 +13,28 @@ import detailLayout from "./layouts/detail.json" with { type: "json" };
 import listLayout from "./layouts/list.json" with { type: "json" };
 import type { SessionMetadata } from "../../session_metadata.ts";
 import Sessions from "../../tables/sessions.ts";
+import { username } from "/p/the8020/users/types/user.ts";
+import { serviceId } from "/p/the8020/services/types/service.ts";
+import { sandboxId, workerId } from "/p/the8020/admin-core/types/runtime.ts";
 
 const maximumSessions = 200;
 
 const ListScreen = z.object({
   sessions: z.array(z.object({
     navigation: z.string(),
-    sessionId: z.string(),
-    user: z.string(),
-    state: z.string(),
+    sessionId: field(z.string(), { label: "Session" }),
+    user: username,
+    state: field(z.string(), { label: "Status" }),
     screen: z.string(),
     nodeId: z.string(),
-    updatedAt: z.string(),
+    updatedAt: field(z.string(), { label: "Last activity (UTC)" }),
   })),
 });
 
 const DetailScreen = z.object({
   sessionId: field(z.string(), { label: "Session ID", readOnly: true }),
-  state: field(z.string(), { label: "Metadata state", readOnly: true }),
-  authenticatedUser: field(z.string(), { label: "User", readOnly: true }),
+  state: field(z.string(), { label: "Status", readOnly: true }),
+  authenticatedUser: field(username, { readOnly: true }),
   authenticatedUserId: field(z.string(), { label: "User ID", readOnly: true }),
   latestIpAddress: field(z.string(), {
     label: "Latest IP address",
@@ -39,35 +44,48 @@ const DetailScreen = z.object({
     label: "Network scope",
     readOnly: true,
   }),
-  serviceId: field(z.string(), { label: "Service", readOnly: true }),
+  serviceId: field(serviceId, { readOnly: true }),
   persistentExecutionId: field(z.string(), {
     label: "Persistent execution",
     readOnly: true,
   }),
   nodeId: field(z.string(), { label: "Node", readOnly: true }),
 
-  sandboxId: field(z.string(), { label: "Sandbox", readOnly: true }),
-  workerId: field(z.string(), { label: "Worker", readOnly: true }),
+  sandboxId: field(sandboxId, { readOnly: true }),
+  workerId: field(workerId, { readOnly: true }),
   currentScreen: field(z.string(), { label: "Current screen", readOnly: true }),
-  createdAt: field(z.string(), { label: "Created", readOnly: true }),
-  updatedAt: field(z.string(), { label: "Updated", readOnly: true }),
+  currentScreenId: field(z.string(), { label: "Screen ID", readOnly: true }),
+  createdAt: field(z.string(), { label: "Started (UTC)", readOnly: true }),
+  updatedAt: field(z.string(), {
+    label: "Last activity (UTC)",
+    readOnly: true,
+  }),
   lastConnectionAt: field(z.string(), {
-    label: "Last connection",
+    label: "Last connection (UTC)",
     readOnly: true,
   }),
   liveState: field(z.string(), { label: "Live validation", readOnly: true }),
   messageLog: field(z.string(), {
-    label: "Bounded message log",
+    label: "Message log",
     control: "textarea",
     length: "long",
     readOnly: true,
+    rowSpan: 8,
   }),
 });
 
-export default async function sessionsProgram(): Promise<void> {
+export default async function sessionsProgram(
+  username?: string,
+): Promise<void> {
   let screenModel: Model<z.infer<typeof ListScreen>> | undefined;
+  let offset = 0;
   while (true) {
-    const sessions = await readSessionMetadata();
+    const page = await readSessionMetadata(
+      username,
+      offset,
+      maximumSessions + 1,
+    );
+    const sessions = page.slice(0, maximumSessions);
     const screenModelData = {
       sessions: sessions.map((item) => ({
         navigation: item.sessionId,
@@ -83,13 +101,30 @@ export default async function sessionsProgram(): Promise<void> {
     screenModel.data = screenModelData;
     const event = await callScreen({
       id: "uui-sessions",
-      title: "UUI sessions",
+      title: username === undefined
+        ? "UUI sessions"
+        : `Sessions for ${username}`,
       schema: ListScreen,
       model: screenModel,
       layout: listLayout,
-      header: { actions: [{ id: "refresh", label: "Refresh" }] },
+      header: {
+        actions: [
+          { id: "refresh", label: "[[icon=refresh]] Refresh" },
+          ...(offset > 0 ? [{ id: "newer", label: "Newer sessions" }] : []),
+          ...(page.length > maximumSessions
+            ? [{ id: "older", label: "Older sessions" }]
+            : []),
+        ],
+      },
     });
     if (event.action === BACK_EVENT) return;
+    if (event.action === "older" && page.length > maximumSessions) {
+      offset += maximumSessions;
+    }
+    if (event.action === "newer") {
+      offset = Math.max(0, offset - maximumSessions);
+    }
+    if (event.action === "refresh") offset = 0;
     if (event.action === "select" && typeof event.value === "string") {
       const selected = sessions.find((item) => item.sessionId === event.value);
       if (selected !== undefined) await sessionDetail(selected);
@@ -97,20 +132,26 @@ export default async function sessionsProgram(): Promise<void> {
   }
 }
 
-async function sessionDetail(metadata: SessionMetadata): Promise<void> {
+async function sessionDetail(
+  metadata: SessionMetadata,
+  advanced = false,
+): Promise<void> {
   let screenModel1: Model<z.infer<typeof DetailScreen>> | undefined;
   while (true) {
     const live = await invoke(metadata, "uui.session.inspect", {
       sessionId: metadata.sessionId,
     });
-    const messages = live.ok
+    const messages = advanced && live.ok
       ? await invoke(metadata, "uui.session.message-log", {
         sessionId: metadata.sessionId,
       })
-      : live;
+      : undefined;
+    const status = live.ok
+      ? live.output as { current_screen_title?: string; state?: string }
+      : undefined;
     const screenModel1Data = {
       sessionId: metadata.sessionId,
-      state: metadata.state,
+      state: live.ok ? status?.state ?? metadata.state : "Unavailable",
       authenticatedUser: metadata.authenticatedUser,
       authenticatedUserId: metadata.authenticatedUserId,
       latestIpAddress: metadata.latestIpAddress,
@@ -121,33 +162,56 @@ async function sessionDetail(metadata: SessionMetadata): Promise<void> {
 
       sandboxId: metadata.sandboxId,
       workerId: metadata.workerId,
-      currentScreen: metadata.currentScreenId ?? "",
+      currentScreen: status?.current_screen_title ?? "",
+      currentScreenId: metadata.currentScreenId ?? "",
       createdAt: metadata.createdAt.toISOString(),
       updatedAt: metadata.updatedAt.toISOString(),
       lastConnectionAt: metadata.lastConnectionAt.toISOString(),
       liveState: live.ok ? "LIVE" : `STALE: ${live.message}`,
-      messageLog: messages.ok
+      messageLog: messages?.ok
         ? JSON.stringify(messages.output, null, 2)
         : "Unavailable",
     };
     screenModel1 ??= new Model(screenModel1Data);
     screenModel1.data = screenModel1Data;
     const event = await callScreen({
-      id: "uui-session-detail",
-      title: `UUI session ${metadata.sessionId}`,
+      id: advanced ? "uui-session-advanced" : "uui-session-detail",
+      title: advanced
+        ? `Advanced · ${metadata.sessionId}`
+        : `Session for ${metadata.authenticatedUser}`,
       schema: DetailScreen,
       model: screenModel1,
-      layout: detailLayout,
+      controls: (advanced
+        ? [
+          "sessionId",
+          "authenticatedUserId",
+          "latestNetworkScope",
+          "serviceId",
+          "persistentExecutionId",
+          "nodeId",
+          "sandboxId",
+          "workerId",
+          "currentScreenId",
+          "liveState",
+          "messageLog",
+        ]
+        : detailLayout.root.controls).map((bind) => ({ bind })),
+      layout: advanced ? undefined : detailLayout,
       header: {
         actions: [
-          { id: "refresh", label: "Refresh" },
-          ...(live.ok
-            ? [{ id: "terminate", label: "Terminate", kind: "danger" as const }]
+          { id: "refresh", label: "[[icon=refresh]] Refresh" },
+          ...(!advanced ? [{ id: "advanced", label: "Advanced" }] : []),
+          ...(live.ok && !advanced
+            ? [{
+              id: "terminate",
+              label: "End session",
+              kind: "danger" as const,
+            }]
             : []),
-          ...(!live.ok
+          ...(!live.ok && !advanced
             ? [{
               id: "clean",
-              label: "Clean stale metadata",
+              label: "Remove stale session",
               kind: "danger" as const,
             }]
             : []),
@@ -155,12 +219,31 @@ async function sessionDetail(metadata: SessionMetadata): Promise<void> {
       },
     });
     if (event.action === BACK_EVENT) return;
+    if (event.action === "advanced") {
+      await presentPage(() => sessionDetail(metadata, true));
+    }
     if (event.action === "clean") {
       await removeMetadata(metadata.sessionId);
       sendMessage("Stale session metadata removed", "success");
       return;
     }
     if (event.action === "terminate") {
+      const confirmed = await presentModal(() =>
+        callScreen({
+          id: "uui-session-end",
+          title: `End ${metadata.authenticatedUser}'s session?`,
+          description: "Any interactive work in this session will stop.",
+          schema: z.object({}),
+          model: new Model({}),
+          header: {
+            actions: [{ id: "end", label: "End session", kind: "danger" }, {
+              id: "keep",
+              label: "Keep session",
+            }],
+          },
+        })
+      );
+      if (confirmed.action !== "end") continue;
       const result = await invoke(metadata, "uui.session.terminate", {
         sessionId: metadata.sessionId,
       });
@@ -170,9 +253,7 @@ async function sessionDetail(metadata: SessionMetadata): Promise<void> {
       );
       if (result.ok) return;
     }
-    const refreshed = (await readSessionMetadata()).find((item) =>
-      item.sessionId === metadata.sessionId
-    );
+    const refreshed = await readSession(metadata.sessionId);
     if (refreshed !== undefined) metadata = refreshed;
   }
 }
@@ -206,10 +287,26 @@ async function invoke(
   }
 }
 
-export async function readSessionMetadata(): Promise<SessionMetadata[]> {
-  return await Sessions.selectAll().orderBy(Sessions.updatedAt, "desc").limit(
-    maximumSessions,
+export async function readSessionMetadata(
+  username?: string,
+  offset = 0,
+  limit = maximumSessions,
+): Promise<SessionMetadata[]> {
+  return await Sessions.selectAll().$if(
+    username !== undefined,
+    (query) => query.where(Sessions.authenticatedUser, "=", username!),
+  ).orderBy(Sessions.updatedAt, "desc").orderBy(Sessions.sessionId).offset(
+    offset,
+  ).limit(
+    limit,
   ).execute() as SessionMetadata[];
+}
+
+export async function readSession(
+  sessionId: string,
+): Promise<SessionMetadata | undefined> {
+  return await Sessions.selectAll().where(Sessions.sessionId, "=", sessionId)
+    .executeTakeFirst() as SessionMetadata | undefined;
 }
 
 function formatNetworkScope(

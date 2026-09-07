@@ -18,6 +18,13 @@ export function compareListValues(
   const emptyRight = right === null || right === undefined || right === "";
   if (emptyLeft || emptyRight) return Number(emptyRight) - Number(emptyLeft);
   if (type === "number") return compareNumbers(Number(left), Number(right));
+  if (type === "decimal") {
+    const a = decimalParts(left);
+    const b = decimalParts(right);
+    return a === undefined || b === undefined
+      ? Number(a !== undefined) - Number(b !== undefined)
+      : compareDecimals(a, b);
+  }
   if (type === "boolean") return Number(left === true) - Number(right === true);
   if (type === "date" || type === "datetime") {
     return compareNumbers(dateNumber(left), dateNumber(right));
@@ -52,6 +59,12 @@ export function matchesListFilter(
   }
   const match = /^(<=|>=|!=|=|<|>)?\s*(.+)$/.exec(text)!;
   const operand = match[2]!;
+  if (type === "decimal") {
+    const left = decimalParts(value);
+    const right = decimalParts(operand);
+    if (left === undefined || right === undefined) return false;
+    return matchesComparison(compareDecimals(left, right), match[1]);
+  }
   let left: number;
   let right: number;
   if (type === "number") {
@@ -73,20 +86,49 @@ export function matchesListFilter(
     }
   }
   if (!Number.isFinite(left) || !Number.isFinite(right)) return false;
-  switch (match[1]) {
+  return matchesComparison(compareNumbers(left, right), match[1]);
+}
+
+function matchesComparison(comparison: number, operator?: string): boolean {
+  switch (operator) {
     case "<":
-      return left < right;
+      return comparison < 0;
     case "<=":
-      return left <= right;
+      return comparison <= 0;
     case ">":
-      return left > right;
+      return comparison > 0;
     case ">=":
-      return left >= right;
+      return comparison >= 0;
     case "!=":
-      return left !== right;
+      return comparison !== 0;
     default:
-      return left === right;
+      return comparison === 0;
   }
+}
+
+// Query operands may use a different scale from a stored value. Compare their
+// exact integers at the same scale without converting either amount to Number.
+function decimalParts(
+  value: unknown,
+): { integer: bigint; scale: number } | undefined {
+  if (typeof value !== "string") return;
+  const match = /^([+-]?)(\d+)(?:\.(\d+))?$/.exec(value);
+  if (match === null) return;
+  const fraction = match[3] ?? "";
+  return {
+    integer: BigInt(`${match[1]}${match[2]}${fraction}`),
+    scale: fraction.length,
+  };
+}
+
+function compareDecimals(
+  left: { integer: bigint; scale: number },
+  right: { integer: bigint; scale: number },
+): number {
+  const scale = Math.max(left.scale, right.scale);
+  const a = left.integer * 10n ** BigInt(scale - left.scale);
+  const b = right.integer * 10n ** BigInt(scale - right.scale);
+  return a === b ? 0 : a < b ? -1 : 1;
 }
 
 function dateNumber(value: unknown): number {

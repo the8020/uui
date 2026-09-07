@@ -10,15 +10,14 @@ import type {
 import type { LayoutDocument, LayoutNode } from "/p/the8020/uui/layout.ts";
 import { humanize } from "../../../humanize.ts";
 import { fieldGridPositions } from "./field_grid.ts";
-import {
-  fieldMessageIsOverflowing,
-  fieldMessagePopoverPosition,
-} from "./field_message.ts";
+import { createOverflowText, disposeOverflowText } from "./overflow.ts";
 import { createMaterialIcon, renderIconText } from "./icon_text.ts";
 import { getPath, setPath } from "./model.ts";
+import { renderMarkdown } from "../../../frontend/mod.ts";
 
 export interface RenderCallbacks {
   changed(bind: string, value: unknown, control: ControlDescriptor): void;
+  help(control: ControlDescriptor): void;
   action(
     action: string,
     eventType?: ScreenEventType,
@@ -59,27 +58,6 @@ interface FieldMessage {
   text: string;
 }
 
-let fieldMessageSequence = 0;
-
-interface FieldMessageController {
-  refresh(): void;
-  dispose(): void;
-}
-
-const fieldMessageControllers = new WeakMap<
-  HTMLElement,
-  FieldMessageController
->();
-const fieldMessageResizeObserver = typeof ResizeObserver === "undefined"
-  ? undefined
-  : new ResizeObserver((entries) => {
-    for (const entry of entries) {
-      if (entry.target instanceof HTMLElement) {
-        fieldMessageControllers.get(entry.target)?.refresh();
-      }
-    }
-  });
-
 export function renderScreen(
   root: HTMLElement,
   snapshot: ScreenSnapshot,
@@ -94,8 +72,8 @@ export function renderScreen(
   renderIconText(heading, snapshot.title ?? snapshot.id);
   article.append(heading);
   if (snapshot.description) {
-    const description = element("p", "screen-description");
-    renderIconText(description, snapshot.description);
+    const description = element("div", "screen-description");
+    renderMarkdown(description, snapshot.description);
     article.append(description);
   }
   const controls = new Map(
@@ -457,6 +435,7 @@ export function renderControl(
   } else {
     input = document.createElement("input");
     input.type = inputType(control.control);
+    if (control.semanticType === "decimal") input.inputMode = "decimal";
     if (control.control === "password") input.autocomplete = "new-password";
     if (control.control === "checkbox" || control.control === "switch") {
       input.checked = Boolean(value);
@@ -478,8 +457,16 @@ export function renderControl(
   input.dataset.bind = control.bind;
   if ("placeholder" in input) input.placeholder = control.placeholder ?? "";
   input.required = control.required ?? false;
-  input.disabled ||= control.readOnly ?? false;
+  if (control.readOnly) {
+    if (
+      input instanceof HTMLTextAreaElement ||
+      input instanceof HTMLInputElement &&
+        !["checkbox", "range", "file"].includes(input.type)
+    ) input.readOnly = true;
+    else input.disabled = true;
+  }
   input.addEventListener("input", () => {
+    if (control.readOnly) return;
     const next = inputValue(input, control.control);
     setPath(model, control.bind, next);
     synchronizeBinding(control.bind, next, input);
@@ -504,14 +491,7 @@ export function renderControl(
     icon.classList.add("field-select-icon");
     inputShell.append(icon);
   }
-  if (hasEditAffordance(control, input)) {
-    wrapper.classList.add("field-has-edit-affordance");
-    const icon = createMaterialIcon("edit", "muted", {
-      decorativeIcons: true,
-    });
-    icon.classList.add("field-edit-icon");
-    inputShell.append(icon);
-  }
+  addFieldHelp(wrapper, inputShell, control, callbacks, input.disabled);
   wrapper.append(
     label,
     inputShell,
@@ -526,6 +506,7 @@ function renderRadioControl(
   callbacks: RenderCallbacks,
 ): HTMLElement {
   const group = element("fieldset", "field field-radio");
+  group.dataset.elementId = control.id;
   group.dataset.group = control.group ?? "";
   group.dataset.fieldLength = control.length ?? "medium";
   group.dataset.fieldRowSpan = String(control.rowSpan ?? 1);
@@ -559,20 +540,62 @@ function renderRadioControl(
     label.append(input, text);
     options.append(label);
   }
-  if (!(control.readOnly ?? false)) {
-    group.classList.add("field-has-edit-affordance");
-    const icon = createMaterialIcon("edit", "muted", {
-      decorativeIcons: true,
-    });
-    icon.classList.add("field-edit-icon");
-    inputShell.append(icon);
-  }
+  addFieldHelp(
+    group,
+    inputShell,
+    control,
+    callbacks,
+    control.readOnly ?? false,
+  );
   group.append(
     legend,
     inputShell,
     renderFieldMessage(control.label ?? control.id, hintFor(control)),
   );
   return group;
+}
+
+function addFieldHelp(
+  wrapper: HTMLElement,
+  shell: HTMLElement,
+  control: ControlDescriptor,
+  callbacks: RenderCallbacks,
+  disabled: boolean,
+): void {
+  if (control.fieldHelp === false) return;
+  wrapper.classList.add("field-has-edit-affordance");
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "field-help-button";
+  button.id = `field-help-${control.id}`;
+  const label = `${control.readOnly ? "View" : "Edit"} ${
+    control.label ?? control.bind
+  }`;
+  button.setAttribute("aria-label", `${label}: field help`);
+  button.setAttribute("aria-keyshortcuts", "F4");
+  button.title = `${label} (F4)`;
+  const icon = createMaterialIcon(
+    control.readOnly ? "chevron_right" : "edit",
+    "muted",
+    {
+      decorativeIcons: true,
+    },
+  );
+  icon.classList.add("field-edit-icon");
+  button.append(icon);
+  button.addEventListener("click", () => callbacks.help(control));
+  wrapper.addEventListener("keydown", (event) => {
+    if (event.key !== "F4") return;
+    event.preventDefault();
+    event.stopPropagation();
+    callbacks.help(control);
+  });
+  if (disabled) {
+    wrapper.tabIndex = 0;
+    wrapper.setAttribute("aria-label", control.label ?? control.bind);
+    wrapper.setAttribute("aria-readonly", "true");
+  }
+  shell.append(button);
 }
 
 function hintFor(control: ControlDescriptor): FieldMessage | undefined {
@@ -593,130 +616,21 @@ function renderFieldMessage(
     return slot;
   }
 
-  const text = element("span", "field-message-text");
-  renderIconText(text, message.text);
-
-  const popover = element("div", "field-message-popover");
-  popover.id = `field-message-popover-${++fieldMessageSequence}`;
-  popover.setAttribute("popover", "auto");
-  popover.setAttribute("role", "tooltip");
-  popover.setAttribute("aria-label", `${fieldLabel} message`);
-  renderIconText(popover, message.text);
-
-  slot.append(text, popover);
-  const controller = createFieldMessageController(
-    slot,
-    text,
-    popover,
-    fieldLabel,
+  const overflow = createOverflowText(message.text, {
+    label: `Show full message for ${fieldLabel}`,
+    preview: "markdown",
+  });
+  overflow.querySelector(".overflow-text-content")!.classList.add(
+    "field-message-text",
   );
-  fieldMessageControllers.set(text, controller);
-  queueMicrotask(controller.refresh);
+  slot.append(overflow);
   return slot;
 }
 
 export function disposeFieldMessages(root: ParentNode): void {
-  for (
-    const text of root.querySelectorAll<HTMLElement>(".field-message-text")
-  ) {
-    fieldMessageControllers.get(text)?.dispose();
-    fieldMessageControllers.delete(text);
+  for (const slot of root.querySelectorAll<HTMLElement>(".field-message")) {
+    disposeOverflowText(slot);
   }
-}
-
-function createFieldMessageController(
-  slot: HTMLElement,
-  text: HTMLElement,
-  popover: HTMLElement,
-  fieldLabel: string,
-): FieldMessageController {
-  let interactive = false;
-
-  const positionPopover = (): void => {
-    if (!popover.matches(":popover-open")) return;
-    const anchorBounds = text.getBoundingClientRect();
-    const popoverBounds = popover.getBoundingClientRect();
-    const position = fieldMessagePopoverPosition(
-      anchorBounds,
-      popoverBounds.width,
-      popoverBounds.height,
-      innerWidth,
-      innerHeight,
-    );
-    popover.style.left = `${position.left}px`;
-    popover.style.top = `${position.top}px`;
-  };
-
-  const togglePopover = (): void => {
-    if (!interactive) return;
-    if (popover.matches(":popover-open")) {
-      popover.hidePopover();
-      return;
-    }
-    const anchorBounds = text.getBoundingClientRect();
-    popover.style.left = `${anchorBounds.left}px`;
-    popover.style.top = `${anchorBounds.bottom + 6}px`;
-    popover.showPopover();
-    positionPopover();
-  };
-
-  const clicked = (): void => togglePopover();
-  const keyDown = (event: KeyboardEvent): void => {
-    if (event.key !== "Enter" && event.key !== " ") return;
-    event.preventDefault();
-    togglePopover();
-  };
-  const toggled = (): void => {
-    if (!interactive) return;
-    text.setAttribute(
-      "aria-expanded",
-      String(popover.matches(":popover-open")),
-    );
-    positionPopover();
-  };
-
-  const setInteractive = (next: boolean): void => {
-    if (next === interactive) return;
-    interactive = next;
-    slot.dataset.messageOverflow = String(next);
-    text.classList.toggle("field-message-trigger", next);
-    if (next) {
-      text.setAttribute("role", "button");
-      text.setAttribute("tabindex", "0");
-      text.setAttribute("aria-label", `Show full message for ${fieldLabel}`);
-      text.setAttribute("aria-expanded", "false");
-      text.setAttribute("aria-controls", popover.id);
-      text.setAttribute("aria-describedby", popover.id);
-      text.addEventListener("click", clicked);
-      text.addEventListener("keydown", keyDown);
-      return;
-    }
-    if (popover.matches(":popover-open")) popover.hidePopover();
-    text.removeAttribute("role");
-    text.removeAttribute("tabindex");
-    text.removeAttribute("aria-label");
-    text.removeAttribute("aria-expanded");
-    text.removeAttribute("aria-controls");
-    text.removeAttribute("aria-describedby");
-    text.removeEventListener("click", clicked);
-    text.removeEventListener("keydown", keyDown);
-  };
-
-  const controller: FieldMessageController = {
-    refresh() {
-      setInteractive(
-        fieldMessageIsOverflowing(text.clientWidth, text.scrollWidth),
-      );
-    },
-    dispose() {
-      setInteractive(false);
-      popover.removeEventListener("toggle", toggled);
-      fieldMessageResizeObserver?.unobserve(text);
-    },
-  };
-  popover.addEventListener("toggle", toggled);
-  fieldMessageResizeObserver?.observe(text);
-  return controller;
 }
 
 function synchronizeBinding(
@@ -798,13 +712,6 @@ function inputType(kind: ControlDescriptor["control"]): string {
     default:
       return "text";
   }
-}
-
-function hasEditAffordance(
-  control: ControlDescriptor,
-  input: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
-): boolean {
-  return !input.disabled && control.control !== "file";
 }
 
 function element<K extends keyof HTMLElementTagNameMap>(

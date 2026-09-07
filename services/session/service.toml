@@ -6,9 +6,9 @@ entrypoint = "service.ts"
 mode = "authenticated"
 
 [access.unauthenticated]
-action = "reject"
-status = 401
-message = "Authentication is required."
+action = "redirect"
+redirect_url = "/the8020/uui/login/"
+status = 302
 
 [lifecycle]
 default_enabled = true

@@ -9,7 +9,12 @@ import {
   type ScreenState,
 } from "../../../screen_state.ts";
 import { listValueText } from "../../../list_values.ts";
-import { fieldMessagePopoverPosition } from "./field_message.ts";
+import { AnchoredPopover } from "./popover.ts";
+import {
+  createOverflowText,
+  disposeOverflowText,
+  refreshOverflowText,
+} from "./overflow.ts";
 import { type MaterialIconName, renderIconText } from "./icon_text.ts";
 import { listColumnWidths, listRowCapacity } from "./list_geometry.ts";
 import { getPath, paginationItems } from "./model.ts";
@@ -123,6 +128,7 @@ class ListController {
   #table!: HTMLTableElement;
   #pagination!: HTMLElement;
   #popover: HTMLElement | undefined;
+  #popoverController: AnchoredPopover | undefined;
   #anchor: HTMLElement | undefined;
   #measures: Array<
     {
@@ -172,11 +178,10 @@ class ListController {
         end: focused.selectionEnd,
       };
     }
-    const previousPopover = this.#popover;
+    this.#popoverController?.dispose();
+    this.#popoverController = undefined;
     this.#popover = undefined;
-    if (previousPopover?.matches(":popover-open")) {
-      previousPopover.hidePopover();
-    }
+    disposeOverflowText(this.host);
     this.host.replaceChildren();
     this.host.dataset.listId = snapshot.id;
     this.host.dataset.viewRevision = String(snapshot.revision);
@@ -332,32 +337,17 @@ class ListController {
       });
       for (const column of snapshot.columns) {
         const cell = row.insertCell();
-        const text = document.createElement("span");
-        text.className = "data-list-cell-text";
         const value = listValueText(
           column.key === "" ? item : getPath(item, column.key),
         );
-        renderIconText(text, value);
-        cell.append(text);
-        cell.title = value;
-        const reveal = (event: Event) => {
-          if (text.scrollWidth <= text.clientWidth + 1) return;
-          event.preventDefault();
-          event.stopPropagation();
-          this.closePopover();
-          this.#openColumn = undefined;
-          const popover = this.makePopover(cell, "Complete value");
-          const content = document.createElement("div");
-          content.className = "data-list-complete-value";
-          content.textContent = value;
-          popover.append(content);
-          this.showPopover();
-          popover.focus({ preventScroll: true });
-        };
-        cell.addEventListener("click", reveal);
-        cell.addEventListener("keydown", (event) => {
-          if (event.key === "Enter" || event.key === " ") reveal(event);
+        const overflow = createOverflowText(value, {
+          label: "Show complete value",
+          className: "data-list-cell-value",
         });
+        overflow.querySelector(".overflow-text-content")!.classList.add(
+          "data-list-cell-text",
+        );
+        cell.append(overflow);
       }
     });
     if (snapshot.rows.length === 0) {
@@ -421,23 +411,7 @@ class ListController {
       item.full.hidden = useShort;
       item.short.hidden = !useShort;
     }
-    for (
-      const text of this.host.querySelectorAll<HTMLElement>(
-        ".data-list-cell-text",
-      )
-    ) {
-      const cell = text.parentElement!;
-      const truncated = text.scrollWidth > text.clientWidth + 1;
-      if (truncated) {
-        cell.tabIndex = 0;
-        cell.setAttribute("role", "button");
-        cell.setAttribute("aria-label", `Show complete value: ${cell.title}`);
-      } else {
-        cell.removeAttribute("tabindex");
-        cell.removeAttribute("role");
-        cell.removeAttribute("aria-label");
-      }
-    }
+    refreshOverflowText(this.host);
     this.#scroll.scrollLeft = this.#state.scroll.x;
     this.#restoreScroll = false;
     if (
@@ -495,7 +469,7 @@ class ListController {
       preceding,
       overhead,
       rowHeight,
-      snapshot.totalSourceItems,
+      snapshot.pageSource?.more ? Infinity : snapshot.totalSourceItems,
       paginationHeight,
     );
     // Use the full source count even when the first view after reload is short
@@ -504,7 +478,11 @@ class ListController {
     this.host.style.setProperty("--list-scrollbar-height", `${scrollbar}px`);
     this.host.style.setProperty(
       "--list-pagination-reserve",
-      `${snapshot.totalSourceItems > pageSize ? paginationHeight : 0}px`,
+      `${
+        snapshot.pageSource?.more || snapshot.totalSourceItems > pageSize
+          ? paginationHeight
+          : 0
+      }px`,
     );
     this.reserveRows(pageSize);
     if (pageSize !== snapshot.state.pageSize || !snapshot.state.measured) {
@@ -521,7 +499,11 @@ class ListController {
   private reserveRows(pageSize: number): void {
     this.host.style.setProperty(
       "--list-reserved-rows",
-      String(Math.max(1, Math.min(this.#snapshot.totalSourceItems, pageSize))),
+      String(
+        this.#snapshot.pageSource?.more
+          ? pageSize
+          : Math.max(1, Math.min(this.#snapshot.totalSourceItems, pageSize)),
+      ),
     );
   }
 
@@ -533,16 +515,20 @@ class ListController {
     navigation.setAttribute("aria-label", `Pages for ${snapshot.bind}`);
     const summary = document.createElement("span");
     summary.className = "data-list-page-summary";
-    const start = snapshot.totalItems === 0
+    const start = snapshot.rows.length === 0
       ? 0
       : (snapshot.state.page - 1) * snapshot.state.pageSize + 1;
-    const end = Math.min(
+    const end = snapshot.rows.length === 0 ? 0 : Math.min(
       snapshot.totalItems,
       snapshot.state.page * snapshot.state.pageSize,
     );
-    summary.textContent = `${start}–${end} of ${snapshot.totalItems}${
-      snapshot.filtered ? ` (filtered, total ${snapshot.totalSourceItems})` : ""
-    }`;
+    summary.textContent = snapshot.pageSource !== undefined
+      ? `${start}–${end}`
+      : `${start}–${end} of ${snapshot.totalItems}${
+        snapshot.filtered
+          ? ` (filtered, total ${snapshot.totalSourceItems})`
+          : ""
+      }`;
     summary.title = summary.textContent;
     const pages = document.createElement("span");
     pages.className = "data-list-page-numbers";
@@ -593,6 +579,18 @@ class ListController {
     const title = document.createElement("strong");
     renderIconText(title, column.heading);
     popover.append(title);
+    if (column.description) {
+      popover.append(createOverflowText(column.description, {
+        label: `${column.heading}: full description`,
+        preview: "markdown",
+        maxCharacters: 100,
+        className: "data-list-column-description",
+      }));
+    }
+    if (this.#snapshot.pageSource?.searchOnly) {
+      this.showPopover();
+      return;
+    }
     const sorts = document.createElement("div");
     sorts.className = "data-list-sorts";
     for (
@@ -632,13 +630,14 @@ class ListController {
     input.setAttribute("aria-label", `Filter ${title.textContent}`);
     input.type = "text";
     input.maxLength = MAX_LIST_QUERY_LENGTH;
-    input.placeholder = column.semanticType === "number"
-      ? "Filter: e.g. >= 10"
-      : column.semanticType === "boolean"
-      ? "Filter: true or false"
-      : column.semanticType === "date" || column.semanticType === "datetime"
-      ? "Filter: YYYY-MM-DD"
-      : "Filter: contains…";
+    input.placeholder =
+      column.semanticType === "number" || column.semanticType === "decimal"
+        ? "Filter: e.g. >= 10"
+        : column.semanticType === "boolean"
+        ? "Filter: true or false"
+        : column.semanticType === "date" || column.semanticType === "datetime"
+        ? "Filter: YYYY-MM-DD"
+        : "Filter: contains…";
     input.value = this.#draft.filters[column.key] ?? "";
     input.addEventListener("input", () => {
       this.#draft.filters[column.key] = input.value;
@@ -694,54 +693,38 @@ class ListController {
   }
 
   private makePopover(anchor: HTMLElement, label: string): HTMLElement {
-    const popover = document.createElement("div");
-    popover.className = "data-list-popover";
-    popover.popover = "auto";
-    popover.setAttribute("role", "dialog");
-    popover.tabIndex = -1;
-    popover.setAttribute("aria-label", label);
-    popover.addEventListener("toggle", (event) => {
-      if (
-        (event as ToggleEvent).newState === "closed" && !this.#rendering &&
-        this.#popover === popover
-      ) this.#openColumn = undefined;
+    const controller = new AnchoredPopover(anchor, label, {
+      alignment: "start",
+      onClose: () => {
+        if (!this.#rendering && this.#popover === controller.element) {
+          this.#openColumn = undefined;
+        }
+      },
     });
-    popover.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        event.stopPropagation();
-        this.closePopover();
-        anchor.focus({ preventScroll: true });
-      }
-    });
+    const popover = controller.element;
+    popover.classList.add("data-list-popover");
     this.host.append(popover);
     this.#popover = popover;
+    this.#popoverController = controller;
     this.#anchor = anchor;
     return popover;
   }
 
   private showPopover(): void {
     if (this.#popover?.isConnected) {
-      this.#popover.showPopover();
-      this.positionPopover();
+      this.#popoverController?.show(false);
+      refreshOverflowText(this.#popover);
     }
   }
   private positionPopover(): void {
-    if (this.#popover === undefined || this.#anchor === undefined) return;
-    const position = fieldMessagePopoverPosition(
-      this.#anchor.getBoundingClientRect(),
-      this.#popover.offsetWidth,
-      this.#popover.offsetHeight,
-      innerWidth,
-      innerHeight,
-    );
-    this.#popover.style.top = `${position.top}px`;
-    this.#popover.style.left = `${position.left}px`;
+    this.#popoverController?.position();
   }
   private closePopover(): void {
     this.#openColumn = undefined;
     this.#filterFocus = undefined;
-    this.#popover?.remove();
+    if (this.#popover) disposeOverflowText(this.#popover);
+    this.#popoverController?.dispose();
+    this.#popoverController = undefined;
     this.#popover = undefined;
   }
   private queueQuery(immediate = false): void {
@@ -778,6 +761,7 @@ class ListController {
     if (this.#timer !== undefined) clearTimeout(this.#timer);
     this.#resize.disconnect();
     this.closePopover();
+    disposeOverflowText(this.host);
     this.host.remove();
   }
 }

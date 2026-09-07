@@ -242,10 +242,17 @@ function installBrowserBack(): void {
   const current = slot(history.state);
   if (current === undefined) history.replaceState(state("base"), "");
   if (current !== "guard") history.pushState(state("guard"), "");
+  let restoring = false;
   addEventListener("popstate", (event) => {
-    if (slot(event.state) !== "base") return;
-    history.pushState(state("guard"), "");
-    requestBack();
+    if (slot(event.state) === "base" && !restoring) {
+      restoring = true;
+      // Reuse the activated entry. Pushing a replacement after traversal makes
+      // Chromium skip these entries on the next native browser Back action.
+      history.forward();
+    } else if (slot(event.state) === "guard" && restoring) {
+      restoring = false;
+      requestBack();
+    }
   });
 }
 
@@ -262,6 +269,7 @@ async function connectAttempt(): Promise<void> {
     scheduleReconnect();
     return;
   }
+  if (ended) return;
   let opened = false;
   socket = new WebSocket(websocketRouteURL(), ["the8020.uui.v1"]);
   socket.binaryType = "arraybuffer";
@@ -316,10 +324,21 @@ async function establishRoute(reuse: boolean): Promise<void> {
     });
   };
   let response = await request();
-  if (response.status === 409 && reuse && routeToken !== null) {
+  if (
+    !response.redirected && response.status === 409 && reuse &&
+    routeToken !== null
+  ) {
     replaceRoute(undefined);
     reuse = false;
     response = await request();
+  }
+  // WebSocket handshakes hide HTTP redirects. The ordinary establishment
+  // request exposes the server-selected destination for both startup and recovery.
+  if (response.redirected) {
+    ended = true;
+    replaceRoute(undefined);
+    location.assign(response.url);
+    return;
   }
   if (!response.ok) {
     throw new Error(`route establishment failed: ${response.status}`);
@@ -798,8 +817,10 @@ function updateLayer(
     model: nextModel,
   });
   layer.screen = surface.screen;
-  layer.model = nextModel;
+  // Retained controls close over the model passed to renderScreen. An identical
+  // snapshot must retain that object too, or later edits write a discarded copy.
   if (fingerprint === layer.screenFingerprint) return false;
+  layer.model = nextModel;
   rememberLayerFocus(layer);
   layer.screenFingerprint = fingerprint;
   renderLayer(layer);
@@ -815,6 +836,17 @@ function renderLayer(layer: PresentationLayer): void {
       if (control.reactive) {
         dispatchFromLayer(layer, "change", "change", undefined, bind);
       }
+    },
+    help(control) {
+      if (!layerIsActive(layer)) return;
+      sendInteraction(layer, {
+        type: "screen.event",
+        action: "field-help",
+        eventType: "field-help",
+        controlId: control.id,
+        bind: control.bind,
+        changes: changesForBindings(layer.model, layer.dirty.bindings()),
+      });
     },
     action(action, eventType = "action", value) {
       dispatchFromLayer(layer, action, eventType, value);
@@ -832,7 +864,9 @@ function renderLayer(layer: PresentationLayer): void {
       select: (selection) => selectListRow(layer, selection),
     },
   );
-  layer.customElements.begin();
+  layer.customElements.begin((action, value) =>
+    callbacks.action(action, "action", value)
+  );
   renderScreen(
     layer.root,
     layer.screen,
@@ -1088,6 +1122,7 @@ function updateInteractionState(): void {
   for (const layer of layers.values()) {
     const isVisible = visible.has(layer.surfaceId);
     const isActive = activeSurfaceID === layer.surfaceId;
+    layer.customElements.setActive(isVisible && isActive);
     layer.shell.inert = !isVisible || waiting || !isActive;
     const modalWaiting = waiting && feedbackLayer === layer &&
       layer.kind === "modal";

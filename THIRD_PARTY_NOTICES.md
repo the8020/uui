@@ -1,19 +1,8 @@
 # Third-party notices
 
-The browser bundle includes `@xterm/xterm` 5.5.0, `@xterm/addon-canvas` 0.7.0,
-and `@xterm/addon-fit` 0.10.0. It also includes `markdown-it` 14.1.0 and its
-browser-reachable `linkify-it` 5.0.2, `mdurl` 2.1.0, `punycode.js` 2.3.1, and
-`uc.micro` 2.1.0 dependencies. These libraries are provided under the MIT
-License.
-
-Copyright (c) 2017-2019, The xterm.js authors
-(https://github.com/xtermjs/xterm.js)
-
-Copyright (c) 2014-2016, SourceLair Private Company (https://www.sourcelair.com)
-
-Copyright (c) 2012-2013, Christopher Jeffrey (https://github.com/chjj/)
-
-Copyright (c) 2019, The xterm.js authors (https://github.com/xtermjs/xterm.js)
+The browser bundle includes `markdown-it` 14.1.0 and its browser-reachable
+`linkify-it` 5.0.2, `mdurl` 2.1.0, `punycode.js` 2.3.1, and `uc.micro` 2.1.0
+dependencies under the MIT license.
 
 Copyright (c) 2014 Vitaly Puzrin, Alex Kocharin.
 
@@ -64,28 +53,20 @@ ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-## Google Material Icons
+## Google Material Symbols
 
-The UUI shell includes the 24px filled `arrow_back`, `arrow_drop_down`, `close`,
-`dark_mode`, `edit`, `error`, `light_mode`, `logout`, `menu`, `more_vert`,
-`refresh`, `save`, `filter_alt`, `filter_alt_off`, `filter_list_off`, `sort`,
-`arrow_upward`, `arrow_downward`, and outlined `tab_close` SVGs from Google
-Material Icons and Material Symbols. The `edit` icon is vendored from
-`google/material-design-icons` at Git object
-`a4b3c9f6b79b1a46ddff7e9a29b4e2a7e9c077bb`; the other optimized icons are
-vendored from Git objects `e083cc60a0828fdd3b404cea0cb8a5b900e9c23e` and
-`84ccef280841abfac506afc4ad4a2782f6d0a1d0`. They are provided under the Apache
-License, Version 2.0. The list icons are the filled 24px assets from
-`google/material-design-icons/src/action/filter_alt/materialicons/24px.svg` and
-`src/navigation/{arrow_upward,arrow_downward}/materialicons/24px.svg`. Their
-vendored filenames carry the content-hash prefixes `f934b1a5`, `473799e3`, and
-`61643262`, respectively. The `sort`, `filter_list_off`, and `filter_alt_off`
-icons come from `src/content/sort/materialicons/24px.svg`,
-`src/content/filter_list_off/materialicons/24px.svg`, and
-`src/action/filter_alt_off/materialicons/24px.svg` in the same Google
-repository, with SHA-256 filename prefixes `49248279`, `facdda9f`, and
-`f4842a13`. Ascending sort vertically reflects the unmodified `sort` asset in
-CSS.
+Copyright 2026 Google LLC. All Rights Reserved.
+
+The shell includes the complete Material Symbols Outlined font from Google Fonts
+v369, using optical size 24, weight 400, fill 1, and grade 0. It is provided
+under the Apache License, Version 2.0. The WOFF2 is unmodified;
+`vendor_material_symbols.py` derives the name/codepoint catalogue from the same
+font's TrueType representation. The exact upstream URL, SHA-256, and complete
+catalogue are recorded in
+`services/shell/frontend/assets/material_symbols.json`.
+
+[Upstream collection](https://github.com/google/material-design-icons) and
+[Google's self-hosting guide](https://developers.google.com/fonts/docs/material_symbols#self-hosting_the_font).
 
 Apache License Version 2.0, January 2004 http://www.apache.org/licenses/
 

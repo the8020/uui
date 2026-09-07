@@ -131,6 +131,7 @@ export class ScreenLists {
       }
       const search = state.query.search.trim().toLocaleLowerCase("en");
       let indices = source.map((_, index) => index).filter((index) => {
+        if (definition.pageSource !== undefined) return true;
         const row = source[index];
         if (
           search &&
@@ -147,9 +148,17 @@ export class ScreenLists {
           )
         );
       });
-      const totalItems = indices.length;
+      const offset = (state.page - 1) * state.pageSize;
+      const totalItems = definition.pageSource === undefined
+        ? indices.length
+        : offset + source.length;
+      if (
+        definition.pageSource !== undefined && source.length > state.pageSize
+      ) {
+        throw new TypeError("list page source exceeds the requested capacity");
+      }
       const sort = state.query.sort;
-      if (sort !== null) {
+      if (sort !== null && definition.pageSource === undefined) {
         const column = definition.columns.find((column) =>
           column.key === sort.column
         )!;
@@ -162,12 +171,16 @@ export class ScreenLists {
             ) || a - b
         );
       }
-      const totalPages = Math.max(1, Math.ceil(totalItems / state.pageSize));
+      const totalPages = definition.pageSource === undefined
+        ? Math.max(1, Math.ceil(totalItems / state.pageSize))
+        : state.page + (definition.pageSource.more ? 1 : 0);
       state.page = Math.min(Math.max(1, state.page), totalPages);
-      indices = indices.slice(
-        (state.page - 1) * state.pageSize,
-        state.page * state.pageSize,
-      );
+      if (definition.pageSource === undefined) {
+        indices = indices.slice(
+          (state.page - 1) * state.pageSize,
+          state.page * state.pageSize,
+        );
+      }
       const snapshot: ScreenListSnapshot = {
         id: definition.id,
         bind: definition.bind,
@@ -176,7 +189,12 @@ export class ScreenLists {
         rows: structuredClone(indices.map((index) => source[index])),
         state: structuredClone(state),
         totalItems,
-        totalSourceItems: source.length,
+        totalSourceItems: definition.pageSource === undefined
+          ? source.length
+          : totalItems + (definition.pageSource.more ? 1 : 0),
+        ...(definition.pageSource === undefined
+          ? {}
+          : { pageSource: definition.pageSource }),
         totalPages,
         filtered: search.length > 0 ||
           Object.values(state.query.filters).some((value) =>
@@ -221,6 +239,13 @@ export class ScreenLists {
         ) throw new TypeError("invalid list capacity");
       } else {
         normalizeQuery(request.query, view.snapshot.columns);
+        if (
+          view.snapshot.pageSource?.searchOnly &&
+          (request.query.sort !== null ||
+            Object.keys(request.query.filters).length > 0)
+        ) {
+          throw new TypeError("this list source supports quick search only");
+        }
       }
     }
   }
@@ -231,7 +256,7 @@ export class ScreenLists {
     id: string;
     bind: string;
     query: ListQuery;
-    change: "search" | "filter" | "sort";
+    change: "search" | "filter" | "sort" | "page" | "capacity";
   } | undefined {
     const definition = this.#definitions.get(request.id)!;
     const state = this.state(request.id);
@@ -253,7 +278,9 @@ export class ScreenLists {
         : "filter";
       state.query = query;
       state.page = 1;
-      if (definition.triggerFilterEvents) {
+      if (
+        definition.triggerFilterEvents || definition.pageSource !== undefined
+      ) {
         return {
           id: request.id,
           bind: definition.bind,
@@ -261,6 +288,14 @@ export class ScreenLists {
           change,
         };
       }
+    }
+    if (definition.pageSource !== undefined && request.operation !== "query") {
+      return {
+        id: request.id,
+        bind: definition.bind,
+        query: structuredClone(state.query),
+        change: request.operation,
+      };
     }
     return undefined;
   }
@@ -406,7 +441,9 @@ function buildColumns(
           (metadata?.semanticType === "date" ||
               metadata?.semanticType === "datetime"
             ? metadata.semanticType
-            : type instanceof z.ZodNumber || type instanceof z.ZodBigInt
+            : metadata?.storage?.type === "decimal"
+            ? "decimal"
+            : type.type === "number" || type.type === "bigint"
             ? "number"
             : type instanceof z.ZodBoolean
             ? "boolean"
@@ -422,8 +459,10 @@ function buildColumns(
         heading: options.columnOptions?.[key]?.heading ??
           options.headings?.[key] ?? metadata?.label ??
           (key === "" ? options.label ?? "Value" : humanize(key)),
+        description: metadata?.description,
         length: options.columnOptions?.[key]?.length ?? metadata?.length ??
-          (semanticType === "number" || semanticType === "boolean"
+          (semanticType === "number" || semanticType === "decimal" ||
+              semanticType === "boolean"
             ? "compact"
             : semanticType === "date" || semanticType === "datetime"
             ? "short"

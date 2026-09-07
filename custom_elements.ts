@@ -3,9 +3,9 @@ import type {
   CustomElementDescriptor,
 } from "./protocol.ts";
 import { resolveElementIDs } from "./identifiers.ts";
+import { validBrowserAssetURL } from "./browser_assets.ts";
 
 const identifier = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
-const initializer = /^[a-z][a-z0-9.-]{0,63}$/;
 
 export function validateCustomElements(
   value: readonly CustomElementDeclaration[] = [],
@@ -17,24 +17,26 @@ export function validateCustomElements(
   const ids = new Set<string>();
   return resolveElementIDs(
     value,
-    (item) => ({ initializer: item.initializer }),
+    (item) => ({ module: item.module, styles: item.styles }),
     "custom",
     reserved,
   ).map((item) => {
     const id = isRecord(item) ? item.id : undefined;
-    const initializerName = isRecord(item) ? item.initializer : undefined;
+    const module = isRecord(item) ? item.module : undefined;
+    const styles = isRecord(item) ? item.styles : undefined;
     const config = isRecord(item) ? item.config : undefined;
     if (
       !isRecord(item) || typeof id !== "string" || !identifier.test(id) ||
-      typeof initializerName !== "string" ||
-      !initializer.test(initializerName) ||
+      !validBrowserAssetURL(module, "module") ||
+      styles !== undefined && (!Array.isArray(styles) || styles.length > 8 ||
+          !styles.every((value) => validBrowserAssetURL(value, "style"))) ||
       item.preserve !== undefined && typeof item.preserve !== "boolean" ||
       !isRecord(config)
     ) {
       throw new TypeError("invalid custom element descriptor");
     }
     const unknown = Object.keys(item).find((key) =>
-      !["id", "initializer", "preserve", "config"].includes(key)
+      !["id", "module", "styles", "preserve", "config"].includes(key)
     );
     if (unknown !== undefined) {
       throw new TypeError(
@@ -54,7 +56,10 @@ export function validateCustomElements(
     }
     return {
       id,
-      initializer: initializerName,
+      module,
+      ...(styles === undefined
+        ? {}
+        : { styles: [...new Set(styles as string[])] }),
       preserve: item.preserve,
       config: structuredClone(config),
     };

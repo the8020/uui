@@ -132,8 +132,8 @@ below.
 - Own the public login service, authenticated browser shell, authenticated
   persistent UUI service, Home and Program terminated programs, browser
   protocol/configuration, session metadata and administration, source/build,
-  package-local layouts, trusted custom-element initializer registry, xterm
-  terminal rendering, shared Markdown rendering, and the shell message center.
+  package-local layouts, generic program-supplied custom elements and public
+  asset delivery, shared Markdown rendering, and the shell message center.
 - Do not own authentication storage/validation, cookie construction, sandbox
   placement, physical WebSockets, or kernel routing.
 
@@ -200,7 +200,10 @@ below.
   the selected persistent-execution identity, and calls package-owned inspect,
   bounded message-log, or terminate functions. Missing targets are stale and may
   be cleaned by the program; no kernel Worker scan or UUI administration command
-  exists.
+  exists. The registered inspect result includes the active screen title.
+  Session lists page 200 rows at a time; selected refreshes query the exact row.
+  The main detail shows user/activity, Advanced owns execution references and
+  message logs, and ending a live session requires confirmation.
 - Login, shell, and session declare zero minimum sandboxes and Workers. Login
   and shell share sandbox group `uui`, permit 128 Workers at 64 per sandbox, use
   concurrency 16, target 70% utilization, and retain idle Workers for two
@@ -243,7 +246,12 @@ below.
   exact Worker is gone; the kernel returns `409`, and the shell replaces that
   stale route automatically without a page reload. Transient establishment
   failures stay inside the bounded reconnect loop rather than escaping as
-  unhandled browser errors.
+  unhandled browser errors. HTTP redirects from establishment or recovery end
+  reconnecting, clear the stored route, and navigate to the response URL before
+  interpreting status or route headers. Browser WebSocket handshakes hide
+  redirects, so failed upgrades use this same HTTP path. The session manifest
+  declares the login redirect through ordinary service access policy; the
+  browser never guesses an authentication destination from a close code or 401.
 - Programs obtain the current authenticated identity on demand through
   `currentUser()` from `/p/the8020/users/mod.ts` instead of receiving identity
   or infrastructure dependencies through their function parameters.
@@ -303,6 +311,7 @@ below.
   pushes cache and hide the prior visible composition, and normal pops restore
   its exact DOM. Reload rebuilds every layer in the retained visible
   presentation; brief reconnects preserve existing DOM and dirty edits.
+  Identical snapshots retain both the control DOM and its bound model object.
 - Browser runtime values come directly from the browser-safe `protocol.ts`
   contract, not the program-facing `mod.ts` barrel; the latter exports the
   server session engine and must never pull Node built-ins into the shell
@@ -324,6 +333,36 @@ below.
   Programs or navigation frames retain wrappers across refreshes and returns.
   `resetScreen()` explicitly increments a reset version and clears presentation
   state. Never attach one Model to multiple pending calls.
+- Field catalogs and list columns consume shared Zod semantic fields from
+  `the8020/db/fields.ts`. UUI `field(schema, options)` returns an independent
+  schema with local presentation metadata, retaining shared names, Markdown
+  descriptions, and server callbacks through nullable/optional wrappers. Reusing
+  or customizing a field never mutates another screen's definition. Field
+  callbacks are excluded from wire descriptors. Structures remain normal Zod
+  objects and arrays. Control and list inference use the underlying primitive
+  kind, including formatted numbers such as `z.int()` and `z.float64()`.
+  Declared decimal storage supplies text controls with decimal input mode and
+  exact decimal list semantics. Forms and help retain strings; sorting and
+  comparison filters never convert monetary values to floating point.
+- Scalar fields expose a pencil or read-only Chevron Right button and
+  focused-field F4 help. The modal owns an isolated draft and keeps the caller
+  Model and surface reserved. Only Done validates against the complete caller
+  schema and commits; Close, Back, and Escape discard even invalid drafts. Show
+  Done only in edit mode, followed by Navigate when semantic `open(value)`
+  exists. Navigate opens a related page without committing and restores help on
+  return. Markdown descriptions appear in full. `fieldHelp: false` suppresses
+  help. Editable help shows a Value help card below the value when the field has
+  a provider or ordinary control options. Its standard list opens with search
+  visible; selecting a row fills the draft.
+  `valueHelp({ query, offset, limit })` fetches only the requested page on the
+  server, bounded by measured list capacity (1–500), and returns at most `limit`
+  choices plus `more`. Raw values stay on the server until selected.
+- Help uses ordinary screen, modal, list, and page machinery. Inline edits are
+  flushed before opening. A reactive field returns one ordinary change event
+  only after Done commits a changed value. The caller and its ScreenChannel stay
+  pending during help: background redraws update the covered snapshot;
+  exit/failure settles after help returns. Read-only controls reject client
+  edits at the session boundary and never load choices.
 - A Model creates its `mdl-*` screen identity through the shared operational ID
   helper and retains it for the wrapper's lifetime. IDs are scoped to the UUI
   session; registering a screen rejects a collision with any pending Model
@@ -336,22 +375,31 @@ below.
   themselves move or disappear; explicit IDs resolve that ambiguity. Binding
   references resolve to control IDs centrally, and each descriptor has one
   placement. Column IDs are list-local; framework DOM IDs also include surface
-  and Model identity. Initializer internals keep their own ownership.
-- Protocol version 4 puts Model state and independent list snapshots in each
-  screen. Wire business list bindings contain empty arrays; displayed values
-  live exclusively in `screen.lists`. `ScreenLists` owns search/filter, stable
-  typed sort, pagination, and displayed-to-source mappings for explicit and
-  inferred lists. Views never reorder or truncate the source array. Mapping
-  validation checks the exact source identity, row order/content, and view
-  revision before applying a selection or edit. Stale views reject and publish a
-  fresh snapshot; invalid dirty edits change neither business nor screen state.
+  and Model identity. Component internals remain owned by the providing package.
+- Protocol version 7 adds program-supplied custom-element modules and retains
+  exact decimal list semantics and the validated `field-help` screen event, and
+  puts Model state and independent list snapshots in each screen. Wire business
+  list bindings contain empty arrays; displayed values live exclusively in
+  `screen.lists`. `ScreenLists` owns search/filter, stable typed sort,
+  pagination, and displayed-to-source mappings for explicit and inferred lists.
+  Views never reorder or truncate the source array. Mapping validation checks
+  the exact source identity, row order/content, and view revision before
+  applying a selection or edit. Stale views reject and publish a fresh snapshot;
+  invalid dirty edits change neither business nor screen state.
 - `screen.list` carries bounded page, query, or browser-measured capacity
   requests on the existing WebSocket. Queries reset only their list to page 1.
   Default queries remain inside the pending call; `triggerFilterEvents: true`
   resolves a typed `list-query` event after valid edits/metadata and the query
   are merged. Repeated queries, pages, capacity, and redraws emit no query
-  event. Processing and counts cover only the supplied array. Database search,
-  providers, and a `table()` search helper remain deferred.
+  event. Ordinary arrays retain local processing and exact counts.
+  `pageSource: { more, searchOnly? }` declares one server-supplied page.
+  Preserve its order and matching without re-slicing; query changes return
+  `list-query` and page/capacity changes return `list-page`. `reloadLists`
+  identifies every changed page source, including batched capacities. Programs
+  reload from the retained page/query state before presenting again. Reject
+  oversized pages and unavailable page numbers. Search-only sources hide and
+  reject column queries. Field help uses this contract for bounded lookup pages;
+  a `table()` search helper remains deferred.
 - Capture scroll and toolbar metadata with existing interactions, including
   Back, paging, queries, and capacity. Never send standalone or periodic scroll
   updates. Browser-local positions survive redraw and surface/instance returns;
@@ -363,19 +411,22 @@ below.
   Resizing and visibility/toolbar changes may remeasure; scrolling may not.
   Capacity changes keep the former first row within the new page when possible.
   Tab selection is element state, so measuring a revealed list retains its tab.
-  Rows have a fixed height, nowrap ellipsis, and keyboard-accessible full
-  values. Reserve body space from the unfiltered source total up to one page's
-  capacity, including after reload; short pages and filtered results retain the
-  card height and pagination position.
+  Rows have a fixed height, nowrap ellipsis, and keyboard-accessible full values
+  through a distinct, subtle ellipsis button. Clicking the value retains
+  standard row selection even when every column overflows. Reserve body space
+  from the unfiltered source total up to one page's capacity, including after
+  reload; short pages and filtered results retain the card height and pagination
+  position.
 - List headers use full/short headings and semantic widths from schema and
   declarative `columnOptions`. Only genuinely wider columns overflow
   horizontally; fractional sizing and invisible heading measurements must not
-  create scrollbars. Header popovers expose full headings, typed filters, sort,
-  and clear actions; icons use the vendored `[[icon=...]]` registry. The
-  rightmost List tools disclosure opens the search toolbar. Drafts, focus/caret,
-  expansion, and horizontal scroll survive updates. The pagination footer is
-  hidden for single-page and empty results; sources that fit on one page reserve
-  no footer space. Clearing controls appear only for active queries. The
+  create scrollbars. Header popovers expose full headings, shared field
+  descriptions, typed filters, sort, and clear actions; icons use the vendored
+  `[[icon=...]]` registry. The rightmost List tools disclosure opens the search
+  toolbar. Drafts, focus/caret, expansion, and horizontal scroll survive
+  updates. The pagination footer is hidden for single-page and empty results;
+  sources that fit on one page reserve no footer space. Clearing controls appear
+  only for active queries. The
   [browser contract](services/shell/frontend/AGENTS.md) owns list control layout
   and confirmation behavior. No export action is implemented.
 - Root-page overscroll containment must not be inherited by nested horizontal
@@ -390,30 +441,32 @@ below.
   immediately after the brand, retains the accessible `Back` label, and emits
   the reserved `BACK_EVENT` as both action and event type to the topmost visible
   surface. The browser Back action traverses one marked same-URL guard entry,
-  immediately restores that guard without growing history, and invokes this same
-  Back path; reload adopts the existing guard instead of adding another. Program
-  header controls and actions render from the screen snapshot between Back and
-  the always-visible session disclosure. That disclosure combines one `8px`
-  status circle, the authenticated username, and a Material `menu` icon in one
-  button. Connected is green; connecting and reconnecting are red, while a
-  visually hidden live label preserves the complete textual state. The username
-  remains one line and ellipsizes at constrained widths. Its locally anchored,
-  light-dismiss menu currently owns labeled light/dark theme switching and clean
-  logout. Logout ends the persistent UUI session through the typed client
-  protocol before redirecting through the configured logout route, with direct
-  navigation as a disconnected-client fallback. The left brand/Back cluster and
-  right session cluster use explicit grid positions, so hiding or emptying the
-  dynamic middle never moves the right cluster away from the navbar's right
-  edge. Page header controls remain in this global area; modal header controls
-  render inside their own semantic native dialog. Program presentation dialogs
-  and shell-owned dialogs such as Messages share the same `uui-dialog` frame,
-  toolbar, body, close affordance, backdrop, responsive bounds, and scrolling
-  design; their distinct ownership changes behavior, not appearance. Dialog
-  focus is contained and restored, covered layers are inert, close and Escape
-  route through `BACK_EVENT`, and responsive modal bodies scroll within bounded
-  viewport dimensions. The navbar remains one row at every width. As the dynamic
-  area shrinks, a measured stable prefix remains visible while items move from
-  right to left into an accessible More disclosure without recreating their DOM
+  restores it with `history.forward()` before invoking the same Back path. Never
+  recreate it with pushState after traversal: Chromium can skip replacement
+  entries during subsequent native Back actions. Reload adopts the existing
+  guard instead of adding another. Program header controls and actions render
+  from the screen snapshot between Back and the always-visible session
+  disclosure. That disclosure combines one `8px` status circle, the
+  authenticated username, and a Material `menu` icon in one button. Connected is
+  green; connecting and reconnecting are red, while a visually hidden live label
+  preserves the complete textual state. The username remains one line and
+  ellipsizes at constrained widths. Its locally anchored, light-dismiss menu
+  currently owns labeled light/dark theme switching and clean logout. Logout
+  ends the persistent UUI session through the typed client protocol before
+  redirecting through the configured logout route, with direct navigation as a
+  disconnected-client fallback. The left brand/Back cluster and right session
+  cluster use explicit grid positions, so hiding or emptying the dynamic middle
+  never moves the right cluster away from the navbar's right edge. Page header
+  controls remain in this global area; modal header controls render inside their
+  own semantic native dialog. Program presentation dialogs and shell-owned
+  dialogs such as Messages share the same `uui-dialog` frame, toolbar, body,
+  close affordance, backdrop, responsive bounds, and scrolling design; their
+  distinct ownership changes behavior, not appearance. Dialog focus is contained
+  and restored, covered layers are inert, close and Escape route through
+  `BACK_EVENT`, and responsive modal bodies scroll within bounded viewport
+  dimensions. The navbar remains one row at every width. As the dynamic area
+  shrinks, a measured stable prefix remains visible while items move from right
+  to left into an accessible More disclosure without recreating their DOM
   controls. More sits immediately after the last visible dynamic control, or at
   the dynamic area's start when none remain; opening it stacks every hidden
   control vertically in original order and clamps the popover to a `10px`
@@ -459,13 +512,14 @@ below.
   in UUI button and text content into accessible Material icon spans. An
   optional `color` accepts `text`, `muted`, `primary`, `success`, `warning`,
   `danger`, its `error` alias, `info`, `brand`, or a 3/4/6/8-digit hex value.
-  Icon names resolve only through the fixed registry of individually vendored
-  hashed SVGs. Inline text icons are `1.2em` and vertically centered; button
-  icons are `1.5em`, flex-based buttons keep `0.45em` between every rendered
-  child, and explicitly sized shell icons remain `20px`. Unregistered names and
-  invalid colors remain literal text. Shell-owned Back, overflow, session menu,
-  theme, edit, and select affordances use the same registry and ship no icon
-  font or unused collection.
+  The complete locally hosted Material Symbols font and its generated
+  name/codepoint catalogue resolve every icon in the collection, including
+  digit-leading names. Inline icons are `1.2em`, button icons are `1.5em`, and
+  explicitly sized shell icons remain `20px`; icon glyphs fit their full boxes
+  without cropping. Unrecognized names and invalid colors remain literal text.
+  Shell-owned affordances use the same renderer; programs need no per-icon
+  registration or external network request. `vendor_material_symbols.py` updates
+  the pinned font, generated catalogue, and stylesheet reference together.
 - The authenticated shell uses the static demo's light/dark visual tokens and
   component language with an explicit two-level hierarchy. Screen and section
   canvases remain unboxed and section titles render as H1 headings; semantic
@@ -512,26 +566,37 @@ below.
   range input's travel area; values use the ordinary numeric binding path. Every
   field control, including checkboxes, switches, radios, and ranges, uses the
   shared flat underline treatment. Read-only and editable controls retain
-  identical color, opacity, and value styling; the pencil is the steady-state
-  visual indicator of editability. Editable controls alone receive the muted
-  vendored Material `edit` SVG aligned visually and geometrically to the exact
-  field end; textarea and radio pencils keep the same underline-relative bottom
-  offset, while select chevrons and native input affordances remain immediately
-  before the pencil. Password controls retain this shared layout while masking
-  their current browser value; programs must start sensitive edit models empty
-  and never redisplay stored values. Interactive hover feedback changes
-  paint-only properties such as color, border, background, and shadow; it never
-  transforms or repositions a pointer hitbox. Neutral elevation shadows are
-  dark-tinted in light mode and black in dark mode; dark-mode surfaces never use
-  text-derived light shadows. Theme state is browser-only: `sessionStorage`
+  identical color, opacity, and value styling. Editable controls receive the
+  muted Material `edit` icon and read-only controls receive `chevron_right` in
+  focusable field-help buttons at the exact field end. Read-only text values
+  remain focusable and selectable; disabled native choices expose F4 on their
+  field wrapper. Textarea and radio buttons keep the same underline-relative
+  bottom offset, while select chevrons and native input affordances remain
+  immediately before the pencil. Password controls retain this shared layout
+  while masking their current browser value; programs must start sensitive edit
+  models empty and never redisplay stored values. Interactive hover feedback
+  changes paint-only properties such as color, border, background, and shadow;
+  it never transforms or repositions a pointer hitbox. Neutral elevation shadows
+  are dark-tinted in light mode and black in dark mode; dark-mode surfaces never
+  use text-derived light shadows. Theme state is browser-only: `sessionStorage`
   keeps the current UUI session override through redraw/reconnect/reload, while
   `localStorage` supplies the default for future tabs. Shell markup defaults to
   dark, and a CSP-nonced initializer in the head resolves the browser-only
   stored or operating-system preference before CSS and first paint; theme state
   never enters UUI messages, service requests, kernel APIs, or backend storage.
-- Untruncated field messages remain ordinary selectable text. Only genuine
-  overflow adds the underline, help cursor, button semantics, and locally
-  anchored full-message popover; responsive width changes update that state.
+- List values, field hints, and column descriptions share the browser's
+  `createOverflowText` component. Text stays selectable and keeps its ordinary
+  click behavior; only the separate font-sized ellipsis opens full content.
+  Buttons use transparent, borderless pencil styling with subtle hover fill;
+  keyboard focus remains visible. Column descriptions come from shared Zod
+  metadata, preview at most 100 characters and three lines between the heading
+  and query controls, and disclose the full description through that button.
+- `AnchoredPopover` owns native light dismissal, nested popovers, Escape focus
+  return, viewport clamping, and resize/scroll positioning. Overflow popovers
+  expand below and left from their right-edge button, flipping above only when
+  needed, and scroll within 24rem and the viewport. Full content uses shared
+  safe Markdown; hint and description previews use selectable plain text.
+  Responsive measurement removes buttons and reserved space when content fits.
 - Browser source executes bounded framework clipboard-write commands using the
   standard Clipboard API with a compatibility fallback.
 - Shared browser Markdown lives under `frontend/`, outside any service-owned
@@ -542,20 +607,29 @@ below.
   headings, tables, lists, quotes, code, and other rendered content; the shell's
   constrained static handler serves only that CSS from the shared frontend root,
   never the TypeScript source.
-- Browser custom elements are selected only by framework-validated initializer
-  names and plain JSON configuration. `sandbox-console.v1` owns one persistent
-  xterm instance, same-origin `the8020.console.v1` connection, binary PTY
-  input/output, Canvas2D rendering with DOM fallback, visible active/inactive
-  mouse selection, exact content-box fitting, resize controls, bounded
-  reconnect, and teardown; it never accepts executable source or
-  backend-provided CSS.
-- `THIRD_PARTY_NOTICES.md` records the MIT/BSD notices for the bundled xterm and
-  Markdown renderer dependencies, copied essential xterm styles, plus the
-  Apache-2.0 license and source paths for the individually vendored Google
-  Material SVGs. Session menu rows place a fixed-width leading icon or
-  message-count badge before a left-aligned label. The theme menu action shows
-  the icon and visible label for the theme it will switch to and retains its
-  accessible label.
+- Custom elements are generic wrappers for program-supplied browser modules and
+  styles. UUI owns validation, lazy loading, stable wrappers, scoped screen
+  actions, activity, and disposal. Programs own component code, dependencies,
+  CSS, assets, and behavior. Never put a terminal or another program-specific
+  implementation in the shell bundle or a framework initializer registry.
+- Descriptors contain same-origin `module` URLs, optional `styles`, bounded JSON
+  `config`, and optional `preserve`. Modules default-export the browser-only
+  `custom_element.ts` mount contract. Styles finish loading before mount;
+  asynchronous removal aborts the signal and disposes late instances. Preserved
+  elements receive updates and presentation activity without DOM replacement.
+- `packageAssetURL(packageId, path)` addresses only that package's explicit
+  `public/` directory through the authenticated shell. Real-path confinement
+  rejects traversal and symlinks outside the publication directory. Programs
+  build and version their own assets; UUI has no per-component registry.
+- Shell builds are minified. Shell asset URLs carry their content hash; hashed
+  package filenames must match the bytes. Assets use ETags, conditional 304
+  responses, and immutable caching only for matching versions. The Deno
+  supervisor owns automatic response compression; asset handlers return source
+  bytes and never duplicate encoding negotiation or retain compressed variants.
+  The per-Worker byte cache is bounded and invalidated by native file metadata.
+- `THIRD_PARTY_NOTICES.md` records the MIT/BSD Markdown dependency notices and
+  the Apache-2.0 license and pinned source for the local Material Symbols font.
+  Program component dependency notices remain in their owning packages.
 - Reload resume synchronizes the Worker-acknowledged client sequence before a
   new event is emitted, preventing post-reload actions from being mistaken for
   duplicates.
@@ -566,8 +640,21 @@ below.
 
 # Work Guidance
 
-- Keep all assets local, semantic, keyboard-accessible, responsive, and free of
-  backend-provided CSS or executable layout content.
+- Keep the framework generic and application workflows in their providing
+  packages. Reuse ordinary Zod schemas, UUI models, and presentation mechanisms;
+  new components carry their own code, dependencies, and assets through generic
+  hosting contracts.
+- Keep UUI protocol and session behavior in this package, authentication policy
+  in users, and native execution foundations in the kernel. A UUI feature alone
+  does not justify a kernel change.
+- Keep browser connection, UUI session, Worker, and sandbox lifetimes distinct.
+  Bound retained presentation and transport state, and repair shared behavior at
+  its owner with the existing browser or runtime verification for the affected
+  flow.
+
+- Keep standard layouts declarative and rendering local, semantic,
+  keyboard-accessible, and responsive. Optional custom-element code and CSS
+  belong to the providing package and load through the generic host contract.
 - User-visible descriptions, hints, placeholders, notices, and empty-state copy
   must help the user act or understand a user-visible outcome. Never add copy
   solely to explain internal architecture, storage, persistence, sessions,
@@ -579,6 +666,14 @@ below.
 
 # Verification
 
+- `deno task test:asset-delivery` checks the actual shell Worker, native Deno
+  supervisor listener, and Go supervisor client together for encoding, cache,
+  conditional-request, and HEAD behavior. See the shell service DOX for scope.
+- `deno task test:connection-browser` uses the existing Chromium harness to
+  cover the session manifest's login redirect after a rejected reconnect,
+  redirects during initial establishment and stale-route replacement, terminal
+  navigation without further connection attempts, and transient recovery with
+  retained dirty values. Redirected error pages remain navigation outcomes.
 - `deno task test:presentation-browser` covers page/modal restoration and exact
   field heights and underlines across desktop, tablet, and mobile widths,
   including default one-row textareas and explicit multiple-row controls.
@@ -588,8 +683,22 @@ below.
   validation, retained inputs, captured job output, current-session UUI
   execution, Back, and mobile sizing. Job fixtures retain canonical execution
   references and serve bounded `logs.query` pages separately from run metadata;
-  browser assertions verify rendered log messages and execution usernames.
-  Package tests cover Home filtering and silent returns.
+  browser assertions verify rendered log messages and execution usernames. It
+  also drives the real Users program against SQLite: account creation, password
+  changes, enable/disable, Advanced confirmation, user-filtered UUI sessions,
+  and shared user-field record navigation at desktop/mobile widths.
+  Program/package clickthrough covers the compact overview, Advanced, row/tag
+  version selection, and a package credential opening the real empty secret
+  editor through shared help. Package tests cover Home filtering and silent
+  returns. The same fixture covers service settings/draft retention and Service
+  → Sandbox → Worker navigation, with desktop and mobile inspection. It covers a
+  selected session older than 200 unrelated rows, exact refresh, lazy Advanced
+  message logs, sandbox clickthrough, and cancelling session termination.
+  Database coverage includes compact/Advanced/field views, related tables, table
+  help in SQL, executing the prepared SELECT, and row filtering with return
+  navigation. Development coverage checks Advanced, reset confirmation,
+  activation validation, related packages, retained draft messages, and console
+  DOM preservation without starting a real sandbox.
 - Deno checks cover all services/programs, including login template/error
   injection and constrained static asset routing. UUI and frontend tests cover
   discovery and containment failures, dynamic/default-export loading, static and
@@ -667,15 +776,36 @@ below.
   are accepted before first-request lazy provisioning, staged rootfs fixtures
   dereference symlinks only through a component-wise resolver contained by the
   source root, and process cleanup is time-bounded.
+- The native browser harness accepts `--fixture=<module>` to run a package's
+  default-exported scenario after its normal node setup and real login. The
+  `NativeBrowserFixtureContext` supplies the browser, disposable node
+  references, ordinary administrative commands for each node (`admin` and
+  `otherAdmin`), bounded `restartNodes` for startup-only node configuration, and
+  shared interaction helpers. The default UUI scenario remains the default;
+  fixture runs share exception checks and bounded teardown and add no
+  application behavior to the runtime.
 - `presentation_browser_e2e.ts` is the focused presentation-stack browser
   harness. It serves the built shell, connects it to the real UUI session engine
   over a local WebSocket, and verifies page/modal stacking, exact hidden layer
   and custom-element preservation, dirty `ScreenChannel` redraws, Escape/Back
   routing, reload of a later page plus modal, and restoration of the earlier
-  page-plus-modal continuation. Run it with
+  page-plus-modal continuation. It also exercises pencil/Chevron Right/F4 field
+  help drafts, invalid Close cancellation, Done-only commits, Markdown, bounded
+  search and standard pagination over 2,001 choices, related-record navigation,
+  and desktop/mobile sizing. Interaction helpers wait for the shell's in-flight
+  gate to release before clicking. Run it with
   `deno task test:presentation-browser`; it is not part of the ordinary
   unit-test glob. Pass `--browser=/path/to/chromium` when Chromium is not at the
-  default path.
+  default path. `--field-help` focuses on field help, all local icon glyphs,
+  Chevron Right sizing, and editing after an identical retained snapshot.
+  `--programs --runtime` focuses the program suite through service configuration
+  and Sandbox/Worker navigation.
+- The presentation harness accepts `--fixture=<module>` for package-owned
+  browser checks. The module's default factory receives the temporary root and
+  returns `run`, `serve`, `verify`, and `close`; `verify` receives the browser
+  and a function to open another tab. Fixtures own their optional assets,
+  protocol endpoints, and teardown. This test extension adds no
+  component-specific behavior to the UUI frontend or production services.
 - `download_browser_e2e.ts` connects the real session service and built shell
   over a local WebSocket. `deno task test:download-browser` verifies concurrent
   native Chromium downloads, partial disk writes before production completes,
@@ -695,8 +825,14 @@ below.
   source mappings, identities, typed semantics, atomic edits/query events, and
   page-five retention across selection and data refresh.
 - `deno task test:lists-browser` exercises real Chromium search/filter/sort,
-  focus/caret, empty counts, local/synchronized scroll, reload/reconnect,
-  capacities, fractional widths, long-heading containment, inline query
-  confirmation, conditional toolbar actions, stable card/footer geometry on
-  short or filtered pages and reload, and same-surface plus nested page/modal
-  returns.
+  shared semantic field headings, focus/caret, empty counts, local/synchronized
+  scroll, reload/reconnect, capacities, fractional widths, long-heading
+  containment, inline query confirmation, conditional toolbar actions, stable
+  card/footer geometry on short or filtered pages and reload, and same-surface
+  plus nested page/modal returns, including rows with every column truncated.
+
+- `deno task test:native-back-browser` uses headed Chromium under Xvfb and
+  xdotool's native Alt+Left shortcut. It covers consecutive page/modal returns,
+  reload in the middle, repeated home Back, and unchanged history entry IDs.
+  Read assertions disable CDP userGesture so they cannot mask Chromium's history
+  manipulation intervention. Xvfb and xdotool are test-only dependencies.

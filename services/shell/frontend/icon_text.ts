@@ -1,26 +1,10 @@
 import { humanize } from "../../../humanize.ts";
 
-const MATERIAL_ICON_ASSETS = {
-  arrow_downward: "./assets/material-arrow-downward-24-61643262.svg",
-  arrow_upward: "./assets/material-arrow-upward-24-473799e3.svg",
-  filter_alt: "./assets/material-filter-alt-24-f934b1a5.svg",
-  filter_alt_off: "./assets/material-filter-alt-off-24-f4842a13.svg",
-  filter_list_off: "./assets/material-filter-list-off-24-facdda9f.svg",
-  sort: "./assets/material-sort-24-49248279.svg",
-  arrow_back: "./assets/material-arrow-back-24-e083cc60.svg",
-  arrow_drop_down: "./assets/material-arrow-drop-down-24-e083cc60.svg",
-  close: "./assets/material-close-24-84ccef28.svg",
-  dark_mode: "./assets/material-dark-mode-24-bab57d17.svg",
-  edit: "./assets/material-edit-24-a4b3c9f6.svg",
-  error: "./assets/material-error-24-e083cc60.svg",
-  light_mode: "./assets/material-light-mode-24-e5b6e132.svg",
-  logout: "./assets/material-logout-24-84ccef28.svg",
-  menu: "./assets/material-menu-24-e083cc60.svg",
-  more_vert: "./assets/material-more-vert-24-e083cc60.svg",
-  refresh: "./assets/material-refresh-24-e083cc60.svg",
-  save: "./assets/material-save-24-e083cc60.svg",
-  tab_close: "./assets/material-tab-close-24-84ccef28.svg",
-} as const;
+import materialSymbols from "./assets/material_symbols.json" with {
+  type: "json",
+};
+
+export const MATERIAL_ICONS = materialSymbols.icons;
 
 const SEMANTIC_COLORS = new Set([
   "text",
@@ -34,11 +18,11 @@ const SEMANTIC_COLORS = new Set([
   "brand",
 ]);
 const ICON_PLACEHOLDER =
-  /\[\[icon=([a-z][a-z0-9_]*)(?:\s+color=([^\]\s]+))?\]\]/g;
+  /\[\[icon=([a-z0-9][a-z0-9_]*)(?:\s+color=([^\]\s]+))?\]\]/g;
 const HEX_COLOR =
   /^(?:#[0-9a-fA-F]{3}|#[0-9a-fA-F]{4}|#[0-9a-fA-F]{6}|#[0-9a-fA-F]{8})$/;
 
-export type MaterialIconName = keyof typeof MATERIAL_ICON_ASSETS;
+export type MaterialIconName = keyof typeof MATERIAL_ICONS;
 
 export type IconTextToken =
   | { type: "text"; text: string }
@@ -94,10 +78,7 @@ export function createMaterialIcon(
   const icon = document.createElement("span");
   icon.className = "material-icon";
   icon.dataset.materialIcon = name;
-  icon.style.setProperty(
-    "--material-icon-url",
-    `url("${MATERIAL_ICON_ASSETS[name]}")`,
-  );
+  icon.dataset.materialGlyph = String.fromCodePoint(MATERIAL_ICONS[name]);
   if (color !== undefined) {
     if (SEMANTIC_COLORS.has(color)) {
       icon.classList.add(
@@ -117,7 +98,7 @@ export function createMaterialIcon(
 }
 
 function isMaterialIconName(value: string): value is MaterialIconName {
-  return Object.hasOwn(MATERIAL_ICON_ASSETS, value);
+  return Object.hasOwn(MATERIAL_ICONS, value);
 }
 
 function isIconColor(value: string | undefined): boolean {

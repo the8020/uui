@@ -7,22 +7,23 @@
     "bind": "sessions",
     "key": "navigation",
     "display": [
-      "sessionId",
       "user",
       "state",
-      "screen",
-      "nodeId",
-      "updatedAt"
+      "updatedAt",
+      "sessionId"
     ],
     "columnOptions": {
-      "sessionId": {
-        "shortHeading": "Session"
+      "user": {
+        "length": "medium"
       },
-      "nodeId": {
-        "shortHeading": "Node"
+      "state": {
+        "length": "short"
       },
       "updatedAt": {
-        "shortHeading": "Updated"
+        "length": "medium"
+      },
+      "sessionId": {
+        "length": "long"
       }
     }
   }

@@ -138,16 +138,36 @@ html[data-interaction-pending] .interaction-spinner {
   }
 }
 
+@font-face {
+  font-family: "UUI Material Symbols";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("./assets/material-symbols-db4f1902.woff2") format("woff2");
+}
+
 .material-icon {
   --material-icon-size: 1.2em;
   display: inline-block;
   width: var(--material-icon-size);
   height: var(--material-icon-size);
   flex: 0 0 var(--material-icon-size);
-  background-color: currentColor;
-  -webkit-mask: var(--material-icon-url) center / contain no-repeat;
-  mask: var(--material-icon-url) center / contain no-repeat;
   vertical-align: middle;
+}
+
+.material-icon::before {
+  content: attr(data-material-glyph);
+  display: block;
+  font-family: "UUI Material Symbols";
+  font-size: var(--material-icon-size);
+  font-style: normal;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
 }
 
 .btn .material-icon,
@@ -1237,11 +1257,10 @@ textarea {
 }
 
 .field-select-icon {
+  --material-icon-size: 1rem;
   position: absolute;
   inset-block-start: calc(50% - 0.5rem);
   inset-inline-end: 0;
-  width: 1rem;
-  height: 1rem;
   opacity: 0.78;
   pointer-events: none;
 }
@@ -1250,21 +1269,42 @@ textarea {
   inset-inline-end: 1.45rem;
 }
 
-.field-edit-icon {
+.field-help-button {
   position: absolute;
-  inset-block-start: calc(50% - 0.45rem);
+  inset-block-start: calc(50% - 0.9rem);
   inset-inline-end: 0;
-  width: 0.9rem;
-  height: 0.9rem;
-  -webkit-mask-size: 1.2rem 1.2rem;
-  mask-size: 1.2rem 1.2rem;
+  display: grid;
+  place-items: center end;
+  width: 1.4rem;
+  min-width: 0;
+  height: 1.8rem;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.field-help-button:hover,
+.field-help-button:focus-visible {
+  background: color-mix(in srgb, var(--primary), transparent 90%);
+}
+
+.field-help-button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.field-help-button .field-edit-icon {
+  --material-icon-size: 1.2rem;
   opacity: 0.78;
   pointer-events: none;
 }
 
-.field[data-control-kind="textarea"] .field-edit-icon {
+.field[data-control-kind="textarea"] .field-help-button {
   inset-block-start: auto;
-  inset-block-end: calc(19px - 0.45rem);
+  inset-block-end: calc(19px - 0.9rem);
 }
 
 .field:is([data-control-kind="checkbox"], [data-control-kind="switch"]) .field-input-shell {
@@ -1440,9 +1480,9 @@ textarea {
   overflow: auto;
 }
 
-.field-radio .field-edit-icon {
+.field-radio .field-help-button {
   inset-block-start: auto;
-  inset-block-end: calc(19px - 0.45rem);
+  inset-block-end: calc(19px - 0.9rem);
 }
 
 .field-radio-options label {
@@ -1496,50 +1536,18 @@ textarea {
 }
 
 .field-message-text {
-  display: block;
-  width: 100%;
-  max-width: 100%;
   height: var(--field-grid-message-line-height, 0.9rem);
-  overflow: hidden;
-  border: 0;
-  padding: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  line-height: inherit;
-  text-align: start;
-  text-overflow: ellipsis;
-  user-select: text;
-  white-space: nowrap;
   cursor: text;
 }
 
-.field-message-trigger {
-  text-decoration: underline dotted;
-  text-underline-offset: 0.15em;
-  user-select: none;
-  cursor: help;
-}
-
-.field-message-trigger:hover {
-  color: var(--primary);
-}
-
-.field-message-trigger:focus-visible {
-  border-radius: 2px;
-  outline: 2px solid color-mix(in srgb, var(--primary), transparent 55%);
-  outline-offset: 1px;
-}
-
-.field-message-trigger .material-icon {
-  --material-icon-size: 1.2em;
-}
-
-.field-message-popover {
+.uui-popover {
   position: fixed;
   inset: auto;
   width: max-content;
   max-width: min(28rem, calc(100vw - 20px));
+  max-height: min(24rem, calc(100dvh - 20px));
+  overflow: auto;
+  overscroll-behavior: contain;
   margin: 0;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -1551,9 +1559,10 @@ textarea {
   line-height: 1.4;
   overflow-wrap: anywhere;
   white-space: normal;
+  user-select: text;
 }
 
-.field-message-popover::backdrop {
+.uui-popover::backdrop {
   background: transparent;
 }
 
@@ -1889,17 +1898,8 @@ textarea {
 }
 
 .data-list-popover {
-  position: fixed;
   width: min(22rem, calc(100vw - 20px));
-  max-height: calc(100dvh - 20px);
-  overflow: auto;
-  margin: 0;
-  border: 1px solid var(--border);
-  border-radius: 10px;
   padding: 14px;
-  background: var(--surface);
-  color: var(--text);
-  box-shadow: var(--shadow);
   font-size: 0.86rem;
 }
 
@@ -1915,7 +1915,7 @@ textarea {
   overflow-wrap: anywhere;
 }
 
-.data-list-popover button,
+.data-list-popover button:not(.overflow-reveal),
 .data-list-tools-actions button {
   display: flex;
   align-items: center;
@@ -1930,8 +1930,8 @@ textarea {
   cursor: pointer;
 }
 
-.data-list-popover button:hover,
-.data-list-popover button:focus-visible,
+.data-list-popover button:not(.overflow-reveal):hover,
+.data-list-popover button:not(.overflow-reveal):focus-visible,
 .data-list-tools-actions button:hover,
 .data-list-tools-actions button:focus-visible,
 .data-list-sort-option.is-selected {
@@ -1986,12 +1986,6 @@ textarea {
 .data-list-filter .data-list-icon-button {
   position: absolute;
   inset: 0 0 auto auto;
-}
-
-.data-list-complete-value {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  user-select: text;
 }
 
 .data-list-pagination,
@@ -2080,17 +2074,73 @@ textarea {
 }
 
 .data-list td {
+  position: relative;
   height: var(--list-row-height);
 }
 
-.data-list-cell-text {
+.overflow-text {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.overflow-text-content {
   display: block;
-  height: calc(var(--list-row-height) - 1px);
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+  user-select: text;
+}
+
+.overflow-text[data-overflow-measuring] > .overflow-reveal {
+  position: absolute;
+}
+
+.overflow-reveal {
+  flex: 0 0 auto;
+  min-width: 1.2em;
+  min-height: 0;
+  height: 1.2em;
+  margin: 0;
+  padding: 0 0.1em;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.overflow-reveal:hover,
+.overflow-reveal:focus-visible {
+  background: color-mix(in srgb, var(--primary), transparent 90%);
+}
+
+.overflow-reveal:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.data-list-cell-value {
+  height: calc(var(--list-row-height) - 1px);
   padding: 8px 7px;
   line-height: 19px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+}
+
+.data-list-column-description {
+  align-items: flex-end;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.3;
+}
+
+.data-list-column-description .overflow-text-content {
+  max-height: 3.9em;
+  white-space: normal;
 }
 
 .data-list-empty {
@@ -2119,14 +2169,13 @@ textarea {
 }
 
 .data-list tbody tr {
-  transition: background 120ms ease, color 120ms ease;
+  transition: color 120ms ease;
   cursor: pointer;
 }
 
 .data-list tbody tr:hover,
 .data-list tbody tr:focus {
   outline: 0;
-  background: var(--primary-soft);
   color: var(--primary);
 }
 
@@ -2160,32 +2209,6 @@ textarea {
   min-width: 0;
 }
 
-.sandbox-console {
-  position: relative;
-  min-width: 0;
-  overflow: hidden;
-  border: 1px solid #30364a;
-  border-radius: 8px;
-  background: #111522;
-  box-shadow: 0 20px 45px rgb(10 15 30 / 24%);
-  color: #dfe5f6;
-}
-
-.sandbox-console-status {
-  min-height: 36px;
-  border-bottom: 1px solid #30364a;
-  padding: 0.5rem 0.65rem;
-  background: #191e2e;
-  color: #919bb5;
-  font-size: 0.78rem;
-}
-
-.sandbox-console-viewport {
-  height: min(60vh, 34rem);
-  min-height: 22rem;
-  padding: 0;
-}
-
 .custom-element-error {
   border: 1px solid color-mix(in srgb, var(--danger), transparent 55%);
   border-radius: 12px;
@@ -2194,148 +2217,6 @@ textarea {
   color: var(--danger);
 }
 
-/* Core xterm.js 5.5 styles, MIT licensed by the xterm.js authors. */
-.xterm {
-  position: relative;
-  cursor: text;
-  user-select: none;
-  -webkit-user-select: none;
-}
-.xterm.focus,
-.xterm:focus {
-  outline: none;
-}
-.xterm .xterm-helpers {
-  position: absolute;
-  top: 0;
-  z-index: 5;
-}
-.xterm .xterm-helper-textarea {
-  position: absolute;
-  z-index: -5;
-  top: 0;
-  left: -9999em;
-  width: 0;
-  height: 0;
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-  border: 0;
-  opacity: 0;
-  white-space: nowrap;
-  resize: none;
-}
-.xterm .composition-view {
-  position: absolute;
-  z-index: 1;
-  display: none;
-  background: #000;
-  color: #fff;
-  white-space: nowrap;
-}
-.xterm .composition-view.active {
-  display: block;
-}
-.xterm .xterm-viewport {
-  position: absolute;
-  inset: 0;
-  overflow-y: scroll;
-  background-color: #000;
-  cursor: default;
-}
-.xterm .xterm-screen {
-  position: relative;
-}
-.xterm .xterm-screen canvas {
-  position: absolute;
-  top: 0;
-  left: 0;
-}
-.xterm .xterm-scroll-area {
-  visibility: hidden;
-}
-.xterm-char-measure-element {
-  position: absolute;
-  top: 0;
-  left: -9999em;
-  display: inline-block;
-  visibility: hidden;
-  line-height: normal;
-}
-.xterm.enable-mouse-events {
-  cursor: default;
-}
-.xterm.xterm-cursor-pointer,
-.xterm .xterm-cursor-pointer {
-  cursor: pointer;
-}
-.xterm.column-select.focus {
-  cursor: crosshair;
-}
-.xterm .xterm-accessibility:not(.debug),
-.xterm .xterm-message {
-  position: absolute;
-  z-index: 10;
-  inset: 0;
-  color: transparent;
-  pointer-events: none;
-}
-.xterm .xterm-accessibility-tree:not(.debug) *::selection {
-  color: transparent;
-}
-.xterm .xterm-accessibility-tree {
-  user-select: text;
-  white-space: pre;
-}
-.xterm .live-region {
-  position: absolute;
-  left: -9999px;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-}
-.xterm-dim {
-  opacity: 1 !important;
-}
-.xterm-underline-1 {
-  text-decoration: underline;
-}
-.xterm-underline-2 {
-  text-decoration: double underline;
-}
-.xterm-underline-3 {
-  text-decoration: wavy underline;
-}
-.xterm-underline-4 {
-  text-decoration: dotted underline;
-}
-.xterm-underline-5 {
-  text-decoration: dashed underline;
-}
-.xterm-overline {
-  text-decoration: overline;
-}
-.xterm-strikethrough {
-  text-decoration: line-through;
-}
-.xterm-screen .xterm-decoration-container .xterm-decoration {
-  position: absolute;
-  z-index: 6;
-}
-.xterm-screen .xterm-decoration-container .xterm-decoration.xterm-decoration-top-layer {
-  z-index: 7;
-}
-.xterm-decoration-overview-ruler {
-  position: absolute;
-  z-index: 8;
-  top: 0;
-  right: 0;
-  pointer-events: none;
-}
-.xterm-decoration-top {
-  position: relative;
-  z-index: 2;
-}
 [hidden] {
   display: none !important;
 }
@@ -2423,10 +2304,6 @@ textarea {
 
   .data-list-page-numbers {
     justify-content: flex-start;
-  }
-
-  .sandbox-console-viewport {
-    min-height: 18rem;
   }
 }
 

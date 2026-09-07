@@ -1,5 +1,5 @@
-import { assertEquals } from "@std/assert";
-import { parseIconText } from "./icon_text.ts";
+import { assert, assertEquals } from "@std/assert";
+import { MATERIAL_ICONS, parseIconText } from "./icon_text.ts";
 
 Deno.test("icon text parses vendored names and safe semantic or hex colors", () => {
   assertEquals(
@@ -21,14 +21,36 @@ Deno.test("icon text parses vendored names and safe semantic or hex colors", () 
 Deno.test("icon text leaves unknown names and unsafe colors visible", () => {
   assertEquals(
     parseIconText(
-      "[[icon=delete]] [[icon=edit color=purple]] [[icon=edit color=url(x)]]",
+      "[[icon=not_a_material_icon]] [[icon=edit color=purple]] [[icon=edit color=url(x)]]",
     ),
     [{
       type: "text",
       text:
-        "[[icon=delete]] [[icon=edit color=purple]] [[icon=edit color=url(x)]]",
+        "[[icon=not_a_material_icon]] [[icon=edit color=purple]] [[icon=edit color=url(x)]]",
     }],
   );
+});
+
+Deno.test("every icon name in the complete font catalogue is usable by programs", () => {
+  assert(Object.keys(MATERIAL_ICONS).length > 4000);
+  for (const [name, codepoint] of Object.entries(MATERIAL_ICONS)) {
+    assert(Number.isInteger(codepoint) && codepoint >= 0xe000);
+    assertEquals<unknown>(parseIconText(`[[icon=${name}]]`), [{
+      type: "icon",
+      name,
+    }]);
+  }
+  for (
+    const name of [
+      "delete",
+      "chevron_right",
+      "rocket_launch",
+      "10k",
+      "6_ft_apart",
+    ]
+  ) {
+    assert(Object.hasOwn(MATERIAL_ICONS, name));
+  }
 });
 
 Deno.test("icon text supports icon-only and adjacent placeholders", () => {

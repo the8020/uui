@@ -1,16 +1,12 @@
 import { defineService, type RequestMetadata } from "@the8020/http";
+import { AssetServer } from "./assets.ts";
 import uiConfig from "../../ui-config.json" with { type: "json" };
 
 const frontend = new URL("./frontend/", import.meta.url);
 const sharedFrontend = new URL("../../frontend/", import.meta.url);
 const generated = new URL("./.generated/", import.meta.url);
 const staticRoots = [generated, frontend, sharedFrontend] as const;
-const staticContentTypes = new Map([
-  [".js.map", "application/json; charset=utf-8"],
-  [".js", "text/javascript; charset=utf-8"],
-  [".css", "text/css; charset=utf-8"],
-  [".svg", "image/svg+xml"],
-]);
+const assets = new AssetServer();
 const service = defineService();
 
 service.get(
@@ -26,11 +22,21 @@ service.get(
 service.get(
   "/*",
   { summary: "Serve a static UUI shell asset" },
-  ({ request }) => staticResponse(new URL(request.url).pathname),
+  ({ request }) => staticResponse(request),
 );
 
 async function shellResponse(meta: RequestMetadata): Promise<Response> {
-  const source = await Deno.readTextFile(new URL("index.html", frontend));
+  let source = await Deno.readTextFile(new URL("index.html", frontend));
+  const versions = await Promise.all([
+    assets.version(generated, "main.js"),
+    assets.version(frontend, "styles.css"),
+    assets.version(sharedFrontend, "markdown.css"),
+  ]);
+  for (
+    const [index, path] of ["main.js", "styles.css", "markdown.css"].entries()
+  ) {
+    source = source.replace(`"${path}"`, `"${path}?v=${versions[index]}"`);
+  }
   const requestURL = new URL(meta.originalUrl);
   const websocketScheme = requestURL.protocol === "https:" ? "wss:" : "ws:";
   const themeNonce = contentSecurityNonce();
@@ -43,7 +49,7 @@ async function shellResponse(meta: RequestMetadata): Promise<Response> {
     heartbeatInterval: uiConfig.heartbeatIntervalMilliseconds,
     reconnectInitialDelay: uiConfig.reconnectInitialDelayMilliseconds,
     reconnectMaximumDelay: uiConfig.reconnectMaximumDelayMilliseconds,
-    buildVersion: "phase-1d",
+    buildVersion: versions[0],
   };
   const html = source.replace("__the8020_theme_nonce__", themeNonce).replace(
     /\{\s*"__the8020_boot_placeholder__"\s*:\s*true\s*\}/,
@@ -68,33 +74,19 @@ function contentSecurityNonce(): string {
   ).join("");
 }
 
-async function staticResponse(path: string): Promise<Response> {
-  const relativePath = path.replace(/^\/+/, "");
-  const safe = relativePath.length > 0 && relativePath.split("/").every(
-    (segment) => /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(segment),
-  );
-  const contentType = [...staticContentTypes].find(([suffix]) =>
-    relativePath.endsWith(suffix)
-  )?.[1];
-  if (!safe || contentType === undefined) return notFoundResponse();
-
+async function staticResponse(request: Request): Promise<Response> {
+  const path = new URL(request.url).pathname.replace(/^\/+/, "");
+  if (path.startsWith("package-assets/")) {
+    return await assets.package(
+      request,
+      path.slice("package-assets/".length),
+    ) ?? notFoundResponse();
+  }
+  // Authored TypeScript and unrelated package files are never shell assets.
+  if (!/\.(?:js|js\.map|css|svg|woff2)$/.test(path)) return notFoundResponse();
   for (const root of staticRoots) {
-    try {
-      const body = await Deno.readFile(new URL(relativePath, root));
-      const immutable = /-[a-f0-9]{8}\.[a-z0-9]+$/.test(relativePath);
-      return new Response(body, {
-        headers: {
-          "content-type": contentType,
-          "cache-control": immutable
-            ? "public, max-age=31536000, immutable"
-            : "no-cache",
-          "x-content-type-options": "nosniff",
-        },
-      });
-    } catch (error) {
-      if (error instanceof Deno.errors.NotFound) continue;
-      throw error;
-    }
+    const response = await assets.file(request, root, path);
+    if (response) return response;
   }
   return notFoundResponse();
 }

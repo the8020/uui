@@ -12,11 +12,48 @@ import { validateLayout } from "./layout.ts";
 import { ScreenLists, StaleListView } from "./lists.ts";
 import { Model } from "./model.ts";
 import { emptyListQuery } from "./screen_state.ts";
+import { field as sharedField, money } from "/p/the8020/db/fields.ts";
 
 const schema = z.object({
   rows: z.array(
     z.object({ id: z.number(), name: z.string(), enabled: z.boolean() }),
   ),
+});
+
+Deno.test("lists use shared structure field names and Zod value types", () => {
+  const summary = z.object({
+    owner: sharedField(z.string(), {
+      label: "Responsible user",
+      description: "The **account** responsible for this work.",
+    }).nullable().optional(),
+    attempts: sharedField(z.int(), { label: "Attempts" }),
+    amount: money().nullable(),
+    enabled: sharedField(z.boolean(), { label: "Enabled" }),
+  });
+  const schema = z.object({ rows: summary.array() });
+  const model = new Model({
+    rows: [{ owner: "alice", attempts: 2, amount: "9.25", enabled: true }],
+  });
+  const controls = buildControls(buildFieldCatalog(schema));
+  const lists = new ScreenLists(schema, controls, undefined, model.screen);
+  const list = Object.values(lists.present(model.data))[0]!;
+  assertEquals(
+    list.columns[0]!.description,
+    "The **account** responsible for this work.",
+  );
+  assertEquals(list.columns[1]!.description, undefined);
+  assertEquals(
+    list.columns.map(({ heading, semanticType }) => ({
+      heading,
+      semanticType,
+    })),
+    [
+      { heading: "Responsible user", semanticType: "text" },
+      { heading: "Attempts", semanticType: "number" },
+      { heading: "Amount", semanticType: "decimal" },
+      { heading: "Enabled", semanticType: "boolean" },
+    ],
+  );
 });
 
 function fixture(duplicate = false, triggerFilterEvents = false) {
@@ -300,4 +337,84 @@ Deno.test("empty and implicit scalar lists retain columns and handle capacity an
   });
   shown = lists.present(model.data)[0]!;
   assert(shown.rows.includes(40));
+});
+
+Deno.test("page sources retain remote ordering, selection mappings, and bounded next-page access", () => {
+  const model = new Model({
+    rows: [{ id: 20, name: "Remote match", enabled: true }, {
+      id: 21,
+      name: "Second",
+      enabled: false,
+    }],
+  });
+  const layout = validateLayout({
+    schema: 1,
+    id: "external",
+    root: {
+      id: "rows",
+      type: "list",
+      bind: "rows",
+      key: "id",
+      pageSource: { more: true, searchOnly: true },
+    },
+  });
+  const lists = new ScreenLists(
+    schema,
+    buildControls(buildFieldCatalog(schema)),
+    layout,
+    model.screen,
+  );
+  const state = model.screen.elements.rows!.list!;
+  state.page = 11;
+  state.pageSize = 2;
+  state.query.search = "server-defined matching";
+  const view = lists.present(model.data)[0]!;
+  assertEquals(
+    view.rows,
+    model.data.rows,
+    "page sources are not filtered or sliced again",
+  );
+  assertEquals(view.totalPages, 12);
+  assertEquals(
+    lists.select({ id: "rows", revision: view.revision, index: 1 }, model.data)
+      .value,
+    21,
+  );
+  lists.validateRequests([{
+    id: "rows",
+    revision: view.revision,
+    operation: "page",
+    page: 12,
+  }], model.data);
+  assertThrows(
+    () =>
+      lists.validateRequests([{
+        id: "rows",
+        revision: view.revision,
+        operation: "page",
+        page: 13,
+      }], model.data),
+    TypeError,
+    "out of bounds",
+  );
+  assertThrows(
+    () =>
+      lists.validateRequests([{
+        id: "rows",
+        revision: view.revision,
+        operation: "query",
+        query: { search: "", filters: { name: "Second" }, sort: null },
+      }], model.data),
+    TypeError,
+    "quick search only",
+  );
+  const event = lists.update({
+    id: "rows",
+    revision: view.revision,
+    operation: "capacity",
+    pageSize: 4,
+  });
+  assertEquals(event?.change, "capacity");
+  assertEquals(state.page, 6);
+  assertEquals(model.data.rows.length, 2);
 });

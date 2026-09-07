@@ -8,4 +8,4 @@ if [[ -n "${DENO_IMPORT_MAP:-}" ]]; then
   IMPORT_MAP=(--import-map "$DENO_IMPORT_MAP")
 fi
 mkdir -p "$SCRIPT_DIR/.generated"
-"$DENO_COMMAND" bundle --config "$PACKAGE_ROOT/deno.json" "${IMPORT_MAP[@]}" --platform browser --sourcemap=external --output "$SCRIPT_DIR/.generated/main.js" "$SCRIPT_DIR/frontend/main.ts"
+"$DENO_COMMAND" bundle --config "$PACKAGE_ROOT/deno.json" "${IMPORT_MAP[@]}" --platform browser --minify --sourcemap=external --output "$SCRIPT_DIR/.generated/main.js" "$SCRIPT_DIR/frontend/main.ts"

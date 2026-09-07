@@ -82,6 +82,7 @@ const nodeKeys = new Set([
   "headings",
   "columnOptions",
   "triggerFilterEvents",
+  "pageSource",
   "controls",
   "actions",
   "children",

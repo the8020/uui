@@ -501,6 +501,13 @@ Deno.test("reload and resync retain a stacked presentation and its hidden contin
       }).current_screen_id,
       "modal-b",
     );
+    assertEquals(
+      workerFunctions["uui.session.inspect"]({ sessionId })
+        .current_screen_title,
+      resynced.presentation.surfaces.find((surface) =>
+        surface.surfaceId === "surface-2"
+      )?.screen.title,
+    );
 
     pageReload.message(screenEvent(resynced, "close-b", 4));
     await until(() => {

@@ -35,6 +35,7 @@ export type ScreenEventType =
   | "action"
   | "change"
   | "select"
+  | "field-help"
   | typeof BACK_EVENT
   | "exit";
 
@@ -240,7 +241,7 @@ export interface FieldDescriptor {
   step?: number;
   valueSuffix?: string;
   options?: FieldOption[];
-  searchHelp?: string;
+  fieldHelp?: boolean;
   semanticType?: string;
   list?: ListOptions;
 }
@@ -270,7 +271,10 @@ export interface ScreenHeader {
 
 export interface CustomElementDescriptor {
   id: string;
-  initializer: string;
+  /** Same-origin browser module, loaded only when this element is rendered. */
+  module: string;
+  /** Program-owned stylesheets, loaded before mounting the module. */
+  styles?: string[];
   preserve?: boolean;
   config: Record<string, unknown>;
 }
@@ -395,6 +399,7 @@ export function parseClientMessage(value: unknown): UUIClientMessage {
     "action",
     "change",
     "select",
+    "field-help",
     BACK_EVENT,
     "exit",
   ]);

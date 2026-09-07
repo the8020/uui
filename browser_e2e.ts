@@ -7,6 +7,32 @@ interface Options {
   kernel: string;
   admin: string;
   browser: string;
+  fixture?: string;
+}
+
+/** Package-owned scenarios reuse the real node, authentication and browser harness. */
+export interface NativeBrowserFixtureContext {
+  page: BrowserPage;
+  root: string;
+  baseURL: string;
+  otherNodeURL: string;
+  credentials: { username: string; password: string };
+  openPage(): Promise<BrowserPage>;
+  restartNodes(): Promise<void>;
+  admin(arguments_: string[], input?: string): Promise<Record<string, unknown>>;
+  otherAdmin(
+    arguments_: string[],
+    input?: string,
+  ): Promise<Record<string, unknown>>;
+  click: typeof click;
+  clickButton: typeof clickButton;
+  clickRow: typeof clickRow;
+  clickSessionMenuAction: typeof clickSessionMenuAction;
+  setValue: typeof setValue;
+  enterTerminal: typeof enterTerminal;
+  waitForPage: typeof waitForPage;
+  waitForScreen: typeof waitForScreen;
+  websocketOutput: typeof websocketOutput;
 }
 
 interface KernelProcess {
@@ -367,6 +393,87 @@ try {
     );
   }
 
+  if (options.fixture) {
+    const fixture = await import(
+      new URL(options.fixture, import.meta.url).href
+    );
+    if (typeof fixture.default !== "function") {
+      throw new Error("Native browser fixture must default-export a scenario");
+    }
+    await fixture.default(
+      {
+        page: first,
+        root: primaryRoot,
+        baseURL: primaryBase,
+        otherNodeURL: `http://127.0.0.1:${secondaryPort}`,
+        credentials: { username: "admin", password: "phase1d-password" },
+        openPage: async () => {
+          const page = await openPage(
+            debugPort,
+            `${primaryBase}/the8020/uui/shell/`,
+          );
+          pages.push(page);
+          return page;
+        },
+        restartNodes: async () => {
+          for (const kernel of kernels) await stopKernel(kernel);
+          for (
+            const [index, root, port, sshPort] of [
+              [0, primaryRoot, primaryPort, primarySSHPort],
+              [1, secondaryRoot, secondaryPort, secondarySSHPort],
+            ] as const
+          ) {
+            kernels[index] = startKernel(root, port, sshPort, sharedDatabase);
+            await waitForHTTP(`http://127.0.0.1:${port}/`, 120_000);
+            await waitForAdmin(root);
+            await waitForServices(root, [
+              "the8020/uui/login",
+              "the8020/uui/session",
+              "the8020/uui/shell",
+            ]);
+          }
+        },
+        admin: (arguments_: string[], input?: string) =>
+          admin(primaryRoot, arguments_, input),
+        otherAdmin: (arguments_: string[], input?: string) =>
+          admin(secondaryRoot, arguments_, input),
+        click,
+        clickButton,
+        clickRow,
+        clickSessionMenuAction,
+        setValue,
+        enterTerminal,
+        waitForPage,
+        waitForScreen,
+        websocketOutput,
+      } satisfies NativeBrowserFixtureContext,
+    );
+    assert(
+      pages.every((page) => page.exceptions.length === 0),
+      `browser exceptions: ${
+        pages.flatMap((page) => page.exceptions).join("; ")
+      }`,
+    );
+    console.log("Package native browser fixture passed");
+  } else {
+    await verifyUUI(first, primaryBase);
+  }
+} catch (error) {
+  console.error(await latestKernelLog(primaryRoot));
+  throw error;
+} finally {
+  for (const page of pages) page.close();
+  if (browser !== undefined) await stopProcess(browser);
+  for (const kernel of kernels.toReversed()) {
+    await stopKernel(kernel);
+  }
+  await removeTemporaryRoot(temporaryRoot);
+}
+
+async function verifyUUI(
+  first: BrowserPage,
+  primaryBase: string,
+): Promise<void> {
   // A cold second node must load authentication dependencies through its
   // normal runtime profile without another users-package job warming its cache.
   {
@@ -455,7 +562,7 @@ try {
         status.textContent === "Connected" && statusStyle.position === "absolute" &&
         statusStyle.width === "1px" && toggle.getAttribute("aria-expanded") === "false" &&
         toggle.getAttribute("aria-label") === "admin, Connected Open session menu" &&
-        getComputedStyle(icon).maskImage !== "none";
+        document.fonts.check('20px "UUI Material Symbols"');
     })()`,
     "connected username session control",
   );
@@ -525,7 +632,7 @@ try {
       document.querySelector("#theme-toggle")?.getAttribute("aria-pressed") === "true" &&
       document.querySelector("#theme-toggle")?.getAttribute("aria-label") === "Switch to light mode" &&
       document.querySelector('#theme-toggle [data-material-icon="dark_mode"]') === null &&
-      getComputedStyle(document.querySelector('#theme-toggle [data-material-icon="light_mode"]')).maskImage !== "none" &&
+      document.fonts.check('20px \"UUI Material Symbols\"') &&
       getComputedStyle(document.documentElement).getPropertyValue("--primary").trim() === "#8c8cff" &&
       getComputedStyle(document.querySelector(".navbar")).position === "sticky" &&
       getComputedStyle(document.querySelector(".screen")).borderTopWidth === "0px" &&
@@ -666,7 +773,7 @@ try {
       document.querySelector("#theme-toggle")?.textContent?.trim() === "Dark mode" &&
       document.querySelector("#theme-toggle")?.getAttribute("aria-label") === "Switch to dark mode" &&
       document.querySelector('#theme-toggle [data-material-icon="light_mode"]') === null &&
-      getComputedStyle(document.querySelector('#theme-toggle [data-material-icon="dark_mode"]')).maskImage !== "none"`,
+      document.fonts.check('20px \"UUI Material Symbols\"')`,
     "light theme gold brand and centered divider",
   );
   await clickSessionMenuAction(first, "#theme-toggle");
@@ -868,13 +975,13 @@ try {
     await clickRow(first, "the8020/uui/sessions");
     await waitForScreen(first, "UUI sessions");
     await clickRow(first, priorSessionID);
-    await waitForScreen(first, `UUI session ${priorSessionID}`);
+    await waitForScreen(first, "Session for admin");
     await waitForPage(
       first,
-      `document.querySelector('[data-bind="liveState"]')?.value?.startsWith("STALE:") === true`,
+      `document.querySelector('[data-bind="state"]')?.value === "Unavailable"`,
       "kernel-restart session metadata represented as stale",
     );
-    await clickButton(first, "Clean stale metadata");
+    await clickButton(first, "Remove stale session");
     await waitForScreen(first, "UUI sessions");
     const cleaned = await waitForUISessions(primaryRoot, 1);
     assert(
@@ -990,7 +1097,7 @@ try {
   );
 
   await clickRow(first, "the8020/dev-core/development-test");
-  await waitForScreen(first, "Development test", 120_000);
+  await waitForScreen(first, "Development", 120_000);
   await first.command("Emulation.setDeviceMetricsOverride", {
     width: 1280,
     height: 800,
@@ -1013,10 +1120,10 @@ try {
       const combined = [...visible.children, ...overflowItems.children].map(itemKey);
       return Math.abs(leading.getBoundingClientRect().top - program.getBoundingClientRect().top) < 8 &&
         visible.children.length > 0 &&
-        overflowItems.children.length === 6 - visible.children.length &&
+        overflowItems.children.length === 4 - visible.children.length &&
         overflow.hidden === (overflowItems.children.length === 0) &&
         JSON.stringify(combined) === JSON.stringify([
-          'Activate changes', 'Stop sandbox', 'Restart sandbox', 'Reset source', 'Factory reset', 'Refresh'
+          'Review changes', 'Stop sandbox', 'Advanced', 'Refresh'
         ]) &&
         document.querySelector('#app .screen-actions, #app .layout-actions') === null;
     })()`,
@@ -1048,11 +1155,11 @@ try {
         const toggleBounds = overflowToggle.getBoundingClientRect();
         const gap = parseFloat(getComputedStyle(program).columnGap);
         return Math.abs(leading.getBoundingClientRect().top - program.getBoundingClientRect().top) < 8 &&
-          visible.children.length > 0 && visible.children.length < 6 &&
-          !overflow.hidden && overflowItems.children.length === 6 - visible.children.length &&
+          visible.children.length > 0 && visible.children.length < 4 &&
+          !overflow.hidden && overflowItems.children.length === 4 - visible.children.length &&
           Math.abs(toggleBounds.left - lastVisibleBounds.right - gap) < 1 &&
           JSON.stringify(combined) === JSON.stringify([
-            'Activate changes', 'Stop sandbox', 'Restart sandbox', 'Reset source', 'Factory reset', 'Refresh'
+            'Review changes', 'Stop sandbox', 'Advanced', 'Refresh'
           ]);
       })()`,
       "header hides a right-hand suffix at intermediate width",
@@ -1131,14 +1238,14 @@ try {
       const overflowIcon = overflow.querySelector('[data-material-icon="more_vert"]');
       return !back.disabled && back.textContent?.trim() === '' &&
         back.getAttribute('aria-label') === 'Back' &&
-        backIcon instanceof HTMLElement && getComputedStyle(backIcon).maskImage !== 'none' &&
+        backIcon instanceof HTMLElement && document.fonts.check('20px "UUI Material Symbols"') &&
         backBounds.left >= brandBounds.right &&
         !sessionMenu.open && getComputedStyle(sessionToggle).display !== 'none' &&
         connection.dataset.state === 'connected' && Math.abs(connectionBounds.width - 8) < 1 &&
         Math.abs(connectionBounds.height - 8) < 1 && username.textContent === 'admin' &&
         getComputedStyle(username).whiteSpace === 'nowrap' &&
         getComputedStyle(username).textOverflow === 'ellipsis' &&
-        getComputedStyle(sessionIcon).maskImage !== 'none' &&
+        document.fonts.check('20px "UUI Material Symbols"') &&
         navbarBounds !== undefined && navbarBounds.height <= 60 &&
         Math.abs(sessionBounds.right - navbarBounds.right) < 2 &&
         Math.abs(sessionToggleBounds.right - navbarBounds.right) < 2 &&
@@ -1147,7 +1254,7 @@ try {
         visible.children.length === 0 && !overflow.hidden &&
         getComputedStyle(visible).display === 'none' &&
         Math.abs(toggleBounds.left - programBounds.left) < 1 &&
-        overflowIcon instanceof HTMLElement && getComputedStyle(overflowIcon).maskImage !== 'none' &&
+        overflowIcon instanceof HTMLElement && document.fonts.check('20px "UUI Material Symbols"') &&
         overflowItems.children.length === 6 &&
         document.querySelector('#app .screen-actions, #app .layout-actions') === null;
       })()`,
@@ -1235,10 +1342,10 @@ try {
       return Math.abs(leading.getBoundingClientRect().top - program.getBoundingClientRect().top) < 8 &&
         Math.abs(actions.getBoundingClientRect().right - inner.getBoundingClientRect().right) < 2 &&
         visible.children.length > 0 &&
-        overflowItems.children.length === 6 - visible.children.length &&
+        overflowItems.children.length === 4 - visible.children.length &&
         overflow.hidden === (overflowItems.children.length === 0) &&
         JSON.stringify(combined) === JSON.stringify([
-          'Activate changes', 'Stop sandbox', 'Restart sandbox', 'Reset source', 'Factory reset', 'Refresh'
+          'Review changes', 'Stop sandbox', 'Advanced', 'Refresh'
         ]);
     })()`,
     "wide program header restores its largest ordered prefix",
@@ -1371,7 +1478,7 @@ try {
     "development overlay leaked a private file into the shared demo repository",
   );
 
-  await clickButton(first, "Activate changes");
+  await clickButton(first, "Review changes");
   await waitForScreen(first, "Activate development changes", 60_000);
   await waitForPage(
     first,
@@ -1380,15 +1487,15 @@ try {
       return rows.length === 2 &&
         rows.some((row) => row.textContent?.includes('the8020/admin-core') && row.textContent?.includes('1')) &&
         rows.some((row) => row.textContent?.includes('the8020/demo') && row.textContent?.includes('1')) &&
-        document.querySelector('[data-bind="status"]')?.value === 'Review all private package changes before activation';
+        document.querySelector('.presentation-page-layer:not([hidden]) [data-bind="status"]')?.value === 'Review the changed packages and enter a commit message.';
     })()`,
     "development activation preview with per-package statistics",
     60_000,
   );
-  await clickButton(first, "Sync all changes");
+  await clickButton(first, "Activate all changes");
   await waitForPage(
     first,
-    `document.querySelector('[data-bind="status"]')?.value === "A commit message is required"`,
+    `document.querySelector('.presentation-page-layer:not([hidden]) [data-bind="status"]')?.value === "A commit message is required"`,
     "activation commit-message validation",
   );
   await setValue(
@@ -1396,20 +1503,20 @@ try {
     '[data-bind="message"]',
     "Activate browser development changes",
   );
-  await clickButton(first, "Sync all changes");
+  await clickButton(first, "Activate all changes");
   try {
     await waitForPage(
       first,
-      `document.querySelector('[data-bind="status"]')?.value === "No private changes" &&
+      `document.querySelector('.presentation-page-layer:not([hidden]) [data-bind="status"]')?.value === "No private changes" &&
         ![...document.querySelectorAll('[data-layout-id="changed-packages"] tbody tr')].some((row) => row.textContent?.includes('the8020/')) &&
-        ![...document.querySelectorAll('button')].some((button) => button.textContent?.trim() === "Sync all changes")`,
+        ![...document.querySelectorAll('button')].some((button) => button.textContent?.trim() === "Activate all changes")`,
       "UUI activation publishes every package and clears the overlay",
       120_000,
     );
   } catch (error) {
     const state = await first.evaluate(`({
       title: document.querySelector('h1')?.textContent,
-      status: document.querySelector('[data-bind="status"]')?.value,
+      status: document.querySelector('.presentation-page-layer:not([hidden]) [data-bind="status"]')?.value,
       exceptionType: document.querySelector('[data-bind="exceptionType"]')?.value,
       exceptionMessage: document.querySelector('[data-bind="message"]')?.value,
       exceptionLocation: document.querySelector('[data-bind="location"]')?.value,
@@ -1489,72 +1596,70 @@ try {
     );
   }
   await clickButton(first, "Back");
-  await waitForScreen(first, "Development test", 60_000);
+  await waitForScreen(first, "Development", 60_000);
   await waitForPage(
     first,
     `document.querySelector(".sandbox-console-status")?.textContent === "Terminal connected"`,
     "development console reconnect after UUI activation",
     60_000,
   );
+  await clickButton(first, "Advanced");
+  await waitForScreen(first, "Advanced development settings");
   const beforeSourceReset = await first.evaluate<string>(
-    `document.querySelector('[data-bind="sandboxId"]')?.value ?? ""`,
+    `document.querySelector('[data-bind="sandboxId"]').value`,
   );
+  await clickButton(first, "Reset source");
+  await waitForScreen(first, "Reset source?");
   await clickButton(first, "Reset source");
   await waitForPage(
     first,
-    `document.querySelector('[data-bind="status"]')?.value === "Select Confirm destructive reset before resetting the sandbox" &&
-      document.querySelector('[data-bind="sandboxId"]')?.value === ${
-      JSON.stringify(beforeSourceReset)
-    }`,
+    `document.body.innerText.includes("Confirm deletion before resetting the sandbox.")`,
     "rejected unconfirmed development reset",
   );
-  await setChecked(
-    first,
-    '[data-bind="confirmDestructive"]',
-    true,
-  );
+  await setChecked(first, '[data-bind="confirmed"]', true);
   await clickButton(first, "Reset source");
+  await waitForScreen(first, "Development", 60_000);
   await waitForPage(
     first,
-    `document.querySelector('[data-bind="state"]')?.value === "READY" &&
-      document.querySelector('[data-bind="status"]')?.value === "Development source reset" &&
-      document.querySelector('[data-bind="sandboxId"]')?.value === ${
-      JSON.stringify(beforeSourceReset)
-    } && document.querySelector('[data-bind="confirmDestructive"]')?.checked === false`,
+    `document.querySelector('[data-bind="state"]')?.value === "READY" && document.querySelector('[data-bind="status"]')?.value === "Development source reset"`,
     "confirmed development source reset",
     60_000,
   );
+  await clickButton(first, "Advanced");
+  await waitForScreen(first, "Advanced development settings");
   const beforeFactoryReset = await first.evaluate<string>(
-    `document.querySelector('[data-bind="sandboxId"]')?.value ?? ""`,
+    `document.querySelector('[data-bind="sandboxId"]').value`,
   );
-  await setChecked(
-    first,
-    '[data-bind="confirmDestructive"]',
-    true,
+  assert(
+    beforeFactoryReset === beforeSourceReset,
+    "source reset changed sandbox identity",
   );
   await clickButton(first, "Factory reset");
+  await waitForScreen(first, "Factory reset?");
+  await setChecked(first, '[data-bind="confirmed"]', true);
+  await clickButton(first, "Factory reset");
+  await waitForScreen(first, "Development", 60_000);
   await waitForPage(
     first,
-    `document.querySelector('[data-bind="state"]')?.value === "READY" &&
-      document.querySelector('[data-bind="status"]')?.value === "Development sandbox factory reset" &&
-      /^sbx-[a-z0-9]{10}$/.test(document.querySelector('[data-bind="sandboxId"]')?.value ?? "") &&
-      document.querySelector('[data-bind="sandboxId"]')?.value !== ${
-      JSON.stringify(beforeFactoryReset)
-    } && document.querySelector('[data-bind="confirmDestructive"]')?.checked === false`,
+    `document.querySelector('[data-bind="state"]')?.value === "READY" && document.querySelector('[data-bind="status"]')?.value === "Development sandbox factory reset"`,
     "confirmed development factory reset",
     60_000,
   );
+  await clickButton(first, "Advanced");
+  await waitForScreen(first, "Advanced development settings");
   const beforeRestart = await first.evaluate<string>(
-    `document.querySelector('[data-bind="sandboxId"]')?.value ?? ""`,
+    `document.querySelector('[data-bind="sandboxId"]').value`,
+  );
+  assert(
+    /^sbx-[a-z0-9]{10}$/.test(beforeRestart) &&
+      beforeRestart !== beforeFactoryReset,
+    "factory reset did not replace the sandbox identity",
   );
   await clickButton(first, "Restart sandbox");
+  await waitForScreen(first, "Development", 60_000);
   await waitForPage(
     first,
-    `document.querySelector('[data-bind="state"]')?.value === "READY" &&
-      document.querySelector('[data-bind="status"]')?.value === "Development sandbox restarted" &&
-      document.querySelector('[data-bind="sandboxId"]')?.value === ${
-      JSON.stringify(beforeRestart)
-    }`,
+    `document.querySelector('[data-bind="state"]')?.value === "READY" && document.querySelector('[data-bind="status"]')?.value === "Development sandbox restarted"`,
     "development sandbox restart",
     60_000,
   );
@@ -1562,10 +1667,7 @@ try {
   await waitForPage(
     first,
     `document.querySelector('[data-bind="state"]')?.value === "STOPPED" &&
-      document.querySelector('[data-bind="status"]')?.value === "Development sandbox stopped" &&
-      document.querySelector('[data-bind="sandboxId"]')?.value === ${
-      JSON.stringify(beforeRestart)
-    }`,
+      document.querySelector('[data-bind="status"]')?.value === "Development sandbox stopped"`,
     "development sandbox stop",
     60_000,
   );
@@ -1575,9 +1677,6 @@ try {
       first,
       `document.querySelector('[data-bind="state"]')?.value === "READY" &&
         document.querySelector('[data-bind="status"]')?.value === "Development sandbox started" &&
-        document.querySelector('[data-bind="sandboxId"]')?.value === ${
-        JSON.stringify(beforeRestart)
-      } &&
         document.querySelector(".sandbox-console-status")?.textContent === "Terminal connected"`,
       "development sandbox restart after stop",
       60_000,
@@ -1609,23 +1708,20 @@ try {
         .filter((row) => row.querySelector("td")?.textContent?.trim() === "the8020/demo");
       const tables = rows.map((row) => row.querySelectorAll("td")[1]?.textContent?.trim());
       return JSON.stringify(tables) === JSON.stringify(["customers", "order_items", "orders"]) &&
-        rows.every((row) => row.textContent?.includes("Active") && row.textContent?.includes("Synchronized")) &&
+        rows.every((row) => row.textContent?.includes("Active")) &&
         rows.every((row) => !row.textContent?.includes("the8020__demo__"));
     })()`,
     "synchronized demo database tables",
   );
   await clickRow(first, "orders");
-  await waitForScreen(first, "the8020__demo__orders");
+  await waitForScreen(first, "Table orders");
   await waitForPage(
     first,
     `document.querySelector('[data-bind="package"]')?.value === "the8020/demo" &&
       document.querySelector('[data-bind="tableName"]')?.value === "orders" &&
-      document.querySelector('[data-bind="physicalTable"]')?.value === "the8020__demo__orders" &&
       document.querySelector('[data-bind="tableState"]')?.value === "Active" &&
       document.querySelector('[data-bind="schemaState"]')?.value === "Synchronized" &&
       document.querySelectorAll('textarea').length === 0 &&
-      [...document.querySelectorAll('[data-layout-id="differences"] tbody tr')].some((row) =>
-        row.textContent?.includes("No differences detected")) &&
       !document.querySelector('#app')?.textContent?.includes('Worker "wrk-')`,
     "human-readable database field detail",
   );
@@ -1644,8 +1740,7 @@ try {
           "metadata",
         ]) &&
       detailColumns.some((row) =>
-        row.includes("total") && row.includes("decimal(18, 2)") &&
-        row.includes("INTEGER")
+        row.includes("total") && row.includes("decimal(18, 2)")
       ),
     `database field order or types differ: ${JSON.stringify(detailColumns)}`,
   );
@@ -1653,6 +1748,8 @@ try {
     await evaluatorExecutionCount(primaryRoot) === evaluatorJobsBeforeBrowse,
     "ordinary database list/detail browsing launched a table evaluator job",
   );
+  await clickButton(first, "Advanced");
+  await waitForScreen(first, "Advanced · orders");
   await clickButton(first, "Compare activated definition");
   await waitForScreen(first, "Compare the8020__demo__orders", 120_000);
   await waitForPage(
@@ -1679,7 +1776,7 @@ try {
     "explicit table comparison did not launch exactly one evaluator job",
   );
   await clickButton(first, "Back");
-  await waitForScreen(first, "the8020__demo__orders");
+  await waitForScreen(first, "Advanced · orders");
   await clickButton(first, "Synchronize");
   await waitForPage(
     first,
@@ -1692,12 +1789,14 @@ try {
     "database table detail refresh after synchronization",
   );
   await clickButton(first, "Back");
+  await waitForScreen(first, "Table orders");
+  await clickButton(first, "Back");
   await waitForScreen(first, "Database tables");
   const evaluatorJobsAfterSynchronize = await evaluatorExecutionCount(
     primaryRoot,
   );
   await clickRow(first, "customers");
-  await waitForScreen(first, "the8020__demo__customers");
+  await waitForScreen(first, "Table customers");
   await waitForPage(
     first,
     `document.querySelectorAll('textarea').length === 0`,
@@ -1706,7 +1805,7 @@ try {
   const customerColumns = await renderedListRows(first, "columns", "email");
   assert(
     customerColumns.some((row) =>
-      row.includes("email") && row.includes("text") && row.includes("TEXT")
+      row.includes("email") && row.includes("text")
     ),
     `customer email field differs: ${JSON.stringify(customerColumns)}`,
   );
@@ -1724,6 +1823,13 @@ try {
   await waitForScreen(first, "Packages");
   await clickRow(first, "the8020/demo");
   await waitForScreen(first, "Package the8020/demo");
+  await waitForPage(
+    first,
+    `!document.querySelector('[data-bind="path"]') && !document.querySelector('[data-bind="repositoryStatus"]')`,
+    "package overview keeps technical fields in Advanced",
+  );
+  await clickButton(first, "Advanced");
+  await waitForScreen(first, "Advanced · the8020/demo");
   await waitForPage(
     first,
     `document.querySelector('[data-bind="packageId"]')?.value === "the8020/demo" &&
@@ -1759,8 +1865,10 @@ try {
     );
   }
   await clickRow(first, "the8020/demo/variables");
-  await waitForScreen(first, "Service the8020/demo/variables");
+  await waitForScreen(first, "Service variables");
   const guardedHistoryLength = await first.evaluate<number>("history.length");
+  await first.evaluate("history.back()");
+  await waitForScreen(first, "Advanced · the8020/demo");
   await first.evaluate("history.back()");
   await waitForScreen(first, "Package the8020/demo");
   await first.evaluate("history.back()");
@@ -1786,7 +1894,14 @@ try {
     "UUI session in package-owned session list",
   );
   await clickRow(first, firstSession.session_id);
-  await waitForScreen(first, `UUI session ${firstSession.session_id}`);
+  await waitForScreen(first, "Session for admin");
+  await waitForPage(
+    first,
+    `document.querySelector('[data-bind="authenticatedUser"]')?.value === "admin" && !document.querySelector('[data-bind="messageLog"]')`,
+    "human session overview",
+  );
+  await clickButton(first, "Advanced");
+  await waitForScreen(first, `Advanced · ${firstSession.session_id}`);
   try {
     await waitForPage(
       first,
@@ -1817,6 +1932,8 @@ try {
     );
   }
   await clickButton(first, "Back");
+  await waitForScreen(first, "Session for admin");
+  await clickButton(first, "Back");
   await waitForScreen(first, "UUI sessions");
   await clickButton(first, "Back");
   await waitForScreen(first, "Welcome to 80|20");
@@ -1824,11 +1941,11 @@ try {
   await clickRow(first, "the8020/admin-core/services");
   await waitForScreen(first, "Services");
   await clickRow(first, "the8020/uui/session");
-  await waitForScreen(first, "Service the8020/uui/session");
+  await waitForScreen(first, "Service session");
   await clickButton(first, "Back");
   await waitForScreen(first, "Services");
   await clickRow(first, "the8020/demo/variables");
-  await waitForScreen(first, "Service the8020/demo/variables");
+  await waitForScreen(first, "Service variables");
   await first.command("Emulation.setDeviceMetricsOverride", {
     width: 1280,
     height: 800,
@@ -1837,245 +1954,39 @@ try {
   });
   await waitForPage(
     first,
-    `(() => {
-      const grid = document.querySelector('[data-layout-id="scaling"]');
-      const cards = ['worker-threads', 'single-worker', 'replication']
-        .map((id) => document.querySelector('[data-layout-id="' + id + '"]'));
-      if (!(grid instanceof HTMLElement) ||
-        cards.some((card) => !(card instanceof HTMLElement))) return false;
-      const cardElements = cards;
-      const equalHeightOnEachRow = cardElements.every((card, index) => {
-        const bounds = card.getBoundingClientRect();
-        return cardElements.every((peer, peerIndex) => {
-          if (peerIndex === index) return true;
-          const peerBounds = peer.getBoundingClientRect();
-          return Math.abs(bounds.top - peerBounds.top) >= 2 ||
-            Math.abs(bounds.height - peerBounds.height) < 2;
-        });
-      });
-      const insetBorderTitles = cardElements.every((card) => {
-        const title = card.querySelector(':scope > .group-title');
-        const contents = card.querySelector(':scope > .field-group-fields');
-        if (!(title instanceof HTMLElement) || !(contents instanceof HTMLElement)) return false;
-        const bounds = card.getBoundingClientRect();
-        const titleBounds = title.getBoundingClientRect();
-        const contentsBounds = contents.getBoundingClientRect();
-        const cardStyle = getComputedStyle(card);
-        const titleStyle = getComputedStyle(title);
-        const titleOutline = getComputedStyle(title, '::before');
-        const titleLeftContinuation = getComputedStyle(title, '::after');
-        return Math.abs(titleBounds.top + titleBounds.height / 2 - bounds.top) < 2 &&
-          Math.abs(titleBounds.left - bounds.left) < 2 &&
-          titleStyle.fontSize === '16px' && titleStyle.fontWeight === '600' &&
-          titleStyle.borderTopLeftRadius === '10px' &&
-          titleStyle.borderTopRightRadius === '20px' &&
-          titleStyle.paddingLeft === '12.48px' &&
-          titleStyle.paddingRight === '24px' &&
-          cardStyle.paddingLeft === titleStyle.paddingLeft &&
-          cardStyle.paddingRight === titleStyle.paddingRight &&
-          Math.abs(contentsBounds.left - bounds.left - 1 - parseFloat(titleStyle.paddingLeft)) < 1 &&
-          Math.abs(bounds.right - contentsBounds.right - 1 - parseFloat(titleStyle.paddingRight)) < 1 &&
-          titleStyle.textAlign === 'left' &&
-          titleOutline.borderLeftWidth === '1px' &&
-          titleOutline.borderBottomWidth === '0px' &&
-          titleOutline.clipPath !== 'none' &&
-          titleLeftContinuation.borderLeftWidth === '1px' &&
-          titleLeftContinuation.borderRightWidth === '0px';
-      });
-      const section = document.querySelector('[data-layout-id="scaling-section"]');
-      const sectionTitle = section?.querySelector(':scope > .section-title');
-      const lifecycleSection = document.querySelector('[data-layout-id="lifecycle-section"]');
-      const lifecycleTitle = lifecycleSection?.querySelector(':scope > .section-title');
-      const serviceType = document.querySelector('[data-bind="serviceType"]');
-      const sessionKeepAlive = document.querySelector('[data-bind="sessionKeepAlive"]');
-      const screenTitle = document.querySelector('.screen > .screen-title');
-      const screenLayout = document.querySelector('.screen > .layout-stack');
-      const readOnly = document.querySelector('[data-bind="serviceId"]');
-      const readOnlyCheckbox = document.querySelector('[data-bind="enabled"]');
-      const editable = document.querySelector('[data-bind="minimumWorkers"]');
-      const maximumWorkers = document.querySelector('[data-bind="maximumWorkers"]');
-      const slider = document.querySelector('[data-bind="targetUtilization"]');
-      const sliderValue = slider?.closest('.field-input-shell')?.querySelector('.field-range-value');
-      const fieldLabel = editable?.closest('.field')?.querySelector(':scope > label');
-      if (!(readOnly instanceof HTMLElement) ||
-        !(readOnlyCheckbox instanceof HTMLInputElement) ||
-        !(editable instanceof HTMLElement) ||
-        !(maximumWorkers instanceof HTMLInputElement) ||
-        !(slider instanceof HTMLInputElement) ||
-        !(sliderValue instanceof HTMLOutputElement) ||
-        !(fieldLabel instanceof HTMLLabelElement)) return false;
-      const fieldLabelStyle = getComputedStyle(fieldLabel);
-      const flat = [readOnly, editable].every((control) => {
-        const style = getComputedStyle(control);
-        return style.backgroundColor === 'rgba(0, 0, 0, 0)' &&
-          style.borderTopWidth === '0px' && style.borderInlineStartWidth === '0px' &&
-          style.borderInlineEndWidth === '0px' && style.borderBottomWidth === '1px';
-      });
-      const readOnlyIcon = readOnly.closest('.field')?.querySelector('.field-edit-icon');
-      const readOnlyCheckboxShell = readOnlyCheckbox.closest('.field-input-shell');
-      const readOnlyCheckboxIcon = readOnlyCheckbox.closest('.field')?.querySelector('.field-edit-icon');
-      const editableIcon = editable.closest('.field')?.querySelector('.field-edit-icon');
-      const sliderIcon = slider.closest('.field')?.querySelector('.field-edit-icon');
-      const editableShell = editable.closest('.field-input-shell');
-      const sliderShell = slider.closest('.field-input-shell');
-      const maximumField = maximumWorkers.closest('.field');
-      const sliderField = slider.closest('.field');
-      const maximumMessage = maximumField?.querySelector(':scope > .field-message');
-      const sliderMessage = sliderField?.querySelector(':scope > .field-message');
-      const maximumHint = maximumMessage?.querySelector('.field-message-trigger');
-      const iconStyle = editableIcon instanceof HTMLElement
-        ? getComputedStyle(editableIcon)
-        : undefined;
-      const readOnlyCheckboxStyle = getComputedStyle(readOnlyCheckbox);
-      const readOnlyCheckboxShellStyle = readOnlyCheckboxShell instanceof HTMLElement
-        ? getComputedStyle(readOnlyCheckboxShell)
-        : undefined;
-      const sliderStyle = getComputedStyle(slider);
-      const pencilAtEnd = editableIcon instanceof HTMLElement &&
-        editableShell instanceof HTMLElement &&
-        Math.abs(editableShell.getBoundingClientRect().right - editableIcon.getBoundingClientRect().right) < 1;
-      const sliderPencilAtEnd = sliderIcon instanceof HTMLElement &&
-        sliderShell instanceof HTMLElement &&
-        Math.abs(sliderShell.getBoundingClientRect().right - sliderIcon.getBoundingClientRect().right) < 1;
-      const sliderValueOnLeft = sliderValue.getBoundingClientRect().right <
-        slider.getBoundingClientRect().left && sliderValue.nextElementSibling === slider;
-      const reservedMessageRows = maximumField instanceof HTMLElement &&
-        sliderField instanceof HTMLElement && maximumMessage instanceof HTMLElement &&
-        sliderMessage instanceof HTMLElement && maximumHint instanceof HTMLElement &&
-        sliderShell instanceof HTMLElement &&
-        maximumMessage.dataset.messageKind === 'hint' &&
-        sliderMessage.dataset.messageKind === 'none' &&
-        sliderMessage.querySelector('.field-message-trigger') === null &&
-        Math.abs(maximumField.getBoundingClientRect().height -
-          sliderField.getBoundingClientRect().height) < 0.5 &&
-        Math.abs(maximumMessage.getBoundingClientRect().height -
-          sliderMessage.getBoundingClientRect().height) < 0.5 &&
-        Math.abs(maximumWorkers.getBoundingClientRect().bottom -
-          sliderShell.getBoundingClientRect().bottom) < 0.5 &&
-        getComputedStyle(maximumHint).whiteSpace === 'nowrap' &&
-        getComputedStyle(maximumHint).textOverflow === 'ellipsis' &&
-        maximumHint.scrollHeight <= maximumHint.clientHeight + 1 &&
-        maximumHint.scrollWidth > maximumHint.clientWidth;
-      return grid.children.length === 3 &&
-        cardElements.every((card) => card.parentElement === grid) &&
-        equalHeightOnEachRow && insetBorderTitles && flat && reservedMessageRows &&
-        screenTitle?.textContent === 'Service the8020/demo/variables' &&
-        screenLayout instanceof HTMLElement &&
-        getComputedStyle(screenLayout).marginTop === '32px' &&
-        sectionTitle?.textContent === 'Scaling' &&
-        sectionTitle instanceof HTMLElement &&
-        getComputedStyle(sectionTitle).marginBottom === '0px' &&
-        lifecycleTitle?.textContent === 'Lifecycle' &&
-        document.querySelector('[data-layout-id="service-lifecycle"] > .group-title')?.textContent === 'Service lifecycle' &&
-        serviceType instanceof HTMLSelectElement && !serviceType.disabled &&
-        sessionKeepAlive === null &&
-        document.querySelector('[data-bind*="replica" i], [data-bind*="instance" i]') === null &&
-        document.querySelector('[data-layout-id="identity"] > .group-title')?.textContent === 'Status' &&
-        document.querySelector('[data-layout-id="sandboxes"] > .group-title')?.textContent === 'Sandboxes' &&
-        document.querySelector('.field-group-title, .region-title') === null &&
-        fieldLabelStyle.color === 'rgb(166, 174, 194)' &&
-        fieldLabelStyle.fontSize === '11.2px' &&
-        fieldLabelStyle.fontWeight === '800' &&
-        fieldLabelStyle.letterSpacing === '0.672px' &&
-        fieldLabelStyle.textTransform === 'uppercase' &&
-        readOnlyIcon === null && editableIcon instanceof HTMLElement &&
-        readOnlyCheckbox.type === 'checkbox' && readOnlyCheckbox.disabled &&
-        readOnlyCheckboxIcon === null && readOnlyCheckboxStyle.appearance === 'none' &&
-        readOnlyCheckboxStyle.opacity === '1' &&
-        readOnlyCheckboxShellStyle?.borderBottomWidth === '1px' &&
-        pencilAtEnd &&
-        editableIcon.dataset.materialIcon === 'edit' &&
-        iconStyle?.opacity === '0.78' &&
-        (iconStyle.maskImage !== 'none' || iconStyle.webkitMaskImage !== 'none') &&
-        editable instanceof HTMLInputElement && editable.type === 'number' &&
-        slider.type === 'range' && slider.min === '1' && slider.max === '100' &&
-        slider.step === '0.1' && slider.value === '70' &&
-        slider.getAttribute('aria-valuetext') === '70%' &&
-        sliderValue.value === '70%' &&
-        sliderStyle.appearance === 'none' && sliderStyle.opacity === '1' &&
-        sliderStyle.paddingInlineEnd === '0px' &&
-        sliderStyle.backgroundImage.includes('linear-gradient') &&
-        sliderStyle.backgroundSize.includes('calc(100% - 14px)') &&
-        slider.style.getPropertyValue('--range-progress').endsWith('%') &&
-        sliderValueOnLeft && sliderIcon instanceof HTMLElement &&
-        sliderPencilAtEnd && sliderIcon.dataset.materialIcon === 'edit' &&
-        iconStyle.maskSize.includes('19.2px');
-    })()`,
-    "unified field groups and editable field affordances",
-  );
-  await first.evaluate(`document.querySelector('[data-bind="maximumWorkers"]')
-    ?.closest('.field')?.querySelector('.field-message')
-    ?.scrollIntoView({ block: 'center' })`);
-  const openedServiceHint = await first.evaluate<boolean>(`(() => {
-    const field = document.querySelector('[data-bind="maximumWorkers"]')?.closest('.field');
-    const trigger = field?.querySelector('.field-message-trigger');
-    const popover = field?.querySelector('.field-message-popover');
-    if (!(trigger instanceof HTMLElement) || !(popover instanceof HTMLElement)) return false;
-    trigger.click();
-    const triggerBounds = trigger.getBoundingClientRect();
-    const popoverBounds = popover.getBoundingClientRect();
-    const besideHint = Math.abs(popoverBounds.left - triggerBounds.left) < 2 &&
-      (Math.abs(popoverBounds.top - triggerBounds.bottom - 6) < 2 ||
-        Math.abs(popoverBounds.bottom - triggerBounds.top + 6) < 2);
-    return popover.matches(':popover-open') && besideHint &&
-      popover.textContent?.trim() ===
-        'Zero is unlimited at the service level; kernel sandbox and resource limits still apply.';
-  })()`);
-  assert(
-    openedServiceHint,
-    "clicking a service field hint did not open its full text",
-  );
-  await waitForPage(
-    first,
-    `(() => {
-      const field = document.querySelector('[data-bind="maximumWorkers"]')?.closest('.field');
-      const trigger = field?.querySelector('.field-message-trigger');
-      const popover = field?.querySelector('.field-message-popover');
-      return trigger?.getAttribute('aria-expanded') === 'true' &&
-        popover?.matches(':popover-open') === true;
-    })()`,
-    "accessible service field hint popover",
-  );
-  await first.evaluate(`document.querySelector('[data-bind="maximumWorkers"]')
-    ?.closest('.field')?.querySelector('.field-message-trigger')?.click()`);
-  await setValue(first, '[data-bind="serviceType"]', "session");
-  await waitForPage(
-    first,
-    `document.querySelector('[data-bind="serviceType"]')?.value === "session" &&
-      document.querySelector('[data-bind="sessionKeepAlive"]') instanceof HTMLInputElement &&
-      !document.querySelector('[data-bind="sessionKeepAlive"]').disabled`,
-    "editable session lifecycle controls",
-  );
-  await setValue(first, '[data-bind="serviceType"]', "stateless");
-  await waitForPage(
-    first,
-    `document.querySelector('[data-bind="serviceType"]')?.value === "stateless" &&
-      document.querySelector('[data-bind="sessionKeepAlive"]') === null`,
-    "stateless lifecycle hides only its session control",
+    `!document.querySelector('[data-bind="minimumWorkers"]') && !document.querySelector('[data-bind="loadedVersion"]')`,
+    "service overview separates settings and diagnostics",
   );
   await clickButton(first, "Enable");
   await waitForPage(
     first,
-    `[...document.querySelectorAll("button")].some((item) => item.textContent?.trim() === "Disable")`,
+    `[...document.querySelectorAll("button")].some(item => item.textContent?.trim() === "Disable")`,
     "service enable through Deno admin bus",
     30_000,
   );
-  await setValue(first, '[data-bind="targetUtilization"]', "100");
+  await clickButton(first, "Configure");
+  await waitForScreen(first, "Configure variables");
+  await setValue(first, '[data-bind="serviceType"]', "session");
   await waitForPage(
     first,
-    `(() => {
-      const slider = document.querySelector('[data-bind="targetUtilization"]');
-      const output = slider?.closest('.field-input-shell')?.querySelector('.field-range-value');
-      return slider instanceof HTMLInputElement &&
-        output instanceof HTMLOutputElement && slider.value === '100' &&
-        slider.style.getPropertyValue('--range-progress') === '100%' &&
-        slider.getAttribute('aria-valuetext') === '100%' && output.value === '100%';
-    })()`,
-    "range endpoint value, fill, and label synchronization",
+    `document.querySelector('[data-bind="sessionKeepAlive"]') instanceof HTMLInputElement`,
+    "session lifecycle controls",
+  );
+  await setValue(first, '[data-bind="serviceType"]', "stateless");
+  await waitForPage(
+    first,
+    `document.querySelector('[data-bind="sessionKeepAlive"]') === null`,
+    "stateless hides session timeout",
   );
   await setValue(first, '[data-bind="minimumWorkers"]', "2");
   await setValue(first, '[data-bind="targetUtilization"]', "65");
-  await clickButton(first, "Save");
+  await waitForPage(
+    first,
+    `document.querySelector('[data-bind="minimumWorkers"]')?.value === "2"`,
+    "configuration retains capacity draft",
+  );
+  await clickButton(first, "Save settings");
+  await waitForScreen(first, "Service variables");
   let managedSandbox = "";
   await waitFor(
     async () => {
@@ -2117,27 +2028,20 @@ try {
   await waitForScreen(first, `Sandbox ${managedSandbox}`);
   await waitForPage(
     first,
-    `(() => {
-      const fields = document.querySelector('[data-layout-id="identity"] .field-group-fields');
-      const failure = document.querySelector('[data-bind="failure"]')?.closest('.field');
-      if (!(fields instanceof HTMLElement) || !(failure instanceof HTMLElement)) return false;
-      const container = fields.getBoundingClientRect();
-      const startsOnHalf = (field) => {
-        const ratio = (field.getBoundingClientRect().left - container.left) / container.width;
-        return Math.abs(ratio) < 0.02 || Math.abs(ratio - 0.5) < 0.02;
-      };
-      const longFields = [...fields.querySelectorAll('[data-field-length="long"]')];
-      const label = failure.querySelector('label');
-      const value = failure.querySelector('.field-input-shell');
-      return longFields.every((field) => field instanceof HTMLElement && startsOnHalf(field)) &&
-        getComputedStyle(failure).rowGap === '0px' &&
-        label instanceof HTMLElement && value instanceof HTMLElement &&
-        Math.abs(value.getBoundingClientRect().top - label.getBoundingClientRect().bottom) < 1;
-    })()`,
-    "sandbox field grid half-boundary alignment",
+    `document.querySelector('[data-bind="memory"]') && !document.querySelector('[data-bind="cpuMicros"]')`,
+    "readable sandbox resources",
+  );
+  await clickButton(first, "Advanced");
+  await waitForScreen(first, `Advanced · ${managedSandbox}`);
+  await waitForPage(
+    first,
+    `document.querySelector('[data-bind="snapshotRevision"]') !== null`,
+    "sandbox runtime diagnostics",
   );
   await clickButton(first, "Back");
-  await waitForScreen(first, "Service the8020/demo/variables");
+  await waitForScreen(first, `Sandbox ${managedSandbox}`);
+  await clickButton(first, "Back");
+  await waitForScreen(first, "Service variables");
   await clickButton(first, "Back");
   await waitForScreen(first, "Services");
   await clickButton(first, "Back");
@@ -2226,7 +2130,7 @@ try {
     `document.documentElement.removeAttribute("data-interaction-pending")`,
   );
   await clickRow(first, "the8020/demo/variables");
-  await waitForScreen(first, "Service the8020/demo/variables");
+  await waitForScreen(first, "Service variables");
   await clickButton(first, "Back");
   await waitForScreen(first, `Sandbox ${managedSandbox}`);
   await clickButton(first, "Back");
@@ -2237,7 +2141,7 @@ try {
   await clickRow(first, "the8020/admin-core/services");
   await waitForScreen(first, "Services");
   await clickRow(first, "the8020/demo/variables");
-  await waitForScreen(first, "Service the8020/demo/variables");
+  await waitForScreen(first, "Service variables");
   await clickButton(first, "Disable");
   await waitForPage(
     first,
@@ -2268,7 +2172,7 @@ try {
       const saveIconBounds = saveIcon.getBoundingClientRect();
       return titleIcon.classList.contains('material-icon-color-primary') &&
         saveStyle.color === 'rgb(255, 255, 255)' &&
-        titleStyle.maskImage !== 'none' && saveStyle.maskImage !== 'none' &&
+        document.fonts.check('20px \"UUI Material Symbols\"') &&
         titleStyle.verticalAlign === 'middle' &&
         Math.abs(titleBounds.width / parseFloat(titleStyle.fontSize) - 1.2) < 0.05 &&
         Math.abs(saveIconBounds.width / parseFloat(saveStyle.fontSize) - 1.5) < 0.05 &&
@@ -3271,7 +3175,7 @@ try {
         stack.includes("demo-form/program.ts") &&
         source.includes("raiseDemoTypeError") &&
         titleIcon?.classList.contains("material-icon-color-danger") === true &&
-        getComputedStyle(titleIcon).maskImage !== "none";
+        document.fonts.check('20px "UUI Material Symbols"');
     })()`),
     "TypeError short dump is missing exception, stack, or source details",
   );
@@ -3303,7 +3207,7 @@ try {
       const icon = reset?.querySelector('[data-material-icon="refresh"]');
       return icon instanceof HTMLElement &&
         icon.classList.contains('material-icon-color-warning') &&
-        getComputedStyle(icon).maskImage !== 'none';
+        document.fonts.check('20px "UUI Material Symbols"');
     })()`,
     "semantic icon color in a UUI action",
   );
@@ -3324,8 +3228,8 @@ try {
     popover?: { top: number; right: number; bottom: number; left: number };
   }>(`(() => {
     const field = document.querySelector('[data-bind="username"]')?.closest('.field');
-    const trigger = field?.querySelector('.field-message-trigger');
-    const popover = field?.querySelector('.field-message-popover');
+    const trigger = field?.querySelector('.overflow-reveal');
+    const popover = field?.querySelector('.overflow-popover');
     if (!(trigger instanceof HTMLElement) || !(popover instanceof HTMLElement)) {
       return { opened: false, text: '' };
     }
@@ -3333,7 +3237,7 @@ try {
     const triggerBounds = trigger.getBoundingClientRect();
     const popoverBounds = popover.getBoundingClientRect();
     const text = popover.textContent?.trim() ?? '';
-    const besideHint = Math.abs(popoverBounds.left - triggerBounds.left) < 2 &&
+    const besideHint = Math.abs(popoverBounds.left - Math.max(10, Math.min(triggerBounds.right - popoverBounds.width, innerWidth - 10 - popoverBounds.width))) < 2 &&
       (Math.abs(popoverBounds.top - triggerBounds.bottom - 6) < 2 ||
         Math.abs(popoverBounds.bottom - triggerBounds.top + 6) < 2);
     return {
@@ -3353,11 +3257,11 @@ try {
   await waitForPage(
     first,
     `document.querySelector('[data-bind="username"]')?.closest('.field')
-      ?.querySelector('.field-message-trigger')?.getAttribute('aria-expanded') === 'true'`,
+      ?.querySelector('.overflow-reveal')?.getAttribute('aria-expanded') === 'true'`,
     "responsive field hint accessibility state",
   );
   await first.evaluate(`document.querySelector('[data-bind="username"]')
-    ?.closest('.field')?.querySelector('.field-message-trigger')?.click()`);
+    ?.closest('.field')?.querySelector('.overflow-reveal')?.click()`);
   await first.command("Emulation.setDeviceMetricsOverride", {
     width: 800,
     height: 900,
@@ -3488,13 +3392,13 @@ try {
   await clickRow(second, "the8020/uui/sessions");
   await waitForScreen(second, "UUI sessions");
   await clickRow(second, firstSession.session_id);
-  await waitForScreen(second, `UUI session ${firstSession.session_id}`);
+  await waitForScreen(second, "Session for admin");
   await waitForPage(
     second,
-    `document.querySelector('[data-bind="liveState"]')?.value?.startsWith("STALE:") === true`,
+    `document.querySelector('[data-bind="state"]')?.value === "Unavailable"`,
     "failed Worker represented as stale package metadata",
   );
-  await clickButton(second, "Clean stale metadata");
+  await clickButton(second, "Remove stale session");
   await waitForScreen(second, "UUI sessions");
   await waitFor(
     async () => {
@@ -3525,8 +3429,10 @@ try {
     "refreshed UUI session metadata",
   );
   await clickRow(second, thirdSession.session_id);
-  await waitForScreen(second, `UUI session ${thirdSession.session_id}`);
-  await clickButton(second, "Terminate");
+  await waitForScreen(second, "Session for admin");
+  await clickButton(second, "End session");
+  await waitForScreen(second, "End admin's session?");
+  await clickButton(second, "End session");
   await waitForScreen(second, "UUI sessions");
   try {
     await waitForUISessions(primaryRoot, 1);
@@ -3580,16 +3486,6 @@ try {
   console.log(
     "Phase 1D browser E2E passed: login, browser-only persistent themes, responsive semantic field layouts, bounded Markdown and asynchronous messages, kernel-restart stale-route recovery, development Bash console, development activation and start/stop/restart/reset controls, package manifest/Git/content inspection, package-owned UUI session administration, service control, shared-node auth, programs, short dumps, recovery, reconnect, reload, isolation, and logout",
   );
-} catch (error) {
-  console.error(await latestKernelLog(primaryRoot));
-  throw error;
-} finally {
-  for (const page of pages) page.close();
-  if (browser !== undefined) await stopProcess(browser);
-  for (const kernel of kernels.toReversed()) {
-    await stopKernel(kernel);
-  }
-  await removeTemporaryRoot(temporaryRoot);
 }
 
 function parseOptions(arguments_: string[]): Options {
@@ -3617,6 +3513,7 @@ function parseOptions(arguments_: string[]): Options {
     kernel: required("kernel"),
     admin: required("admin"),
     browser: required("browser"),
+    fixture: values.get("fixture"),
   };
 }
 
@@ -4364,7 +4261,9 @@ async function waitForScreen(
   try {
     await waitForPage(
       page,
-      `document.querySelector("#connection-state")?.textContent === "Connected" && document.querySelector(".screen > h1.screen-title")?.textContent?.trim() === ${
+      `document.querySelector("#connection-state")?.textContent === "Connected" &&
+      [...document.querySelectorAll('.screen-title')].find(element =>
+        element.getClientRects().length > 0 && !element.closest('[inert]'))?.textContent?.trim() === ${
         JSON.stringify(title)
       } && document.title === ${JSON.stringify(`80|20 ${title}`)}`,
       title,
@@ -4373,7 +4272,8 @@ async function waitForScreen(
   } catch (error) {
     const state = await page.evaluate(`({
       title: document.title,
-      heading: document.querySelector('.screen > h1')?.textContent,
+      heading: [...document.querySelectorAll('.screen-title')].filter(element =>
+        element.getClientRects().length > 0 && !element.closest('[inert]')).map(element => element.textContent),
       connection: document.querySelector('#connection-state')?.textContent,
       exception: document.querySelector('[data-bind="exceptionType"]')?.value,
       message: document.querySelector('[data-bind="message"]')?.value,
@@ -4429,10 +4329,11 @@ function responsiveFieldLayoutExpression(
     const localeField = fieldFor('locale');
     const usernameMessage = usernameField?.querySelector(':scope > .field-message');
     const languageMessage = languageField?.querySelector(':scope > .field-message');
-    const usernameTrigger = usernameMessage?.querySelector('.field-message-trigger');
-    const usernamePopover = usernameMessage?.querySelector('.field-message-popover');
-    const hintStyle = usernameTrigger instanceof HTMLElement
-      ? getComputedStyle(usernameTrigger)
+    const usernameTrigger = usernameMessage?.querySelector('.overflow-reveal');
+    const usernamePopover = usernameMessage?.querySelector('.overflow-popover');
+    const usernameText = usernameMessage?.querySelector(".field-message-text");
+    const hintStyle = usernameText instanceof HTMLElement
+      ? getComputedStyle(usernameText)
       : undefined;
     const alignedSiblingMessageRows = ${JSON.stringify(mode)} === 'mobile' ||
       (usernameField instanceof HTMLElement && languageField instanceof HTMLElement &&
@@ -4444,19 +4345,18 @@ function responsiveFieldLayoutExpression(
       usernamePopover instanceof HTMLElement && alignedSiblingMessageRows &&
       usernameMessage.dataset.messageKind === 'hint' &&
       languageMessage.dataset.messageKind === 'none' &&
-      languageMessage.querySelector('.field-message-trigger') === null &&
+      languageMessage.querySelector('.overflow-reveal') === null &&
       Math.abs(usernameMessage.getBoundingClientRect().height -
         languageMessage.getBoundingClientRect().height) < 0.5 &&
       hintStyle?.whiteSpace === 'nowrap' && hintStyle.overflowX === 'hidden' &&
-      hintStyle.textOverflow === 'ellipsis' &&
-      hintStyle.cursor === 'help' && hintStyle.textDecorationLine === 'underline' &&
-      hintStyle.textDecorationStyle === 'dotted' &&
-      usernameTrigger.scrollHeight <= usernameTrigger.clientHeight + 1 &&
-      usernameTrigger.scrollWidth > usernameTrigger.clientWidth &&
-      usernameTrigger.getAttribute('role') === 'button' &&
-      usernameMessage.dataset.messageOverflow === 'true' &&
+      hintStyle.textOverflow === 'clip' && hintStyle.userSelect === 'text' &&
+      hintStyle.cursor === 'text' && hintStyle.textDecorationLine === 'none' &&
+      usernameText.scrollHeight <= usernameText.clientHeight + 1 &&
+      usernameText.scrollWidth > usernameText.clientWidth &&
+      usernameText.getAttribute('role') === null &&
+      usernameTrigger instanceof HTMLButtonElement && !usernameTrigger.hidden &&
       usernamePopover.getAttribute('popover') === 'auto' &&
-      usernamePopover.getAttribute('role') === 'tooltip';
+      usernamePopover.getAttribute('role') === 'dialog';
     const spanningNote = document.querySelector('[data-bind="spanningNote"]');
     const spanningTextarea = spanningNote instanceof HTMLTextAreaElement ? spanningNote : undefined;
     const spanningField = spanningTextarea?.closest('.field');
@@ -4478,17 +4378,13 @@ function responsiveFieldLayoutExpression(
       : undefined;
     const spanningTextOverflows = spanningText instanceof HTMLElement &&
       spanningText.scrollWidth > spanningText.clientWidth + 0.5;
+    const spanningTrigger = spanningMessage?.querySelector('.overflow-reveal');
     const spanningHintBehavior = spanningText instanceof HTMLElement &&
-      (spanningTextOverflows
-        ? spanningText.classList.contains('field-message-trigger') &&
-          spanningText.getAttribute('role') === 'button' &&
-          spanningTextStyle?.cursor === 'help' &&
-          spanningTextStyle.textDecorationLine === 'underline'
-        : !spanningText.classList.contains('field-message-trigger') &&
-          spanningText.getAttribute('role') === null &&
-          spanningTextStyle?.userSelect === 'text' &&
-          spanningTextStyle.textDecorationLine === 'none' &&
-          spanningTextStyle.cursor === 'text');
+      spanningTrigger instanceof HTMLButtonElement &&
+      spanningTrigger.hidden === !spanningTextOverflows &&
+      spanningText.getAttribute('role') === null &&
+      spanningTextStyle?.userSelect === 'text' &&
+      spanningTextStyle.textDecorationLine === 'none' && spanningTextStyle.cursor === 'text';
     const spanningLongMessage = spanningLong?.querySelector(':scope > .field-message');
     const spanningMessageBounds = spanningMessage?.getBoundingClientRect();
     const spanningLongMessageBounds = spanningLongMessage?.getBoundingClientRect();
@@ -4581,7 +4477,7 @@ function responsiveFieldLayoutDiagnosticsExpression(): string {
       const inputRect = input?.getBoundingClientRect();
       const message = field.querySelector(':scope > .field-message');
       const messageRect = message?.getBoundingClientRect();
-      const trigger = message?.querySelector('.field-message-trigger');
+      const trigger = message?.querySelector('.overflow-reveal');
       const grid = field.closest('.field-group-fields');
       const label = field.querySelector(':scope > :is(label, legend)');
       return {

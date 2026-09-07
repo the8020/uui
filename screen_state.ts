@@ -7,6 +7,7 @@ export interface ScrollPosition {
 export type ListValueType =
   | "text"
   | "number"
+  | "decimal"
   | "boolean"
   | "date"
   | "datetime"
@@ -27,12 +28,15 @@ export interface ListOptions {
   headings?: Record<string, string>;
   columnOptions?: Record<string, ListColumnOptions>;
   triggerFilterEvents?: boolean;
+  /** The bound array is one server-supplied page; interactions return to the program. */
+  pageSource?: { more: boolean; searchOnly?: boolean };
 }
 
 export interface ListColumn extends ListColumnOptions {
   id: string;
   key: string;
   heading: string;
+  description?: string;
   length: ColumnLength;
   semanticType: ListValueType;
 }
@@ -86,6 +90,7 @@ export interface ScreenListSnapshot {
   totalPages: number;
   filtered: boolean;
   triggerFilterEvents: boolean;
+  pageSource?: { more: boolean; searchOnly?: boolean };
 }
 
 export type ListRequest =

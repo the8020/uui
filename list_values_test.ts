@@ -42,3 +42,28 @@ Deno.test("column semantics distinguish numbers, text, booleans, dates, and empt
   );
   assertEquals(matchesListFilter("2026-09-05", "tomorrow", "date"), false);
 });
+
+Deno.test("decimal lists sort and filter exact amounts beyond floating-point precision", () => {
+  assertEquals(compareListValues("9.00", "10.00", "decimal"), -1);
+  assertEquals(compareListValues("-9.00", "-10.00", "decimal"), 1);
+  assertEquals(
+    compareListValues("90071992547409.91", "90071992547409.92", "decimal"),
+    -1,
+  );
+  assertEquals(compareListValues("0.1", "0.10", "decimal"), 0);
+  assertEquals(compareListValues(null, "0.00", "decimal"), -1);
+  assertEquals(
+    matchesListFilter("90071992547409.92", ">90071992547409.91", "decimal"),
+    true,
+  );
+  assertEquals(
+    matchesListFilter("90071992547409.91", "=90071992547409.92", "decimal"),
+    false,
+  );
+  assertEquals(matchesListFilter("10.00", "=10", "decimal"), true);
+  assertEquals(matchesListFilter("-0.25", "<-0.2", "decimal"), true);
+  assertEquals(matchesListFilter("0.00", "is:not-empty", "decimal"), true);
+  for (const value of ["1e2", "NaN", "Infinity", "1abc"]) {
+    assertEquals(matchesListFilter("10.00", value, "decimal"), false);
+  }
+});

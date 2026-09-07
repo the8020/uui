@@ -570,7 +570,8 @@ function sessionRecordStatus(record: SessionRecord): Record<string, unknown> {
     sandbox_id: record.placement.sandboxId,
     worker_id: record.placement.workerId,
     state: record.socket === undefined ? "DISCONNECTED" : "CONNECTED",
-    current_screen_id: currentScreenID(record),
+    current_screen_id: currentScreen(record)?.id,
+    current_screen_title: currentScreen(record)?.title,
     server_sequence: record.serverSequence,
     last_client_sequence: record.lastClientSequence,
     created_at: new Date(record.createdAt).toISOString(),
@@ -578,14 +579,14 @@ function sessionRecordStatus(record: SessionRecord): Record<string, unknown> {
   };
 }
 
-function currentScreenID(record: SessionRecord): string | undefined {
+function currentScreen(record: SessionRecord) {
   const presentation = record.currentPresentation?.presentation;
   if (presentation?.activeSurfaceId === null || presentation === undefined) {
     return undefined;
   }
   return presentation.surfaces.find((surface) =>
     surface.surfaceId === presentation.activeSurfaceId
-  )?.screen.id;
+  )?.screen;
 }
 
 function updateMetadata(record: SessionRecord): void {
@@ -621,7 +622,7 @@ async function writeMetadata(
     createdAt: new Date(record.createdAt),
     updatedAt: new Date(),
     lastConnectionAt: new Date(record.lastConnectionAt),
-    currentScreenId: currentScreenID(record) ?? null,
+    currentScreenId: currentScreen(record)?.id ?? null,
     terminationFailure: record.terminationFailure ?? null,
   };
   if (create) await record.metadataStore.create(metadata);

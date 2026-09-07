@@ -2,7 +2,13 @@ import { Model } from "./model.ts";
 import { assertEquals, assertRejects, assertThrows } from "@std/assert";
 import { z } from "zod";
 import { validateCustomElements } from "./custom_elements.ts";
-import { buildControls, buildFieldCatalog, field } from "./fields.ts";
+import {
+  buildControls,
+  buildFieldCatalog,
+  field,
+  fieldMetadata,
+} from "./fields.ts";
+import { field as sharedField, money } from "/p/the8020/db/fields.ts";
 import { applyLayoutOverride, validateLayout } from "./layout.ts";
 import {
   BACK_EVENT,
@@ -26,6 +32,74 @@ type PresentationShow = Extract<
   UUIWorkerOutbound,
   { type: "presentation.show" }
 >;
+
+Deno.test("shared semantic fields retain help and independent screen presentation", () => {
+  const valueHelp = () => ({
+    items: [{ value: "alice", label: "Alice" }],
+    more: false,
+  });
+  const user = sharedField(z.string(), {
+    label: "User",
+    description: "Choose an **account**.",
+    valueHelp,
+  });
+  const owner = field(user, {
+    label: "Owner",
+    length: "long",
+    group: "Assignment",
+  });
+  const reviewer = field(owner.nullable(), {
+    label: "Reviewer",
+    readOnly: true,
+  });
+  assertEquals(fieldMetadata(user)?.label, "User");
+  assertEquals(fieldMetadata(owner)?.label, "Owner");
+  assertEquals(fieldMetadata(reviewer)?.length, "long");
+  assertEquals(fieldMetadata(reviewer)?.valueHelp, valueHelp);
+  const catalog = buildFieldCatalog(z.object({ owner, reviewer }));
+  assertEquals(
+    catalog.map(({ label, description, length, required }) => ({
+      label,
+      description,
+      length,
+      required,
+    })),
+    [
+      {
+        label: "Owner",
+        description: "Choose an **account**.",
+        length: "long",
+        required: true,
+      },
+      {
+        label: "Reviewer",
+        description: "Choose an **account**.",
+        length: "long",
+        required: false,
+      },
+    ],
+  );
+  // Callbacks stay with the schema in the Worker, outside the wire descriptors.
+  structuredClone(catalog);
+});
+
+Deno.test("decimal presentation retains its exact string schema and storage contract", () => {
+  const amount = field(money().refine((value) => !value.startsWith("-")), {
+    label: "Total",
+    description: "Enter the **total amount**.",
+  });
+  const descriptor = buildFieldCatalog(z.object({ amount }))[0]!;
+  assertEquals(descriptor.control, "text");
+  assertEquals(descriptor.semanticType, "decimal");
+  assertEquals(fieldMetadata(amount)?.storage, {
+    type: "decimal",
+    precision: 18,
+    scale: 2,
+  });
+  assertEquals(amount.parse("9999999999999999.99"), "9999999999999999.99");
+  assertEquals(amount.safeParse(1.25).success, false);
+  assertEquals(amount.safeParse("-1.25").success, false);
+});
 
 class TestChannel {
   readonly sessionId = "session-test";
@@ -58,17 +132,19 @@ class TestChannel {
 
 Deno.test("field catalog infers controls and keeps id separate from shared bind", () => {
   const schema = z.object({
-    email: field(z.string().email(), {
+    email: field(z.email(), {
       label: "Email",
       control: "email",
       length: "long",
     }),
     enabled: z.boolean(),
+    attempts: z.int().nullable(),
+    ratio: z.float64(),
     role: z.enum(["administrator", "viewer"]),
     biography: field(z.string().optional(), { semanticType: "long-string" }),
     notes: field(z.string(), { control: "textarea", rowSpan: 3 }),
     token: field(z.string(), { control: "password" }),
-    utilization: field(z.number().min(1).max(100), {
+    utilization: field(z.int().min(1).max(100), {
       control: "range",
       minimum: 1,
       maximum: 100,
@@ -86,10 +162,12 @@ Deno.test("field catalog infers controls and keeps id separate from shared bind"
       item.rowSpan,
     ]),
     [
+      ["attempts", "number", false, "medium", 1],
       ["biography", "textarea", false, "medium", 1],
       ["email", "email", true, "long", 1],
       ["enabled", "checkbox", true, "medium", 1],
       ["notes", "textarea", true, "medium", 3],
+      ["ratio", "number", true, "medium", 1],
       ["role", "select", true, "medium", 1],
       ["token", "password", true, "medium", 1],
       ["utilization", "range", true, "medium", 1],
@@ -114,7 +192,7 @@ Deno.test("field catalog infers controls and keeps id separate from shared bind"
     step: 1,
     valueSuffix: "%",
     options: undefined,
-    searchHelp: undefined,
+    fieldHelp: undefined,
     semanticType: undefined,
     list: undefined,
   });
@@ -303,14 +381,14 @@ Deno.test("custom screen elements stay bounded and declarative", () => {
   };
   const elements = validateCustomElements([{
     id: "console",
-    initializer: "sandbox-console.v1",
+    module: "/component.js",
     preserve: true,
     config,
   }]);
   config.target.sandboxId = "changed-after-validation";
   assertEquals(elements, [{
     id: "console",
-    initializer: "sandbox-console.v1",
+    module: "/component.js",
     preserve: true,
     config: {
       enabled: true,
@@ -357,7 +435,7 @@ Deno.test("custom screen elements stay bounded and declarative", () => {
     () =>
       validateCustomElements([{
         id: "console",
-        initializer: "sandbox-console.v1",
+        module: "/component.js",
         config: { connect: () => undefined },
       }]),
     TypeError,
@@ -367,7 +445,7 @@ Deno.test("custom screen elements stay bounded and declarative", () => {
     () =>
       validateCustomElements([{
         id: "console",
-        initializer: "sandbox-console.v1",
+        module: "/component.js",
         config: {},
         source: "javascript:alert(1)",
       } as never]),
@@ -390,7 +468,7 @@ Deno.test({
         model: new Model({ ready: true }),
         customElements: [{
           id: "console",
-          initializer: "sandbox-console.v1",
+          module: "/component.js",
           preserve: true,
           config: { enabled: true },
         }],
@@ -1426,6 +1504,288 @@ async function flushMicrotasks(): Promise<void> {
   for (let index = 0; index < 12; index++) await Promise.resolve();
 }
 
+Deno.test("field help drafts, cancels, commits, and pages searchable choices through standard lists", async () => {
+  const test = new TestChannel();
+  const unbind = bindSession(test);
+  const requests: Array<{ query: string; offset: number; limit: number }> = [];
+  const values = Array.from({ length: 2001 }, (_, index) => `user${index}`);
+  const user = field(z.string(), {
+    label: "User",
+    valueHelp: (request) => {
+      requests.push(request);
+      const matches = values.filter((value) => value.includes(request.query));
+      return {
+        items: matches.slice(request.offset, request.offset + request.limit)
+          .map((value) => ({ value, label: value })),
+        more: matches.length > request.offset + request.limit,
+      };
+    },
+    open: () => {},
+  });
+  const schema = z.object({ user, reference: field(user, { readOnly: true }) })
+    .refine((value) => value.user !== "blocked", "This user is unavailable");
+  const model = new Model({ user: "user0", reference: "user1" });
+  let sequence = 0;
+  const action = async (
+    id: string,
+    changes: Array<{ bind: string; value: unknown }> = [],
+  ) => {
+    test.push({ ...eventFor(lastPresentation(test), id, ++sequence), changes });
+    await flushMicrotasks();
+  };
+  const open = async (bind: string) => {
+    const shown = lastPresentation(test);
+    const control = topScreen(shown).controls.find((item) =>
+      item.bind === bind
+    )!;
+    test.push({
+      ...eventFor(shown, "field-help", ++sequence, "field-help"),
+      controlId: control.id,
+      bind,
+    });
+    await flushMicrotasks();
+  };
+  const request = async (
+    update: { operation: "capacity"; pageSize: number } | {
+      operation: "page";
+      page: number;
+    } | {
+      operation: "query";
+      query: { search: string; filters: Record<string, string>; sort: null };
+    },
+  ) => {
+    const shown = lastPresentation(test), list = topScreen(shown).lists[0]!;
+    test.push({
+      ...eventFor(shown, "", ++sequence),
+      type: "screen.list",
+      updates: [{ id: list.id, revision: list.revision, ...update }],
+    });
+    await flushMicrotasks();
+  };
+  try {
+    const pending = callScreen({ id: "help-owner", schema, model });
+    await open("user");
+    assertEquals(
+      topScreen(lastPresentation(test)).header?.actions.map((item) =>
+        item.label
+      ),
+      ["Done", "Navigate"],
+    );
+    assertEquals(requests, [{ query: "", offset: 0, limit: 1 }]);
+    assertEquals(
+      topScreen(lastPresentation(test)).state.elements.choices?.toolbarOpen,
+      true,
+    );
+    await assertRejects(
+      () => callScreen({ id: "concurrent", schema, model }),
+      Error,
+      "only one",
+    );
+    await request({ operation: "capacity", pageSize: 7 });
+    assertEquals(requests.at(-1), { query: "", offset: 0, limit: 7 });
+    await request({ operation: "page", page: 2 });
+    assertEquals(requests.at(-1), { query: "", offset: 7, limit: 7 });
+    assertEquals(topScreen(lastPresentation(test)).lists[0]!.rows[0], {
+      index: 0,
+      label: "user7",
+      description: "",
+    });
+    await request({
+      operation: "query",
+      query: { search: "user1999", filters: {}, sort: null },
+    });
+    assertEquals(requests.at(-1), { query: "user1999", offset: 0, limit: 7 });
+    const shown = lastPresentation(test), list = topScreen(shown).lists[0]!;
+    assertEquals(list.totalPages, 1);
+    test.push({
+      ...eventFor(shown, "select", ++sequence, "select"),
+      selection: { id: list.id, revision: list.revision, index: 0 },
+    });
+    await flushMicrotasks();
+    assertEquals(
+      (topScreen(lastPresentation(test)).model as { value: string }).value,
+      "user1999",
+    );
+    assertEquals(model.data.user, "user0");
+    await action(BACK_EVENT);
+    assertEquals(topScreen(lastPresentation(test)).id, "help-owner");
+    assertEquals(model.data.user, "user0");
+    await open("user");
+    await action("open", [{ bind: "value", value: "user20" }]);
+    assertEquals(
+      model.data.user,
+      "user0",
+      "Navigate does not commit the draft",
+    );
+    await action(BACK_EVENT, [{ bind: "value", value: 42 }]);
+    assertEquals(
+      model.data.user,
+      "user0",
+      "Close discards even an invalid draft",
+    );
+    await open("user");
+    await action("done", [{ bind: "value", value: "blocked" }]);
+    assertEquals(model.data.user, "user0");
+    assertEquals(topScreen(lastPresentation(test)).id, "uui-field-help");
+    await action("done", [{ bind: "value", value: "user1999" }]);
+    assertEquals(model.data.user, "user1999");
+    await open("reference");
+    assertEquals(
+      topScreen(lastPresentation(test)).header?.actions.map((item) =>
+        item.label
+      ),
+      ["Navigate"],
+    );
+    assertEquals(topScreen(lastPresentation(test)).lists.length, 0);
+    await action(BACK_EVENT);
+    await action("save");
+    assertEquals((await pending).action, "save");
+  } finally {
+    unbind();
+  }
+});
+
+Deno.test("enum field help exposes searchable options and commits only on Done", async () => {
+  const test = new TestChannel();
+  const unbind = bindSession(test);
+  const schema = z.object({ value: z.enum(["red", "green", "blue"]) });
+  const model = new Model({ value: "red" as "red" | "green" | "blue" });
+  try {
+    const pending = callScreen({ id: "enum", schema, model });
+    void pending.catch(() => {});
+    const shown = lastPresentation(test),
+      control = topScreen(shown).controls[0]!;
+    test.push({
+      ...eventFor(shown, "field-help", 1, "field-help"),
+      controlId: control.id,
+      bind: "value",
+    });
+    await flushMicrotasks();
+    const help = lastPresentation(test), list = topScreen(help).lists[0]!;
+    assertEquals(list.rows, [{ index: 0, label: "Red", description: "" }]);
+    test.push({
+      ...eventFor(help, "", 2),
+      type: "screen.list",
+      updates: [{
+        id: list.id,
+        revision: list.revision,
+        operation: "query",
+        query: { search: "BLUE", filters: {}, sort: null },
+      }],
+    });
+    await flushMicrotasks();
+    assertEquals(topScreen(lastPresentation(test)).lists[0]!.rows, [{
+      index: 0,
+      label: "Blue",
+      description: "",
+    }]);
+    test.push(eventFor(lastPresentation(test), BACK_EVENT, 3, BACK_EVENT));
+    await flushMicrotasks();
+    assertEquals(model.data.value, "red");
+    test.push(eventFor(lastPresentation(test), "save", 4));
+    await pending;
+  } finally {
+    unbind();
+  }
+});
+
+Deno.test("field help retains background redraws and defers channel completion until return", async () => {
+  for (const fail of [false, true]) {
+    const test = new TestChannel();
+    const unbind = bindSession(test);
+    const channel = new ScreenChannel();
+    const schema = z.object({ value: z.string(), status: z.string() });
+    const model = new Model({ value: "before", status: "waiting" });
+    let settled = false;
+    try {
+      const pending = callScreen({
+        id: "background-help",
+        schema,
+        model,
+        channel,
+      })
+        .then((event) => {
+          settled = true;
+          return event;
+        }, (error: unknown) => {
+          settled = true;
+          return error;
+        });
+      let shown = lastPresentation(test);
+      const control = topScreen(shown).controls.find((item) =>
+        item.bind === "value"
+      )!;
+      test.push({
+        ...eventFor(shown, "field-help", 1, "field-help"),
+        controlId: control.id,
+        bind: control.bind,
+      });
+      await flushMicrotasks();
+      model.data.status = "updated";
+      channel.redraw();
+      await flushMicrotasks();
+      shown = lastPresentation(test);
+      assertEquals(topScreen(shown).id, "uui-field-help");
+      const error = new Error("background failure");
+      if (fail) channel.fail(error);
+      else channel.exit("refresh");
+      await flushMicrotasks();
+      assertEquals(settled, false);
+      test.push(eventFor(shown, "done", 2));
+      assertEquals(
+        await pending,
+        fail ? error : {
+          action: "refresh",
+          eventType: "exit",
+          origin: "channel",
+        },
+      );
+      const restored = topScreen(lastPresentation(test));
+      assertEquals(restored.id, "background-help");
+      assertEquals((restored.model as { status: string }).status, "updated");
+    } finally {
+      unbind();
+    }
+  }
+});
+
+Deno.test("field help preserves parent validation and returns reactive changes to its program", async () => {
+  const test = new TestChannel();
+  const unbind = bindSession(test);
+  const schema = z.object({ value: field(z.string(), { reactive: true }) })
+    .refine((model) => model.value !== "blocked", "This value is unavailable");
+  const model = new Model({ value: "before" });
+  try {
+    const pending = callScreen({ id: "reactive-help", schema, model });
+    let shown = lastPresentation(test);
+    const control = topScreen(shown).controls[0]!;
+    test.push({
+      ...eventFor(shown, "field-help", 1, "field-help"),
+      controlId: control.id,
+      bind: control.bind,
+    });
+    await flushMicrotasks();
+    shown = lastPresentation(test);
+    test.push({
+      ...eventFor(shown, "done", 2),
+      changes: [{ bind: "value", value: "blocked" }],
+    });
+    await flushMicrotasks();
+    assertEquals(model.data.value, "before");
+    shown = lastPresentation(test);
+    test.push({
+      ...eventFor(shown, "done", 3),
+      changes: [{ bind: "value", value: "after" }],
+    });
+    const event = await pending;
+    assertEquals(event.eventType, "change");
+    assertEquals(event.bind, "value");
+    assertEquals(model.data.value, "after");
+  } finally {
+    unbind();
+  }
+});
+
 Deno.test({
   name:
     "query interactions validate edits and stale mappings before atomically merging metadata or resolving",
@@ -1593,7 +1953,7 @@ Deno.test({
           id: "identity-layout",
           root: { type: "section", controls: ["value"] },
         },
-        customElements: [{ initializer: "probe.v1", config: {} }],
+        customElements: [{ module: "/probe.js", config: {} }],
       };
       const pending = callScreen(options);
       await flushMicrotasks();
@@ -1635,4 +1995,50 @@ Deno.test({
       unbind();
     }
   },
+});
+
+Deno.test("page-source interactions report every measured list for one atomic reload", async () => {
+  const test = new TestChannel();
+  const unbind = bindSession(test);
+  const schema = z.object({ a: z.string().array(), b: z.string().array() });
+  const model = new Model({ a: ["A"], b: ["B"] });
+  try {
+    const pending = callScreen({
+      id: "sources",
+      schema,
+      model,
+      layout: {
+        schema: 1,
+        id: "sources",
+        root: {
+          type: "stack",
+          children: ["a", "b"].map((id) => ({
+            id,
+            type: "list",
+            bind: id,
+            pageSource: { more: true },
+          })),
+        },
+      },
+    });
+    const shown = lastPresentation(test);
+    test.push({
+      ...eventFor(shown, "", 1),
+      type: "screen.list",
+      updates: topScreen(shown).lists.map((list) => ({
+        id: list.id,
+        revision: list.revision,
+        operation: "capacity",
+        pageSize: 4,
+      })),
+    });
+    const result = await pending;
+    assertEquals(result.eventType, "list-page");
+    if (result.eventType !== "list-page") throw new Error("expected list-page");
+    assertEquals(result.reloadLists, ["a", "b"]);
+    assertEquals(model.screen.elements.a!.list!.pageSize, 4);
+    assertEquals(model.screen.elements.b!.list!.pageSize, 4);
+  } finally {
+    unbind();
+  }
 });

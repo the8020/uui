@@ -1,6 +1,12 @@
 import { resolveElementIDs } from "./identifiers.ts";
 import { validateListOptions } from "./list_options.ts";
 import { z } from "@the8020/http";
+import {
+  field as defineField,
+  type FieldMetadata as SharedFieldMetadata,
+  fieldMetadata as sharedFieldMetadata,
+  fieldSchemas,
+} from "/p/the8020/db/fields.ts";
 import { humanize } from "./humanize.ts";
 import type {
   ControlDeclaration,
@@ -13,9 +19,8 @@ import type {
 } from "./protocol.ts";
 import { MAX_FIELD_ROW_SPAN } from "./protocol.ts";
 
-export interface FieldMetadata {
-  label?: string;
-  description?: string;
+export interface FieldMetadata<Value = unknown>
+  extends SharedFieldMetadata<Value> {
   control?: ControlKind;
   group?: string;
   length?: FieldLength;
@@ -32,30 +37,52 @@ export interface FieldMetadata {
   step?: number;
   valueSuffix?: string;
   options?: FieldOption[];
-  searchHelp?: string;
+  fieldHelp?: boolean;
   semanticType?: "long-string" | "date" | "datetime" | "email" | string;
 }
 
-const metadata = new WeakMap<z.ZodType, FieldMetadata>();
+const metadata = z.registry<
+  Omit<FieldMetadata, "valueHelp" | "open" | "storage">
+>();
 
 export function field<T extends z.ZodType>(
   schema: T,
-  options: FieldMetadata,
+  options: FieldMetadata<z.output<T>>,
 ): T {
   normalizeRowSpan(options.rowSpan);
-  const configured = structuredClone(options);
+  const { valueHelp, open, storage, ...presentation } = {
+    ...fieldMetadata(schema),
+    ...options,
+  };
+  const configured = structuredClone(presentation);
   if (configured.list !== undefined) validateListOptions(configured.list);
   normalizeRangeMetadata(
     configured,
-    unwrap(schema).schema instanceof z.ZodNumber,
+    unwrap(schema).schema.type === "number",
   );
-  metadata.set(schema, configured);
-  return schema;
+  const result = defineField(schema, {
+    storage,
+    label: configured.label,
+    description: configured.description,
+    valueHelp,
+    open,
+  });
+  metadata.add(result, configured);
+  return result;
 }
 
-export function fieldMetadata(schema: z.ZodType): FieldMetadata | undefined {
-  const value = metadata.get(schema);
-  return value === undefined ? undefined : structuredClone(value);
+export function fieldMetadata<T extends z.ZodType>(
+  schema: T,
+): FieldMetadata<z.output<T>> | undefined {
+  let result: FieldMetadata<z.output<T>> | undefined;
+  for (const current of fieldSchemas(schema).reverse()) {
+    const own = metadata.get(current);
+    if (own !== undefined) result = { ...result, ...structuredClone(own) };
+  }
+  const shared = sharedFieldMetadata(schema);
+  return result === undefined && shared === undefined
+    ? undefined
+    : { ...result, ...shared };
 }
 
 export function buildFieldCatalog(
@@ -147,8 +174,7 @@ function visitShape(
       visitShape(unwrapped.schema.shape, bind, output);
       continue;
     }
-    const configured = metadata.get(declaredSchema) ??
-      metadata.get(unwrapped.schema) ?? {};
+    const configured = fieldMetadata(declaredSchema) ?? {};
     output.push({
       bind,
       label: configured.label ?? humanize(name),
@@ -158,7 +184,12 @@ function visitShape(
       length: configured.length ?? "medium",
       rowSpan: normalizeRowSpan(configured.rowSpan),
       order: configured.order,
-      readOnly: configured.readOnly,
+      readOnly: configured.readOnly ??
+        (fieldSchemas(declaredSchema).some((item) =>
+            item instanceof z.ZodReadonly
+          )
+          ? true
+          : undefined),
       hidden: configured.hidden,
       required: configured.required ?? !unwrapped.optional,
       placeholder: configured.placeholder,
@@ -168,8 +199,9 @@ function visitShape(
       step: configured.step,
       valueSuffix: configured.valueSuffix,
       options: configured.options ?? inferredOptions(unwrapped.schema),
-      searchHelp: configured.searchHelp,
-      semanticType: configured.semanticType,
+      fieldHelp: configured.fieldHelp,
+      semanticType: configured.semanticType ??
+        (configured.storage?.type === "decimal" ? "decimal" : undefined),
       list: configured.list,
     });
   }
@@ -226,18 +258,13 @@ function normalizeRowSpan(value: number | undefined): number {
 export function unwrap(
   schema: z.ZodType,
 ): { schema: z.ZodType; optional: boolean } {
-  let current = schema;
-  let optional = false;
-  while (
-    current instanceof z.ZodOptional || current instanceof z.ZodNullable ||
-    current instanceof z.ZodDefault || current instanceof z.ZodCatch ||
-    current instanceof z.ZodReadonly
-  ) {
-    optional ||= current instanceof z.ZodOptional ||
-      current instanceof z.ZodNullable;
-    current = current.unwrap() as z.ZodType;
-  }
-  return { schema: current, optional };
+  const schemas = fieldSchemas(schema);
+  return {
+    schema: schemas.at(-1)!,
+    optional: schemas.some((item) =>
+      item instanceof z.ZodOptional || item instanceof z.ZodNullable
+    ),
+  };
 }
 
 function inferControl(
@@ -248,7 +275,7 @@ function inferControl(
   if (configured.semanticType === "date") return "date";
   if (configured.semanticType === "datetime") return "datetime";
   if (configured.semanticType === "email") return "email";
-  if (schema instanceof z.ZodNumber || schema instanceof z.ZodBigInt) {
+  if (schema.type === "number" || schema.type === "bigint") {
     return "number";
   }
   if (schema instanceof z.ZodBoolean) return "checkbox";

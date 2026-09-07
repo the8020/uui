@@ -15,8 +15,16 @@ Parent DOX: [uui/services DOX](../AGENTS.md).
   workerFunctions.
 - The service uses session lifecycle and strict concurrency one; supervisor and
   kernel behavior remain generic.
+- Unauthenticated access declares the ordinary service redirect to the login
+  page for HTTP establishment and WebSocket admission. Keep this policy in the
+  manifest; authentication runs before the UUI handler.
 
 # Work Guidance
+
+- Keep this adapter thin and application-session behavior in the shared UUI
+  engine. Reconnection targets the existing logical execution; do not move
+  recovery semantics into the generic supervisor or imply that a metadata row
+  restores lost Worker state.
 
 # Verification
 

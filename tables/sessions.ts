@@ -1,15 +1,19 @@
 import { type Row, t, table, type TableDatabase } from "/p/the8020/db/mod.ts";
+import { username } from "/p/the8020/users/types/user.ts";
+
+import { serviceId } from "/p/the8020/services/types/service.ts";
+import { sandboxId, workerId } from "/p/the8020/admin-core/types/runtime.ts";
 
 const Sessions = table("the8020__uui__sessions", {
   sessionId: t.text().primaryKey(),
-  serviceId: t.text(),
+  serviceId: t.from(serviceId),
   persistentExecutionId: t.text(),
   nodeId: t.text(),
 
-  sandboxId: t.text(),
-  workerId: t.text(),
+  sandboxId: t.from(sandboxId),
+  workerId: t.from(workerId),
   authenticatedUserId: t.text(),
-  authenticatedUser: t.text(),
+  authenticatedUser: t.from(username),
   latestIpAddress: t.text(),
   latestNetworkScope: t.enum(
     [

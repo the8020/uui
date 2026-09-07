@@ -29,6 +29,17 @@ export function validateListOptions(value: ListOptions): void {
   ) {
     throw new TypeError("list headings must be nonempty strings");
   }
+  if (
+    value.pageSource !== undefined && (
+      !isRecord(value.pageSource) ||
+      typeof value.pageSource.more !== "boolean" ||
+      (value.pageSource.searchOnly !== undefined &&
+        typeof value.pageSource.searchOnly !== "boolean") ||
+      Object.keys(value.pageSource).some((key) =>
+        !["more", "searchOnly"].includes(key)
+      )
+    )
+  ) throw new TypeError("invalid list page source");
   if (value.columnOptions === undefined) return;
   if (!isRecord(value.columnOptions)) {
     throw new TypeError("invalid list column options");
@@ -49,9 +60,10 @@ export function validateListOptions(value: ListOptions): void {
           String(option.length),
         ) ||
       option.semanticType !== undefined &&
-        !["text", "number", "boolean", "date", "datetime", "json"].includes(
-          String(option.semanticType),
-        )
+        !["text", "number", "decimal", "boolean", "date", "datetime", "json"]
+          .includes(
+            String(option.semanticType),
+          )
     ) {
       throw new TypeError("invalid list column options");
     }

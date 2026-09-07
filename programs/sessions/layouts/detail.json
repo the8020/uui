@@ -5,24 +5,13 @@
     "id": "session",
     "type": "detail",
     "controls": [
-      "sessionId",
-      "state",
       "authenticatedUser",
-      "authenticatedUserId",
-      "latestIpAddress",
-      "latestNetworkScope",
-      "serviceId",
-      "persistentExecutionId",
-      "nodeId",
-
-      "sandboxId",
-      "workerId",
+      "state",
       "currentScreen",
-      "createdAt",
-      "updatedAt",
       "lastConnectionAt",
-      "liveState",
-      "messageLog"
+      "latestIpAddress",
+      "createdAt",
+      "updatedAt"
     ]
   }
 }

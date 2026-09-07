@@ -5,6 +5,7 @@ import { validateCustomElements } from "./custom_elements.ts";
 import { resolveLayoutReferences, validateLayout } from "./layout.ts";
 import { ScreenLists, StaleListView } from "./lists.ts";
 import { Model } from "./model.ts";
+import { runFieldHelp } from "./field_help.ts";
 import { explicitElementIDs, resolveElementIDs } from "./identifiers.ts";
 import {
   type ListChange,
@@ -20,6 +21,7 @@ import {
 } from "./downloads.ts";
 import type {
   ControlDeclaration,
+  ControlDescriptor,
   CustomElementDeclaration,
   PresentationSnapshot,
   PresentationSurfaceKind,
@@ -64,12 +66,29 @@ export interface ListQueryScreenEvent {
   bind: string;
   change: "search" | "filter" | "sort";
   query: ListQuery;
+  /** Page sources whose queries or capacities changed in this interaction. */
+  reloadLists?: string[];
+}
+
+export interface ListPageScreenEvent {
+  action: "list-page";
+  eventType: "list-page";
+  clientSequence: number;
+  listId: string;
+  bind: string;
+  change: "page" | "capacity";
+  query: ListQuery;
+  /** Page sources whose queries or capacities changed in this interaction. */
+  reloadLists?: string[];
 }
 
 export type ScreenEvent =
   | ClientScreenEvent
   | ChannelScreenExit
-  | ListQueryScreenEvent;
+  | ListQueryScreenEvent
+  | ListPageScreenEvent;
+
+type ScreenOutcome = { event: ScreenEvent } | { error: unknown };
 
 export interface CallScreenOptions<T extends z.ZodRawShape> {
   id: string;
@@ -112,11 +131,14 @@ interface ActiveScreenCall {
   readonly revision: number;
   readonly snapshot: () => ScreenSnapshot;
   readonly receive: (message: ScreenEventMessage | ScreenListMessage) => void;
+  readonly help: (control: ControlDescriptor) => void;
   readonly resolve: (event: ScreenEvent) => void;
   readonly reject: (error: unknown) => void;
   detachChannel?: () => void;
   redrawQueued: boolean;
   settled: boolean;
+  helping: boolean;
+  afterHelp?: ScreenOutcome;
 }
 
 interface BoundSession {
@@ -414,11 +436,65 @@ export async function callScreen<T extends z.ZodRawShape>(
         elementIDs,
         message,
       ),
+    help: (control) => {
+      void showFieldHelp(control);
+    },
     resolve: resolveResult,
     reject: rejectResult,
     redrawQueued: false,
     settled: false,
+    helping: false,
   };
+  async function showFieldHelp(control: ControlDescriptor): Promise<void> {
+    if (call.helping || call.settled) return;
+    call.helping = true;
+    let changed = false;
+    try {
+      await surfaceContext.run(
+        surface,
+        () =>
+          presentModal(() =>
+            runFieldHelp(schemaAtPath(options.schema, control.bind)!, control, {
+              get: () => getPath(options.model.data, control.bind),
+              set: (value) => {
+                if (control.readOnly) {
+                  throw new TypeError("This field is read-only");
+                }
+                const candidate = structuredClone(options.model.data);
+                setPath(candidate, control.bind, value);
+                const parsed = options.schema.parse(candidate);
+                const next = getPath(parsed, control.bind);
+                changed ||= !Object.is(
+                  getPath(options.model.data, control.bind),
+                  next,
+                );
+                setPath(options.model.data, control.bind, next);
+              },
+            })
+          ),
+      );
+    } catch (error) {
+      call.afterHelp = { error };
+    } finally {
+      call.helping = false;
+      if (call.afterHelp !== undefined) {
+        settleCall(state, call, call.afterHelp);
+      } else if (changed && control.reactive) {
+        settleCall(state, call, {
+          event: {
+            action: "change",
+            eventType: "change",
+            bind: control.bind,
+            controlId: control.id,
+            value: getPath(options.model.data, control.bind),
+            clientSequence: state.lastClientSequence,
+          },
+        });
+      } else {
+        scheduleRedraw(state, call, options.schema, options.model);
+      }
+    }
+  }
   state.models.add(options.model);
   surface.pending = call;
   try {
@@ -628,12 +704,27 @@ function receiveScreenMessage<T extends z.ZodRawShape>(
   let selection:
     | { value: unknown; bind: string; controlId: string }
     | undefined;
-  let queryEvent: ListQueryScreenEvent | undefined;
+  let queryEvent: ListQueryScreenEvent | ListPageScreenEvent | undefined;
+  let helpControl: ControlDescriptor | undefined;
+  const controls = [
+    ...call.surface.snapshot!.controls,
+    ...(call.surface.snapshot!.header?.controls ?? []),
+  ];
   try {
     if (message.instanceId !== model.screen.instanceId) {
       throw new TypeError("screen instance mismatch");
     }
     validateScreenUpdate(message.screenState, model, elementIDs);
+    if (message.type === "screen.event" && message.eventType === "field-help") {
+      helpControl = controls.find((control) =>
+        control.id === message.controlId
+      );
+      if (
+        message.action !== "field-help" || helpControl === undefined ||
+        helpControl.bind !== message.bind || helpControl.hidden ||
+        helpControl.fieldHelp === false || helpControl.control === "list"
+      ) throw new TypeError("unknown or unavailable field help");
+    }
     if (message.type === "screen.list") {
       if (
         message.updates.filter((item) => item.operation === "query").length > 1
@@ -648,6 +739,7 @@ function receiveScreenMessage<T extends z.ZodRawShape>(
       message.changes,
       lists,
       message.listChanges ?? [],
+      controls,
     );
     model.screen.scroll = structuredClone(message.screenState.scroll);
     for (const [id, update] of Object.entries(message.screenState.elements)) {
@@ -659,22 +751,43 @@ function receiveScreenMessage<T extends z.ZodRawShape>(
       }
     }
     if (message.type === "screen.list") {
+      const reloadLists: string[] = [];
       for (const request of message.updates) {
         const changed = lists.update(request);
         if (changed !== undefined) {
+          if (
+            call.surface.snapshot!.lists.find((list) => list.id === changed.id)
+              ?.pageSource !== undefined
+          ) reloadLists.push(changed.id);
+          // Preserve a query event when the browser also measures other lists.
+          if (
+            queryEvent?.eventType === "list-query" &&
+            (changed.change === "page" || changed.change === "capacity")
+          ) continue;
           queryEvent = {
-            action: "list-query",
-            eventType: "list-query",
+            ...(changed.change === "page" || changed.change === "capacity"
+              ? {
+                action: "list-page",
+                eventType: "list-page",
+                change: changed.change,
+              } as const
+              : {
+                action: "list-query",
+                eventType: "list-query",
+                change: changed.change,
+              } as const),
             clientSequence: message.clientSequence,
             listId: changed.id,
             bind: changed.bind,
-            change: changed.change,
             query: changed.query,
           };
         }
       }
+      if (queryEvent !== undefined && reloadLists.length > 0) {
+        queryEvent.reloadLists = reloadLists;
+      }
     }
-    call.surface.snapshot = call.snapshot();
+    if (queryEvent === undefined) call.surface.snapshot = call.snapshot();
   } catch (error) {
     state.channel.send({
       type: "session.error",
@@ -704,8 +817,12 @@ function receiveScreenMessage<T extends z.ZodRawShape>(
     type: "server.ack",
     clientSequence: message.clientSequence,
   });
-  if (queryEvent !== undefined) settleCall(state, call, { event: queryEvent });
-  else if (message.type === "screen.event") {
+  if (helpControl !== undefined) {
+    call.help(helpControl);
+  } else if (queryEvent !== undefined) {
+    settleCall(state, call, { event: queryEvent });
+  } else if (message.type === "screen.event") {
+    if (message.eventType === "field-help") return;
     settleCall(state, call, {
       event: {
         action: message.action,
@@ -760,10 +877,14 @@ function scheduleRedraw<T extends z.ZodRawShape>(
 function settleCall(
   state: BoundSession,
   call: ActiveScreenCall,
-  outcome: { event: ScreenEvent } | { error: unknown },
+  outcome: ScreenOutcome,
   publish = true,
 ): void {
   if (call.settled) return;
+  if (call.helping && state.active) {
+    call.afterHelp ??= outcome;
+    return;
+  }
   call.settled = true;
   if (call.surface.pending === call) call.surface.pending = undefined;
   call.detachChannel?.();
@@ -872,6 +993,7 @@ function applyChanges<T extends z.ZodRawShape>(
   changes: readonly ScreenChange[],
   lists: ScreenLists,
   listChanges: readonly ListChange[],
+  controls: readonly ControlDescriptor[],
 ): void {
   if (changes.length === 0 && listChanges.length === 0) return;
   const candidate = structuredClone(model) as Record<string, unknown>;
@@ -882,6 +1004,12 @@ function applyChanges<T extends z.ZodRawShape>(
     if (target === undefined) {
       throw new TypeError(`unknown binding ${change.bind}`);
     }
+    if (
+      !controls.some((control) =>
+        control.bind === change.bind && !control.readOnly && !control.hidden &&
+        (change.controlId === undefined || change.controlId === control.id)
+      )
+    ) throw new TypeError(`binding ${change.bind} is not editable`);
     if (
       bindings.has(change.bind) ||
       [...bindings].some((bind) => bind.startsWith(`${change.bind}.`))
