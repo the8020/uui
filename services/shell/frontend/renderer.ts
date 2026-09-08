@@ -567,13 +567,14 @@ function addFieldHelp(
   const button = document.createElement("button");
   button.type = "button";
   button.className = "field-help-button";
+  button.tabIndex = -1;
   button.id = `field-help-${control.id}`;
   const label = `${control.readOnly ? "View" : "Edit"} ${
     control.label ?? control.bind
   }`;
   button.setAttribute("aria-label", `${label}: field help`);
-  button.setAttribute("aria-keyshortcuts", "F4");
-  button.title = `${label} (F4)`;
+  button.setAttribute("aria-keyshortcuts", "F1 F4");
+  button.title = `${label} (F1 / F4)`;
   const icon = createMaterialIcon(
     control.readOnly ? "chevron_right" : "edit",
     "muted",
@@ -584,12 +585,6 @@ function addFieldHelp(
   icon.classList.add("field-edit-icon");
   button.append(icon);
   button.addEventListener("click", () => callbacks.help(control));
-  wrapper.addEventListener("keydown", (event) => {
-    if (event.key !== "F4") return;
-    event.preventDefault();
-    event.stopPropagation();
-    callbacks.help(control);
-  });
   if (disabled) {
     wrapper.tabIndex = 0;
     wrapper.setAttribute("aria-label", control.label ?? control.bind);

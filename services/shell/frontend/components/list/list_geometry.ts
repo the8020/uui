@@ -1,7 +1,7 @@
 import {
   type ColumnLength,
   MAX_LIST_PAGE_SIZE,
-} from "../../../screen_state.ts";
+} from "../../../../../screen_state.ts";
 
 export function listRowCapacity(
   viewport: number,

@@ -8,58 +8,53 @@ import {
   type TerminatedProgramInput,
   z,
 } from "/p/the8020/uui/mod.ts";
-import { buildShortDump } from "../../src/short_dump.ts";
+import {
+  buildShortDump,
+  copyStatus,
+  shortDumpFields,
+} from "../../src/short_dump.ts";
 import layout from "./layouts/main.json" with { type: "json" };
 
 const TerminationScreen = z.object({
-  exceptionType: field(z.string(), {
-    label: "Type",
+  exceptionType: field(shortDumpFields.shape.exceptionType, {
     length: "short",
     readOnly: true,
   }),
-  message: field(z.string(), {
-    label: "Message",
+  message: field(shortDumpFields.shape.message, {
     length: "long",
     control: "textarea",
     readOnly: true,
   }),
-  properties: field(z.string(), {
-    label: "Properties",
+  properties: field(shortDumpFields.shape.properties, {
     length: "long",
     control: "textarea",
     readOnly: true,
   }),
-  programId: field(z.string(), {
-    label: "Program",
+  programId: field(shortDumpFields.shape.programId, {
     length: "long",
     readOnly: true,
   }),
-  entrypoint: field(z.string(), {
-    label: "Entrypoint",
+  entrypoint: field(shortDumpFields.shape.entrypoint, {
     length: "long",
     readOnly: true,
   }),
-  location: field(z.string(), {
-    label: "Raised at",
+  location: field(shortDumpFields.shape.location, {
     length: "long",
     readOnly: true,
   }),
-  occurredAt: field(z.string(), { label: "Time", readOnly: true }),
-  copyStatus: field(z.string(), { label: "Copy status", readOnly: true }),
-  stack: field(z.string(), {
-    label: "Call stack",
+  occurredAt: field(shortDumpFields.shape.occurredAt, { readOnly: true }),
+  copyStatus: field(copyStatus, { readOnly: true }),
+  stack: field(shortDumpFields.shape.stack, {
     length: "long",
     control: "textarea",
     readOnly: true,
   }),
-  source: field(z.string(), {
-    label: "Source context",
+  source: field(shortDumpFields.shape.source, {
     length: "long",
     control: "textarea",
     readOnly: true,
   }),
-  dumpText: field(z.string(), {
-    label: "Short dump",
+  dumpText: field(shortDumpFields.shape.dumpText, {
     length: "long",
     control: "textarea",
     readOnly: true,

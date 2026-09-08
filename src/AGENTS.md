@@ -2,13 +2,19 @@ Parent DOX: [uui DOX](../AGENTS.md).
 
 # Purpose
 
-- Own shared short-dump shaping and focused standard-program tests.
+- Own semantic session and short-dump fields, dump shaping, and focused
+  standard-program tests.
 
 # Ownership
 
-- Own `short_dump.ts`, `short_dump_test.ts`, and `home_test.ts`.
+- Own `session_fields.ts`, `short_dump.ts`, `short_dump_test.ts`, and
+  `home_test.ts`.
 
 # Local Contracts
+
+- `session_fields.ts` owns reusable UUI-session labels and help. `short_dump.ts`
+  also owns the short-dump field schema; standard programs add only their
+  presentation hints.
 
 - Bound exception, stack, and source context before presenting recovery output.
 - Home tests retain manifest-driven filtering and silent program returns.

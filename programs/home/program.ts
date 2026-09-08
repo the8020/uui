@@ -7,10 +7,13 @@ import {
   Model,
   z,
 } from "/p/the8020/uui/mod.ts";
+import { programId, programInfo } from "/p/the8020/packages/types/program.ts";
 import layout from "./layouts/main.json" with { type: "json" };
 
 const HomeScreen = z.object({
-  programs: z.array(z.object({ id: z.string(), description: z.string() })),
+  programs: z.array(
+    z.object({ id: programId, description: programInfo.shape.description }),
+  ),
 });
 
 export default function home(): Promise<void> {

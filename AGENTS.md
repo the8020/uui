@@ -115,8 +115,8 @@ below.
   terminated, and session administration programs.
 - [services/AGENTS.md](services/AGENTS.md): Declare and expose the login, shell,
   and persistent session services.
-- [src/AGENTS.md](src/AGENTS.md): Own shared short-dump shaping and focused
-  standard-program tests.
+- [src/AGENTS.md](src/AGENTS.md): Own shared session/short-dump fields,
+  short-dump shaping, and focused standard-program tests.
 - [tables/AGENTS.md](tables/AGENTS.md): Describe bounded persistent metadata for
   UUI application sessions.
 
@@ -334,7 +334,8 @@ below.
   shield. If still pending after `500ms`, the same state reveals a blurred
   overlay and loading indicator. An early `server.ack` does not unlock stale
   content; an atomic presentation with an active surface, a session
-  error/resync, or session end releases it.
+  error/resync, session end, or a matching list data response releases it.
+  Independent reads leave dirty values pending and reject on disconnect.
 - `Model(data)` retains the business-data reference and owns typed screen state.
   `callScreen()` validates and edits `model.data`; reusing the wrapper preserves
   a logical screen identity, query/page state, scroll, and toolbar expansion.
@@ -353,15 +354,15 @@ below.
   exact decimal list semantics. Forms and help retain strings; sorting and
   comparison filters never convert monetary values to floating point.
 - Scalar fields expose a pencil or read-only Chevron Right button and
-  focused-field F4 help. The modal owns an isolated draft and keeps the caller
-  Model and surface reserved. Only Done validates against the complete caller
-  schema and commits; Close, Back, and Escape discard even invalid drafts. Show
-  Done only in edit mode, followed by Navigate when semantic `open(value)`
-  exists. Navigate opens a related page without committing and restores help on
-  return. Markdown descriptions appear in full. `fieldHelp: false` suppresses
-  help. Editable help shows a Value help card below the value when the field has
-  a provider or ordinary control options. Its standard list opens with search
-  visible; selecting a row fills the draft.
+  focused-field F1/F4 help. The modal owns an isolated draft and keeps the
+  caller Model and surface reserved. Only Done validates against the complete
+  caller schema and commits; Close, Back, and Escape discard even invalid
+  drafts. Show Done only in edit mode, followed by Navigate when semantic
+  `open(value)` exists. Navigate opens a related page without committing and
+  restores help on return. Markdown descriptions appear in full.
+  `fieldHelp: false` suppresses help. Editable help shows a Value help card
+  below the value when the field has a provider or ordinary control options. Its
+  standard list opens with search visible; selecting a row fills the draft.
   `valueHelp({ query, offset, limit })` fetches only the requested page on the
   server, bounded by measured list capacity (1–500), and returns at most `limit`
   choices plus `more`. Raw values stay on the server until selected.
@@ -384,16 +385,16 @@ below.
   references resolve to control IDs centrally, and each descriptor has one
   placement. Column IDs are list-local; framework DOM IDs also include surface
   and Model identity. Component internals remain owned by the providing package.
-- Protocol version 7 adds program-supplied custom-element modules and retains
-  exact decimal list semantics and the validated `field-help` screen event, and
-  puts Model state and independent list snapshots in each screen. Wire business
-  list bindings contain empty arrays; displayed values live exclusively in
-  `screen.lists`. `ScreenLists` owns search/filter, stable typed sort,
-  pagination, and displayed-to-source mappings for explicit and inferred lists.
-  Views never reorder or truncate the source array. Mapping validation checks
-  the exact source identity, row order/content, and view revision before
-  applying a selection or edit. Stale views reject and publish a fresh snapshot;
-  invalid dirty edits change neither business nor screen state.
+- Protocol version 8 adds independent list reads alongside custom-element
+  modules and retains exact decimal list semantics and the validated
+  `field-help` screen event, and puts Model state and independent list snapshots
+  in each screen. Wire business list bindings contain empty arrays; displayed
+  values live exclusively in `screen.lists`. `ScreenLists` owns search/filter,
+  stable typed sort, pagination, and displayed-to-source mappings for explicit
+  and inferred lists. Views never reorder or truncate the source array. Mapping
+  validation checks the exact source identity, row order/content, and view
+  revision before applying a selection or edit. Stale views reject and publish a
+  fresh snapshot; invalid dirty edits change neither business nor screen state.
 - `screen.list` carries bounded page, query, or browser-measured capacity
   requests on the existing WebSocket. Queries reset only their list to page 1.
   Default queries remain inside the pending call; `triggerFilterEvents: true`
@@ -408,6 +409,15 @@ below.
   oversized pages and unavailable page numbers. Search-only sources hide and
   reject column queries. Field help uses this contract for bounded lookup pages;
   a `table()` search helper remains deferred.
+- Independent `screen.list` reads are exclusive of updates/edits and return
+  `screen.list.data` on the same authenticated channel, bounded to 1,000 rows.
+  `ScreenLists` reuses its filtered/sorted projection and validates source/view
+  identity. Reads acknowledge their client sequence for reconnect/reload while
+  preserving the pending call, UUI page, and dirty form values. Page sources can
+  supply `callScreen({ listReaders })`, keyed by list ID; callbacks receive the
+  retained query and bounded 500-row requests. Field help uses this contract
+  without exposing raw choice values. Unknown totals remain unknown until a
+  reader reaches the end.
 - Capture scroll and toolbar metadata with existing interactions, including
   Back, paging, queries, and capacity. Never send standalone or periodic scroll
   updates. Browser-local positions survive redraw and surface/instance returns;
@@ -419,12 +429,11 @@ below.
   Resizing and visibility/toolbar changes may remeasure; scrolling may not.
   Capacity changes keep the former first row within the new page when possible.
   Tab selection is element state, so measuring a revealed list retains its tab.
-  Rows have a fixed height, nowrap ellipsis, and keyboard-accessible full values
-  through a distinct, subtle ellipsis button. Clicking the value retains
-  standard row selection even when every column overflows. Reserve body space
-  from the unfiltered source total up to one page's capacity, including after
-  reload; short pages and filtered results retain the card height and pagination
-  position.
+  Rows have a fixed height, nowrap ellipsis, and full values through a distinct,
+  subtle ellipsis button. Clicking the value retains standard row selection even
+  when every column overflows. Reserve body space from the unfiltered source
+  total up to one page's capacity, including after reload; short pages and
+  filtered results retain the card height and pagination position.
 - List headers use full/short headings and semantic widths from schema and
   declarative `columnOptions`. Only genuinely wider columns overflow
   horizontally; fractional sizing and invisible heading measurements must not
@@ -436,7 +445,12 @@ below.
   sources that fit on one page reserve no footer space. Clearing controls appear
   only for active queries. The
   [browser contract](services/shell/frontend/AGENTS.md) owns list control layout
-  and confirmation behavior. No export action is implemented.
+  and confirmation behavior. Encapsulate browser lists and their data tools in
+  `services/shell/frontend/components/list/`. The expanded toolbar includes
+  icon-only Table processor, Export, Copy page, and Copy all actions with
+  tooltips. A read-only spreadsheet dialog defaults to 1,000 rows per page;
+  export offers CSV, JSON, XML, YAML, XLSX, and ODS with an inclusive range.
+  Copy writes spreadsheet-compatible text and HTML using displayed columns.
 - Root-page overscroll containment must not be inherited by nested horizontal
   overflow regions. Paginated lists retain horizontal overflow for narrow
   viewports while vertical wheel and touch movement chains to the page scroller.
@@ -459,7 +473,7 @@ below.
   green; connecting and reconnecting are red, while a visually hidden live label
   preserves the complete textual state. The username remains one line and
   ellipsizes at constrained widths. Its locally anchored, light-dismiss menu
-  currently owns labeled light/dark theme switching and clean logout. Logout
+  owns My account, labeled light/dark theme switching, and clean logout. Logout
   ends the persistent UUI session through the typed client protocol before
   redirecting through the configured logout route, with direct navigation as a
   disconnected-client fallback. The left brand/Back cluster and right session
@@ -479,6 +493,12 @@ below.
   the dynamic area's start when none remain; opening it stacks every hidden
   control vertically in original order and clamps the popover to a `10px`
   viewport edge gutter.
+- The quick menu's reserved `ACCOUNT_EVENT` opens `the8020/users/my-account`
+  directly through an ordinary page presentation. It shares field help's
+  pending-call protection, retains the previous screen and draft, and restores
+  it on Back. The users program resolves authenticated identity and owns
+  profile/password behavior. This core-to-core call needs no hook, registry,
+  kernel execution, or command-bus dispatch.
 - The session disclosure menu owns a Messages action whose badge counts all
   messages received since the current screen interaction began. A new
   `screen.event`, `screen.list`, or route begins a fresh collection. At most the
@@ -556,42 +576,42 @@ below.
   aligning its underline and reserved message slot with the `N`th ordinary
   field. Every field reserves the same supporting-message slot even when empty.
   Hints occupy exactly one ellipsized line in that slot; truncated hints open
-  the complete text in a keyboard-accessible, light-dismiss popover. The
-  renderer and semantic message-kind styling form the shared field message
-  concept so later validation errors can use the same slot without changing
-  geometry. Textarea resizing is disabled so it cannot escape the planned grid.
-  Field items have zero outer padding and field-group grids use a 20px row and
-  column gap. Direct field labels and legends reuse list-column-header
-  typography: muted, uppercase, `0.7em`, weight `800`, and `0.06em` tracking.
-  They always occupy exactly one fixed-height line and ellipsize overflow,
-  including in groups without row spans; radio option labels retain ordinary
-  body typography. Numeric range controls render a native slider with its
-  synchronized bounded value suffix on the left and, when editable, the same
-  exact-right-edge pencil used by other editable fields. The painted track is
-  centered over the thumb's actual center-travel width, so its fill endpoint and
-  thumb center coincide at minimum, midpoint, and maximum. Pencil clearance
-  belongs to the surrounding field shell and never pads or shortens the native
-  range input's travel area; values use the ordinary numeric binding path. Every
-  field control, including checkboxes, switches, radios, and ranges, uses the
-  shared flat underline treatment. Read-only and editable controls retain
-  identical color, opacity, and value styling. Editable controls receive the
-  muted Material `edit` icon and read-only controls receive `chevron_right` in
-  focusable field-help buttons at the exact field end. Read-only text values
-  remain focusable and selectable; disabled native choices expose F4 on their
-  field wrapper. Textarea and radio buttons keep the same underline-relative
-  bottom offset, while select chevrons and native input affordances remain
-  immediately before the pencil. Password controls retain this shared layout
-  while masking their current browser value; programs must start sensitive edit
-  models empty and never redisplay stored values. Interactive hover feedback
-  changes paint-only properties such as color, border, background, and shadow;
-  it never transforms or repositions a pointer hitbox. Neutral elevation shadows
-  are dark-tinted in light mode and black in dark mode; dark-mode surfaces never
-  use text-derived light shadows. Theme state is browser-only: `sessionStorage`
-  keeps the current UUI session override through redraw/reconnect/reload, while
-  `localStorage` supplies the default for future tabs. Shell markup defaults to
-  dark, and a CSP-nonced initializer in the head resolves the browser-only
-  stored or operating-system preference before CSS and first paint; theme state
-  never enters UUI messages, service requests, kernel APIs, or backend storage.
+  the complete text in a light-dismiss popover. The renderer and semantic
+  message-kind styling form the shared field message concept so later validation
+  errors can use the same slot without changing geometry. Textarea resizing is
+  disabled so it cannot escape the planned grid. Field items have zero outer
+  padding and field-group grids use a 20px row and column gap. Direct field
+  labels and legends reuse list-column-header typography: muted, uppercase,
+  `0.7em`, weight `800`, and `0.06em` tracking. They always occupy exactly one
+  fixed-height line and ellipsize overflow, including in groups without row
+  spans; radio option labels retain ordinary body typography. Numeric range
+  controls render a native slider with its synchronized bounded value suffix on
+  the left and, when editable, the same exact-right-edge pencil used by other
+  editable fields. The painted track is centered over the thumb's actual
+  center-travel width, so its fill endpoint and thumb center coincide at
+  minimum, midpoint, and maximum. Pencil clearance belongs to the surrounding
+  field shell and never pads or shortens the native range input's travel area;
+  values use the ordinary numeric binding path. Every field control, including
+  checkboxes, switches, radios, and ranges, uses the shared flat underline
+  treatment. Read-only and editable controls retain identical color, opacity,
+  and value styling. Editable controls receive the muted Material `edit` icon
+  and read-only controls receive `chevron_right` in field-help buttons outside
+  the Tab order at the exact field end. Read-only text values remain focusable
+  and selectable; disabled native choices expose F1/F4 on their field wrapper.
+  Textarea and radio buttons keep the same underline-relative bottom offset,
+  while select chevrons and native input affordances remain immediately before
+  the pencil. Password controls retain this shared layout while masking their
+  current browser value; programs must start sensitive edit models empty and
+  never redisplay stored values. Interactive hover feedback changes paint-only
+  properties such as color, border, background, and shadow; it never transforms
+  or repositions a pointer hitbox. Neutral elevation shadows are dark-tinted in
+  light mode and black in dark mode; dark-mode surfaces never use text-derived
+  light shadows. Theme state is browser-only: `sessionStorage` keeps the current
+  UUI session override through redraw/reconnect/reload, while `localStorage`
+  supplies the default for future tabs. Shell markup defaults to dark, and a
+  CSP-nonced initializer in the head resolves the browser-only stored or
+  operating-system preference before CSS and first paint; theme state never
+  enters UUI messages, service requests, kernel APIs, or backend storage.
 - List values, field hints, and column descriptions share the browser's
   `createOverflowText` component. Text stays selectable and keeps its ordinary
   click behavior; only the separate font-sized ellipsis opens full content.
@@ -642,7 +662,9 @@ below.
   The per-Worker byte cache is bounded and invalidated by native file metadata.
 - `THIRD_PARTY_NOTICES.md` records the MIT/BSD Markdown dependency notices and
   the Apache-2.0 license and pinned source for the local Material Symbols font.
-  Program component dependency notices remain in their owning packages.
+  It also records the MIT Tabulator and Apache-2.0 SheetJS dependencies,
+  vendored inside the list component and loaded only for its data tools. Program
+  component dependency notices remain in their owning packages.
 - Reload resume synchronizes the Worker-acknowledged client sequence before a
   new event is emitted, preventing post-reload actions from being mistaken for
   duplicates.
@@ -698,7 +720,10 @@ below.
   references and serve bounded `logs.query` pages separately from run metadata;
   browser assertions verify rendered log messages and execution usernames. It
   also drives the real Users program against SQLite: account creation, password
-  changes, enable/disable, Advanced confirmation, user-filtered UUI sessions,
+  changes, full-name creation/editing, My account through the quick menu,
+  password-mismatch clearing, authenticated self-targeting, password
+  replacement, profile cancellation, and pending configuration drafts across My
+  account, enable/disable, Advanced confirmation, user-filtered UUI sessions,
   and shared user-field record navigation at desktop/mobile widths.
   Program/package clickthrough covers the compact overview, Advanced, row/tag
   version selection, and a package credential opening the real empty secret
@@ -803,15 +828,17 @@ below.
   over a local WebSocket, and verifies page/modal stacking, exact hidden layer
   and custom-element preservation, dirty `ScreenChannel` redraws, Escape/Back
   routing, reload of a later page plus modal, and restoration of the earlier
-  page-plus-modal continuation. It also exercises pencil/Chevron Right/F4 field
-  help drafts, invalid Close cancellation, Done-only commits, Markdown, bounded
-  search and standard pagination over 2,001 choices, related-record navigation,
-  and desktop/mobile sizing. Interaction helpers wait for the shell's in-flight
-  gate to release before clicking. Run it with
+  page-plus-modal continuation. It also exercises pencil/Chevron Right/F1/F4
+  field help drafts, invalid Close cancellation, Done-only commits, Markdown,
+  bounded search and standard pagination over 2,001 choices, related-record
+  navigation, and desktop/mobile sizing. Interaction helpers wait for the
+  shell's in-flight gate to release before clicking. Run it with
   `deno task test:presentation-browser`; it is not part of the ordinary
   unit-test glob. Pass `--browser=/path/to/chromium` when Chromium is not at the
   default path. `--field-help` focuses on field help, all local icon glyphs,
   Chevron Right sizing, and editing after an identical retained snapshot.
+  Keyboard checks cover Tab exclusions, F2 clicks, F3 dialog/page Back, and
+  F5/F6 editable-control looping and relative focus in the active surface.
   `--programs --runtime` focuses the program suite through service configuration
   and Sandbox/Worker navigation.
 - The presentation harness accepts `--fixture=<module>` for package-owned
@@ -840,6 +867,7 @@ below.
   source mappings, identities, typed semantics, atomic edits/query events, and
   page-five retention across selection and data refresh.
 - `deno task test:lists-browser` exercises real Chromium search/filter/sort,
+  toolbar copy/export and spreadsheet selection/paging, real downloaded files,
   shared semantic field headings, focus/caret, empty counts, local/synchronized
   scroll, reload/reconnect, capacities, fractional widths, long-heading
   containment, inline query confirmation, conditional toolbar actions, stable

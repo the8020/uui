@@ -11,6 +11,9 @@ Parent DOX: [uui/programs DOX](../AGENTS.md).
 
 # Local Contracts
 
+- Reuse the short-dump fields from `src/short_dump.ts`, including package-owned
+  program and entrypoint references.
+
 - Keep the UUI session alive, expose bounded exception/stack/source context,
   support copying, and allow direct Home recovery.
 - Use package configuration for Home and termination identities.

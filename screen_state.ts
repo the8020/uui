@@ -90,7 +90,37 @@ export interface ScreenListSnapshot {
   totalPages: number;
   filtered: boolean;
   triggerFilterEvents: boolean;
+  /** Page sources require a server-side list reader for independent reads. */
+  readable?: boolean;
   pageSource?: { more: boolean; searchOnly?: boolean };
+}
+
+export interface ListReadRequest {
+  id: string;
+  revision: number;
+  offset: number;
+  limit: number;
+}
+
+export interface ListDataPage {
+  id: string;
+  revision: number;
+  offset: number;
+  rows: unknown[];
+  totalItems?: number;
+  more: boolean;
+}
+
+export const MAX_LIST_READ_SIZE = 1000;
+
+export function validListRead(value: unknown): value is ListReadRequest {
+  return isRecord(value) && typeof value.id === "string" &&
+    value.id.length > 0 &&
+    Number.isSafeInteger(value.revision) && Number(value.revision) > 0 &&
+    Number.isSafeInteger(value.offset) && Number(value.offset) >= 0 &&
+    Number.isSafeInteger(value.limit) && Number(value.limit) > 0 &&
+    Number(value.limit) <= MAX_LIST_READ_SIZE &&
+    Number.isSafeInteger(Number(value.offset) + Number(value.limit));
 }
 
 export type ListRequest =

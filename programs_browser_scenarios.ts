@@ -183,7 +183,8 @@ export async function runProgramsBrowser(root: string): Promise<void> {
     INSERT INTO example__testing__people VALUES (1, 'Avery', NULL), (2, 'Blair', 1);
     CREATE TABLE the8020__users__users (
       username TEXT PRIMARY KEY, passwordHash TEXT NOT NULL, enabled INTEGER NOT NULL,
-      authVersion INTEGER NOT NULL, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL);
+      authVersion INTEGER NOT NULL, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL,
+      fullName TEXT NOT NULL DEFAULT '');
     CREATE TABLE the8020__users__sessions (
       sessionId TEXT PRIMARY KEY, username TEXT NOT NULL, authVersion INTEGER NOT NULL,
       createdAt TEXT NOT NULL, expiresAt TEXT NOT NULL);
@@ -201,7 +202,7 @@ export async function runProgramsBrowser(root: string): Promise<void> {
     SELECT 'recent-' || n, 'another-user', '2026-09-06T10:00:00.000Z' FROM recent;
     CREATE TABLE the8020__secrets__secrets (name TEXT PRIMARY KEY, value TEXT NOT NULL, updatedAt TEXT NOT NULL);
     INSERT INTO the8020__secrets__secrets VALUES ('github', '', '2026-09-01T10:00:00.000Z');
-    INSERT INTO the8020__users__users VALUES (
+    INSERT INTO the8020__users__users (username, passwordHash, enabled, authVersion, createdAt, updatedAt) VALUES (
       'robot', '', 1, 1, '2026-09-01T10:00:00.000Z', '2026-09-01T10:00:00.000Z');
   `);
   globals[kernelDatabaseBackendSymbol] = "sqlite";
@@ -536,6 +537,30 @@ export async function runProgramsBrowser(root: string): Promise<void> {
     );
     await development();
     await users();
+    const accounts = await import("/p/the8020/users/src/admin.ts");
+    const { authenticatePassword } = await import("/p/the8020/users/mod.ts");
+    assert(
+      (await accounts.user("reader")).full_name === "Reader Updated",
+      "admin details were not persisted",
+    );
+    assert(
+      (await accounts.user("robot")).full_name === "Robot Updated",
+      "own details were not persisted",
+    );
+    assert(
+      (await authenticatePassword("reader", "browser-test-password"))
+        ?.username === "reader",
+      "admin password was not saved",
+    );
+    assert(
+      (await authenticatePassword("robot", "changed-browser-password"))
+        ?.username === "robot",
+      "own password was not saved",
+    );
+    assert(
+      await authenticatePassword("robot", "own-browser-password") === undefined,
+      "own previous password still works",
+    );
     await callScreen({
       id: "user-reference",
       title: "User reference",
@@ -857,6 +882,21 @@ async function verifyRuntime(page: BrowserDriver): Promise<void> {
   );
   await input(page, "sessionKeepAlive", "45m");
   await input(page, "targetUtilization", "65.5");
+  await openMyAccount(page);
+  await button(page, "Edit details");
+  await title(page, "Edit details");
+  await input(page, "fullName", "Discard this name");
+  await button(page, "Back");
+  await title(page, "My account");
+  assert(await fieldValue(page, "fullName") === "", "cancel saved the name");
+  await button(page, "Back");
+  await title(page, "Configure api");
+  assert(
+    await fieldValue(page, "minimumWorkers") === "2" &&
+      await fieldValue(page, "sessionKeepAlive") === "45m" &&
+      await fieldValue(page, "targetUtilization") === "65.5",
+    "My account lost the pending configuration draft",
+  );
   await button(page, "Edit Public execution user: field help");
   await title(page, "Public execution user");
   await searchHelp(page, "robot");
@@ -1171,8 +1211,22 @@ async function verifyUsers(page: BrowserDriver): Promise<void> {
   await button(page, "Add user");
   await title(page, "Add user");
   await input(page, "username", "reader");
+  await input(page, "fullName", "Reader Example");
   await button(page, "Create user");
   await title(page, "User reader");
+  assert(
+    await fieldValue(page, "fullName") === "Reader Example",
+    "created full name is missing",
+  );
+  await button(page, "Edit details");
+  await title(page, "Edit details");
+  await input(page, "fullName", "Reader Updated");
+  await button(page, "Save details");
+  await title(page, "User reader");
+  assert(
+    await fieldValue(page, "fullName") === "Reader Updated",
+    "edited full name is missing",
+  );
   assert(
     await fieldValue(page, "signIn") === "No password",
     "passwordless status is missing",
@@ -1185,6 +1239,19 @@ async function verifyUsers(page: BrowserDriver): Promise<void> {
   );
   await button(page, "Set password");
   await title(page, "Password for reader");
+  await input(page, "password", "mismatched-password");
+  await input(page, "confirmation", "different-password");
+  await button(page, "Save password");
+  await wait(
+    page,
+    "document.body.textContent.includes('The passwords do not match.')",
+    "password mismatch message",
+  );
+  assert(
+    await fieldValue(page, "password") === "" &&
+      await fieldValue(page, "confirmation") === "",
+    "failed password values were retained",
+  );
   await input(page, "password", "browser-test-password");
   await input(page, "confirmation", "browser-test-password");
   await button(page, "Save password");
@@ -1194,6 +1261,52 @@ async function verifyUsers(page: BrowserDriver): Promise<void> {
     "setting a password did not enable sign-in",
   );
   await screenshot(page, "user-desktop");
+  await openMyAccount(page);
+  assert(
+    await fieldValue(page, "username") === "robot",
+    "My account used the selected or browser user instead of the authenticated user",
+  );
+  assert(
+    await page.evaluate<boolean>(
+      "![...document.querySelectorAll('button')].some(b => b.getClientRects().length && /^(Disable user|Enable user|Advanced)$/.test(b.textContent.trim()))",
+    ),
+    "own account exposes administrative controls",
+  );
+  await button(page, "Edit details");
+  await title(page, "Edit details");
+  await input(page, "fullName", "Robot Updated");
+  await button(page, "Save details");
+  await title(page, "My account");
+  assert(
+    await fieldValue(page, "fullName") === "Robot Updated",
+    "own name was not updated",
+  );
+  await button(page, "Set password");
+  await title(page, "Password for robot");
+  assert(
+    await fieldValue(page, "password") === "",
+    "own password editor was not empty",
+  );
+  await input(page, "password", "own-browser-password");
+  await input(page, "confirmation", "own-browser-password");
+  await button(page, "Save password");
+  await title(page, "My account");
+  await button(page, "Change password");
+  await title(page, "Password for robot");
+  assert(
+    await fieldValue(page, "password") === "" &&
+      await page.evaluate<boolean>(
+        "![...document.querySelectorAll('dialog[open] button')].some(b => b.textContent.includes('Remove password'))",
+      ),
+    "own password editor retains a password or offers removal",
+  );
+  await input(page, "password", "changed-browser-password");
+  await input(page, "confirmation", "changed-browser-password");
+  await button(page, "Save password");
+  await title(page, "My account");
+  await screenshot(page, "my-account-desktop");
+  await button(page, "Back");
+  await title(page, "User reader");
   await button(page, "Open sessions");
   await title(page, "Sessions for reader");
   await button(page, "Back");
@@ -1235,6 +1348,20 @@ async function verifyUsers(page: BrowserDriver): Promise<void> {
     mobile: false,
   });
   await screenshot(page, "user-mobile");
+  await openMyAccount(page);
+  assert(
+    await fieldValue(page, "fullName") === "Robot Updated",
+    "own details were lost on reopen",
+  );
+  await screenshot(page, "my-account-mobile");
+  assert(
+    await page.evaluate<boolean>(
+      "document.documentElement.scrollWidth <= innerWidth",
+    ),
+    "own account overflows mobile",
+  );
+  await button(page, "Back");
+  await title(page, "User reader");
   assert(
     await page.evaluate<boolean>(
       "document.documentElement.scrollWidth <= innerWidth",
@@ -1258,6 +1385,12 @@ async function verifyUsers(page: BrowserDriver): Promise<void> {
   await button(page, "Close");
   await title(page, "User reference");
   await button(page, "Back");
+}
+
+async function openMyAccount(page: BrowserDriver): Promise<void> {
+  await page.evaluate("document.querySelector('#session-menu-toggle').click()");
+  await button(page, "My account");
+  await title(page, "My account");
 }
 
 async function fieldValue(page: BrowserDriver, bind: string): Promise<string> {

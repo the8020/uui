@@ -1,4 +1,5 @@
-import { ListRenderer } from "./lists.ts";
+import { ListRenderer } from "./components/list/lists.ts";
+import { ListDataChannel } from "./components/list/data.ts";
 import {
   type ListRequest,
   type ListSelection,
@@ -7,6 +8,7 @@ import {
   type ScreenStateUpdate,
 } from "../../../screen_state.ts";
 import {
+  ACCOUNT_EVENT,
   BACK_EVENT,
   type BrowserContext,
   type PresentationSnapshot,
@@ -42,6 +44,11 @@ import { MessageCenter } from "./message_center.ts";
 import { mergeServerModel, PresentationHistory } from "./presentation.ts";
 import { windowTitleForHeading } from "./window_title.ts";
 import { BrowserDownloads } from "./downloads.ts";
+import {
+  activeDialog,
+  focusableControls,
+  installKeyboardShortcuts,
+} from "./keyboard.ts";
 
 interface FocusState {
   element?: HTMLElement;
@@ -102,6 +109,7 @@ const sessionMenuToggle = requiredElement<HTMLElement>("session-menu-toggle");
 const sessionMenuIcon = requiredElement<HTMLElement>("session-menu-icon");
 const sessionUsername = requiredElement<HTMLElement>("session-username");
 const sessionLogout = requiredElement<HTMLButtonElement>("session-logout");
+const sessionAccount = requiredElement<HTMLButtonElement>("session-account");
 const themeToggle = requiredElement<HTMLButtonElement>("theme-toggle");
 const messagesOpen = requiredElement<HTMLButtonElement>("messages-open");
 const messagesCount = requiredElement<HTMLElement>("messages-count");
@@ -153,6 +161,9 @@ let reconnectAttempt = 0;
 let ended = false;
 let currentSessionID = "";
 let interactionSequence: number | undefined;
+const listData = new ListDataChannel((sequence) => {
+  if (interactionSequence === sequence) setInteractionPending(undefined);
+});
 let activeSurfaceID: string | null = null;
 let connectionText = "Connecting…";
 let logoutFallback: ReturnType<typeof setTimeout> | undefined;
@@ -194,6 +205,7 @@ renderIconText(messageDialogClose, "[[icon=close]]", {
   decorativeIcons: true,
 });
 renderSessionMenuAction(sessionLogout, "logout", "Logout");
+renderSessionMenuAction(sessionAccount, "person", "My account");
 sessionUsername.textContent = username;
 sessionUsername.title = username;
 updateSessionMenuLabel();
@@ -207,6 +219,10 @@ themeToggle.addEventListener("click", () => {
   sessionMenu.open = false;
 });
 sessionLogout.addEventListener("click", requestLogout);
+sessionAccount.addEventListener("click", () => {
+  sessionMenu.open = false;
+  dispatch(ACCOUNT_EVENT, "action");
+});
 sessionMenu.addEventListener("toggle", () => {
   sessionMenuToggle.setAttribute("aria-expanded", String(sessionMenu.open));
   updateSessionMenuLabel();
@@ -224,10 +240,23 @@ document.addEventListener("keydown", (event) => {
 });
 screenBack.addEventListener("click", requestBack);
 installBrowserBack();
+installKeyboardShortcuts({
+  roots: () => {
+    const layer = activeLayer();
+    return layer === undefined ? [] : [programHeaderRoot, layer.shell];
+  },
+  back: requestBack,
+});
 synchronizeWindowTitle();
 connect();
 
 function requestBack(): void {
+  const dialog = activeDialog();
+  if (dialog) {
+    dialog.requestClose();
+    return;
+  }
+  if (activeLayer()?.lists.closeTools()) return;
   if (screenBack.disabled) return;
   dispatch(BACK_EVENT, BACK_EVENT);
 }
@@ -296,6 +325,9 @@ async function connectAttempt(): Promise<void> {
   });
   socket.addEventListener("message", (event) => receive(event.data));
   socket.addEventListener("close", (event) => {
+    listData.fail(
+      "The connection closed. Try the list action again after reconnecting.",
+    );
     downloads.close();
     if (!shouldReconnectWebSocket(ended, event.code)) {
       if (terminalRedirect !== undefined) {
@@ -463,6 +495,9 @@ function receive(raw: unknown): void {
       setConnectionState("Connected", "connected");
       break;
     case "session.resync_required":
+      listData.fail(
+        "The screen needs to reconnect. Try the list action again.",
+      );
       setInteractionPending(undefined);
       showResync(
         message.message ?? "This session needs a fresh screen snapshot.",
@@ -472,12 +507,16 @@ function receive(raw: unknown): void {
       sendClient({ type: "session.pong" });
       break;
     case "presentation.show":
+      listData.fail("The list changed. Try the list action again.");
       notice.hidden = true;
       try {
         reconcilePresentation(message.presentation);
       } catch {
         showNotice("The server sent an invalid presentation.");
       }
+      break;
+    case "screen.list.data":
+      listData.receive(message);
       break;
     case "notification.show":
       messageCenter.show(message);
@@ -498,13 +537,19 @@ function receive(raw: unknown): void {
         }
       }
       break;
-    case "session.error":
+    case "session.error": {
+      const listReadFailed = listData.fail(
+        message.message ?? "Could not read the list.",
+      );
       if (interactionSequence !== undefined) {
         pending.delete(interactionSequence);
       }
       setInteractionPending(undefined);
-      showNotice(message.message ?? message.code ?? "Session error");
+      if (!listReadFailed) {
+        showNotice(message.message ?? message.code ?? "Session error");
+      }
       break;
+    }
     case "session.end":
       downloads.close();
       setInteractionPending(undefined);
@@ -881,6 +926,25 @@ function renderLayer(layer: PresentationLayer): void {
     {
       request: (updates) => requestLists(layer, updates),
       select: (selection) => selectListRow(layer, selection),
+      read: (read, signal) =>
+        listData.request(() => {
+          if (
+            !layerIsActive(layer) || socket?.readyState !== WebSocket.OPEN
+          ) return;
+          const sequence = sendClient({
+            type: "screen.list",
+            read,
+            updates: [],
+            changes: [],
+            surfaceId: layer.surfaceId,
+            screenId: layer.screen.id,
+            screenRevision: layer.screen.revision,
+            instanceId: layer.viewState.instanceId,
+            screenState: screenStateUpdate(layer),
+          });
+          if (sequence !== undefined) setInteractionPending(sequence);
+          return sequence;
+        }, signal),
     },
   );
   layer.customElements.begin((action, value) =>
@@ -953,6 +1017,7 @@ function disposeLayer(surfaceId: string): void {
 }
 
 function clearPresentation(): void {
+  listData.fail("The screen closed.");
   localScreenStates.clear();
   presentationHistory.clear();
   for (const surfaceId of [...layers.keys()]) disposeLayer(surfaceId);
@@ -1142,6 +1207,7 @@ function updateInteractionState(): void {
     const isVisible = visible.has(layer.surfaceId);
     const isActive = activeSurfaceID === layer.surfaceId;
     layer.customElements.setActive(isVisible && isActive);
+    if (!isVisible || !isActive) layer.lists.closeTools();
     layer.shell.inert = !isVisible || waiting || !isActive;
     const modalWaiting = waiting && feedbackLayer === layer &&
       layer.kind === "modal";
@@ -1153,6 +1219,9 @@ function updateInteractionState(): void {
   programHeaderRoot.inert = waiting ||
     activeSurfaceID !== presentationHistory.visible()[0];
   screenBack.disabled = waiting || active === undefined;
+  sessionAccount.disabled = logoutRequested || waiting ||
+    active === undefined ||
+    active.screen.id === "my-account";
   if (pageWaiting) {
     app.setAttribute("aria-busy", "true");
     programHeaderRoot.setAttribute("aria-busy", "true");
@@ -1318,11 +1387,8 @@ function restoreFocus(layer: PresentationLayer): void {
     );
   }
   if (target === undefined && layer.kind === "modal") {
-    target = layer.root.querySelector<HTMLElement>(
-      "input:not(:disabled), select:not(:disabled), textarea:not(:disabled), button:not(:disabled), [tabindex]:not([tabindex='-1'])",
-    ) ?? layer.headerRoot?.querySelector<HTMLElement>(
-      "input:not(:disabled), select:not(:disabled), textarea:not(:disabled), button:not(:disabled), [tabindex]:not([tabindex='-1'])",
-    ) ?? layer.root.querySelector<HTMLElement>(".screen-title") ?? undefined;
+    target = focusableControls([layer.root, layer.headerRoot!])[0] ??
+      layer.root.querySelector<HTMLElement>(".screen-title") ?? undefined;
   }
   if (target === undefined) return;
   target.focus({ preventScroll: true });

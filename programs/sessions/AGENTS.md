@@ -10,6 +10,10 @@ Parent DOX: [uui/programs DOX](../AGENTS.md).
 
 # Local Contracts
 
+- Reuse `src/session_fields.ts` across lists, details, and compatible table
+  columns; its help distinguishes UUI executions from authentication sign-ins.
+  Runtime and account references retain their owning fields.
+
 - Page database metadata in batches of 200 with one-row lookahead, then inspect
   the selected node/sandbox/Worker and persistent execution identity. Refresh a
   selected row by its exact session ID, independently of list scope or paging.

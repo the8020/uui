@@ -14,13 +14,15 @@
   "fmt": {
     "exclude": [
       "services/shell/.generated",
-      "services/shell/frontend/assets"
+      "services/shell/frontend/assets",
+      "services/shell/frontend/components/list/vendor"
     ]
   },
   "lint": {
     "exclude": [
       "services/shell/.generated",
-      "services/shell/frontend/assets"
+      "services/shell/frontend/assets",
+      "services/shell/frontend/components/list/vendor"
     ]
   },
   "imports": {

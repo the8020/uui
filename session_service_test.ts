@@ -1050,3 +1050,66 @@ async function until(
   }
   throw new Error("condition was not reached");
 }
+
+Deno.test("list reads acknowledge the session sequence so reload can submit the next screen event", async () => {
+  const metadataStore = new MemorySessionMetadataStore();
+  let action = "";
+  const service = defineSessionService(async () => {
+    const event = await callScreen({
+      id: "read-resume",
+      schema: z.object({ rows: z.number().array() }),
+      model: new Model({ rows: Array.from({ length: 2205 }, (_, i) => i) }),
+    });
+    action = event.action;
+  }, { metadataStore, completePersistent: () => Promise.resolve() });
+  try {
+    await service.fetch(
+      new Request("https://example.test/connect", { method: "POST" }),
+      context(metadata),
+    );
+    const first = new TestSocket();
+    first.message(connectMessage(0));
+    await service.connectWebSocket(
+      new Request("https://example.test/connect"),
+      context(metadata),
+      first,
+    );
+    await until(() => serverMessages(first, "presentation.show").length === 1);
+    const presentation = serverMessages(first, "presentation.show")[0]!;
+    const list = presentation.presentation.surfaces.at(-1)!.screen.lists[0]!;
+    first.message({
+      ...screenEvent(presentation, "", 7),
+      type: "screen.list",
+      updates: [],
+      read: { id: list.id, revision: list.revision, offset: 1000, limit: 1000 },
+    });
+    await until(() => serverMessages(first, "screen.list.data").length === 1);
+    assertEquals(
+      serverMessages(first, "screen.list.data")[0]!.data.rows.length,
+      1000,
+    );
+    first.remoteClose();
+    const reloaded = new TestSocket();
+    reloaded.message(connectMessage(0));
+    await service.connectWebSocket(
+      new Request("https://example.test/connect"),
+      context(metadata),
+      reloaded,
+    );
+    await until(() =>
+      serverMessages(reloaded, "presentation.show").length === 1
+    );
+    const resumed = serverMessages(reloaded, "session.resumed")[0]!;
+    assertEquals(resumed.lastClientSequence, 7);
+    reloaded.message(
+      screenEvent(
+        serverMessages(reloaded, "presentation.show")[0]!,
+        "done",
+        resumed.lastClientSequence + 1,
+      ),
+    );
+    await until(() => action === "done");
+  } finally {
+    await metadataStore.clear();
+  }
+});

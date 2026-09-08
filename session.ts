@@ -3,7 +3,7 @@ import { z } from "@the8020/http";
 import { buildControls, buildFieldCatalog, schemaAtPath } from "./fields.ts";
 import { validateCustomElements } from "./custom_elements.ts";
 import { resolveLayoutReferences, validateLayout } from "./layout.ts";
-import { ScreenLists, StaleListView } from "./lists.ts";
+import { type ListReader, ScreenLists, StaleListView } from "./lists.ts";
 import { Model } from "./model.ts";
 import { runFieldHelp } from "./field_help.ts";
 import { explicitElementIDs, resolveElementIDs } from "./identifiers.ts";
@@ -36,6 +36,7 @@ import type {
   UUIWorkerOutbound,
 } from "./protocol.ts";
 import {
+  ACCOUNT_EVENT,
   BACK_EVENT,
   MAX_UUI_MESSAGE_BODY_LENGTH,
   UUI_MESSAGE_KINDS,
@@ -106,6 +107,8 @@ export interface CallScreenOptions<T extends z.ZodRawShape> {
   description?: string;
   customElements?: CustomElementDeclaration[];
   channel?: ScreenChannel;
+  /** Optional independent readers keyed by list ID for server-paged sources. */
+  listReaders?: Record<string, ListReader>;
 }
 
 export interface SessionChannel {
@@ -133,14 +136,14 @@ interface ActiveScreenCall {
   readonly revision: number;
   readonly snapshot: () => ScreenSnapshot;
   readonly receive: (message: ScreenEventMessage | ScreenListMessage) => void;
-  readonly help: (control: ControlDescriptor) => void;
+  readonly open: (target: ControlDescriptor | typeof ACCOUNT_EVENT) => void;
   readonly resolve: (event: ScreenEvent) => void;
   readonly reject: (error: unknown) => void;
   detachChannel?: () => void;
   redrawQueued: boolean;
   settled: boolean;
-  helping: boolean;
-  afterHelp?: ScreenOutcome;
+  presenting: boolean;
+  afterPresentation?: ScreenOutcome;
 }
 
 interface BoundSession {
@@ -349,7 +352,8 @@ export async function callScreen<T extends z.ZodRawShape>(
   for (const action of [...actions, ...headerActions]) {
     if (
       action.id.length === 0 || action.label.length === 0 ||
-      actionIDs.has(action.id) || action.id === BACK_EVENT
+      actionIDs.has(action.id) || action.id === BACK_EVENT ||
+      action.id === ACCOUNT_EVENT
     ) {
       throw new TypeError(
         `duplicate, empty, unlabeled, or reserved action ${action.id}`,
@@ -376,6 +380,7 @@ export async function callScreen<T extends z.ZodRawShape>(
     layout,
     options.model.screen,
     headerControls,
+    options.listReaders,
   );
   const elementIDs = new Set(
     [
@@ -438,50 +443,64 @@ export async function callScreen<T extends z.ZodRawShape>(
         elementIDs,
         message,
       ),
-    help: (control) => {
-      void showFieldHelp(control);
+    open: (target) => {
+      void showRelated(target);
     },
     resolve: resolveResult,
     reject: rejectResult,
     redrawQueued: false,
     settled: false,
-    helping: false,
+    presenting: false,
   };
-  async function showFieldHelp(control: ControlDescriptor): Promise<void> {
-    if (call.helping || call.settled) return;
-    call.helping = true;
+  async function showRelated(
+    target: ControlDescriptor | typeof ACCOUNT_EVENT,
+  ): Promise<void> {
+    const control = target === ACCOUNT_EVENT ? undefined : target;
+    if (call.presenting || call.settled) return;
+    call.presenting = true;
     let changed = false;
     try {
       await surfaceContext.run(
         surface,
         () =>
-          presentModal(() =>
-            runFieldHelp(schemaAtPath(options.schema, control.bind)!, control, {
-              get: () => getPath(options.model.data, control.bind),
-              set: (value) => {
-                if (control.readOnly) {
-                  throw new TypeError("This field is read-only");
-                }
-                const candidate = structuredClone(options.model.data);
-                setPath(candidate, control.bind, value);
-                const parsed = options.schema.parse(candidate);
-                const next = getPath(parsed, control.bind);
-                changed ||= !Object.is(
-                  getPath(options.model.data, control.bind),
-                  next,
-                );
-                setPath(options.model.data, control.bind, next);
-              },
+          control === undefined
+            ? presentPage(async () => {
+              const { default: myAccount } = await import(
+                "/p/the8020/users/programs/my-account/program.ts"
+              );
+              await myAccount();
             })
-          ),
+            : presentModal(() =>
+              runFieldHelp(
+                schemaAtPath(options.schema, control.bind)!,
+                control,
+                {
+                  get: () => getPath(options.model.data, control.bind),
+                  set: (value) => {
+                    if (control.readOnly) {
+                      throw new TypeError("This field is read-only");
+                    }
+                    const candidate = structuredClone(options.model.data);
+                    setPath(candidate, control.bind, value);
+                    const parsed = options.schema.parse(candidate);
+                    const next = getPath(parsed, control.bind);
+                    changed ||= !Object.is(
+                      getPath(options.model.data, control.bind),
+                      next,
+                    );
+                    setPath(options.model.data, control.bind, next);
+                  },
+                },
+              )
+            ),
       );
     } catch (error) {
-      call.afterHelp = { error };
+      call.afterPresentation = { error };
     } finally {
-      call.helping = false;
-      if (call.afterHelp !== undefined) {
-        settleCall(state, call, call.afterHelp);
-      } else if (changed && control.reactive) {
+      call.presenting = false;
+      if (call.afterPresentation !== undefined) {
+        settleCall(state, call, call.afterPresentation);
+      } else if (changed && control?.reactive) {
         settleCall(state, call, {
           event: {
             action: "change",
@@ -717,6 +736,44 @@ function receiveScreenMessage<T extends z.ZodRawShape>(
       throw new TypeError("screen instance mismatch");
     }
     validateScreenUpdate(message.screenState, model, elementIDs);
+    if (message.type === "screen.list" && message.read !== undefined) {
+      if (
+        message.updates.length || message.changes.length ||
+        message.listChanges?.length
+      ) {
+        throw new TypeError("list reads cannot include edits or updates");
+      }
+      state.lastClientSequence = message.clientSequence;
+      state.channel.send({
+        type: "server.ack",
+        clientSequence: message.clientSequence,
+      });
+      void lists.read(message.read, model.data).then((data) => {
+        if (!state.active || call.settled || call.surface.pending !== call) {
+          return;
+        }
+        state.channel.send({
+          type: "screen.list.data",
+          surfaceId: call.surface.id,
+          clientSequence: message.clientSequence,
+          data,
+        });
+      }).catch((error) => {
+        if (!state.active || call.settled) return;
+        state.channel.send({
+          type: "session.error",
+          code: "list_read_failed",
+          message: error instanceof Error
+            ? error.message
+            : "Could not read the list.",
+        });
+        if (error instanceof StaleListView) {
+          call.surface.snapshot = call.snapshot();
+          publishPresentation(state);
+        }
+      });
+      return;
+    }
     if (message.type === "screen.event" && message.eventType === "field-help") {
       helpControl = controls.find((control) =>
         control.id === message.controlId
@@ -819,8 +876,10 @@ function receiveScreenMessage<T extends z.ZodRawShape>(
     type: "server.ack",
     clientSequence: message.clientSequence,
   });
-  if (helpControl !== undefined) {
-    call.help(helpControl);
+  if (message.type === "screen.event" && message.action === ACCOUNT_EVENT) {
+    call.open(ACCOUNT_EVENT);
+  } else if (helpControl !== undefined) {
+    call.open(helpControl);
   } else if (queryEvent !== undefined) {
     settleCall(state, call, { event: queryEvent });
   } else if (message.type === "screen.event") {
@@ -883,8 +942,8 @@ function settleCall(
   publish = true,
 ): void {
   if (call.settled) return;
-  if (call.helping && state.active) {
-    call.afterHelp ??= outcome;
+  if (call.presenting && state.active) {
+    call.afterPresentation ??= outcome;
     return;
   }
   call.settled = true;

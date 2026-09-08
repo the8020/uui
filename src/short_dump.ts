@@ -1,17 +1,55 @@
+import { field, z } from "/p/the8020/db/fields.ts";
+import { programId } from "/p/the8020/packages/types/program.ts";
+import { sourceInfo } from "/p/the8020/packages/types/source.ts";
 import type { TerminatedProgramInput } from "/p/the8020/uui/mod.ts";
 
-export interface ShortDump {
-  exceptionType: string;
-  message: string;
-  properties: string;
-  programId: string;
-  entrypoint: string;
-  location: string;
-  occurredAt: string;
-  stack: string;
-  source: string;
-  dumpText: string;
-}
+export const shortDumpFields = z.object({
+  exceptionType: field(z.string(), {
+    label: "Type",
+    description: "The type of the exception that stopped this program.",
+  }),
+  message: field(z.string(), {
+    label: "Message",
+    description: "The message reported by the exception.",
+  }),
+  properties: field(z.string(), {
+    label: "Properties",
+    description:
+      "Additional details attached to the exception, shortened when necessary.",
+  }),
+  location: field(z.string(), {
+    label: "Raised at",
+    description:
+      "The source file, line, and column associated with the exception, when available.",
+  }),
+  occurredAt: field(z.string(), {
+    label: "Time",
+    description: "When the uncaught exception stopped the program.",
+  }),
+  stack: field(z.string(), {
+    label: "Call stack",
+    description:
+      "The chain of calls reported by the exception. Use it to locate the failing code.",
+  }),
+  source: field(z.string(), {
+    label: "Source context",
+    description:
+      "Lines around the reported failure location, when the source is available.",
+  }),
+  dumpText: field(z.string(), {
+    label: "Short dump",
+    description:
+      "The combined exception, call stack, and source context. Copy short dump copies this report.",
+  }),
+  programId,
+  entrypoint: sourceInfo.shape.entrypoint,
+});
+export type ShortDump = z.infer<typeof shortDumpFields>;
+
+export const copyStatus = field(z.string(), {
+  label: "Copy status",
+  description: "The time at which Copy short dump was last requested.",
+});
 
 interface SourceLocation {
   path: string;

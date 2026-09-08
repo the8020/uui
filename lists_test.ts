@@ -2,6 +2,7 @@ import {
   assert,
   assertEquals,
   assertNotEquals,
+  assertRejects,
   assertStrictEquals,
   assertThrows,
 } from "@std/assert";
@@ -417,4 +418,105 @@ Deno.test("page sources retain remote ordering, selection mappings, and bounded 
   assertEquals(event?.change, "capacity");
   assertEquals(state.page, 6);
   assertEquals(model.data.rows.length, 2);
+});
+
+Deno.test("independent reads share the filtered sorted projection and preserve the displayed page", async () => {
+  const { lists, model } = fixture();
+  let shown = lists.present(model.data)[0]!;
+  lists.update({
+    id: shown.id,
+    revision: shown.revision,
+    operation: "query",
+    query: {
+      search: "Row",
+      filters: { enabled: "true" },
+      sort: { column: "id", direction: "desc" },
+    },
+  });
+  lists.update({
+    id: shown.id,
+    revision: shown.revision,
+    operation: "page",
+    page: 3,
+  });
+  shown = lists.present(model.data)[0]!;
+  const state = structuredClone(model.screen);
+  const data = structuredClone(model.data);
+  const request = {
+    id: shown.id,
+    revision: shown.revision,
+    offset: 9,
+    limit: 1000,
+  };
+  const page = await lists.read(request, model.data);
+  assertEquals(
+    page.rows.map((row) => (row as { id: number }).id),
+    Array.from({ length: 56 }, (_, i) => 110 - i * 2),
+  );
+  assertEquals(page.totalItems, 65);
+  assertEquals(page.more, false);
+  assertEquals(model.screen, state);
+  assertEquals(model.data, data);
+  assertStrictEquals(lists.present(model.data)[0], shown);
+  for (
+    const invalid of [{ offset: -1 }, { limit: 1001 }, { limit: 0 }, {
+      offset: 0.5,
+    }]
+  ) {
+    await assertRejects(
+      () => lists.read({ ...request, ...invalid }, model.data),
+      TypeError,
+    );
+  }
+  model.data.rows[0]!.name = "changed";
+  await assertRejects(() => lists.read(request, model.data), StaleListView);
+});
+
+Deno.test("page-source readers fill independent pages in bounded batches without changing the program page", async () => {
+  const model = new Model({ rows: [{ id: 0, name: "Row 0", enabled: true }] });
+  const layout = validateLayout({
+    schema: 1,
+    id: "remote",
+    root: {
+      id: "rows",
+      type: "list",
+      bind: "rows",
+      pageSource: { more: true },
+    },
+  });
+  const requests: Array<{ offset: number; limit: number }> = [];
+  const lists = new ScreenLists(schema, [], layout, model.screen, [], {
+    rows: ({ offset, limit }) => {
+      requests.push({ offset, limit });
+      return {
+        rows: Array.from(
+          { length: Math.min(limit, 1205 - offset) },
+          (_, i) => ({ id: offset + i }),
+        ),
+        more: offset + limit < 1205,
+      };
+    },
+  });
+  const shown = lists.present(model.data)[0]!;
+  const request = {
+    id: shown.id,
+    revision: shown.revision,
+    offset: 0,
+    limit: 1000,
+  };
+  assertEquals((await lists.read(request, model.data)).rows.length, 1000);
+  assertEquals(requests, [{ offset: 0, limit: 500 }, {
+    offset: 500,
+    limit: 500,
+  }]);
+  const last = await lists.read({ ...request, offset: 1000 }, model.data);
+  assertEquals(last.totalItems, 1205);
+  assertEquals(last.rows.length, 205);
+  assertEquals(last.more, false);
+  const beyond = await lists.read({ ...request, offset: 2000 }, model.data);
+  assertEquals(beyond.rows, []);
+  assertEquals(beyond.totalItems, undefined);
+  assertEquals(model.data.rows.length, 1);
+  assertEquals(model.screen.elements.rows!.list!.pageSize, 1);
+  assertStrictEquals(lists.present(model.data)[0], shown);
 });

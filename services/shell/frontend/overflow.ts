@@ -53,6 +53,7 @@ export function createOverflowText(
   const button = document.createElement("button");
   button.type = "button";
   button.className = "overflow-reveal";
+  button.tabIndex = -1;
   button.textContent = "…";
   button.hidden = true;
   button.title = options.label;

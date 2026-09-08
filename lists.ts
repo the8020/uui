@@ -15,8 +15,10 @@ import {
   isRecord,
   type ListChange,
   type ListColumn,
+  type ListDataPage,
   type ListOptions,
   type ListQuery,
+  type ListReadRequest,
   type ListRequest,
   type ListSelection,
   type ListState,
@@ -26,7 +28,18 @@ import {
   type ScreenListSnapshot,
   type ScreenState,
   validListQuery,
+  validListRead,
 } from "./screen_state.ts";
+
+/** Reads the current query without changing the program's displayed page. */
+export type ListReader = (request: {
+  query: ListQuery;
+  offset: number;
+  /** At most MAX_LIST_PAGE_SIZE, also suitable for value-help providers. */
+  limit: number;
+}) =>
+  | { rows: unknown[]; more: boolean }
+  | Promise<{ rows: unknown[]; more: boolean }>;
 
 interface ListDefinition extends ListOptions {
   id: string;
@@ -39,6 +52,7 @@ interface ListView {
   originals: unknown[];
   sourceText: string;
   indices: number[];
+  allIndices: number[];
   snapshot: ScreenListSnapshot;
 }
 
@@ -57,6 +71,7 @@ export class ScreenLists {
     layout: LayoutDocument | undefined,
     screen: ScreenState,
     header: readonly ControlDescriptor[] = [],
+    readonly readers: Readonly<Record<string, ListReader>> = {},
   ) {
     this.#screen = screen;
     const declared: Array<
@@ -175,6 +190,7 @@ export class ScreenLists {
         ? Math.max(1, Math.ceil(totalItems / state.pageSize))
         : state.page + (definition.pageSource.more ? 1 : 0);
       state.page = Math.min(Math.max(1, state.page), totalPages);
+      const allIndices = indices;
       if (definition.pageSource === undefined) {
         indices = indices.slice(
           (state.page - 1) * state.pageSize,
@@ -201,17 +217,73 @@ export class ScreenLists {
             value.trim() !== ""
           ),
         triggerFilterEvents: definition.triggerFilterEvents ?? false,
+        readable: definition.pageSource === undefined ||
+          Object.hasOwn(this.readers, definition.id),
       };
       this.#views.set(definition.id, {
         source,
         originals: [...source],
         sourceText,
         indices,
+        allIndices,
         snapshot,
       });
       result.push(snapshot);
     }
     return result;
+  }
+
+  async read(request: ListReadRequest, model: object): Promise<ListDataPage> {
+    if (!validListRead(request)) throw new TypeError("invalid list read range");
+    const view = this.view(request.id, request.revision, model);
+    const data: ListDataPage = {
+      id: request.id,
+      revision: request.revision,
+      offset: request.offset,
+      rows: [],
+      more: false,
+    };
+    if (view.snapshot.pageSource === undefined) {
+      data.rows = view.allIndices.slice(
+        request.offset,
+        request.offset + request.limit,
+      )
+        .map((index) => view.source[index]);
+      data.totalItems = view.allIndices.length;
+      data.more = request.offset + data.rows.length < data.totalItems;
+    } else {
+      if (!Object.hasOwn(this.readers, request.id)) {
+        throw new TypeError(
+          "This list source does not provide independent reads.",
+        );
+      }
+      do {
+        const limit = Math.min(
+          MAX_LIST_PAGE_SIZE,
+          request.limit - data.rows.length,
+        );
+        const page = await this.readers[request.id]!({
+          query: structuredClone(view.snapshot.state.query),
+          offset: request.offset + data.rows.length,
+          limit,
+        });
+        if (
+          !Array.isArray(page.rows) || page.rows.length > limit ||
+          typeof page.more !== "boolean" ||
+          (page.more && page.rows.length === 0)
+        ) {
+          throw new TypeError("invalid list reader result");
+        }
+        data.rows.push(...page.rows);
+        data.more = page.more;
+      } while (data.more && data.rows.length < request.limit);
+      // An empty read beyond the end cannot establish the actual total.
+      if (!data.more && (data.rows.length > 0 || request.offset === 0)) {
+        data.totalItems = request.offset + data.rows.length;
+      }
+      this.view(request.id, request.revision, model);
+    }
+    return structuredClone(data);
   }
 
   /** Array values travel only in element-specific projections, never as one shared slice. */

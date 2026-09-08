@@ -1,6 +1,8 @@
 import {
   type ListChange,
+  type ListDataPage,
   type ListOptions,
+  type ListReadRequest,
   type ListRequest,
   type ListSelection,
   MAX_LIST_PAGE_SIZE,
@@ -8,6 +10,7 @@ import {
   type ScreenState,
   type ScreenStateUpdate,
   validListQuery,
+  validListRead,
   validScreenStateUpdate,
 } from "./screen_state.ts";
 export * from "./screen_state.ts";
@@ -21,6 +24,7 @@ import {
 
 export const UUI_PROTOCOL_VERSION = uiConfig.protocolVersion;
 export const BACK_EVENT = "back" as const;
+export const ACCOUNT_EVENT = "uui.account" as const;
 export const UUI_MESSAGE_KINDS = [
   "info",
   "success",
@@ -54,6 +58,7 @@ export type UUIMessageType =
   | "presentation.show"
   | "screen.event"
   | "screen.list"
+  | "screen.list.data"
   | "notification.show"
   | "clipboard.write"
   | "client.ack"
@@ -129,6 +134,15 @@ export interface ScreenEventMessage extends ScreenInteractionBase {
 export interface ScreenListMessage extends ScreenInteractionBase {
   type: "screen.list";
   updates: ListRequest[];
+  /** A read is exclusive of updates and edits and leaves the pending screen intact. */
+  read?: ListReadRequest;
+}
+
+export interface ScreenListDataMessage extends ServerMessageBase {
+  type: "screen.list.data";
+  surfaceId: string;
+  clientSequence: number;
+  data: ListDataPage;
 }
 
 export interface SessionPongMessage extends ClientMessageBase {
@@ -220,6 +234,7 @@ export type UUIServerMessage =
   | SessionResumedMessage
   | SessionErrorMessage
   | PresentationShowMessage
+  | ScreenListDataMessage
   | NotificationMessage
   | ClipboardWriteMessage
   | AcknowledgementMessage
@@ -343,6 +358,12 @@ export interface PresentationSnapshot {
 
 export type UUIWorkerOutbound =
   | DownloadServerCommand
+  | {
+    type: "screen.list.data";
+    surfaceId: string;
+    clientSequence: number;
+    data: ListDataPage;
+  }
   | { type: "presentation.show"; presentation: PresentationSnapshot }
   | {
     type: "notification.show";
@@ -412,6 +433,18 @@ export function parseClientMessage(value: unknown): UUIClientMessage {
     }
   }
   if (value.type === "screen.list") {
+    if (value.read !== undefined) {
+      if (
+        !validListRead(value.read) || !Array.isArray(value.updates) ||
+        value.updates.length !== 0 ||
+        (value.changes as unknown[]).length !== 0 ||
+        (value.listChanges !== undefined &&
+          (value.listChanges as unknown[]).length !== 0)
+      ) {
+        throw new TypeError("invalid list read message");
+      }
+      return value as unknown as ScreenListMessage;
+    }
     if (
       !Array.isArray(value.updates) || value.updates.length === 0 ||
       value.updates.length > 200 ||

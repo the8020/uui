@@ -11,6 +11,7 @@ import {
 } from "/p/the8020/uui/mod.ts";
 import detailLayout from "./layouts/detail.json" with { type: "json" };
 import listLayout from "./layouts/list.json" with { type: "json" };
+import { sessionInfo } from "../../src/session_fields.ts";
 import type { SessionMetadata } from "../../session_metadata.ts";
 import Sessions from "../../tables/sessions.ts";
 import { username } from "/p/the8020/users/types/user.ts";
@@ -22,51 +23,47 @@ const maximumSessions = 200;
 const ListScreen = z.object({
   sessions: z.array(z.object({
     navigation: z.string(),
-    sessionId: field(z.string(), { label: "Session" }),
+    sessionId: sessionInfo.shape.sessionId,
     user: username,
-    state: field(z.string(), { label: "Status" }),
-    screen: z.string(),
-    nodeId: z.string(),
-    updatedAt: field(z.string(), { label: "Last activity (UTC)" }),
+    state: sessionInfo.shape.state,
+    screen: sessionInfo.shape.currentScreenId,
+    nodeId: sessionInfo.shape.nodeId,
+    updatedAt: sessionInfo.shape.updatedAt,
   })),
 });
 
 const DetailScreen = z.object({
-  sessionId: field(z.string(), { label: "Session ID", readOnly: true }),
-  state: field(z.string(), { label: "Status", readOnly: true }),
+  sessionId: field(sessionInfo.shape.sessionId, { readOnly: true }),
+  state: field(sessionInfo.shape.state, { readOnly: true }),
   authenticatedUser: field(username, { readOnly: true }),
-  authenticatedUserId: field(z.string(), { label: "User ID", readOnly: true }),
-  latestIpAddress: field(z.string(), {
-    label: "Latest IP address",
+  authenticatedUserId: field(sessionInfo.shape.authenticatedUserId, {
     readOnly: true,
   }),
-  latestNetworkScope: field(z.string(), {
-    label: "Network scope",
+  latestIpAddress: field(sessionInfo.shape.latestIpAddress, {
+    readOnly: true,
+  }),
+  latestNetworkScope: field(sessionInfo.shape.latestNetworkScope, {
     readOnly: true,
   }),
   serviceId: field(serviceId, { readOnly: true }),
-  persistentExecutionId: field(z.string(), {
-    label: "Persistent execution",
+  persistentExecutionId: field(sessionInfo.shape.persistentExecutionId, {
     readOnly: true,
   }),
-  nodeId: field(z.string(), { label: "Node", readOnly: true }),
+  nodeId: field(sessionInfo.shape.nodeId, { readOnly: true }),
 
   sandboxId: field(sandboxId, { readOnly: true }),
   workerId: field(workerId, { readOnly: true }),
-  currentScreen: field(z.string(), { label: "Current screen", readOnly: true }),
-  currentScreenId: field(z.string(), { label: "Screen ID", readOnly: true }),
-  createdAt: field(z.string(), { label: "Started (UTC)", readOnly: true }),
-  updatedAt: field(z.string(), {
-    label: "Last activity (UTC)",
+  currentScreen: field(sessionInfo.shape.currentScreen, { readOnly: true }),
+  currentScreenId: field(sessionInfo.shape.currentScreenId, { readOnly: true }),
+  createdAt: field(sessionInfo.shape.createdAt, { readOnly: true }),
+  updatedAt: field(sessionInfo.shape.updatedAt, {
     readOnly: true,
   }),
-  lastConnectionAt: field(z.string(), {
-    label: "Last connection (UTC)",
+  lastConnectionAt: field(sessionInfo.shape.lastConnectionAt, {
     readOnly: true,
   }),
-  liveState: field(z.string(), { label: "Live validation", readOnly: true }),
-  messageLog: field(z.string(), {
-    label: "Message log",
+  liveState: field(sessionInfo.shape.liveState, { readOnly: true }),
+  messageLog: field(sessionInfo.shape.messageLog, {
     control: "textarea",
     length: "long",
     readOnly: true,

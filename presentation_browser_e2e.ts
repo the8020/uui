@@ -1096,11 +1096,11 @@ async function verifyPresentationFlow(page: BrowserPage): Promise<void> {
     })()`),
     "Messages does not use the shared dialog structure",
   );
-  await click(page, "#message-dialog-close");
+  await pressKey(page, "F3");
   await waitForPage(
     page,
     `document.querySelector('#message-dialog')?.open === false`,
-    "Messages dialog close",
+    "F3 closes Messages without leaving the screen",
   );
 
   await clickButton(page, "Presentation flow");
@@ -1310,6 +1310,7 @@ async function verifyFieldHelp(page: BrowserPage): Promise<void> {
     `!document.querySelector('${hint}').closest('.field').querySelector('.overflow-reveal').hidden`,
     "hint ellipsis after narrowing",
   );
+  await verifyKeyboardNavigation(page);
   assert(
     await page.evaluate<boolean>(`(() => {
     const field = document.querySelector('${hint}').closest('.field');
@@ -1398,11 +1399,39 @@ async function verifyFieldHelp(page: BrowserPage): Promise<void> {
     { type: "text", mode: "decimal", value: "90071992547409.91" },
     "money input preserves exact decimal strings",
   );
-  await click(page, '[aria-label="Edit Amount: field help"]');
+  await page.evaluate(`document.querySelector('[data-bind="amount"]').focus()`);
+  await pressKey(page, "F1");
   await waitForPage(
     page,
     `document.querySelector('${modal} .screen-title')?.textContent === 'Amount'`,
-    "money field help",
+    "F1 opens money field help",
+  );
+  await page.evaluate(
+    `document.querySelector('${modal} [data-bind=value]').focus()`,
+  );
+  for (
+    const [key, selector] of [
+      ["F6", "[data-element-id=done]"],
+      ["F6", ".uui-dialog-close"],
+      ["F6", "[data-bind=value]"],
+      ["F5", ".uui-dialog-close"],
+      ["F5", "[data-element-id=done]"],
+      ["F5", "[data-bind=value]"],
+    ] as const
+  ) {
+    await pressKey(page, key);
+    assert(
+      await page.evaluate<boolean>(
+        `document.activeElement === document.querySelector('${modal} ${selector}')`,
+      ),
+      `${key} loops inside the modal to ${selector}`,
+    );
+  }
+  for (const key of ["F1", "F4"] as const) await pressKey(page, key);
+  assertEquals(
+    await page.evaluate(`document.querySelectorAll('${modal}').length`),
+    1,
+    "fieldHelp: false suppresses both help shortcuts",
   );
   await setValue(page, `${modal} [data-bind="value"]`, "1.234");
   await clickButton(page, "Done");
@@ -1413,7 +1442,10 @@ async function verifyFieldHelp(page: BrowserPage): Promise<void> {
   );
   assertEquals(fieldHelpModel.data.amount, "90071992547409.91");
   await setValue(page, `${modal} [data-bind="value"]`, "90071992547409.92");
-  await clickButton(page, "Done");
+  await page.evaluate(
+    `document.querySelector('${modal} [data-element-id=done]').focus()`,
+  );
+  await pressKey(page, "F2");
   await waitForPage(
     page,
     `document.querySelectorAll('${modal}').length === 0`,
@@ -1460,6 +1492,50 @@ async function verifyFieldHelp(page: BrowserPage): Promise<void> {
   );
   await fieldHelpScreenshot(page, "desktop");
   const firstPage = fieldHelpRequests.at(-1)!;
+  await click(page, `${modal} [aria-label="Display in table processor"]`);
+  await waitForPage(
+    page,
+    "document.querySelector('.data-list-grid')?.dataset.rowCount==='1000' && document.querySelector('.data-list-processor .data-list-status')?.hidden",
+    "field help supplies an independent 1000-row spreadsheet page",
+  );
+  assertEquals(
+    fieldHelpRequests.at(-1)?.limit,
+    500,
+    "value-help reader retains its provider bound",
+  );
+  await page.evaluate(`(() => {
+    const input=document.querySelector('.data-list-processor input');
+    input.value='999'; input.dispatchEvent(new Event('change',{bubbles:true}));
+  })()`);
+  await waitForPage(
+    page,
+    "document.querySelector('.data-list-processor .data-list-status')?.textContent==='This page is unavailable.' && document.querySelector('.data-list-processor input')?.value==='1'",
+    "an unknown source total is not fabricated for an unavailable page",
+  );
+  await click(page, '.data-list-processor [aria-label="Next page"]');
+  await waitForPage(
+    page,
+    "document.querySelector('.data-list-processor input')?.value==='2' && document.querySelector('.data-list-processor .data-list-status')?.hidden",
+    "value-help spreadsheet advances independently",
+  );
+  await click(page, '.data-list-processor [aria-label="Next page"]');
+  await waitForPage(
+    page,
+    "document.querySelector('.data-list-grid')?.dataset.rowCount==='1' && document.querySelector('.data-list-processor-pages > span')?.textContent==='/ 3'",
+    "value-help reader discovers the final total",
+  );
+  await pressKey(page, "F3");
+  await waitForPage(
+    page,
+    `!document.querySelector('.data-list-processor') && document.querySelector('${modal}')`,
+    "F3 closes the local spreadsheet and preserves field help",
+  );
+  assert(
+    await page.evaluate<boolean>(
+      `document.querySelector('${modal} tr[data-row-index="0"]')?.textContent.includes('user0')`,
+    ),
+    "value-help UUI page is retained",
+  );
   await click(page, `${modal} [aria-label="Page 2"]`);
   await waitFor(
     () => fieldHelpRequests.at(-1)?.offset === firstPage.limit,
@@ -1550,11 +1626,11 @@ async function verifyFieldHelp(page: BrowserPage): Promise<void> {
   // Close and Escape discard invalid as well as valid drafts.
   await click(page, '[aria-label="Edit Amount: field help"]');
   await setValue(page, `${modal} [data-bind="value"]`, "invalid");
-  await click(page, `${modal} .uui-dialog-close`);
+  await pressKey(page, "F3");
   await waitForPage(
     page,
     `document.querySelector('${modal}') === null`,
-    "Close discards invalid amount",
+    "F3 discards invalid amount",
   );
   assertEquals(fieldHelpModel.data.amount, "90071992547409.92");
   await click(page, '[aria-label="Edit Note: field help"]');
@@ -1567,11 +1643,12 @@ async function verifyFieldHelp(page: BrowserPage): Promise<void> {
   );
   assertEquals(fieldHelpModel.data.note, "After");
   const requestsBeforeReadonly = fieldHelpRequests.length;
-  await click(page, '[aria-label="View Recorded user: field help"]');
+  await page.evaluate(`document.querySelector('[data-bind=recorded]').focus()`);
+  await pressKey(page, "F1");
   await waitForPage(
     page,
     `document.querySelector('${modal} [data-bind="value"]')?.readOnly === true && document.querySelector('${modal} [data-bind="value"]')?.value === 'user1' && !document.querySelector('${modal} [data-bind="query"]')`,
-    "chevron opens read-only field help",
+    "F1 opens read-only field help",
   );
   assert(
     fieldHelpRequests.length === requestsBeforeReadonly,
@@ -1589,11 +1666,11 @@ async function verifyFieldHelp(page: BrowserPage): Promise<void> {
     `document.querySelector('#app .presentation-page-layer:not([hidden]) .screen-title')?.textContent === 'User user1'`,
     "related record opens its program",
   );
-  await clickButton(page, "Back");
+  await pressKey(page, "F3");
   await waitForPage(
     page,
     `document.querySelector('${modal} .screen-title')?.textContent === 'Recorded user'`,
-    "Back restores field help",
+    "F3 returns from a page to its previous field-help modal",
   );
   await page.command("Page.reload");
   await waitForPage(
@@ -1622,6 +1699,111 @@ async function verifyFieldHelp(page: BrowserPage): Promise<void> {
   );
   await page.command("Emulation.clearDeviceMetricsOverride");
   await clickButton(page, "Next");
+}
+
+async function verifyKeyboardNavigation(page: BrowserPage): Promise<void> {
+  const amount = "[data-bind=amount]";
+  const user = "[data-bind=user]";
+  const note = "[data-bind=note]";
+  const recorded = "[data-bind=recorded]";
+  const next = "#program-header [data-element-id=next]";
+  const ellipsis = ".field:has([data-bind=user]) .overflow-reveal";
+  for (
+    const [start, key, target, modifiers = 0] of [
+      [amount, "Tab", note],
+      [note, "Tab", recorded],
+      [recorded, "Tab", user],
+      [note, "Tab", amount, 8],
+      ["", "F5", next],
+      ["", "F6", next],
+      [amount, "F5", next],
+      [next, "F5", user],
+      [user, "F6", next],
+      [next, "F6", amount],
+      [amount, "F6", note],
+      [note, "F5", amount],
+      [recorded, "F5", note],
+      [recorded, "F6", user],
+      [ellipsis, "F5", user],
+      [ellipsis, "F6", next],
+    ] as const
+  ) {
+    await page.evaluate(
+      start
+        ? `document.querySelector(${JSON.stringify(start)}).focus()`
+        : `document.activeElement.blur()`,
+    );
+    await pressKey(page, key, modifiers);
+    assert(
+      await page.evaluate<boolean>(
+        `document.activeElement === document.querySelector(${
+          JSON.stringify(target)
+        })`,
+      ),
+      `${modifiers ? "Shift+" : ""}${key} from ${
+        start || "no focus"
+      } selects ${target}`,
+    );
+  }
+  for (
+    const [selector, attribute, value] of [
+      [note, "disabled", ""],
+      [".field:has([data-bind=note])", "hidden", ""],
+      [".field:has([data-bind=note])", "inert", ""],
+      [note, "style", "visibility: hidden"],
+    ]
+  ) {
+    await page.evaluate(
+      `document.querySelector('${selector}').setAttribute('${attribute}', '${value}'); document.querySelector('${amount}').focus()`,
+    );
+    await pressKey(page, "F6");
+    assert(
+      await page.evaluate<boolean>(
+        `document.activeElement === document.querySelector('${user}')`,
+      ),
+      `F6 skips ${attribute} controls`,
+    );
+    await page.evaluate(
+      `document.querySelector('${selector}').removeAttribute('${attribute}')`,
+    );
+  }
+  await page.evaluate(`document.querySelector('#session-menu-toggle').focus()`);
+  for (const open of [true, false]) {
+    await pressKey(page, "F2");
+    assertEquals(
+      await page.evaluate(`document.querySelector('#session-menu').open`),
+      open,
+      "F2 clicks the focused native disclosure",
+    );
+  }
+  assert(
+    await page.evaluate<boolean>(`(() => {
+      const field = document.querySelector('${user}');
+      field.focus();
+      return ['altKey', 'ctrlKey', 'metaKey', 'shiftKey'].every(modifier => {
+        const event = new KeyboardEvent('keydown', {key:'F1', [modifier]:true, bubbles:true, cancelable:true});
+        return field.dispatchEvent(event);
+      }) && !document.querySelector('dialog[open]') &&
+        [...document.querySelectorAll('.field-help-button, .overflow-reveal')].every(button => button.tabIndex === -1);
+    })()`),
+    "modified keys stay native and auxiliary buttons stay outside the Tab order",
+  );
+}
+
+async function pressKey(
+  page: BrowserPage,
+  key: "Tab" | "F1" | "F2" | "F3" | "F4" | "F5" | "F6",
+  modifiers = 0,
+): Promise<void> {
+  for (const type of ["keyDown", "keyUp"]) {
+    await page.command("Input.dispatchKeyEvent", {
+      type,
+      key,
+      code: key,
+      windowsVirtualKeyCode: key === "Tab" ? 9 : 111 + Number(key.slice(1)),
+      modifiers,
+    });
+  }
 }
 
 async function fieldHelpScreenshot(

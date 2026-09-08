@@ -7,19 +7,20 @@ import {
   type ScreenElementState,
   type ScreenListSnapshot,
   type ScreenState,
-} from "../../../screen_state.ts";
-import { listValueText } from "../../../list_values.ts";
-import { AnchoredPopover } from "./popover.ts";
+} from "../../../../../screen_state.ts";
+import { listValueText } from "../../../../../list_values.ts";
+import { AnchoredPopover } from "../../popover.ts";
 import {
   createOverflowText,
   disposeOverflowText,
   refreshOverflowText,
-} from "./overflow.ts";
-import { type MaterialIconName, renderIconText } from "./icon_text.ts";
+} from "../../overflow.ts";
+import { renderIconText } from "../../icon_text.ts";
+import { iconButton, type ListToolCallbacks, ListTools } from "./tools.ts";
 import { listColumnWidths, listRowCapacity } from "./list_geometry.ts";
-import { getPath, paginationItems } from "./model.ts";
+import { getPath, paginationItems } from "../../model.ts";
 
-export interface ListCallbacks {
+export interface ListCallbacks extends ListToolCallbacks {
   request(updates: ListRequest[]): boolean;
   select(selection: ListSelection): void;
 }
@@ -87,6 +88,14 @@ export class ListRenderer {
     for (const controller of this.#controllers.values()) controller.capture();
   }
 
+  closeTools(): boolean {
+    let closed = false;
+    for (const controller of this.#controllers.values()) {
+      closed = controller.tools.close() || closed;
+    }
+    return closed;
+  }
+
   schedule = (): void => {
     if (this.#frame !== undefined) return;
     this.#frame = requestAnimationFrame(() => {
@@ -115,6 +124,7 @@ export class ListRenderer {
 }
 
 class ListController {
+  readonly tools = new ListTools();
   readonly host = document.createElement("div");
   readonly #resize: ResizeObserver;
   #snapshot!: ScreenListSnapshot;
@@ -194,9 +204,10 @@ class ListController {
     toolbar.hidden = !state.toolbarOpen;
     const actions = document.createElement("div");
     actions.className = "data-list-tools-actions";
+    actions.append(...this.tools.render(snapshot, callbacks));
     if (snapshot.state.query.sort !== null) {
       actions.append(
-        this.iconButton("Clear all sorts", "filter_list_off", () => {
+        iconButton("Clear all sorts", "filter_list_off", () => {
           this.#draft.sort = null;
           this.queueQuery(true);
         }),
@@ -204,7 +215,7 @@ class ListController {
     }
     if (snapshot.filtered) {
       actions.append(
-        this.iconButton("Clear all filters", "filter_alt_off", () => {
+        iconButton("Clear all filters", "filter_alt_off", () => {
           this.#draft.search = "";
           this.#draft.filters = {};
           this.queueQuery(true);
@@ -616,7 +627,7 @@ class ListController {
       });
       option.append(button);
       if (selected) {
-        option.append(this.iconButton("Clear sort", "close", () => {
+        option.append(iconButton("Clear sort", "close", () => {
           this.#draft.sort = null;
           this.confirmQuery();
         }));
@@ -650,7 +661,7 @@ class ListController {
         this.confirmQuery();
       }
     });
-    const clear = this.iconButton("Clear filter", "close", () => {
+    const clear = iconButton("Clear filter", "close", () => {
       delete this.#draft.filters[column.key];
       input.value = "";
       this.confirmQuery();
@@ -668,21 +679,6 @@ class ListController {
     icon.dataset.direction = direction;
     renderIconText(icon, "[[icon=sort]]", { decorativeIcons: true });
     return icon;
-  }
-
-  private iconButton(
-    label: string,
-    icon: MaterialIconName,
-    action: () => void,
-  ): HTMLButtonElement {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "data-list-icon-button";
-    button.setAttribute("aria-label", label);
-    button.title = label;
-    renderIconText(button, `[[icon=${icon}]]`, { decorativeIcons: true });
-    button.addEventListener("click", action);
-    return button;
   }
 
   private confirmQuery(): void {
@@ -758,6 +754,7 @@ class ListController {
     }]);
   }
   dispose(): void {
+    this.tools.close();
     if (this.#timer !== undefined) clearTimeout(this.#timer);
     this.#resize.disconnect();
     this.closePopover();

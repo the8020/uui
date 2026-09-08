@@ -1,4 +1,4 @@
-import { assertEquals, assertStringIncludes } from "@std/assert";
+import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import type {
   ScreenEventMessage,
   UUIClientMessage,
@@ -35,6 +35,12 @@ Deno.test("Program terminated renders, copies its dump, and returns Home", async
       firstScreen.title,
       "[[icon=error color=error]] Program terminated",
     );
+    for (const control of firstScreen.controls) {
+      assert(
+        control.label && control.description,
+        `Missing recovery help: ${control.bind}`,
+      );
+    }
     const model = firstScreen.model as Record<string, string>;
     assertEquals(model.exceptionType, "TypeError");
     assertStringIncludes(model.dumpText!, "program demonstration failed");

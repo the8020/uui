@@ -123,13 +123,21 @@ import. Shared field storage travels with the schema; table-specific keys and
 defaults stay in the table declaration.
 
 Every scalar field has pencil help, or a Chevron Right when read-only. Click the
-button or press F4 on the field to open its value with the full Markdown
+button or press F1 or F4 on the field to open its value with the full Markdown
 description. The helper owns a separate draft. **Done** validates against the
 complete caller schema and applies that draft. **Close**, Back, and Escape
 discard it, including invalid input. Done is shown only for editable fields.
 Read-only help shows the value and description without loading editable choices.
 Use `fieldHelp: false` in UUI metadata or a control declaration to suppress help
 for a particular control.
+
+Tab visits fields, controls, and standalone buttons, skipping field-help icons
+and overflow ellipses. F2 clicks the focused element. F3 goes Back, closing the
+active modal before returning to a previous screen. F5/F6 loop backward/forward
+through editable fields, controls, and buttons in the active screen or modal.
+They skip read-only, disabled, hidden, and inert controls. From another focused
+element they move relative to its position; with no focus they select the first
+eligible control. These shortcuts use unmodified function keys.
 
 The optional `valueHelp` callback runs on the server. A **Value help** list
 below the value field opens with its standard search toolbar visible. Search
@@ -228,7 +236,32 @@ without losing focus.
 Rows stay one line at a fixed height; truncated cells expose complete text on
 click or keyboard activation. Readable column widths overflow horizontally only
 when they exceed the available width, while vertical movement chains to the page
-or modal. Exports are not implemented here.
+or modal.
+
+The expanded toolbar also has icon-only **Table processor**, **Export**, **Copy
+page**, and **Copy all** buttons with tooltips. Table processor opens a large,
+read-only spreadsheet grid supporting rectangular and whole-column selection and
+copying. Its independent pager defaults to 1,000 rows and offers an editable
+page number plus previous/next controls. All tools use the current list query,
+sort, and displayed columns. Copy page uses the page visible in UUI; Copy all
+traverses all matching rows. The clipboard includes a tab-separated and an HTML
+table representation for Excel and other spreadsheets.
+
+Export offers CSV, JSON, XML, YAML, XLSX, and ODS with a one-based inclusive row
+range defaulting to first through last. JSON/XML/YAML identify columns by their
+keys; other formats include full headings. Exact decimal text is retained in
+workbooks. Data reads are bounded to 1,000 rows, using the same WebSocket while
+leaving the UUI page and unsaved fields unchanged. Export/copy results are held
+in browser memory. Tabulator (MIT) and SheetJS CE (Apache-2.0) are vendored
+inside `services/shell/frontend/components/list/` and load only when needed.
+
+Server-paged lists may supply `callScreen({ listReaders })`, a record keyed by
+list ID. A reader receives `{ query, offset, limit }` (at most 500 rows) and
+returns `{ rows, more }`, synchronously or asynchronously. The framework fills
+larger independent reads without replacing the program's visible page. Field
+help supplies this reader automatically. When the final count is unknown, the
+viewer shows `/ …` and export leaves Last row blank to mean all remaining rows.
+Sources without a reader retain Copy page; other data tools are disabled.
 
 The first presentation supplies one row for measurement. The browser reports
 capacity from the actual page/modal viewport and list geometry; the Worker
@@ -317,17 +350,21 @@ instance is disposed automatically. The program owns the wrapper's contents,
 scoped CSS, dependencies, and any additional assets. Use content-hashed build
 filenames for immutable caching; unversioned files use ETag revalidation.
 
-Protocol version 7 adds program-supplied custom-element modules and supports
-exact decimal list semantics and the `field-help` event, and carries `state` and
-element-specific `lists` in each screen snapshot. List bindings in the wire
-business `model` are empty arrays; displayed rows live exclusively in
-`lists[].rows`. Every interaction includes instance and screen/reset revisions
-plus presentation-only metadata. `screen.list` carries page/capacity/query
-requests. Selections and list edits name the list's presented view revision and
-displayed index; the Worker owns the source-index mapping. Stale source
-replacements, reorders, or content changes reject the interaction and publish a
-fresh view before accepting another mapped edit. Valid edits are schema-checked
-atomically before changing business data or presentation state.
+Protocol version 8 adds independent list reads alongside custom-element modules
+and supports exact decimal list semantics and the `field-help` event, and
+carries `state` and element-specific `lists` in each screen snapshot. List
+bindings in the wire business `model` are empty arrays; displayed rows live
+exclusively in `lists[].rows`. Every interaction includes instance and
+screen/reset revisions plus presentation-only metadata. `screen.list` carries
+page/capacity/query requests, or an exclusive
+`{ read: { id, revision, offset, limit }, updates: [],
+changes: [] }` request
+returning a correlated `screen.list.data` response. Selections and list edits
+name the list's presented view revision and displayed index; the Worker owns the
+source-index mapping. Stale source replacements, reorders, or content changes
+reject the interaction and publish a fresh view before accepting another mapped
+edit. Valid edits are schema-checked atomically before changing business data or
+presentation state.
 
 ## Streaming downloads
 

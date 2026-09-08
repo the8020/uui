@@ -10,6 +10,8 @@ Parent DOX: [uui/programs DOX](../AGENTS.md).
 
 # Local Contracts
 
+- Reuse package-owned program identifiers and descriptions in the launch list.
+
 - Rescan program manifests before rendering and on explicit Refresh; require
   both uui and discoverable flags.
 - Invoke ordinary programs and return silently without a generic completion

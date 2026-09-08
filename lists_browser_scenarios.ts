@@ -227,6 +227,7 @@ export async function verifyListsFlow(
   await until(() => state()?.measured === true, "initial capacity");
   await idle();
   await delay(120);
+  await verifyListTools(page, idle);
   // A truncated value keeps row activation; only its ellipsis opens local help.
   const nameCell = `${primary} tr[data-row-index="0"] td:nth-child(2)`;
   const reveal = `${nameCell} .overflow-reveal`;
@@ -1225,7 +1226,9 @@ async function toolActions(
     JSON.stringify(selector)
   }); return [...h.querySelectorAll('.data-list-tools-actions button')].map(b=>({label:b.getAttribute('aria-label'),title:b.title,icon:b.querySelector('.material-icon')?.dataset.materialIcon,text:b.textContent})); })()`);
   assert(
-    actions.length === Number(sorts) + Number(filters) &&
+    actions.length === 4 + Number(sorts) + Number(filters) &&
+      actions.slice(0, 4).map((action) => action.label).join(",") ===
+        "Display in table processor,Export,Copy page,Copy all" &&
       actions.every((action) =>
         action.text === "" && action.title === action.label
       ) &&
@@ -1421,4 +1424,410 @@ function assert(value: boolean, name: string): asserts value {
 }
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function verifyListTools(
+  page: BrowserDriver,
+  idle: () => Promise<void>,
+): Promise<void> {
+  const primary = '[data-list-id="primary"]';
+  const original = listBrowserProbe.model.data.records;
+  const large = Array.from(
+    { length: 2205 },
+    (_, id) => ({
+      ...original[id % original.length]!,
+      id,
+      name: `Record ${String(id).padStart(4, "0")}`,
+    }),
+  );
+  const directory = await Deno.makeTempDir({ prefix: "uui-list-exports-" });
+  const state = () => listBrowserProbe.model.screen.elements.primary!.list!;
+  const gridReady = (count: number) =>
+    wait(
+      page,
+      `document.querySelector('.data-list-grid')?.dataset.rowCount === '${count}' && document.querySelector('.data-list-processor .data-list-status')?.hidden`,
+      "spreadsheet rows loaded",
+    );
+  const setField = (selector: string, value: string) =>
+    page.evaluate(
+      `(() => { const input=document.querySelector(${
+        JSON.stringify(selector)
+      }); input.value=${
+        JSON.stringify(value)
+      }; input.dispatchEvent(new Event('change',{bubbles:true})); })()`,
+    );
+  const copyKey = async () => {
+    for (const type of ["keyDown", "keyUp"]) {
+      await page.command("Input.dispatchKeyEvent", {
+        type,
+        key: "c",
+        code: "KeyC",
+        windowsVirtualKeyCode: 67,
+        modifiers: 2,
+      });
+    }
+  };
+  const point = (selector: string) =>
+    page.evaluate<{ x: number; y: number }>(
+      `(() => { const r=document.querySelector(${
+        JSON.stringify(selector)
+      }).getBoundingClientRect(); return {x:r.left+r.width/2,y:r.top+r.height/2}; })()`,
+    );
+  try {
+    listBrowserProbe.model.data.records = large;
+    listBrowserProbe.channel.redraw();
+    await idle();
+    await click(page, `${primary} .data-list-tools-toggle`);
+    await idle();
+    await page.command("Browser.grantPermissions", {
+      origin: await page.evaluate<string>("location.origin"),
+      permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"],
+    });
+    await page.command("Browser.setDownloadBehavior", {
+      behavior: "allow",
+      downloadPath: directory,
+    });
+    await input(page, '[data-bind="note"]', "Unsubmitted note");
+    const beforeState = structuredClone(state());
+    await click(page, `${primary} [aria-label="Copy page"]`);
+    await wait(
+      page,
+      "document.querySelector('.data-list-tool-feedback')?.textContent.startsWith('Copied ')",
+      "page copied",
+    );
+    const copiedPage = await page.evaluate<string>(
+      "navigator.clipboard.readText()",
+    );
+    assert(
+      copiedPage.split(/\r?\n/).length === state().pageSize + 1 &&
+        copiedPage.includes("Record 0000"),
+      "copy page uses exactly the UUI page with headings",
+    );
+    const html = await page.evaluate<string>(
+      "navigator.clipboard.read().then(async items => await (await items[0].getType('text/html')).text())",
+    );
+    assert(
+      html.includes("<table") && html.includes("<td"),
+      "clipboard includes an HTML table for spreadsheet paste",
+    );
+    await page.evaluate(
+      "document.querySelector('.data-list-tool-feedback').hidden=true",
+    );
+    await click(page, `${primary} [aria-label="Copy all"]`);
+    await wait(
+      page,
+      "document.querySelector('.data-list-tool-feedback')?.textContent === 'Copied 2205 rows.'",
+      "all list rows copied",
+    );
+    const copiedAll = await page.evaluate<string>(
+      "navigator.clipboard.readText()",
+    );
+    assert(
+      copiedAll.split(/\r?\n/).length === 2206 &&
+        copiedAll.includes("Record 2204"),
+      "copy all traverses all pages",
+    );
+    assert(
+      listBrowserProbe.model.data.note === "Initial note",
+      "read-only tools do not commit dirty fields",
+    );
+    assert(
+      JSON.stringify(state()) === JSON.stringify(beforeState),
+      "copying leaves UUI pagination and query unchanged",
+    );
+    await page.evaluate(`(() => {
+      document.querySelector('${primary} [aria-label="Display in table processor"]').click();
+      document.querySelector('.data-list-processor').close();
+    })()`);
+    await wait(
+      page,
+      `!document.querySelector('.data-list-processor') && !document.querySelector('${primary} [aria-label="Display in table processor"]').disabled && !document.documentElement.hasAttribute('data-interaction-pending')`,
+      "closing during a read releases the list interaction",
+    );
+    await click(page, `${primary} [aria-label="Display in table processor"]`);
+    await gridReady(1000);
+    assert(
+      await page.evaluate<boolean>(
+        "document.querySelector('.data-list-processor-controls select').value==='1000' && document.querySelector('.data-list-processor-pages > span').textContent==='/ 3' && document.querySelector('.data-list-processor').getBoundingClientRect().width > innerWidth*.9",
+      ),
+      "large spreadsheet dialog defaults to 1000 rows and exact total pages",
+    );
+    const start = await point(
+      '.data-list-grid .tabulator-row:nth-child(1) [tabulator-field="c0"]',
+    );
+    const end = await point(
+      '.data-list-grid .tabulator-row:nth-child(2) [tabulator-field="c1"]',
+    );
+    await page.command("Input.dispatchMouseEvent", {
+      type: "mousePressed",
+      ...start,
+      button: "left",
+      clickCount: 1,
+    });
+    await page.command("Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      ...end,
+      button: "left",
+      buttons: 1,
+    });
+    await page.command("Input.dispatchMouseEvent", {
+      type: "mouseReleased",
+      ...end,
+      button: "left",
+      clickCount: 1,
+    });
+    await copyKey();
+    await wait(
+      page,
+      "navigator.clipboard.readText().then(text=>text.replaceAll('\\r','').trim()==='0\\tRecord 0000\\n1\\tRecord 0001')",
+      "rectangular spreadsheet selection copies a two-by-two block",
+    );
+    const header = await point(
+      '.data-list-grid .tabulator-header [tabulator-field="c1"]',
+    );
+    await page.command("Input.dispatchMouseEvent", {
+      type: "mousePressed",
+      ...header,
+      button: "left",
+      clickCount: 1,
+    });
+    await page.command("Input.dispatchMouseEvent", {
+      type: "mouseReleased",
+      ...header,
+      button: "left",
+      clickCount: 1,
+    });
+    await copyKey();
+    const copiedColumn = await page.evaluate<string>(
+      "navigator.clipboard.readText()",
+    );
+    assert(
+      copiedColumn.trim().split(/\r?\n/).length === 1000 &&
+        copiedColumn.startsWith("Record 0000"),
+      "column selection copies all 1000 rows, including virtualized rows",
+    );
+    for (const key of ["Delete", "Backspace", "Enter"]) {
+      await page.command("Input.dispatchKeyEvent", {
+        type: "keyDown",
+        key,
+        code: key,
+        windowsVirtualKeyCode: key === "Delete"
+          ? 46
+          : key === "Backspace"
+          ? 8
+          : 13,
+      });
+    }
+    assert(
+      await page.evaluate<boolean>(
+        "!document.querySelector('.data-list-grid input') && document.querySelector('.data-list-grid .tabulator-row [tabulator-field=\"c1\"]').textContent==='Record 0000'",
+      ),
+      "spreadsheet selection is read only",
+    );
+    await click(page, '.data-list-processor [aria-label="Next page"]');
+    await wait(
+      page,
+      "document.querySelector('.data-list-processor input').value==='2' && document.querySelector('.data-list-grid .tabulator-row [tabulator-field=\"c0\"]')?.textContent==='1000'",
+      "spreadsheet next page",
+    );
+    await setField(".data-list-processor input", "3");
+    await gridReady(205);
+    await click(page, '.data-list-processor [aria-label="Previous page"]');
+    await gridReady(1000);
+    await setField(".data-list-processor select", "250");
+    await gridReady(250);
+    assert(
+      await page.evaluate<boolean>(
+        "document.querySelector('.data-list-processor-pages > span').textContent==='/ 9'",
+      ),
+      "rows per page changes pagination",
+    );
+    const screenshot = await page.command<{ data: string }>(
+      "Page.captureScreenshot",
+      { format: "png" },
+    );
+    await Deno.writeFile(
+      "/tmp/uui-list-processor.png",
+      Uint8Array.from(atob(screenshot.data), (c) => c.charCodeAt(0)),
+    );
+    await page.evaluate("history.back()");
+    await wait(
+      page,
+      "!document.querySelector('.data-list-dialog[open]')",
+      "browser Back closes spreadsheet without leaving the UUI screen",
+    );
+    assert(
+      JSON.stringify(state()) === JSON.stringify(beforeState),
+      "spreadsheet paging leaves the UUI page intact",
+    );
+    assert(
+      await page.evaluate<boolean>(
+        "document.querySelector('[data-bind=\"note\"]').value==='Unsubmitted note'",
+      ),
+      "spreadsheet retains unsubmitted browser edits",
+    );
+    await click(page, `${primary} [aria-label="Export"]`);
+    assert(
+      await page.evaluate<boolean>(
+        "document.querySelectorAll('.data-list-export input')[0].value==='1' && document.querySelectorAll('.data-list-export input')[1].value==='2205'",
+      ),
+      "export defaults to first through last row",
+    );
+    await setField(".data-list-export input:first-of-type", "3");
+    await page.evaluate(
+      "document.querySelectorAll('.data-list-export input')[1].value='5'",
+    );
+    const xlsxURL = new URL(
+      "./services/shell/frontend/components/list/vendor/xlsx-0.20.3.mjs",
+      import.meta.url,
+    ).href;
+    const xlsx = await import(xlsxURL);
+    for (const format of ["csv", "json", "xml", "yaml", "xlsx", "ods"]) {
+      await setField(".data-list-export select", format);
+      await click(page, '.data-list-export button[type="submit"]');
+      await until(async () => {
+        try {
+          return (await Deno.stat(`${directory}/records.${format}`)).size > 0;
+        } catch {
+          return false;
+        }
+      }, `${format} downloaded`);
+      await wait(
+        page,
+        "document.querySelector('.data-list-export .data-list-status').textContent==='Exported 3 rows.' && !document.querySelector('.data-list-export button[type=submit]').disabled",
+        `${format} export finished`,
+      );
+      const bytes = await Deno.readFile(`${directory}/records.${format}`);
+      const text = new TextDecoder().decode(bytes);
+      if (format === "xlsx" || format === "ods" || format === "csv") {
+        const workbook = xlsx.read(bytes, { type: "array" });
+        const rows = xlsx.utils.sheet_to_json(
+          workbook.Sheets[workbook.SheetNames[0]],
+          { header: 1 },
+        );
+        assert(
+          rows.length === 4 && rows[1][0] === 2 && rows[3][0] === 4,
+          `${format} opens with the requested rows and headings`,
+        );
+      } else if (format === "json") {
+        const rows = JSON.parse(text);
+        assert(
+          rows.length === 3 && rows[0].id === 2 && rows[2].id === 4 &&
+            !("navigation" in rows[0]),
+          "JSON includes only displayed columns in the requested range",
+        );
+      } else {
+        assert(
+          text.includes("Record 0002") && text.includes("Record 0004") &&
+            !text.includes("Record 0005"),
+          `${format} contains the requested range`,
+        );
+        if (format === "xml") {
+          assert(
+            await page.evaluate<boolean>(
+              `new DOMParser().parseFromString(${
+                JSON.stringify(text)
+              },'application/xml').querySelector('parsererror')===null`,
+            ),
+            "XML parses successfully",
+          );
+        }
+      }
+    }
+    await escape(page);
+    await input(page, `${primary} .data-list-search`, "Record 000");
+    await enter(page);
+    await until(
+      () => state().query.search === "Record 000",
+      "data tools retain quick search",
+    );
+    await idle();
+    await click(page, `${primary} th:first-child button`);
+    await button(page, "Sort descending", primary);
+    await until(
+      () => state().query.sort?.direction === "desc",
+      "data tools retain sort",
+    );
+    await idle();
+    await click(page, `${primary} [aria-label="Display in table processor"]`);
+    await gridReady(10);
+    assert(
+      await page.evaluate<boolean>(
+        "document.querySelector('.data-list-grid .tabulator-row [tabulator-field=\"c0\"]')?.textContent==='9'",
+      ),
+      "spreadsheet uses the full filtered and sorted projection",
+    );
+    await escape(page);
+    await click(page, `${primary} [aria-label="Copy all"]`);
+    await wait(
+      page,
+      "document.querySelector('.data-list-tool-feedback')?.textContent==='Copied 10 rows.'",
+      "copy all honors the current query",
+    );
+    assert(
+      (await page.evaluate<string>("navigator.clipboard.readText()")).split(
+        /\r?\n/,
+      )[1]?.startsWith("9\t") === true,
+      "copy all follows list sorting",
+    );
+    await click(page, `${primary} [aria-label="Clear all filters"]`);
+    await until(() => state().query.search === "", "clear data-tools search");
+    await idle();
+    await click(page, `${primary} [aria-label="Clear all sorts"]`);
+    await until(() => state().query.sort === null, "clear data-tools sort");
+    await idle();
+    await page.command("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await idle();
+    await click(page, `${primary} [aria-label="Display in table processor"]`);
+    await gridReady(1000);
+    assert(
+      await page.evaluate<boolean>(
+        "(() => {const d=document.querySelector('.data-list-processor');const r=d.getBoundingClientRect(); return r.left>=0 && r.right<=innerWidth && r.bottom<=innerHeight && d.scrollWidth<=d.clientWidth;})()",
+      ),
+      "spreadsheet fits the mobile viewport",
+    );
+    await page.evaluate("document.documentElement.dataset.theme='dark'");
+    assert(
+      await page.evaluate<boolean>(
+        "(() => {const dialog=document.querySelector('.data-list-processor');const row=dialog.querySelector('.tabulator-row');const heading=dialog.querySelector('.tabulator-col');return getComputedStyle(row).color===getComputedStyle(dialog).color && getComputedStyle(heading).color===getComputedStyle(dialog).color;})()",
+      ),
+      "spreadsheet cells and headings follow the dark palette",
+    );
+    const mobile = await page.command<{ data: string }>(
+      "Page.captureScreenshot",
+      { format: "png" },
+    );
+    await Deno.writeFile(
+      "/tmp/uui-list-processor-mobile.png",
+      Uint8Array.from(atob(mobile.data), (c) => c.charCodeAt(0)),
+    );
+    await page.evaluate("document.documentElement.dataset.theme='light'");
+    await escape(page);
+  } finally {
+    await page.evaluate(
+      "document.querySelector('.data-list-dialog[open]')?.close()",
+    );
+    listBrowserProbe.model.data.records = original;
+    listBrowserProbe.channel.redraw();
+    await page.command("Emulation.setDeviceMetricsOverride", {
+      width: 1440,
+      height: 960,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await idle();
+    await input(page, '[data-bind="note"]', "Initial note");
+    if (
+      await page.evaluate<boolean>(
+        `document.querySelector('${primary} .data-list-tools-toggle').getAttribute('aria-expanded')==='true'`,
+      )
+    ) await click(page, `${primary} .data-list-tools-toggle`);
+    await idle();
+    await Deno.remove(directory, { recursive: true });
+  }
 }

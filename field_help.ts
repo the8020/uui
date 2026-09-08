@@ -82,6 +82,19 @@ export async function runFieldHelp(
       description: control.description,
       schema: Help,
       model,
+      listReaders: valueHelp === undefined ? undefined : {
+        choices: async ({ query, offset, limit }) => {
+          const page = await valueHelp({ query: query.search, offset, limit });
+          return {
+            rows: page.items.map((item, index) => ({
+              index: offset + index,
+              label: item.label,
+              description: "description" in item ? item.description ?? "" : "",
+            })),
+            more: page.more,
+          };
+        },
+      },
       controls: [{
         ...control,
         id: "value",

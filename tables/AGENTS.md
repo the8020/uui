@@ -11,6 +11,10 @@ Parent DOX: [uui DOX](../AGENTS.md).
 
 # Local Contracts
 
+- Session identifiers, client address, screen ID, and execution references reuse
+  `src/session_fields.ts`. Persisted lifecycle enums and logical datetime
+  columns keep their existing representation.
+
 - Default-export authored table descriptors through `/p/the8020/db/mod.ts`;
   table identity follows the package and file path.
 - Record exact execution placement, authenticated user, lifecycle, observed

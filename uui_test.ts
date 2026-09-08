@@ -11,6 +11,7 @@ import {
 import { field as sharedField, money } from "/p/the8020/db/fields.ts";
 import { applyLayoutOverride, validateLayout } from "./layout.ts";
 import {
+  ACCOUNT_EVENT,
   BACK_EVENT,
   MAX_UUI_MESSAGE_BODY_LENGTH,
   parseClientMessage,
@@ -704,17 +705,19 @@ Deno.test({
         TypeError,
         "duplicate",
       );
-      await assertRejects(
-        () =>
-          callScreen({
-            id: "reserved-back",
-            schema,
-            model: new Model(model),
-            header: { actions: [{ id: BACK_EVENT, label: "Back" }] },
-          }),
-        TypeError,
-        "reserved",
-      );
+      for (const id of [BACK_EVENT, ACCOUNT_EVENT]) {
+        await assertRejects(
+          () =>
+            callScreen({
+              id: "reserved-action",
+              schema,
+              model: new Model(model),
+              header: { actions: [{ id, label: "Reserved" }] },
+            }),
+          TypeError,
+          "reserved",
+        );
+      }
       const headerPending = callScreen({
         id: "header-catalog",
         schema,
@@ -2038,6 +2041,74 @@ Deno.test("page-source interactions report every measured list for one atomic re
     assertEquals(result.reloadLists, ["a", "b"]);
     assertEquals(model.screen.elements.a!.list!.pageSize, 4);
     assertEquals(model.screen.elements.b!.list!.pageSize, 4);
+  } finally {
+    unbind();
+  }
+});
+
+Deno.test("list reads use the pending screen channel without committing edits or resolving the screen", async () => {
+  const channel = new TestChannel();
+  const unbind = bindSession(channel);
+  const model = new Model({
+    note: "original",
+    rows: Array.from({ length: 2205 }, (_, id) => ({ id })),
+  });
+  try {
+    let settled = false;
+    const pending = callScreen({
+      id: "read-list",
+      schema: z.object({
+        note: z.string(),
+        rows: z.object({ id: z.number() }).array(),
+      }),
+      model,
+    });
+    void pending.then(() => {
+      settled = true;
+    });
+    const shown = lastPresentation(channel);
+    const list = topScreen(shown).lists[0]!;
+    const message = {
+      ...eventFor(shown, "", 1),
+      type: "screen.list" as const,
+      updates: [],
+      changes: [],
+      read: { id: list.id, revision: list.revision, offset: 1000, limit: 1000 },
+    };
+    assertThrows(
+      () =>
+        parseClientMessage({
+          ...message,
+          changes: [{ bind: "note", value: "changed" }],
+        }),
+      TypeError,
+    );
+    assertThrows(
+      () =>
+        parseClientMessage({
+          ...message,
+          read: { ...message.read, limit: 1001 },
+        }),
+      TypeError,
+    );
+    channel.push(parseClientMessage(message));
+    await flushMicrotasks();
+    const response = (channel.sent as UUIWorkerOutbound[]).find((message) =>
+      message.type === "screen.list.data"
+    );
+    if (response?.type !== "screen.list.data") {
+      throw new Error("missing list data response");
+    }
+    assertEquals(response.clientSequence, 1);
+    assertEquals(response.data.rows.length, 1000);
+    assertEquals(response.data.rows[0], { id: 1000 });
+    assertEquals(response.data.more, true);
+    assertEquals(response.data.totalItems, 2205);
+    assertEquals(model.data.note, "original");
+    assertEquals(model.screen.elements[list.id]!.list!.pageSize, 1);
+    assertEquals(settled, false);
+    channel.push(eventFor(shown, "done", 2));
+    await pending;
   } finally {
     unbind();
   }

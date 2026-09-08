@@ -58,6 +58,7 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   assertEquals(body.includes('id="session-username"'), true);
   assertEquals(body.includes('id="session-menu-icon"'), true);
   assertEquals(body.includes('id="session-menu-panel"'), true);
+  assertEquals(body.includes('id="session-account"'), true);
   assertEquals(body.includes('id="messages-open"'), true);
   assertEquals(body.includes('id="messages-count"'), true);
   assertEquals(body.includes('id="message-toast-stack"'), true);

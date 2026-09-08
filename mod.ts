@@ -1,4 +1,5 @@
 export { Model } from "./model.ts";
+export type { ListReader } from "./lists.ts";
 export { z } from "@the8020/http";
 export { validateCustomElements } from "./custom_elements.ts";
 export { packageAssetURL } from "./browser_assets.ts";
