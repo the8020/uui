@@ -1,3 +1,5 @@
+import { queryValueHelp } from "./lists.ts";
+import { type ListQuery, type ValueHelpRequest } from "/p/the8020/db/fields.ts";
 import { Model } from "./model.ts";
 import { assertEquals, assertRejects, assertThrows } from "@std/assert";
 import { z } from "zod";
@@ -36,7 +38,8 @@ type PresentationShow = Extract<
 
 Deno.test("shared semantic fields retain help and independent screen presentation", () => {
   const valueHelp = () => ({
-    items: [{ value: "alice", label: "Alice" }],
+    schema: z.object({ value: z.string(), label: z.string() }),
+    rows: [{ value: "alice", label: "Alice" }],
     more: false,
   });
   const user = sharedField(z.string(), {
@@ -1510,18 +1513,28 @@ async function flushMicrotasks(): Promise<void> {
 Deno.test("field help drafts, cancels, commits, and pages searchable choices through standard lists", async () => {
   const test = new TestChannel();
   const unbind = bindSession(test);
-  const requests: Array<{ query: string; offset: number; limit: number }> = [];
+  const requests: ValueHelpRequest[] = [];
   const values = Array.from({ length: 2001 }, (_, index) => `user${index}`);
   const user = field(z.string(), {
     label: "User",
     valueHelp: (request) => {
       requests.push(request);
-      const matches = values.filter((value) => value.includes(request.query));
-      return {
-        items: matches.slice(request.offset, request.offset + request.limit)
-          .map((value) => ({ value, label: value })),
-        more: matches.length > request.offset + request.limit,
-      };
+      return queryValueHelp(
+        z.object({
+          username: field(z.string(), {
+            label: "Username",
+            description: "Account key.",
+          }),
+          rank: z.number(),
+          enabled: z.boolean(),
+        }),
+        values.map((username, rank) => ({
+          username,
+          rank,
+          enabled: rank % 2 === 0,
+        })),
+        request,
+      );
     },
     open: () => {},
   });
@@ -1554,7 +1567,7 @@ Deno.test("field help drafts, cancels, commits, and pages searchable choices thr
       page: number;
     } | {
       operation: "query";
-      query: { search: string; filters: Record<string, string>; sort: null };
+      query: ListQuery;
     },
   ) => {
     const shown = lastPresentation(test), list = topScreen(shown).lists[0]!;
@@ -1574,7 +1587,11 @@ Deno.test("field help drafts, cancels, commits, and pages searchable choices thr
       ),
       ["Done", "Navigate"],
     );
-    assertEquals(requests, [{ query: "", offset: 0, limit: 1 }]);
+    assertEquals(requests, [{
+      query: { search: "", filters: {}, sort: null },
+      offset: 0,
+      limit: 1,
+    }]);
     assertEquals(
       topScreen(lastPresentation(test)).state.elements.choices?.toolbarOpen,
       true,
@@ -1585,19 +1602,48 @@ Deno.test("field help drafts, cancels, commits, and pages searchable choices thr
       "only one",
     );
     await request({ operation: "capacity", pageSize: 7 });
-    assertEquals(requests.at(-1), { query: "", offset: 0, limit: 7 });
-    await request({ operation: "page", page: 2 });
-    assertEquals(requests.at(-1), { query: "", offset: 7, limit: 7 });
-    assertEquals(topScreen(lastPresentation(test)).lists[0]!.rows[0], {
-      index: 0,
-      label: "user7",
-      description: "",
+    assertEquals(requests.at(-1), {
+      query: { search: "", filters: {}, sort: null },
+      offset: 0,
+      limit: 7,
     });
+    await request({ operation: "page", page: 2 });
+    assertEquals(requests.at(-1), {
+      query: { search: "", filters: {}, sort: null },
+      offset: 7,
+      limit: 7,
+    });
+    assertEquals(topScreen(lastPresentation(test)).lists[0]!.rows[0], {
+      username: "user7",
+      rank: 7,
+      enabled: false,
+    });
+    await request({
+      operation: "query",
+      query: {
+        search: "",
+        filters: { enabled: "true" },
+        sort: { column: "rank", direction: "desc" },
+      },
+    });
+    assertEquals(topScreen(lastPresentation(test)).lists[0]!.rows[0], {
+      username: "user2000",
+      rank: 2000,
+      enabled: true,
+    });
+    assertEquals(
+      topScreen(lastPresentation(test)).lists[0]!.totalSourceItems,
+      2001,
+    );
     await request({
       operation: "query",
       query: { search: "user1999", filters: {}, sort: null },
     });
-    assertEquals(requests.at(-1), { query: "user1999", offset: 0, limit: 7 });
+    assertEquals(requests.at(-1), {
+      query: { search: "user1999", filters: {}, sort: null },
+      offset: 0,
+      limit: 7,
+    });
     const shown = lastPresentation(test), list = topScreen(shown).lists[0]!;
     assertEquals(list.totalPages, 1);
     test.push({
@@ -1665,7 +1711,7 @@ Deno.test("enum field help exposes searchable options and commits only on Done",
     });
     await flushMicrotasks();
     const help = lastPresentation(test), list = topScreen(help).lists[0]!;
-    assertEquals(list.rows, [{ index: 0, label: "Red", description: "" }]);
+    assertEquals(list.rows, [{ value: "red", label: "Red" }]);
     test.push({
       ...eventFor(help, "", 2),
       type: "screen.list",
@@ -1678,9 +1724,8 @@ Deno.test("enum field help exposes searchable options and commits only on Done",
     });
     await flushMicrotasks();
     assertEquals(topScreen(lastPresentation(test)).lists[0]!.rows, [{
-      index: 0,
+      value: "blue",
       label: "Blue",
-      description: "",
     }]);
     test.push(eventFor(lastPresentation(test), BACK_EVENT, 3, BACK_EVENT));
     await flushMicrotasks();

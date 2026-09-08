@@ -1,4 +1,6 @@
 /** Serializable screen state and list contracts, shared with the browser. */
+import type { ListQuery } from "/p/the8020/db/fields.ts";
+export type { ListQuery } from "/p/the8020/db/fields.ts";
 export interface ScrollPosition {
   x: number;
   y: number;
@@ -29,7 +31,12 @@ export interface ListOptions {
   columnOptions?: Record<string, ListColumnOptions>;
   triggerFilterEvents?: boolean;
   /** The bound array is one server-supplied page; interactions return to the program. */
-  pageSource?: { more: boolean; searchOnly?: boolean };
+  pageSource?: {
+    more: boolean;
+    searchOnly?: boolean;
+    totalItems?: number;
+    totalSourceItems?: number;
+  };
 }
 
 export interface ListColumn extends ListColumnOptions {
@@ -41,17 +48,13 @@ export interface ListColumn extends ListColumnOptions {
   semanticType: ListValueType;
 }
 
-export interface ListQuery {
-  search: string;
-  filters: Record<string, string>;
-  sort: { column: string; direction: "asc" | "desc" } | null;
-}
-
 export interface ListState {
   page: number;
   pageSize: number;
   measured: boolean;
   query: ListQuery;
+  /** Server-owned unfiltered size (or observed lower bound) for page-source geometry. */
+  sourceItems?: number;
 }
 
 export interface ScreenElementState {
@@ -92,7 +95,7 @@ export interface ScreenListSnapshot {
   triggerFilterEvents: boolean;
   /** Page sources require a server-side list reader for independent reads. */
   readable?: boolean;
-  pageSource?: { more: boolean; searchOnly?: boolean };
+  pageSource?: ListOptions["pageSource"];
 }
 
 export interface ListReadRequest {

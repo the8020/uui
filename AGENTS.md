@@ -363,9 +363,14 @@ below.
   `fieldHelp: false` suppresses help. Editable help shows a Value help card
   below the value when the field has a provider or ordinary control options. Its
   standard list opens with search visible; selecting a row fills the draft.
-  `valueHelp({ query, offset, limit })` fetches only the requested page on the
-  server, bounded by measured list capacity (1–500), and returns at most `limit`
-  choices plus `more`. Raw values stay on the server until selected.
+  `valueHelp({ query, offset, limit })` receives the complete ordinary list
+  query and fetches a page bounded by measured capacity (1–500). Providers
+  return a Zod row schema, at most `limit` rows, `more`, and optional
+  matching/unfiltered totals. The first schema field supplies the selected
+  value; every column uses ordinary field types, labels, help, sorting,
+  filtering, and list tools. `queryValueHelp()` in `lists.ts` shares ordinary
+  array-list projection for already available snapshots; SQL-backed providers
+  filter/sort before paging at the database owner.
 - Help uses ordinary screen, modal, list, and page machinery. Inline edits are
   flushed before opening. A reactive field returns one ordinary change event
   only after Done commits a changed value. The caller and its ScreenChannel stay
@@ -401,23 +406,25 @@ below.
   resolves a typed `list-query` event after valid edits/metadata and the query
   are merged. Repeated queries, pages, capacity, and redraws emit no query
   event. Ordinary arrays retain local processing and exact counts.
-  `pageSource: { more, searchOnly? }` declares one server-supplied page.
+  `pageSource: { more, searchOnly?, totalItems?, totalSourceItems? }` declares
+  one server-supplied page with optional matching and unfiltered totals.
   Preserve its order and matching without re-slicing; query changes return
   `list-query` and page/capacity changes return `list-page`. `reloadLists`
   identifies every changed page source, including batched capacities. Programs
   reload from the retained page/query state before presenting again. Reject
   oversized pages and unavailable page numbers. Search-only sources hide and
-  reject column queries. Field help uses this contract for bounded lookup pages;
-  a `table()` search helper remains deferred.
+  reject column queries. Field help uses the full query contract. Retain the
+  unfiltered count or observed source-size lower bound in Model list state so
+  filtered pages and reloads reserve the same body and footer space.
 - Independent `screen.list` reads are exclusive of updates/edits and return
   `screen.list.data` on the same authenticated channel, bounded to 1,000 rows.
   `ScreenLists` reuses its filtered/sorted projection and validates source/view
   identity. Reads acknowledge their client sequence for reconnect/reload while
   preserving the pending call, UUI page, and dirty form values. Page sources can
   supply `callScreen({ listReaders })`, keyed by list ID; callbacks receive the
-  retained query and bounded 500-row requests. Field help uses this contract
-  without exposing raw choice values. Unknown totals remain unknown until a
-  reader reaches the end.
+  retained query and bounded 500-row requests. Readers can return an exact
+  matching total; otherwise the total stays unknown until the reader reaches the
+  end. Field help exposes its provider's typed displayed columns.
 - Capture scroll and toolbar metadata with existing interactions, including
   Back, paging, queries, and capacity. Never send standalone or periodic scroll
   updates. Browser-local positions survive redraw and surface/instance returns;
@@ -448,9 +455,11 @@ below.
   and confirmation behavior. Encapsulate browser lists and their data tools in
   `services/shell/frontend/components/list/`. The expanded toolbar includes
   icon-only Table processor, Export, Copy page, and Copy all actions with
-  tooltips. A read-only spreadsheet dialog defaults to 1,000 rows per page;
-  export offers CSV, JSON, XML, YAML, XLSX, and ODS with an inclusive range.
-  Copy writes spreadsheet-compatible text and HTML using displayed columns.
+  tooltips. A read-only spreadsheet dialog has a free positive integer page-size
+  input, default 1000, followed by `(N total)` when known. Larger viewer pages
+  accumulate bounded reads independently of UUI pagination. Export offers CSV,
+  JSON, XML, YAML, XLSX, and ODS with an inclusive range. Copy writes
+  spreadsheet-compatible text and HTML using displayed columns.
 - Root-page overscroll containment must not be inherited by nested horizontal
   overflow regions. Paginated lists retain horizontal overflow for narrow
   viewports while vertical wheel and touch movement chains to the page scroller.

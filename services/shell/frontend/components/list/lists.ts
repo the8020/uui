@@ -533,7 +533,8 @@ class ListController {
       snapshot.totalItems,
       snapshot.state.page * snapshot.state.pageSize,
     );
-    summary.textContent = snapshot.pageSource !== undefined
+    summary.textContent = snapshot.pageSource !== undefined &&
+        snapshot.pageSource.totalItems === undefined
       ? `${start}–${end}`
       : `${start}–${end} of ${snapshot.totalItems}${
         snapshot.filtered

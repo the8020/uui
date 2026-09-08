@@ -1,4 +1,5 @@
 import { z } from "@the8020/http";
+import type { ValueHelpPage, ValueHelpRequest } from "/p/the8020/db/fields.ts";
 import { fieldMetadata, schemaAtPath, unwrap } from "./fields.ts";
 import { humanize } from "./humanize.ts";
 import { resolveElementIDs } from "./identifiers.ts";
@@ -38,8 +39,8 @@ export type ListReader = (request: {
   /** At most MAX_LIST_PAGE_SIZE, also suitable for value-help providers. */
   limit: number;
 }) =>
-  | { rows: unknown[]; more: boolean }
-  | Promise<{ rows: unknown[]; more: boolean }>;
+  | { rows: unknown[]; more: boolean; totalItems?: number }
+  | Promise<{ rows: unknown[]; more: boolean; totalItems?: number }>;
 
 interface ListDefinition extends ListOptions {
   id: string;
@@ -145,48 +146,20 @@ export class ScreenLists {
         continue;
       }
       const search = state.query.search.trim().toLocaleLowerCase("en");
-      let indices = source.map((_, index) => index).filter((index) => {
-        if (definition.pageSource !== undefined) return true;
-        const row = source[index];
-        if (
-          search &&
-          !definition.columns.some((column) =>
-            listValueText(columnValue(row, column.key)).toLocaleLowerCase("en")
-              .includes(search)
-          )
-        ) return false;
-        return definition.columns.every((column) =>
-          matchesListFilter(
-            columnValue(row, column.key),
-            state.query.filters[column.key] ?? "",
-            column.semanticType,
-          )
-        );
-      });
+      let indices = definition.pageSource === undefined
+        ? projectRows(source, definition.columns, state.query)
+        : source.map((_, index) => index);
       const offset = (state.page - 1) * state.pageSize;
       const totalItems = definition.pageSource === undefined
         ? indices.length
-        : offset + source.length;
+        : definition.pageSource.totalItems ?? offset + source.length;
       if (
         definition.pageSource !== undefined && source.length > state.pageSize
       ) {
         throw new TypeError("list page source exceeds the requested capacity");
       }
-      const sort = state.query.sort;
-      if (sort !== null && definition.pageSource === undefined) {
-        const column = definition.columns.find((column) =>
-          column.key === sort.column
-        )!;
-        indices.sort((a, b) =>
-          (sort.direction === "asc" ? 1 : -1) *
-            compareListValues(
-              columnValue(source[a], column.key),
-              columnValue(source[b], column.key),
-              column.semanticType,
-            ) || a - b
-        );
-      }
-      const totalPages = definition.pageSource === undefined
+      const totalPages = definition.pageSource === undefined ||
+          definition.pageSource.totalItems !== undefined
         ? Math.max(1, Math.ceil(totalItems / state.pageSize))
         : state.page + (definition.pageSource.more ? 1 : 0);
       state.page = Math.min(Math.max(1, state.page), totalPages);
@@ -196,6 +169,16 @@ export class ScreenLists {
           (state.page - 1) * state.pageSize,
           state.page * state.pageSize,
         );
+      }
+      const filtered = search.length > 0 ||
+        Object.values(state.query.filters).some((value) => value.trim() !== "");
+      if (definition.pageSource !== undefined) {
+        const observed = offset + source.length +
+          (definition.pageSource.more ? 1 : 0);
+        state.sourceItems = definition.pageSource.totalSourceItems ??
+          (!filtered && definition.pageSource.totalItems !== undefined
+            ? totalItems
+            : Math.max(state.sourceItems ?? 0, observed));
       }
       const snapshot: ScreenListSnapshot = {
         id: definition.id,
@@ -207,15 +190,12 @@ export class ScreenLists {
         totalItems,
         totalSourceItems: definition.pageSource === undefined
           ? source.length
-          : totalItems + (definition.pageSource.more ? 1 : 0),
+          : state.sourceItems!,
         ...(definition.pageSource === undefined
           ? {}
           : { pageSource: definition.pageSource }),
         totalPages,
-        filtered: search.length > 0 ||
-          Object.values(state.query.filters).some((value) =>
-            value.trim() !== ""
-          ),
+        filtered,
         triggerFilterEvents: definition.triggerFilterEvents ?? false,
         readable: definition.pageSource === undefined ||
           Object.hasOwn(this.readers, definition.id),
@@ -274,11 +254,20 @@ export class ScreenLists {
         ) {
           throw new TypeError("invalid list reader result");
         }
+        if (page.totalItems !== undefined) {
+          if (!Number.isSafeInteger(page.totalItems) || page.totalItems < 0) {
+            throw new TypeError("invalid list reader total");
+          }
+          data.totalItems = page.totalItems;
+        }
         data.rows.push(...page.rows);
         data.more = page.more;
       } while (data.more && data.rows.length < request.limit);
       // An empty read beyond the end cannot establish the actual total.
-      if (!data.more && (data.rows.length > 0 || request.offset === 0)) {
+      if (
+        data.totalItems === undefined && !data.more &&
+        (data.rows.length > 0 || request.offset === 0)
+      ) {
         data.totalItems = request.offset + data.rows.length;
       }
       this.view(request.id, request.revision, model);
@@ -571,5 +560,63 @@ function replacePath(model: object, path: string, value: unknown): object {
     [segment!]: rest.length === 0
       ? value
       : replacePath(object[segment!] as object, rest.join("."), value),
+  };
+}
+
+function projectRows(
+  source: readonly unknown[],
+  columns: readonly ListColumn[],
+  query: ListQuery,
+): number[] {
+  const search = query.search.trim().toLocaleLowerCase("en");
+  const indices = source.map((_, index) => index).filter((index) => {
+    const row = source[index];
+    if (
+      search &&
+      !columns.some((column) =>
+        listValueText(columnValue(row, column.key)).toLocaleLowerCase("en")
+          .includes(search)
+      )
+    ) return false;
+    return columns.every((column) =>
+      matchesListFilter(
+        columnValue(row, column.key),
+        query.filters[column.key] ?? "",
+        column.semanticType,
+      )
+    );
+  });
+  const sort = query.sort;
+  if (sort !== null) {
+    const column = columns.find((column) => column.key === sort.column)!;
+    indices.sort((a, b) =>
+      (sort.direction === "asc" ? 1 : -1) *
+        compareListValues(
+          columnValue(source[a], column.key),
+          columnValue(source[b], column.key),
+          column.semanticType,
+        ) || a - b
+    );
+  }
+  return indices;
+}
+
+/** Apply the ordinary list query before paging an already available snapshot. */
+export function queryValueHelp(
+  schema: z.ZodObject,
+  rows: Record<string, unknown>[],
+  request: ValueHelpRequest,
+): ValueHelpPage {
+  const columns = buildColumns(schema, {});
+  const query = normalizeQuery(request.query, columns);
+  const indices = projectRows(rows, columns, query);
+  return {
+    schema,
+    rows: indices.slice(request.offset, request.offset + request.limit).map((
+      index,
+    ) => rows[index]!),
+    more: request.offset + request.limit < indices.length,
+    totalItems: indices.length,
+    totalSourceItems: rows.length,
   };
 }

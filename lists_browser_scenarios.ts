@@ -1548,7 +1548,7 @@ async function verifyListTools(
     await gridReady(1000);
     assert(
       await page.evaluate<boolean>(
-        "document.querySelector('.data-list-processor-controls select').value==='1000' && document.querySelector('.data-list-processor-pages > span').textContent==='/ 3' && document.querySelector('.data-list-processor').getBoundingClientRect().width > innerWidth*.9",
+        "document.querySelector('.data-list-processor-controls [aria-label=\"Rows per page\"]').value==='1000' && document.querySelector('.data-list-processor-pages > span').textContent==='/ 3' && document.querySelector('.data-list-processor').getBoundingClientRect().width > innerWidth*.9",
       ),
       "large spreadsheet dialog defaults to 1000 rows and exact total pages",
     );
@@ -1627,14 +1627,24 @@ async function verifyListTools(
     await click(page, '.data-list-processor [aria-label="Next page"]');
     await wait(
       page,
-      "document.querySelector('.data-list-processor input').value==='2' && document.querySelector('.data-list-grid .tabulator-row [tabulator-field=\"c0\"]')?.textContent==='1000'",
+      "document.querySelector('.data-list-processor [aria-label=\"Page\"]').value==='2' && document.querySelector('.data-list-grid .tabulator-row [tabulator-field=\"c0\"]')?.textContent==='1000'",
       "spreadsheet next page",
     );
-    await setField(".data-list-processor input", "3");
+    await setField('.data-list-processor [aria-label="Page"]', "3");
     await gridReady(205);
     await click(page, '.data-list-processor [aria-label="Previous page"]');
     await gridReady(1000);
-    await setField(".data-list-processor select", "250");
+    await setField('.data-list-processor [aria-label="Rows per page"]', "1501");
+    await gridReady(1501);
+    assert(
+      await page.evaluate<boolean>(
+        "document.querySelector('.data-list-processor-total').textContent.trim()==='(2205 total)'",
+      ),
+      "processor shows the exact total beside its free page-size input",
+    );
+    await click(page, '.data-list-processor [aria-label="Next page"]');
+    await gridReady(704);
+    await setField('.data-list-processor [aria-label="Rows per page"]', "250");
     await gridReady(250);
     assert(
       await page.evaluate<boolean>(

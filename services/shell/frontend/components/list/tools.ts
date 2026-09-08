@@ -171,18 +171,45 @@ export class ListTools {
     }
   }
 
-  private read(
+  private async read(
     snapshot: ScreenListSnapshot,
     offset: number,
     limit: number,
     signal?: AbortSignal,
   ): Promise<ListDataPage> {
-    return this.#callbacks.read({
+    if (
+      !Number.isSafeInteger(offset) || offset < 0 ||
+      !Number.isSafeInteger(limit) || limit < 1 ||
+      !Number.isSafeInteger(offset + limit)
+    ) {
+      throw new Error(
+        "Enter a positive whole number of rows within the supported numeric range.",
+      );
+    }
+    const result: ListDataPage = {
       id: snapshot.id,
       revision: snapshot.revision,
       offset,
-      limit,
-    }, signal);
+      rows: [],
+      more: false,
+    };
+    do {
+      signal?.throwIfAborted();
+      const page = await this.#callbacks.read({
+        id: snapshot.id,
+        revision: snapshot.revision,
+        offset: offset + result.rows.length,
+        limit: Math.min(MAX_LIST_READ_SIZE, limit - result.rows.length),
+      }, signal);
+      signal?.throwIfAborted();
+      if (page.more && page.rows.length === 0) {
+        throw new Error("The list returned an empty page before its end.");
+      }
+      result.rows.push(...page.rows);
+      result.more = page.more;
+      result.totalItems = page.totalItems ?? result.totalItems;
+    } while (result.more && result.rows.length < limit);
+    return result;
   }
 
   private async rows(
@@ -257,13 +284,18 @@ export class ListTools {
     );
     const controls = document.createElement("div");
     controls.className = "data-list-processor-controls";
-    const size = document.createElement("select");
-    for (const count of [100, 250, 500, 1000]) {
-      size.add(new Option(String(count), String(count)));
-    }
+    const size = document.createElement("input");
+    size.type = "number";
+    size.min = "1";
+    size.step = "1";
+    size.required = true;
+    size.setAttribute("aria-label", "Rows per page");
     size.value = "1000";
     const sizeLabel = document.createElement("label");
-    sizeLabel.append("Rows per page ", size);
+    const totalLabel = document.createElement("span");
+    totalLabel.className = "data-list-processor-total";
+    totalLabel.setAttribute("role", "status");
+    sizeLabel.append("Rows per page ", size, totalLabel);
     const page = document.createElement("input");
     page.type = "number";
     page.min = "1";
@@ -292,7 +324,9 @@ export class ListTools {
     grid.setAttribute("aria-label", "List data, read only");
     body.append(grid);
     let current = 1;
-    let total = snapshot.pageSource ? undefined : snapshot.totalItems;
+    let total = snapshot.pageSource
+      ? snapshot.pageSource.totalItems
+      : snapshot.totalItems;
     let table: {
       destroy(): void;
       replaceData(rows: Record<string, Cell>[]): Promise<void>;
@@ -322,6 +356,9 @@ export class ListTools {
             throw new Error("This page is unavailable.");
           }
           total = data.totalItems ?? total;
+          totalLabel.textContent = total === undefined
+            ? " (total unknown)"
+            : ` (${total} total)`;
           current = requested;
           page.value = String(current);
           const count = total === undefined
@@ -411,14 +448,19 @@ export class ListTools {
         }
       }, status);
     };
-    size.addEventListener("change", () => load(1));
+    size.addEventListener("change", () => {
+      if (size.reportValidity()) load(1);
+    });
     page.addEventListener("change", () => {
       if (page.reportValidity()) load(page.valueAsNumber);
     });
     dialog.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" && event.target === page) {
+      if (
+        event.key === "Enter" &&
+        (event.target === page || event.target === size)
+      ) {
         event.preventDefault();
-        page.blur();
+        (event.target as HTMLInputElement).blur();
       }
     });
     load(1);
@@ -438,7 +480,9 @@ export class ListTools {
     }
     const first = document.createElement("input");
     const last = document.createElement("input");
-    const total = snapshot.pageSource ? undefined : snapshot.totalItems;
+    const total = snapshot.pageSource
+      ? snapshot.pageSource.totalItems
+      : snapshot.totalItems;
     for (const input of [first, last]) {
       input.type = "number";
       input.min = "1";

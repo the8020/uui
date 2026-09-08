@@ -10,7 +10,7 @@ import { z } from "@the8020/http";
 import { buildControls, buildFieldCatalog } from "./fields.ts";
 import { resolveElementIDs } from "./identifiers.ts";
 import { validateLayout } from "./layout.ts";
-import { ScreenLists, StaleListView } from "./lists.ts";
+import { queryValueHelp, ScreenLists, StaleListView } from "./lists.ts";
 import { Model } from "./model.ts";
 import { emptyListQuery } from "./screen_state.ts";
 import { field as sharedField, money } from "/p/the8020/db/fields.ts";
@@ -519,4 +519,73 @@ Deno.test("page-source readers fill independent pages in bounded batches without
   assertEquals(model.data.rows.length, 1);
   assertEquals(model.screen.elements.rows!.list!.pageSize, 1);
   assertStrictEquals(lists.present(model.data)[0], shown);
+});
+
+Deno.test("remote list source size survives filtered pages and rebuilt screens", () => {
+  const model = new Model({ rows: [{ id: 1, name: "One", enabled: true }] });
+  const show = (more: boolean, totalItems?: number) => {
+    const layout = validateLayout({
+      schema: 1,
+      id: "remote",
+      root: {
+        type: "list",
+        id: "rows",
+        bind: "rows",
+        key: "id",
+        pageSource: { more, totalItems },
+      },
+    });
+    return new ScreenLists(
+      schema,
+      buildControls(buildFieldCatalog(schema)),
+      layout,
+      model.screen,
+    ).present(model.data)[0]!;
+  };
+  assertEquals(show(true).totalSourceItems, 2);
+  const state = model.screen.elements.rows!.list!;
+  state.pageSize = 10;
+  model.data.rows = Array.from(
+    { length: 10 },
+    (_, id) => ({ id, name: String(id), enabled: true }),
+  );
+  assertEquals(show(true).totalSourceItems, 11);
+  state.query.search = "no matches";
+  model.data.rows = [];
+  assertEquals(show(false, 0).totalSourceItems, 11);
+  assertEquals(show(false, 0).totalPages, 1);
+  state.query.search = "";
+  assertEquals(show(false, 0).totalSourceItems, 0);
+});
+
+Deno.test("value help uses ordinary multi-column typed queries before paging", () => {
+  const schema = z.object({
+    key: z.string(),
+    rank: z.number(),
+    amount: money(),
+    enabled: z.boolean(),
+  });
+  const rows = [
+    { key: "first", rank: 100, amount: "90071992547409.91", enabled: true },
+    { key: "second", rank: 2, amount: "90071992547409.92", enabled: true },
+    { key: "third", rank: 10, amount: "0.00", enabled: false },
+  ];
+  const read = (filters: Record<string, string>, column: string, offset = 0) =>
+    queryValueHelp(schema, rows, {
+      query: { search: "", filters, sort: { column, direction: "asc" } },
+      offset,
+      limit: 1,
+    });
+  assertEquals(read({}, "rank").rows, [rows[1]!]);
+  const page = read({ enabled: "true" }, "amount", 1);
+  assertEquals(page.rows, [rows[1]!]);
+  assertEquals([page.more, page.totalItems, page.totalSourceItems], [
+    false,
+    2,
+    3,
+  ]);
+  assertEquals(read({ amount: ">90071992547409.91" }, "amount").rows, [
+    rows[1]!,
+  ]);
+  assertThrows(() => read({ missing: "x" }, "key"), TypeError);
 });

@@ -35,8 +35,13 @@ export function validateListOptions(value: ListOptions): void {
       typeof value.pageSource.more !== "boolean" ||
       (value.pageSource.searchOnly !== undefined &&
         typeof value.pageSource.searchOnly !== "boolean") ||
+      [value.pageSource.totalItems, value.pageSource.totalSourceItems].some(
+        (count) =>
+          count !== undefined &&
+          (!Number.isSafeInteger(count) || count < 0),
+      ) ||
       Object.keys(value.pageSource).some((key) =>
-        !["more", "searchOnly"].includes(key)
+        !["more", "searchOnly", "totalItems", "totalSourceItems"].includes(key)
       )
     )
   ) throw new TypeError("invalid list page source");

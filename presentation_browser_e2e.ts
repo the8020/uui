@@ -1,3 +1,4 @@
+import { queryValueHelp } from "./lists.ts";
 import { Model } from "./model.ts";
 import { PACKAGE_ASSET_PREFIX } from "./browser_assets.ts";
 import { AssetServer } from "./services/shell/assets.ts";
@@ -227,13 +228,31 @@ const FieldHelpUser = sharedField(z.string(), {
     "Choose **who owns this work**.\n\nSearch by username, then choose a result.",
   valueHelp: (request) => {
     fieldHelpRequests.push(request);
-    const matches = Array.from({ length: 2001 }, (_, index) => `user${index}`)
-      .filter((value) => value.includes(request.query));
-    return {
-      items: matches.slice(request.offset, request.offset + request.limit)
-        .map((value) => ({ value, label: value })),
-      more: request.offset + request.limit < matches.length,
-    };
+    return queryValueHelp(
+      z.object({
+        username: sharedField(z.string(), {
+          label: "Username",
+          description: "The **account key** selected by this lookup.",
+        }),
+        rank: sharedField(z.number(), {
+          label: "Rank",
+          description: "Numeric position in the catalog.",
+        }),
+        enabled: sharedField(z.boolean(), {
+          label: "Enabled",
+          description: "Whether the account is enabled.",
+        }),
+      }),
+      Array.from(
+        { length: 2001 },
+        (_, rank) => ({
+          username: `user${rank}`,
+          rank,
+          enabled: rank % 2 === 0,
+        }),
+      ),
+      request,
+    );
   },
   open: (value) => runLeaf(`User ${value}`),
 });
@@ -1504,25 +1523,25 @@ async function verifyFieldHelp(page: BrowserPage): Promise<void> {
     "value-help reader retains its provider bound",
   );
   await page.evaluate(`(() => {
-    const input=document.querySelector('.data-list-processor input');
+    const input=document.querySelector('.data-list-processor [aria-label=\"Page\"]');
     input.value='999'; input.dispatchEvent(new Event('change',{bubbles:true}));
   })()`);
   await waitForPage(
     page,
-    "document.querySelector('.data-list-processor .data-list-status')?.textContent==='This page is unavailable.' && document.querySelector('.data-list-processor input')?.value==='1'",
-    "an unknown source total is not fabricated for an unavailable page",
+    "document.querySelector('.data-list-processor [aria-label=\"Page\"]')?.validity.rangeOverflow && document.querySelector('.data-list-grid')?.dataset.rowCount==='1000'",
+    "an out-of-range page keeps the current page",
   );
   await click(page, '.data-list-processor [aria-label="Next page"]');
   await waitForPage(
     page,
-    "document.querySelector('.data-list-processor input')?.value==='2' && document.querySelector('.data-list-processor .data-list-status')?.hidden",
+    "document.querySelector('.data-list-processor [aria-label=\"Page\"]')?.value==='2' && document.querySelector('.data-list-processor .data-list-status')?.hidden",
     "value-help spreadsheet advances independently",
   );
   await click(page, '.data-list-processor [aria-label="Next page"]');
   await waitForPage(
     page,
     "document.querySelector('.data-list-grid')?.dataset.rowCount==='1' && document.querySelector('.data-list-processor-pages > span')?.textContent==='/ 3'",
-    "value-help reader discovers the final total",
+    "value-help reader retains the known total",
   );
   await pressKey(page, "F3");
   await waitForPage(
@@ -1547,6 +1566,75 @@ async function verifyFieldHelp(page: BrowserPage): Promise<void> {
     `document.querySelector('${modal} [aria-current="page"]')?.textContent === '2'`,
     "page two selected",
   );
+  const geometry = () =>
+    page.evaluate<number[]>(`(() => {
+    const dialog = document.querySelector('${modal}').getBoundingClientRect();
+    const list = document.querySelector('${modal} .layout-list').getBoundingClientRect();
+    const scroll = document.querySelector('${modal} .data-list-scroll').getBoundingClientRect();
+    return [dialog.x, dialog.y, dialog.width, dialog.height, list.y, list.height, scroll.bottom];
+  })()`);
+  const frame = await geometry();
+  const stableFrame = async (message: string) => {
+    await waitForPage(
+      page,
+      "!document.documentElement.hasAttribute('data-interaction-pending')",
+      message,
+    );
+    const actual = await geometry();
+    assert(
+      actual.every((value, index) => Math.abs(value - frame[index]!) < 1),
+      `${message}: ${JSON.stringify({ frame, actual })}`,
+    );
+  };
+  await click(page, `${modal} th:nth-child(2) button`);
+  await waitForPage(
+    page,
+    `document.querySelector('${modal} .data-list-popover')?.matches(':popover-open') && document.querySelector('${modal} .data-list-popover input')?.placeholder.includes('>')`,
+    "typed numeric column popover opens inside field help",
+  );
+  await click(
+    page,
+    `${modal} .data-list-popover [aria-label="Sort descending"]`,
+  );
+  await waitForPage(
+    page,
+    `document.querySelector('${modal} tr[data-row-index="0"]')?.textContent.includes('user2000')`,
+    "provider sorts all rows before paging",
+  );
+  await click(page, `${modal} th:nth-child(2) button`);
+  await setValue(page, `${modal} .data-list-popover input`, ">1998");
+  await pressKey(page, "Enter");
+  await waitForPage(
+    page,
+    `document.querySelectorAll('${modal} tr[data-row-index]').length === 2 && !document.querySelector('${modal} .data-list-popover')?.matches(':popover-open')`,
+    "typed provider column filter confirms",
+  );
+  await stableFrame("column filtering retains modal and list geometry");
+  await click(page, `${modal} [aria-label="Clear all filters"]`);
+  await waitForPage(
+    page,
+    `document.querySelectorAll('${modal} tr[data-row-index]').length > 2`,
+    "column filter clears",
+  );
+  await setValue(
+    page,
+    `${modal} [aria-label="Search list"]`,
+    "no matching account",
+  );
+  await pressKey(page, "Enter");
+  await waitForPage(
+    page,
+    `document.querySelectorAll('${modal} tr[data-row-index]').length === 0`,
+    "empty lookup search",
+  );
+  await stableFrame("empty filtering retains modal and list geometry");
+  await page.command("Page.reload");
+  await waitForPage(
+    page,
+    `document.querySelector('${modal} [aria-label="Search list"]')?.value === 'no matching account'`,
+    "filtered value help survives reload",
+  );
+  await stableFrame("filtered geometry survives reload");
   await setValue(page, `${modal} [aria-label="Search list"]`, "user1999");
   await page.command("Input.dispatchKeyEvent", {
     type: "keyDown",
@@ -1565,6 +1653,7 @@ async function verifyFieldHelp(page: BrowserPage): Promise<void> {
     `document.querySelector('${modal} tr[data-row-index="0"]')?.textContent?.includes('user1999')`,
     "searches all values",
   );
+  await stableFrame("one lookup result retains modal and list geometry");
   await click(page, `${modal} tr[data-row-index="0"]`);
   await waitForPage(
     page,
@@ -1792,7 +1881,7 @@ async function verifyKeyboardNavigation(page: BrowserPage): Promise<void> {
 
 async function pressKey(
   page: BrowserPage,
-  key: "Tab" | "F1" | "F2" | "F3" | "F4" | "F5" | "F6",
+  key: "Tab" | "Enter" | "F1" | "F2" | "F3" | "F4" | "F5" | "F6",
   modifiers = 0,
 ): Promise<void> {
   for (const type of ["keyDown", "keyUp"]) {
@@ -1800,7 +1889,11 @@ async function pressKey(
       type,
       key,
       code: key,
-      windowsVirtualKeyCode: key === "Tab" ? 9 : 111 + Number(key.slice(1)),
+      windowsVirtualKeyCode: key === "Tab"
+        ? 9
+        : key === "Enter"
+        ? 13
+        : 111 + Number(key.slice(1)),
       modifiers,
     });
   }

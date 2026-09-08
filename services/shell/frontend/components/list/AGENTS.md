@@ -26,10 +26,11 @@ Parent DOX: [shell frontend](../../AGENTS.md).
   timeout, screen replacement, and disposal reject unfinished reads.
 - Table processor opens a large native dialog with a read-only virtualized
   Tabulator grid, rectangular/column selection, and spreadsheet clipboard copy.
-  Start at page 1 with 1,000 rows per page; offer 100, 250, 500, and 1,000 plus
-  previous/next buttons and an editable page number. Keep its page independent
-  of the UUI page and use the list's current filters, sort, and displayed
-  columns.
+  Start at page 1 with a free positive integer rows-per-page input, default
+  1000, followed by `(N total)` when known. No preset choices or 1000-row viewer
+  maximum; fill larger pages with bounded reads. Include previous/next buttons
+  and an editable page number. Keep its page independent of the UUI page and use
+  the list's current filters, sort, and displayed columns.
 - Export opens a compact dialog for CSV, JSON, XML, YAML, XLSX, or ODS and a
   one-based inclusive row range defaulting to first through last. ODS is the
   OpenDocument spreadsheet format. Unknown totals leave Last row blank for all
@@ -44,10 +45,10 @@ Parent DOX: [shell frontend](../../AGENTS.md).
   export/copy result; each server read stays bounded.
 - Page sources use optional server-side `callScreen({ listReaders })` callbacks,
   keyed by list ID. Readers receive the retained query, offset, and a maximum
-  500-row limit and return rows plus `more`; the shared owner fills larger
-  reads. Without a reader, only Copy page is available. Field help supplies a
-  reader that exposes labels/descriptions and keeps raw choice values on the
-  server.
+  500-row limit and return rows, `more`, and an optional matching total; the
+  shared owner fills larger reads. Without a reader, only Copy page is
+  available. Field help supplies ordinary provider-defined typed columns and a
+  full-query reader; the first column is its selection key.
 - Show copy feedback beside the tools without changing list/page geometry. Tool
   results must not cause capacity updates that flush unrelated dirty fields.
 - Close/Escape/browser Back dismiss local dialogs and restore focus. Dispose the
@@ -61,8 +62,9 @@ Parent DOX: [shell frontend](../../AGENTS.md).
   reload. Reserved blank body space never enters capacity overhead; viewport,
   toolbar, and visibility changes may still remeasure capacity.
 - Page sources use the same search toolbar and pagination as local arrays. Show
-  their current range without inventing a total; `more` makes the next page
-  available and reserves footer space independently of the loaded row count.
+  their current range and optional known total; `more` makes the next page
+  available. The server retains source size independently of filtered page
+  length so card, modal, and footer geometry survive filtering and reload.
   Search-only sources retain heading help but omit column sort/filter controls.
 - Hide the entire pagination footer for zero or one result page. Sources that
   fit on one page reserve no footer space; filtering larger sources retains the
