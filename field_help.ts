@@ -10,7 +10,7 @@ import { initialListState, screenElement } from "./screen_state.ts";
 /** Shared provider selection for field help and direct agent value-help queries. */
 export function valueHelpFor(schema: z.ZodType, control: ControlDescriptor) {
   const metadata = fieldMetadata(schema);
-  return control.readOnly ? undefined : metadata?.valueHelp ??
+  return metadata?.valueHelp ??
     (control.options === undefined
       ? undefined
       : (request: ValueHelpRequest) =>

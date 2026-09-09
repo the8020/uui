@@ -136,6 +136,7 @@ let sessionLogReads = 0;
 const developmentCommands: string[] = [];
 let developmentActivated = false;
 let developmentConflicted = false;
+let developmentPreviewFailure = false;
 const developmentDiffRequests: string[] = [];
 const developmentChanges = [
   {
@@ -364,6 +365,11 @@ export async function runProgramsBrowser(root: string): Promise<void> {
       });
     }
     if (name === "development.activate.preview") {
+      if (developmentPreviewFailure) {
+        return Promise.reject(
+          new Error("Package example/testing needs a valid package.toml"),
+        );
+      }
       const data = input.input as {
         user_id?: string;
         packages?: string;
@@ -382,6 +388,7 @@ export async function runProgramsBrowser(root: string): Promise<void> {
           preview: {
             packages: developmentActivated ? [] : [{
               package_id: "example/testing",
+              change: "modified",
               changed_files: developmentChanges.length,
               added_rows: 8,
               removed_rows: 3,
@@ -1346,6 +1353,11 @@ async function verifyDevelopment(page: BrowserDriver): Promise<void> {
     "changed files with edit/add/remove icons",
   );
   await screenshot(page, "development-changed-files");
+  await wait(
+    page,
+    `[...document.querySelectorAll('.presentation-page-layer:not([hidden]) .data-list-cell-value:has(.material-icon)')].every(cell => cell.dataset.overflow === 'false')`,
+    "fitting icon labels must not show an overflow ellipsis",
+  );
   for (const file of developmentChanges) {
     await row(page, file.path);
     await title(page, file.path);
@@ -1353,6 +1365,12 @@ async function verifyDevelopment(page: BrowserDriver): Promise<void> {
       page,
       `document.querySelector('.presentation-page-layer:not([hidden]) .uui-code-editor .cm-content[contenteditable="false"]') !== null`,
       "read-only diff editor",
+    );
+    assert(
+      await page.evaluate<boolean>(
+        `!document.querySelector('.presentation-page-layer:not([hidden])').textContent.includes('Removed lines begin with')`,
+      ),
+      "the editor must not repeat the removed diff legend",
     );
     for (const kind of ["added", "removed"]) {
       const prefix = kind === "added" ? "+" : "-";
@@ -1389,6 +1407,19 @@ async function verifyDevelopment(page: BrowserDriver): Promise<void> {
     "package navigation lost the activation draft",
   );
   await screenshot(page, "development-activation");
+  developmentPreviewFailure = true;
+  await button(page, "Refresh");
+  await wait(
+    page,
+    `document.querySelector('.presentation-page-layer:not([hidden]) [data-bind="status"]')?.value.includes('needs a valid package.toml')`,
+    "preview validation stays on activation screen",
+  );
+  assert(
+    await fieldValue(page, "message") === "Browser reviewed changes",
+    "preview failure lost the draft",
+  );
+  developmentPreviewFailure = false;
+  await button(page, "Refresh");
   await button(page, "Activate all changes");
   try {
     await title(page, "Resolve activation conflicts");

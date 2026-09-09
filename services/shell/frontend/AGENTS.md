@@ -23,11 +23,12 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
   receives no screen updates and polls shell control every two seconds.
   Promotion reconnects with a full snapshot; discard its old pending edits on
   takeover. Ordinary interrupted connections retain pending edits.
-- Normal URLs stay free of session IDs. Remember the current ID in the
-  shell-path-scoped `the8020_uui_session` browser session cookie
-  (`SameSite=Lax`, `Secure` on HTTPS), separate from authentication. Explicit
-  `?session=...` links override the cookie and retain their query parameter.
-  Resolve either reference through shell control before WebSocket admission.
+- Normal URLs stay free of session IDs. Fresh navigation creates a session;
+  reload reconnects using `the8020.session:<websocketUrl>` in per-tab
+  `sessionStorage`. Ignore inherited storage on fresh navigation, including new
+  tabs. Explicit `?session=...` links select that session and retain their query
+  parameter. Resolve remembered and explicit references through shell control
+  before WebSocket admission. Authentication alone uses the shared cookie.
 - Known ended or missing sessions show "This session has ended." and an enabled
   Reload page button. The button clears the remembered session and route,
   removes any explicit session query, and reloads to start a new session.
@@ -121,6 +122,8 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
   separate font-sized ellipsis opens full Markdown. The button is transparent
   and borderless with the pencil's subtle hover fill and visible focus. Fitting
   text has no button or reserved button space.
+- Inline icons in overflow text must fit the text line box; icon baseline
+  overflow alone must not produce an ellipsis for otherwise fitting content.
 - `popover.ts` owns `AnchoredPopover`: native nested light dismissal, Escape
   focus return, resize/scroll positioning, and a ten-pixel viewport gutter.
   Overflow aligns below the row and left from the button's right edge, flipping

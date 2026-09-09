@@ -1806,6 +1806,10 @@ body:has(.uui-content-fullscreen) {
   user-select: text;
 }
 
+.overflow-text-content .material-icon {
+  vertical-align: text-bottom;
+}
+
 .overflow-text[data-overflow-measuring] > .overflow-reveal {
   position: absolute;
 }

@@ -1866,7 +1866,25 @@ Deno.test("field help drafts, cancels, commits, and pages searchable choices thr
       ),
       ["Navigate"],
     );
-    assertEquals(topScreen(lastPresentation(test)).lists.length, 0);
+    assertEquals(topScreen(lastPresentation(test)).lists.length, 1);
+    assertEquals(topScreen(lastPresentation(test)).controls[0]!.readOnly, true);
+    const referenceHelp = lastPresentation(test);
+    const referenceChoices = topScreen(referenceHelp).lists[0]!;
+    test.push({
+      ...eventFor(referenceHelp, "select", ++sequence, "select"),
+      selection: {
+        id: referenceChoices.id,
+        revision: referenceChoices.revision,
+        index: 0,
+      },
+    });
+    await flushMicrotasks();
+    assertEquals(
+      (topScreen(lastPresentation(test)).model as { value: string }).value,
+      "user1",
+      "browsing choices cannot change a read-only value",
+    );
+    assertEquals(model.data.reference, "user1");
     await action(BACK_EVENT);
     await action("save");
     assertEquals((await pending).action, "save");

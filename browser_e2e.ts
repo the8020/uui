@@ -354,6 +354,13 @@ try {
       )}`,
     );
   }
+  // Cookies survive replacing a Docker instance at the same browser address.
+  await first.command("Network.setCookie", {
+    name: "the8020_uui_session",
+    value: "uis-0000000000",
+    url: `${primaryBase}/the8020/uui/shell/`,
+    path: "/the8020/uui/shell/",
+  });
   await setValue(first, 'input[name="username"]', "admin");
   await setValue(first, 'input[name="password"]', "phase1d-password");
   await click(first, 'button[type="submit"]');
@@ -4149,9 +4156,10 @@ async function dragTerminalSelection(page: BrowserPage): Promise<void> {
 async function clickButton(page: BrowserPage, label: string): Promise<void> {
   const clicked = await page.evaluate<boolean>(`(() => {
     const target = [...document.querySelectorAll("button")].find((item) =>
-      item.textContent?.trim() === ${
+      item.getClientRects().length > 0 && !item.closest('[inert],[hidden]') &&
+      !item.disabled && (item.textContent?.trim() === ${
     JSON.stringify(label)
-  } || item.getAttribute("aria-label") === ${JSON.stringify(label)});
+  } || item.getAttribute("aria-label") === ${JSON.stringify(label)}));
     if (!(target instanceof HTMLButtonElement)) return false;
     target.click();
     return true;

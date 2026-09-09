@@ -880,6 +880,7 @@ async function staticAsset(request: Request): Promise<Response | undefined> {
 async function verifyConnectionFlow(page: BrowserPage): Promise<void> {
   const origin = `http://127.0.0.1:${httpPort}`;
   const routeKey = `the8020.route:ws://127.0.0.1:${httpPort}/session`;
+  const sessionKey = `the8020.session:ws://127.0.0.1:${httpPort}/session`;
   const storedRoute = () =>
     page.evaluate<string | null>(
       `sessionStorage.getItem(${JSON.stringify(routeKey)})`,
@@ -916,14 +917,12 @@ async function verifyConnectionFlow(page: BrowserPage): Promise<void> {
     await page.evaluate(`new URL(location.href).searchParams.has('session')`),
     false,
   );
-  const { cookies } = await page.command<{
-    cookies: Array<{ name: string; value: string; session: boolean }>;
-  }>("Network.getCookies", { urls: [origin] });
-  const remembered = cookies.find((cookie) =>
-    cookie.name === "the8020_uui_session"
+  assertEquals(
+    await page.evaluate(
+      `sessionStorage.getItem(${JSON.stringify(sessionKey)})`,
+    ),
+    sessionId,
   );
-  assertEquals(remembered?.value, sessionId);
-  assertEquals(remembered?.session, true);
   let previous = connectionSequence;
   connectionRequests.length = 0;
   await page.command("Page.reload");
@@ -1006,16 +1005,12 @@ async function verifyConnectionFlow(page: BrowserPage): Promise<void> {
     status: 303,
     headers: { location: redirectTarget, "cache-control": "no-store" },
   };
-  await page.command("Network.deleteCookies", {
-    name: "the8020_uui_session",
-    url: origin,
-  });
   await page.command("Page.navigate", { url: origin });
   await redirected();
 
   connectionRejection = undefined;
   await page.evaluate(
-    `document.cookie = 'the8020_uui_session=another-session; Path=/; SameSite=Lax'`,
+    `sessionStorage.setItem(${JSON.stringify(sessionKey)}, 'another-session')`,
   );
   connectionRequests.length = 0;
   await page.command("Page.navigate", {
@@ -1817,12 +1812,12 @@ async function verifyFieldHelp(page: BrowserPage): Promise<void> {
   await pressKey(page, "F1");
   await waitForPage(
     page,
-    `document.querySelector('${modal} [data-bind="value"]')?.readOnly === true && document.querySelector('${modal} [data-bind="value"]')?.value === 'user1' && !document.querySelector('${modal} [data-bind="query"]')`,
+    `document.querySelector('${modal} [data-bind="value"]')?.readOnly === true && document.querySelector('${modal} [data-bind="value"]')?.value === 'user1' && document.querySelector('${modal} [aria-label="Search list"]') !== null`,
     "F1 opens read-only field help",
   );
   assert(
-    fieldHelpRequests.length === requestsBeforeReadonly,
-    "read-only help does not load editable choices",
+    fieldHelpRequests.length > requestsBeforeReadonly,
+    "read-only help retains searchable choices",
   );
   assert(
     await page.evaluate<boolean>(

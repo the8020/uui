@@ -138,10 +138,10 @@ relevant child AGENTS.md
   temporary client attachment and the existing persistent execution retained
   after the request. Build on standard services, signed reconnection routes, and
   registered Worker functions; UUI remains an ordinary persistent service.
-- Keep normal browser URLs free of session IDs and remember the session in a
-  browser session cookie. Use a session query only for deliberately targeted
-  links. Ended sessions offer Reload page; displaced sessions offer Take
-  control.
+- Keep normal browser URLs free of session IDs. A new tab starts its own
+  session; per-tab storage reconnects that session on reload. Use a session
+  query only for deliberately targeted links. Ended sessions offer Reload page;
+  displaced sessions offer Take control.
 - Custom component definitions own their agent fallback: named inputs, outputs,
   and actions, reused unchanged by every screen. Inputs/outputs address paths
   relative to the bound value (`""` is the whole value); actions declare the
@@ -263,7 +263,7 @@ below.
   expire after two minutes. Release/disconnect promotes the previous client;
   polling never resets the disconnect grace. New sessions also start this grace
   before their first client.
-- Browser sessions normally use a session cookie; explicit `?session=uis-...`
+- Browser sessions normally use per-tab storage; explicit `?session=uis-...`
   links override it. A missing execution remains unavailable until the user
   chooses Reload page to start a new session. Only the owner can attach today;
   ownership checks are separate from client IDs and tickets. `openSession()`
@@ -324,9 +324,11 @@ below.
   bounded tail of completed frames remains until connection/page cleanup because
   native attachment registration has no DOM completion event. See `README.md`
   for the API, limits, and browser requirements.
-- Browser startup without a session ID in its cookie or an explicit link
-  performs normal `POST /connect`, reads `the8020-session` and `the8020-route`,
-  and remembers the ID in its session cookie without adding a URL parameter.
+- Fresh browser navigation without an explicit session link performs normal
+  `POST /connect`, reads `the8020-session` and `the8020-route`, and remembers
+  the ID in per-tab `sessionStorage` for reload without adding a URL parameter.
+  Fresh navigation ignores stored IDs, including storage copied from an opener;
+  a login redirect therefore cannot resume an earlier user's or instance's work.
   Existing session references resolve through the stateless shell control
   endpoint. It opens/reconnects the standard `the8020.uui.v1` WebSocket using
   the signed token as the `route` query parameter and a current client/control
@@ -451,9 +453,11 @@ below.
   drafts. Show Done only in edit mode, followed by Navigate when semantic
   `open(value)` exists. Navigate opens a related page without committing and
   restores help on return. Markdown descriptions appear in full.
-  `fieldHelp: false` suppresses help. Editable help shows a Value help card
-  below the value when the field has a provider or ordinary control options. Its
-  standard list opens with search visible; selecting a row fills the draft.
+  `fieldHelp: false` suppresses help. Field help shows a Value help card below
+  the value when the field has a provider or ordinary control options. Its
+  standard list opens with search visible; selecting a row fills editable
+  drafts. Read-only fields retain lookup and navigation, but choices never edit
+  their bound value. Identifier screens retain their semantic `open` callbacks.
   `valueHelp({ query, offset, limit })` receives the complete ordinary list
   query and fetches a page bounded by measured capacity (1–500). Providers
   return a Zod row schema, at most `limit` rows, `more`, and optional
@@ -467,7 +471,7 @@ below.
   only after Done commits a changed value. The caller and its ScreenChannel stay
   pending during help: background redraws update the covered snapshot;
   exit/failure settles after help returns. Read-only controls reject client
-  edits at the session boundary and never load choices.
+  edits at the session boundary.
 - A Model creates its `mdl-*` screen identity through the shared operational ID
   helper and retains it for the wrapper's lifetime. IDs are scoped to the UUI
   session; registering a screen rejects a collision with any pending Model
@@ -823,9 +827,9 @@ below.
   redirects during initial establishment and session lookup, missing execution
   handling without recreation, terminal navigation without further connection
   attempts, and transient recovery with retained dirty values. It verifies clean
-  URLs, cookie-based reload, explicit-link precedence, takeover, and starting a
-  new session through Reload page after an execution disappears. Redirected
-  error pages remain navigation outcomes.
+  URLs, per-tab reload, explicit-link precedence, takeover, and starting a new
+  session through Reload page after an execution disappears. Redirected error
+  pages remain navigation outcomes.
 - `deno task test:presentation-browser` covers page/modal restoration and exact
   field heights and underlines across desktop, tablet, and mobile widths,
   including default one-row textareas and explicit multiple-row controls.
@@ -938,9 +942,15 @@ below.
   `NativeBrowserFixtureContext` supplies the browser, disposable node
   references, ordinary administrative commands for each node (`admin` and
   `otherAdmin`), bounded `restartNodes` for startup-only node configuration, and
-  shared interaction helpers. The default UUI scenario remains the default;
-  fixture runs share exception checks and bounded teardown and add no
-  application behavior to the runtime.
+  shared interaction helpers. Button clicks target visible, enabled controls on
+  active surfaces. The default UUI scenario remains the default; fixture runs
+  share exception checks and bounded teardown and add no application behavior to
+  the runtime.
+- Native browser startup seeds an obsolete UUI session cookie before login and
+  requires the first login to reach Home without an ended-session reload.
+- `--fixture=./connections_native_fixture.ts` checks real entity lookups and
+  navigation, independent tabs sharing authentication, same-tab reload, explicit
+  takeover, and automatic return after the controller leaves.
 - `--fixture=./agent_native_fixture.ts` verifies the real sandbox CLI, code
   editor fallback, direct value help, browser takeover/automatic return, exact
   Worker retention, cross-node routing, and local allowance

@@ -163,12 +163,14 @@ let clientSequence = 0;
 let socket: WebSocket | undefined;
 let reconnectAttempt = 0;
 let ended = false;
-const sessionCookie = "the8020_uui_session";
-const sessionCookiePath = new URL(".", location.href).pathname;
+const sessionKey = `the8020.session:${boot.websocketUrl}`;
+const navigation = performance.getEntriesByType(
+  "navigation",
+)[0] as PerformanceNavigationTiming | undefined;
+// New navigations start fresh, including tabs that inherit opener storage.
 let currentSessionID = new URL(location.href).searchParams.get("session") ??
-  document.cookie.split(";").map((item) => item.trim()).find((item) =>
-    item.startsWith(`${sessionCookie}=`)
-  )?.slice(sessionCookie.length + 1) ?? "";
+  (navigation?.type === "reload" ? sessionStorage.getItem(sessionKey) : null) ??
+  "";
 const clientId = crypto.randomUUID();
 let control = 0;
 let initialClaim = true;
@@ -187,7 +189,7 @@ document.body.append(controlDialog);
 controlDialog.addEventListener("cancel", (event) => event.preventDefault());
 controlButton.addEventListener("click", () => {
   if (ended) {
-    setSessionCookie("");
+    sessionStorage.removeItem(sessionKey);
     sessionStorage.removeItem(routeKey);
     const url = new URL(location.href);
     url.searchParams.delete("session");
@@ -500,20 +502,12 @@ function suspendConnection(): void {
 }
 
 function rememberSession(): void {
-  setSessionCookie(currentSessionID);
+  sessionStorage.setItem(sessionKey, currentSessionID);
   const url = new URL(location.href);
   if (url.searchParams.has("session")) {
     url.searchParams.set("session", currentSessionID);
     history.replaceState(history.state, "", url);
   }
-}
-
-function setSessionCookie(id: string): void {
-  document.cookie = `${sessionCookie}=${
-    encodeURIComponent(id)
-  }; Path=${sessionCookiePath}; SameSite=Lax${
-    location.protocol === "https:" ? "; Secure" : ""
-  }${id === "" ? "; Max-Age=0" : ""}`;
 }
 
 function showEndedSession(): void {
@@ -538,6 +532,7 @@ function replaceRoute(token: string | undefined): void {
   lastServerSequence = 0;
   clientSequence = 0;
   currentSessionID = "";
+  sessionStorage.removeItem(sessionKey);
   pending.clear();
   clearPresentation();
   messageCenter.beginRoundtrip();
@@ -698,7 +693,7 @@ function receive(raw: unknown): void {
       clearPresentation();
       themePreferences.endSession();
       sessionStorage.removeItem(routeKey);
-      setSessionCookie("");
+      sessionStorage.removeItem(sessionKey);
       terminalRedirect = message.redirectUrl;
       if (terminalRedirect !== undefined) {
         if (logoutFallback !== undefined) clearTimeout(logoutFallback);
