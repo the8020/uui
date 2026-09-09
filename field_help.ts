@@ -65,7 +65,6 @@ export async function runFieldHelp(
     choices: [] as Record<string, unknown>[],
   });
   const element = screenElement(model.screen, "choices");
-  element.toolbarOpen = true;
   const listState = element.list = initialListState();
   let page: ValueHelpPage | undefined;
   const load = async (): Promise<void> => {

@@ -33,6 +33,7 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
   Reload page button. The button clears the remembered session and route,
   removes any explicit session query, and reloads to start a new session.
   Missing executions never recreate their program automatically.
+- Take control and Reload page use the shared `btn btn-primary` styling.
 
 - Reconcile stable surfaces and retained DOM while preserving dirty values,
   focus, custom elements, and list state. Identical snapshots that retain DOM

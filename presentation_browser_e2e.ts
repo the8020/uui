@@ -1571,6 +1571,13 @@ async function verifyFieldHelp(page: BrowserPage): Promise<void> {
     "F4 opens the current value and Markdown help",
   );
   assertEquals(
+    await page.evaluate(
+      `document.querySelector('${modal} .data-list-toolbar')?.hidden`,
+    ),
+    true,
+    "value-help tools start collapsed",
+  );
+  assertEquals(
     fieldHelpModel.data.user,
     "user2",
     "opening help flushes the inline edit",
@@ -1584,6 +1591,13 @@ async function verifyFieldHelp(page: BrowserPage): Promise<void> {
     page,
     `document.querySelectorAll('${modal} tr[data-row-index]').length > 1`,
     "measured choices",
+  );
+  const collapsedCapacity = fieldHelpRequests.at(-1)!.limit;
+  await click(page, `${modal} [aria-label="List tools"]`);
+  await waitForPage(
+    page,
+    `(() => { const rows = document.querySelectorAll('${modal} tr[data-row-index]').length; return rows > 1 && rows < ${collapsedCapacity}; })()`,
+    "expanded tools remeasure the choice list",
   );
   await fieldHelpScreenshot(page, "desktop");
   const firstPage = fieldHelpRequests.at(-1)!;

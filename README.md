@@ -197,14 +197,14 @@ not prove native OS interception. Keep ordinary clickable/focusable controls
 available.
 
 The optional `valueHelp` callback runs on the server. A **Value help** list
-below the value field opens with its standard search toolbar visible. Search
-resets to page one; pagination and measured capacity fetch only the requested
-page. Return at most the requested `limit` (1–500) of
-`{ value, label, description? }` items and a `more` boolean. Raw values remain
-on the server; selecting a row fills the draft, which Done commits. Enum and
-explicit control options also appear in the list when there is no provider.
-Callbacks should import runtime queries lazily so the same fields remain usable
-during table evaluation.
+below the value field starts with its extended toolbar collapsed. **List tools**
+(`+`) reveals search and tools. Search resets to page one; pagination and
+measured capacity fetch only the requested page. Return at most the requested
+`limit` (1–500) of `{ value, label, description? }` items and a `more` boolean.
+Raw values remain on the server; selecting a row fills the draft, which Done
+commits. Enum and explicit control options also appear in the list when there is
+no provider. Callbacks should import runtime queries lazily so the same fields
+remain usable during table evaluation.
 
 An optional `open(value)` callback enables **Navigate**, placed to the right of
 Done. It opens the related program on a new page without committing the draft.

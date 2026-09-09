@@ -1775,7 +1775,7 @@ Deno.test("field help drafts, cancels, commits, and pages searchable choices thr
     }]);
     assertEquals(
       topScreen(lastPresentation(test)).state.elements.choices?.toolbarOpen,
-      true,
+      false,
     );
     await assertRejects(
       () => callScreen({ id: "concurrent", schema, model }),

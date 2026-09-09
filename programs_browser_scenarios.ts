@@ -1722,7 +1722,7 @@ async function row(page: BrowserDriver, name: string) {
 async function searchHelp(page: BrowserDriver, value: string) {
   await wait(
     page,
-    `(() => { const input = document.querySelector('dialog[open] [aria-label="Search list"]'); if (!input) return false; input.value = ${
+    `(() => { document.querySelector('dialog[open] [aria-label="List tools"][aria-expanded="false"]')?.click(); const input = document.querySelector('dialog[open] [aria-label="Search list"]'); if (!input) return false; input.value = ${
       JSON.stringify(value)
     }; input.dispatchEvent(new Event('input', {bubbles: true})); input.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true})); return true; })()`,
     "value help search",

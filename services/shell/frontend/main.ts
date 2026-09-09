@@ -183,6 +183,7 @@ const controlText = document.createElement("p");
 controlText.textContent = "This session has been taken over by another window.";
 const controlButton = document.createElement("button");
 controlButton.type = "button";
+controlButton.className = "btn btn-primary";
 controlButton.textContent = "Take control";
 controlDialog.append(controlText, controlButton);
 document.body.append(controlDialog);

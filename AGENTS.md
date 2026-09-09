@@ -455,9 +455,10 @@ below.
   restores help on return. Markdown descriptions appear in full.
   `fieldHelp: false` suppresses help. Field help shows a Value help card below
   the value when the field has a provider or ordinary control options. Its
-  standard list opens with search visible; selecting a row fills editable
-  drafts. Read-only fields retain lookup and navigation, but choices never edit
-  their bound value. Identifier screens retain their semantic `open` callbacks.
+  standard list starts with its extended toolbar collapsed; List tools reveals
+  search and tools. Selecting a row fills editable drafts. Read-only fields
+  retain lookup and navigation, but choices never edit their bound value.
+  Identifier screens retain their semantic `open` callbacks.
   `valueHelp({ query, offset, limit })` receives the complete ordinary list
   query and fetches a page bounded by measured capacity (1–500). Providers
   return a Zod row schema, at most `limit` rows, `more`, and optional
