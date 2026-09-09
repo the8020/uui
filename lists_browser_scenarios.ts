@@ -1678,6 +1678,20 @@ async function verifyListTools(
     );
     await click(page, `${primary} [aria-label="Export"]`);
     assert(
+      await page.evaluate<boolean>(`(() => {
+        const button = document.querySelector('.data-list-export button[type="submit"]');
+        const reference = document.createElement('button');
+        reference.className = 'button button-primary';
+        button.parentElement.append(reference);
+        const matches = !button.disabled &&
+          getComputedStyle(button).backgroundColor === getComputedStyle(reference).backgroundColor &&
+          getComputedStyle(button).color === getComputedStyle(reference).color;
+        reference.remove();
+        return matches;
+      })()`),
+      "export uses the standard enabled primary button colors",
+    );
+    assert(
       await page.evaluate<boolean>(
         "document.querySelectorAll('.data-list-export input')[0].value==='1' && document.querySelectorAll('.data-list-export input')[1].value==='2205'",
       ),

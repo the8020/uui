@@ -163,7 +163,12 @@ let clientSequence = 0;
 let socket: WebSocket | undefined;
 let reconnectAttempt = 0;
 let ended = false;
-let currentSessionID = new URL(location.href).searchParams.get("session") ?? "";
+const sessionCookie = "the8020_uui_session";
+const sessionCookiePath = new URL(".", location.href).pathname;
+let currentSessionID = new URL(location.href).searchParams.get("session") ??
+  document.cookie.split(";").map((item) => item.trim()).find((item) =>
+    item.startsWith(`${sessionCookie}=`)
+  )?.slice(sessionCookie.length + 1) ?? "";
 const clientId = crypto.randomUUID();
 let control = 0;
 let initialClaim = true;
@@ -173,14 +178,22 @@ const controlDialog = document.createElement("dialog");
 controlDialog.className = "uui-dialog uui-control-dialog";
 controlDialog.setAttribute("aria-label", "Session connection");
 const controlText = document.createElement("p");
-controlText.textContent = "This session is connected in another window.";
-const takeControl = document.createElement("button");
-takeControl.type = "button";
-takeControl.textContent = "Take control";
-controlDialog.append(controlText, takeControl);
+controlText.textContent = "This session has been taken over by another window.";
+const controlButton = document.createElement("button");
+controlButton.type = "button";
+controlButton.textContent = "Take control";
+controlDialog.append(controlText, controlButton);
 document.body.append(controlDialog);
 controlDialog.addEventListener("cancel", (event) => event.preventDefault());
-takeControl.addEventListener("click", () => {
+controlButton.addEventListener("click", () => {
+  if (ended) {
+    setSessionCookie("");
+    sessionStorage.removeItem(routeKey);
+    const url = new URL(location.href);
+    url.searchParams.delete("session");
+    location.replace(url);
+    return;
+  }
   initialClaim = true;
   connect();
 });
@@ -352,11 +365,7 @@ async function connectAttempt(): Promise<void> {
         return;
       }
       if (response.status === 404 || response.status === 410) {
-        ended = true;
-        controlText.textContent =
-          "This session has ended. Open UUI again to start a new session.";
-        takeControl.disabled = true;
-        if (!controlDialog.open) controlDialog.showModal();
+        showEndedSession();
         return;
       }
       if (!response.ok) throw new Error("Could not connect to the session");
@@ -369,6 +378,7 @@ async function connectAttempt(): Promise<void> {
       routeToken = result.route;
       sessionStorage.setItem(routeKey, routeToken!);
       control = result.control;
+      rememberSession();
       // A new controller starts from the server's complete presentation.
       // Never replay edits made before another client took control.
       if (suspended) {
@@ -422,9 +432,8 @@ async function connectAttempt(): Promise<void> {
         return;
       }
       if (!ended) {
-        ended = true;
         sessionStorage.removeItem(routeKey);
-        showNotice(event.reason || "The session ended.");
+        showEndedSession();
       }
       return;
     }
@@ -491,9 +500,27 @@ function suspendConnection(): void {
 }
 
 function rememberSession(): void {
+  setSessionCookie(currentSessionID);
   const url = new URL(location.href);
-  url.searchParams.set("session", currentSessionID);
-  history.replaceState(history.state, "", url);
+  if (url.searchParams.has("session")) {
+    url.searchParams.set("session", currentSessionID);
+    history.replaceState(history.state, "", url);
+  }
+}
+
+function setSessionCookie(id: string): void {
+  document.cookie = `${sessionCookie}=${
+    encodeURIComponent(id)
+  }; Path=${sessionCookiePath}; SameSite=Lax${
+    location.protocol === "https:" ? "; Secure" : ""
+  }${id === "" ? "; Max-Age=0" : ""}`;
+}
+
+function showEndedSession(): void {
+  ended = true;
+  controlText.textContent = "This session has ended.";
+  controlButton.textContent = "Reload page";
+  if (!controlDialog.open) controlDialog.showModal();
 }
 
 function browserContext(): BrowserContext {
@@ -671,6 +698,7 @@ function receive(raw: unknown): void {
       clearPresentation();
       themePreferences.endSession();
       sessionStorage.removeItem(routeKey);
+      setSessionCookie("");
       terminalRedirect = message.redirectUrl;
       if (terminalRedirect !== undefined) {
         if (logoutFallback !== undefined) clearTimeout(logoutFallback);
@@ -678,7 +706,7 @@ function receive(raw: unknown): void {
           () => location.assign(terminalRedirect!),
           1_500,
         );
-      } else showNotice(message.message ?? "The session ended.");
+      } else showEndedSession();
       break;
   }
 }

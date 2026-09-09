@@ -279,9 +279,14 @@ const browser = option("browser") ?? "/usr/bin/chromium";
 const httpPort = freePort();
 const debugPort = freePort();
 let routeToken = "presentation-browser-route";
-const connectionRequests: Array<{ method: string; route: string | null }> = [];
+const connectionRequests: Array<{
+  method: string;
+  route: string | null;
+  sessionId?: string;
+}> = [];
 const establishmentResponses: ResponseInit[] = [];
 let connectionRejection: ResponseInit | undefined;
+let connectionTakenOver = false;
 let redirectTarget: string | undefined;
 let redirectPageStatus = 200;
 const sessionId = "presentation-browser-e2e";
@@ -751,10 +756,20 @@ async function serve(request: Request): Promise<Response> {
     });
   }
   if (request.method === "POST" && url.pathname === "/control") {
-    connectionRequests.push({ method: "CONTROL", route: routeToken });
+    const input = await request.json();
+    connectionRequests.push({
+      method: "CONTROL",
+      route: routeToken,
+      sessionId: input.sessionId,
+    });
     const rejection = connectionRejection ?? establishmentResponses.shift();
     if (rejection !== undefined) return new Response(null, rejection);
-    return Response.json({ active: true, control: 1, route: routeToken });
+    if (input.takeover) connectionTakenOver = false;
+    return Response.json({
+      active: !connectionTakenOver,
+      control: 1,
+      route: routeToken,
+    });
   }
   if (request.method === "GET" && url.pathname === "/session") {
     if (url.searchParams.get("route") !== routeToken) {
@@ -897,12 +912,33 @@ async function verifyConnectionFlow(page: BrowserPage): Promise<void> {
     assertEquals(await storedRoute(), null);
   };
   await connected();
+  assertEquals(
+    await page.evaluate(`new URL(location.href).searchParams.has('session')`),
+    false,
+  );
+  const { cookies } = await page.command<{
+    cookies: Array<{ name: string; value: string; session: boolean }>;
+  }>("Network.getCookies", { urls: [origin] });
+  const remembered = cookies.find((cookie) =>
+    cookie.name === "the8020_uui_session"
+  );
+  assertEquals(remembered?.value, sessionId);
+  assertEquals(remembered?.session, true);
+  let previous = connectionSequence;
+  connectionRequests.length = 0;
+  await page.command("Page.reload");
+  await reconnected(previous);
+  assertEquals(connectionRequests.map((request) => request.method), [
+    "CONTROL",
+    "GET",
+  ]);
+  assertEquals(connectionRequests[0]?.sessionId, sessionId);
 
   // Reconnection resolves the same execution through the stateless control path.
   await setValue(page, '[data-bind="user"]', "pending edit");
   connectionRequests.length = 0;
   establishmentResponses.push({ status: 503 });
-  let previous = connectionSequence;
+  previous = connectionSequence;
   currentSocket!.close(1008, "retry admission");
   await reconnected(previous);
   assertEquals(connectionRequests.map((request) => request.method), [
@@ -920,6 +956,34 @@ async function verifyConnectionFlow(page: BrowserPage): Promise<void> {
   currentSocket!.close(1008, "refresh routing");
   await reconnected(previous);
   assertEquals(await storedRoute(), routeToken);
+
+  connectionTakenOver = true;
+  previous = connectionSequence;
+  connectionRequests.length = 0;
+  currentSocket!.close(4001, "connection replaced");
+  await waitForPage(
+    page,
+    `document.querySelector('.uui-control-dialog')?.open &&
+      document.querySelector('.uui-control-dialog p')?.textContent === 'This session has been taken over by another window.' &&
+      document.querySelector('.uui-control-dialog button')?.textContent === 'Take control' &&
+      !document.querySelector('.uui-control-dialog button')?.disabled`,
+    "takeover offers an enabled Take control button",
+  );
+  await waitFor(
+    () => connectionRequests.length > 0,
+    "inactive client polls",
+    5_000,
+  );
+  assertEquals(connectionSequence, previous);
+  await page.evaluate(
+    `document.querySelector('.uui-control-dialog button').click()`,
+  );
+  await reconnected(previous);
+  await waitForPage(
+    page,
+    `!document.querySelector('.uui-control-dialog')?.open`,
+    "taking control restores the screen",
+  );
 
   const access = declaration(
     await Deno.readTextFile(
@@ -942,21 +1006,54 @@ async function verifyConnectionFlow(page: BrowserPage): Promise<void> {
     status: 303,
     headers: { location: redirectTarget, "cache-control": "no-store" },
   };
+  await page.command("Network.deleteCookies", {
+    name: "the8020_uui_session",
+    url: origin,
+  });
   await page.command("Page.navigate", { url: origin });
   await redirected();
 
   connectionRejection = undefined;
-  await page.command("Page.navigate", { url: origin });
-  await connected();
-  previous = connectionSequence;
-  establishmentResponses.push({ status: 410 });
-  currentSocket!.close(1008, "execution lost");
-  await waitForPage(
-    page,
-    `document.querySelector('.uui-control-dialog')?.open && document.querySelector('.uui-control-dialog')?.textContent.includes('ended')`,
-    "lost execution is not replayed",
+  await page.evaluate(
+    `document.cookie = 'the8020_uui_session=another-session; Path=/; SameSite=Lax'`,
   );
-  assertEquals(connectionSequence, previous);
+  connectionRequests.length = 0;
+  await page.command("Page.navigate", {
+    url: `${origin}/?session=${sessionId}`,
+  });
+  await connected();
+  assertEquals(connectionRequests[0]?.sessionId, sessionId);
+  assertEquals(
+    await page.evaluate(`new URL(location.href).searchParams.get('session')`),
+    sessionId,
+  );
+  for (const status of [410, 404]) {
+    previous = connectionSequence;
+    establishmentResponses.push({ status });
+    currentSocket!.close(1008, "execution lost");
+    await waitForPage(
+      page,
+      `document.querySelector('.uui-control-dialog')?.open &&
+        document.querySelector('.uui-control-dialog p')?.textContent === 'This session has ended.' &&
+        document.querySelector('.uui-control-dialog button')?.textContent === 'Reload page' &&
+        !document.querySelector('.uui-control-dialog button')?.disabled`,
+      "lost execution offers an enabled Reload page button",
+    );
+    assertEquals(connectionSequence, previous);
+    connectionRequests.length = 0;
+    await page.evaluate(
+      `document.querySelector('.uui-control-dialog button').click()`,
+    );
+    await reconnected(previous);
+    assertEquals(connectionRequests.map((request) => request.method), [
+      "POST",
+      "GET",
+    ]);
+    assertEquals(
+      await page.evaluate(`new URL(location.href).searchParams.has('session')`),
+      false,
+    );
+  }
 }
 
 async function runNativeBackProgram(): Promise<void> {

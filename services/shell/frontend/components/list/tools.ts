@@ -506,7 +506,7 @@ export class ListTools {
     const submit = document.createElement("button");
     submit.type = "submit";
     submit.textContent = "Export";
-    submit.className = "button primary";
+    submit.className = "button button-primary";
     form.append(submit);
     body.append(form);
     last.addEventListener("input", () => last.setCustomValidity(""));

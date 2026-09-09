@@ -18,13 +18,20 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
 # Local Contracts
 
 - One live socket controls a session. Code 4001 opens a native modal with a
-  full-screen blurred backdrop and Take control, disabling the covered UI. The
-  inactive tab receives no screen updates and polls shell control every two
-  seconds. Promotion reconnects with a full snapshot; discard its old pending
-  edits on takeover. Ordinary interrupted connections retain pending edits.
-- Preserve the live session ID in the URL. Reload/explicit navigation resolves
-  it through shell control before WebSocket admission. Missing live state is
-  shown as unavailable, never recreated from the session ID.
+  full-screen blurred backdrop, "This session has been taken over by another
+  window.", and Take control, disabling the covered UI. The inactive tab
+  receives no screen updates and polls shell control every two seconds.
+  Promotion reconnects with a full snapshot; discard its old pending edits on
+  takeover. Ordinary interrupted connections retain pending edits.
+- Normal URLs stay free of session IDs. Remember the current ID in the
+  shell-path-scoped `the8020_uui_session` browser session cookie
+  (`SameSite=Lax`, `Secure` on HTTPS), separate from authentication. Explicit
+  `?session=...` links override the cookie and retain their query parameter.
+  Resolve either reference through shell control before WebSocket admission.
+- Known ended or missing sessions show "This session has ended." and an enabled
+  Reload page button. The button clears the remembered session and route,
+  removes any explicit session query, and reloads to start a new session.
+  Missing executions never recreate their program automatically.
 
 - Reconcile stable surfaces and retained DOM while preserving dirty values,
   focus, custom elements, and list state. Identical snapshots that retain DOM

@@ -138,6 +138,10 @@ relevant child AGENTS.md
   temporary client attachment and the existing persistent execution retained
   after the request. Build on standard services, signed reconnection routes, and
   registered Worker functions; UUI remains an ordinary persistent service.
+- Keep normal browser URLs free of session IDs and remember the session in a
+  browser session cookie. Use a session query only for deliberately targeted
+  links. Ended sessions offer Reload page; displaced sessions offer Take
+  control.
 - Custom component definitions own their agent fallback: named inputs, outputs,
   and actions, reused unchanged by every screen. Inputs/outputs address paths
   relative to the bound value (`""` is the whole value); actions declare the
@@ -259,10 +263,11 @@ below.
   expire after two minutes. Release/disconnect promotes the previous client;
   polling never resets the disconnect grace. New sessions also start this grace
   before their first client.
-- Browser URLs carry `?session=uis-...`. A missing execution remains
-  unavailable; a URL never recreates its program. Only the owner can attach
-  today; ownership checks are separate from client IDs and tickets.
-  `openSession()` asks the browser to navigate through this same shell path.
+- Browser sessions normally use a session cookie; explicit `?session=uis-...`
+  links override it. A missing execution remains unavailable until the user
+  chooses Reload page to start a new session. Only the owner can attach today;
+  ownership checks are separate from client IDs and tickets. `openSession()`
+  asks the browser to navigate through this same shell path with an explicit ID.
 - The handler atomically maintains one row per live session in
   `the8020__uui__sessions`, containing exact execution placement, authenticated
   user identity, lifecycle timestamps/state, latest kernel-observed client IP
@@ -319,19 +324,21 @@ below.
   bounded tail of completed frames remains until connection/page cleanup because
   native attachment registration has no DOM completion event. See `README.md`
   for the API, limits, and browser requirements.
-- Browser startup without a session ID performs normal `POST /connect`, reads
-  `the8020-session` and `the8020-route`, and records the session ID in its URL.
-  Existing session URLs resolve through the stateless shell control endpoint. It
-  opens/reconnects the standard `the8020.uui.v1` WebSocket using the signed
-  token as the `route` query parameter and a current client/control ticket. Lost
-  executions require starting a new session explicitly. Transient establishment
-  failures stay inside the bounded reconnect loop rather than escaping as
-  unhandled browser errors. HTTP redirects from establishment or recovery end
-  reconnecting, clear the stored route, and navigate to the response URL before
-  interpreting status or route headers. Browser WebSocket handshakes hide
-  redirects, so failed upgrades use this same HTTP path. The session manifest
-  declares the login redirect through ordinary service access policy; the
-  browser never guesses an authentication destination from a close code or 401.
+- Browser startup without a session ID in its cookie or an explicit link
+  performs normal `POST /connect`, reads `the8020-session` and `the8020-route`,
+  and remembers the ID in its session cookie without adding a URL parameter.
+  Existing session references resolve through the stateless shell control
+  endpoint. It opens/reconnects the standard `the8020.uui.v1` WebSocket using
+  the signed token as the `route` query parameter and a current client/control
+  ticket. Lost executions require starting a new session explicitly. Transient
+  establishment failures stay inside the bounded reconnect loop rather than
+  escaping as unhandled browser errors. HTTP redirects from establishment or
+  recovery end reconnecting, clear the stored route, and navigate to the
+  response URL before interpreting status or route headers. Browser WebSocket
+  handshakes hide redirects, so failed upgrades use this same HTTP path. The
+  session manifest declares the login redirect through ordinary service access
+  policy; the browser never guesses an authentication destination from a close
+  code or 401.
 - Programs obtain the current authenticated identity on demand through
   `currentUser()` from `/p/the8020/users/mod.ts` instead of receiving identity
   or infrastructure dependencies through their function parameters.
@@ -815,8 +822,10 @@ below.
   cover the session manifest's login redirect after a rejected reconnect,
   redirects during initial establishment and session lookup, missing execution
   handling without recreation, terminal navigation without further connection
-  attempts, and transient recovery with retained dirty values. Redirected error
-  pages remain navigation outcomes.
+  attempts, and transient recovery with retained dirty values. It verifies clean
+  URLs, cookie-based reload, explicit-link precedence, takeover, and starting a
+  new session through Reload page after an execution disappears. Redirected
+  error pages remain navigation outcomes.
 - `deno task test:presentation-browser` covers page/modal restoration and exact
   field heights and underlines across desktop, tablet, and mobile widths,
   including default one-row textareas and explicit multiple-row controls.
@@ -843,9 +852,10 @@ below.
   Database coverage includes compact/Advanced/field views, related tables, table
   help in SQL, executing the prepared SELECT, and row filtering with return
   navigation. Development coverage checks the combined settings group, SSH
-  subtitle, reset confirmation, activation validation, related packages,
-  retained draft messages, and console DOM preservation without starting a real
-  sandbox.
+  subtitle, reset confirmation, activation validation, changed-file navigation
+  with edit/add/remove icons, lazily loaded read-only code-editor diffs
+  including deletion and binary notices, retained draft messages, and console
+  DOM preservation without starting a real sandbox.
 - Deno checks cover all services/programs, including login template/error
   injection and constrained static asset routing. UUI and frontend tests cover
   discovery and containment failures, dynamic/default-export loading, static and

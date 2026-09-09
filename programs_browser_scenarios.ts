@@ -136,6 +136,34 @@ let sessionLogReads = 0;
 const developmentCommands: string[] = [];
 let developmentActivated = false;
 let developmentConflicted = false;
+const developmentDiffRequests: string[] = [];
+const developmentChanges = [
+  {
+    path: "label.ts",
+    change: "modified",
+    diff: {
+      text: "@@ -1 +1 @@\n-const label = 'before';\n+const label = 'after';\n",
+    },
+  },
+  {
+    path: "added [1].ts",
+    change: "added",
+    diff: { text: "@@ -0,0 +1 @@\n+export const added = true;\n" },
+  },
+  {
+    path: "removed.ts",
+    change: "deleted",
+    diff: { text: "@@ -1 +0,0 @@\n-export const removed = true;\n" },
+  },
+  {
+    path: "icon.png",
+    change: "modified",
+    diff: {
+      text: "",
+      notice: "Binary file changed. A text diff is unavailable.",
+    },
+  },
+];
 const developmentConflicts = new Set(["label.ts", "removed.ts"]);
 const conflictWorktree =
   "/workspace/packages/.conflicts/0123456789abcdef01234567/example/testing";
@@ -335,6 +363,39 @@ export async function runProgramsBrowser(root: string): Promise<void> {
         result: { activation: { success: true, status: "complete" } },
       });
     }
+    if (name === "development.activate.preview") {
+      const data = input.input as {
+        user_id?: string;
+        packages?: string;
+        file?: string;
+      };
+      if (data.file) {
+        assert(
+          data.user_id === "robot" && data.packages === "example/testing",
+          "diff lost its user or selected package",
+        );
+        developmentDiffRequests.push(data.file);
+      }
+      return Promise.resolve({
+        success: true,
+        result: {
+          preview: {
+            packages: developmentActivated ? [] : [{
+              package_id: "example/testing",
+              changed_files: developmentChanges.length,
+              added_rows: 8,
+              removed_rows: 3,
+              activation_ready: true,
+              files: developmentChanges.map(({ path, change, diff }) => ({
+                path,
+                change,
+                ...(path === data.file ? { diff } : {}),
+              })),
+            }],
+          },
+        },
+      });
+    }
     if (name === "development.sandbox.shell") {
       const command = (input.input as { command: string }).command;
       const encoded = command.match(/printf %s '([A-Za-z0-9+/=]+)'/)?.[1];
@@ -465,17 +526,6 @@ export async function runProgramsBrowser(root: string): Promise<void> {
               }],
             }
             : undefined,
-        },
-      },
-      "development.activate.preview": {
-        preview: {
-          packages: developmentActivated ? [] : [{
-            package_id: "example/testing",
-            changed_files: 2,
-            added_rows: 8,
-            removed_rows: 3,
-            activation_ready: true,
-          }],
         },
       },
       "database.table.list": { tables: [databaseTable] },
@@ -1285,7 +1335,53 @@ async function verifyDevelopment(page: BrowserDriver): Promise<void> {
   );
   await input(page, "message", "Browser reviewed changes");
   await row(page, "example/testing");
-  await title(page, "Package example/testing");
+  await title(page, "Changes in example/testing");
+  assert(
+    developmentDiffRequests.length === 0,
+    "file contents loaded before selection",
+  );
+  await wait(
+    page,
+    `['edit', 'add', 'remove'].every(icon => document.querySelector('.presentation-page-layer:not([hidden]) [data-material-icon="' + icon + '"]'))`,
+    "changed files with edit/add/remove icons",
+  );
+  await screenshot(page, "development-changed-files");
+  for (const file of developmentChanges) {
+    await row(page, file.path);
+    await title(page, file.path);
+    await wait(
+      page,
+      `document.querySelector('.presentation-page-layer:not([hidden]) .uui-code-editor .cm-content[contenteditable="false"]') !== null`,
+      "read-only diff editor",
+    );
+    for (const kind of ["added", "removed"]) {
+      const prefix = kind === "added" ? "+" : "-";
+      if (file.diff.text.split("\n").some((line) => line.startsWith(prefix))) {
+        await wait(
+          page,
+          `document.querySelector('.presentation-page-layer:not([hidden]) .uui-code-line-${kind}') !== null`,
+          `${kind} diff annotation missing`,
+        );
+      }
+    }
+    if (file.diff.notice) {
+      assert(
+        await page.evaluate<boolean>(
+          `document.querySelector('.presentation-page-layer:not([hidden]) .screen-description')?.textContent.includes('Binary file changed')`,
+        ),
+        "binary explanation missing",
+      );
+    }
+    if (file.path === "label.ts") {
+      await screenshot(page, "development-file-diff");
+    }
+    await button(page, "Back");
+    await title(page, "Changes in example/testing");
+  }
+  assert(
+    developmentDiffRequests.length === developmentChanges.length,
+    "diff reads must match selected files",
+  );
   await button(page, "Back");
   await title(page, "Activate development changes");
   assert(
