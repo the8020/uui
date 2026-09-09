@@ -27,7 +27,232 @@ import type {
   SessionMetadata,
   SessionMetadataStore,
 } from "./session_metadata.ts";
-import { defineSessionService, workerFunctions } from "./session_service.ts";
+import {
+  controlSession,
+  defineSessionService,
+  workerFunctions,
+} from "./session_service.ts";
+import { field } from "./fields.ts";
+import { ScreenChannel } from "./session.ts";
+import { codeEditor } from "./services/shell/frontend/components/code-editor/mod.ts";
+import type { AgentResponse } from "./agent.ts";
+
+Deno.test("agent commands share the live screen, reject stale edits, and return control without restarting its program", async () => {
+  const metadataStore = new MemorySessionMetadataStore();
+  const channel = new ScreenChannel();
+  const model = new Model({
+    name: "Alice",
+    role: "viewer" as "viewer" | "operator",
+    source: "original",
+    tool: { input: "in", output: "out" },
+    saved: 0,
+  });
+  let invocations = 0;
+  let events = 0;
+  const service = defineSessionService(async () => {
+    invocations++;
+    while (true) {
+      const event = await callScreen({
+        id: "agent-proof",
+        title: "Agent proof",
+        model,
+        channel,
+        schema: z.object({
+          name: field(z.string().min(2), { label: "Name" }),
+          role: field(z.enum(["viewer", "operator"]), { label: "Role" }),
+          source: field(z.string(), { custom: codeEditor() }),
+          tool: field(z.object({ input: z.string(), output: z.string() }), {
+            custom: {
+              module: "/the8020/uui/shell/tool.js",
+              config: {},
+              fallback: {
+                inputs: [{ name: "input", path: "input" }],
+                outputs: [{ name: "output", path: "output" }],
+                actions: [{ name: "run", label: "Run", event: "run-tool" }],
+              },
+            },
+          }),
+          saved: field(z.number(), { readOnly: true }),
+        }),
+        header: {
+          controls: [{ id: "name", bind: "name" }],
+          actions: [{ id: "save", label: "Save" }],
+        },
+        controls: [
+          { id: "role", bind: "role" },
+          { id: "source", bind: "source" },
+          { id: "tool", bind: "tool" },
+          { id: "saved", bind: "saved" },
+        ],
+      });
+      events++;
+      if (event.action === "save") {
+        model.data.saved++;
+        sendMessage("Saved", "success");
+      }
+      if (event.action === "run-tool") {
+        model.data.tool.output = model.data.tool.input;
+      }
+    }
+  }, { metadataStore, completePersistent: () => Promise.resolve() });
+  try {
+    const established = await service.fetch(
+      new Request("https://example.test/connect", { method: "POST" }),
+      context(metadata),
+    );
+    const sessionId = established.headers.get("the8020-session")!;
+    const control = (
+      clientId: string,
+      operation: "claim" | "status" | "release" = "claim",
+      takeover = true,
+    ) =>
+      controlSession(
+        { sessionId, clientId, operation, takeover },
+        metadata.auth.userId!,
+      );
+    assertThrows(() =>
+      controlSession(
+        { sessionId, clientId: "evil", operation: "claim" },
+        "other-user",
+      )
+    );
+    const first = new TestSocket();
+    first.message({
+      ...connectMessage(0),
+      clientId: "first",
+      control: control("first").control,
+    });
+    await service.connectWebSocket(
+      new Request("https://example.test/connect"),
+      context(metadata),
+      first,
+    );
+    await until(() => serverMessages(first, "presentation.show").length > 0);
+    const second = new TestSocket();
+    second.message({
+      ...connectMessage(0),
+      clientId: "second",
+      control: control("second").control,
+    });
+    await service.connectWebSocket(
+      new Request("https://example.test/connect"),
+      context(metadata),
+      second,
+    );
+    await until(() => serverMessages(second, "presentation.show").length > 0);
+    assert(first.signal.aborted);
+    assertEquals(control("first", "status").active, false);
+    second.remoteClose();
+    await until(() => control("first", "status").active);
+    let expected: AgentResponse["expected"];
+    const command = async (
+      value: unknown,
+      force = false,
+    ): Promise<AgentResponse> => {
+      const ticket = control("agent");
+      const response = await service.fetch(
+        new Request("https://example.test/command", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            clientId: "agent",
+            control: ticket.control,
+            expected,
+            command: value,
+            force,
+          }),
+        }),
+        context(metadata),
+      );
+      const result = await response.json() as AgentResponse;
+      expected = result.expected;
+      assertEquals(control("first", "status").active, true);
+      return result;
+    };
+    const firstScreen = await command({ op: "screen" });
+    assert(firstScreen.transcript.startsWith("screenCall:"));
+    assert(firstScreen.transcript.includes("session_service_test.ts:"));
+    assert(firstScreen.transcript.includes('field: "source/value"'));
+    assert(firstScreen.transcript.includes('field: "tool/output"'));
+    assert(!firstScreen.transcript.includes("bind:"));
+    assert(!firstScreen.transcript.includes("run-tool"));
+    assert(firstScreen.transcript.includes("value-help: true"));
+    const choices = await command({
+      op: "value-help",
+      id: "role",
+      search: "oper",
+    });
+    assertEquals((choices.result as { rows: unknown[] }).rows.length, 1);
+    assertEquals(events, 0, "value-help must not open or settle a screen");
+    assert((await command({ op: "set", id: "saved", value: 12 })).error);
+    assert((await command({ op: "set", id: "name", value: "" })).error);
+    assertEquals(model.data.name, "Alice");
+    const before = expected!.revision;
+    channel.redraw();
+    await until(() => {
+      const status = workerFunctions["uui.session.inspect"]({ sessionId });
+      return Number(status.server_sequence) > before;
+    });
+    const stale = await command({ op: "set", id: "name", value: "Bob" });
+    assert(stale.error?.includes("--force"));
+    assertEquals(model.data.name, "Alice");
+    expected = firstScreen.expected;
+    assertEquals(
+      (await command({ op: "set", id: "name", value: "Bob" }, true)).error,
+      undefined,
+    );
+    assertEquals(
+      (await command({ op: "set", id: "source/value", value: "edited code" }))
+        .error,
+      undefined,
+    );
+    assertEquals(
+      (await command({ op: "set", id: "tool/input", value: "edited input" }))
+        .error,
+      undefined,
+    );
+    assert(
+      (await command({ op: "set", id: "tool/output", value: "forged" })).error,
+    );
+    assertEquals(
+      (await command({ op: "click", id: "tool/run" })).error,
+      undefined,
+    );
+    assertEquals(model.data.tool.output, "edited input");
+    const saved = await command({ op: "click", id: "save" });
+    assertEquals(saved.error, undefined);
+    assertEquals(saved.messages, [{ level: "success", message: "Saved" }]);
+    assertEquals(model.data.saved, 1);
+    assertEquals(model.data.source, "edited code");
+    assertEquals(events, 2);
+    assertEquals(invocations, 1);
+    expected = { ...expected!, instanceId: "another-model-instance" };
+    assert(
+      (await command({ op: "set", id: "name", value: "wrong screen" }, true))
+        .error,
+    );
+    assertEquals(model.data.name, "Bob");
+    const returned = new TestSocket();
+    returned.message({
+      ...connectMessage(0),
+      clientId: "first",
+      control: control("first", "status").control,
+    });
+    await service.connectWebSocket(
+      new Request("https://example.test/connect"),
+      context(metadata),
+      returned,
+    );
+    await until(() => serverMessages(returned, "presentation.show").length > 0);
+    assertEquals(
+      serverMessages(returned, "presentation.show").at(-1)!.presentation
+        .surfaces.at(-1)!.screen.model,
+      model.data,
+    );
+  } finally {
+    await metadataStore.clear();
+  }
+});
 
 const metadata: RequestMetadata = {
   contextId: "request-1",
@@ -789,6 +1014,79 @@ Deno.test("session heartbeat uses package constants and closes timed-out clients
     globalThis.setInterval = originalSetInterval;
     globalThis.clearInterval = originalClearInterval;
     Date.now = originalNow;
+    await metadataStore.clear();
+  }
+});
+
+Deno.test("only an active client cancels disconnect grace; waiting-client polls do not retain the execution", async () => {
+  const metadataStore = new MemorySessionMetadataStore();
+  const originalTimeout = globalThis.setTimeout;
+  globalThis.setTimeout =
+    ((callback: TimerHandler, delay?: number, ...args: unknown[]) =>
+      originalTimeout(
+        callback,
+        delay === 120_000 ? 30 : delay,
+        ...args,
+      )) as typeof setTimeout;
+  let complete = false;
+  let poll: ReturnType<typeof setInterval> | undefined;
+  const service = defineSessionService(
+    async ({ signal }) =>
+      await new Promise<void>((resolve) =>
+        signal.addEventListener("abort", () => resolve(), { once: true })
+      ),
+    {
+      metadataStore,
+      completePersistent: () => {
+        complete = true;
+        return Promise.resolve();
+      },
+    },
+  );
+  try {
+    const response = await service.fetch(
+      new Request("https://example.test/connect", { method: "POST" }),
+      context(metadata),
+    );
+    const sessionId = response.headers.get("the8020-session")!;
+    const claim = (clientId: string, operation = "claim") =>
+      controlSession(
+        { sessionId, clientId, operation, takeover: true },
+        metadata.auth.userId!,
+      );
+    const first = new TestSocket();
+    first.message({
+      ...connectMessage(0),
+      clientId: "first",
+      control: claim("first").control,
+    });
+    await service.connectWebSocket(
+      new Request("https://example.test/connect"),
+      context(metadata),
+      first,
+    );
+    const second = new TestSocket();
+    second.message({
+      ...connectMessage(0),
+      clientId: "second",
+      control: claim("second").control,
+    });
+    await service.connectWebSocket(
+      new Request("https://example.test/connect"),
+      context(metadata),
+      second,
+    );
+    await new Promise((resolve) => originalTimeout(resolve, 45));
+    assertEquals(complete, false);
+    second.remoteClose();
+    poll = setInterval(() => {
+      if (!complete) claim("first", "status");
+    }, 3);
+    await until(() => complete);
+    assert(first.signal.aborted);
+  } finally {
+    if (poll !== undefined) clearInterval(poll);
+    globalThis.setTimeout = originalTimeout;
     await metadataStore.clear();
   }
 });

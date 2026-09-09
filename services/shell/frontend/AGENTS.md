@@ -12,8 +12,19 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
 - The list child owns list rendering, geometry, tools, styles, and optional
   spreadsheet dependencies. The assets child owns vendored icon files; shared
   Markdown lives at the repository's frontend root.
+- The code editor child owns the optional prebuilt custom field and its vendored
+  editor and language modules.
 
 # Local Contracts
+
+- One live socket controls a session. Code 4001 opens a native modal with a
+  full-screen blurred backdrop and Take control, disabling the covered UI. The
+  inactive tab receives no screen updates and polls shell control every two
+  seconds. Promotion reconnects with a full snapshot; discard its old pending
+  edits on takeover. Ordinary interrupted connections retain pending edits.
+- Preserve the live session ID in the URL. Reload/explicit navigation resolves
+  it through shell control before WebSocket admission. Missing live state is
+  shown as unavailable, never recreated from the session ID.
 
 - Reconcile stable surfaces and retained DOM while preserving dirty values,
   focus, custom elements, and list state. Identical snapshots that retain DOM
@@ -33,7 +44,8 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
 - Startup and failed WebSocket admission share HTTP route establishment. A
   redirected response ends reconnecting, clears the route, and navigates to its
   final URL before checking status or route headers. Preserve retry behavior for
-  transport failures and route replacement only for a direct `409`.
+  transport failures; resolve an existing session through shell control and stop
+  on a missing execution instead of creating another one.
 - Send browser origin, language, and time zone in the HTTP establishment body
   and each WebSocket `session.connect`. The package session binding owns these
   presentation values; authenticated identity remains runtime-owned.
@@ -41,6 +53,17 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
   icons. `uui-content-fullscreen` fills only the content viewport, using the
   measured global-bar height in `--uui-content-top`, and locks background
   scrolling. The component owns its toggle, geometry, and deactivation cleanup.
+- Custom fields use the ordinary host through `control.custom`, inherit field
+  geometry and help, and expose live `control`, `value`, and `setValue` through
+  the host. Binding synchronization stays within the owning surface, across
+  native and custom controls. A changed Model or reset disposes old instances.
+- `clipboard.ts` owns plain-text writes and the native selection fallback for
+  shell commands and custom code fields, retaining focus and active modal scope.
+- Every component may store bounded JSON in its screen element's `data` through
+  `screenElement` or the custom context's live `state`. Capture custom state
+  before interactions/redraws, retain it across navigation, and synchronize with
+  ordinary events. Custom fields own their scroll; generic wrapper capture must
+  not replace it with wrapper offsets.
 - Scalar fields expose a pencil or read-only Chevron Right button outside the
   Tab order; button clicks and focused-field F1/F4 send the shared `field-help`
   event with dirty bindings. `fieldHelp: false` suppresses it. Keep read-only
@@ -53,15 +76,30 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
   and overflow-ellipsis buttons have `tabIndex = -1`. Unmodified F1/F4 click the
   focused field's help button, F2 clicks the focused element, and F3 uses the
   shared Back action, requesting native dialog closure before page navigation.
-  F5/F6 loop backward/forward through visible, enabled, editable controls and
-  buttons in the active screen and its header, or the active native modal. Skip
-  read-only fields, inert/hidden controls, and auxiliary buttons. From other
-  focused elements, use their DOM position; with no focus, choose the first
-  eligible control in document order. Modal restoration uses the same focus
-  eligibility, including read-only fields.
+  Shift+F2/Shift+F3 loop backward/forward through visible, enabled, editable
+  controls and buttons in the active screen and its header, or the active native
+  modal. Skip read-only fields, inert/hidden controls, and auxiliary buttons.
+  From other focused elements, use their DOM position; with no focus, choose the
+  first eligible control in document order. Modal restoration uses the same
+  focus eligibility, including read-only fields.
 - Run global shortcuts during bubbling, after component handlers. Respect
   prevented/default-consumed events so custom editors and terminal components
   keep their native keys before the shell considers its own actions.
+- `enterEvent` binds editable native inputs to the configured ordinary action;
+  omit it for no Enter roundtrip. Textareas and custom editors keep Enter. Dirty
+  values and event values use the existing renderer/model/interaction gate.
+- Screen `shortcut` descriptors bind F5–F12 plus exact Control/Alt/Shift
+  modifiers. Buttons click; other descriptors focus their first eligible
+  descendant. Explicit list regions bind the shortcut from their bound control;
+  shared layout validation guarantees a single placement. Hidden controls do not
+  contribute a shortcut to an explicit list. Only active roots or the top native
+  modal participate. Closed overflow, hidden, disabled, detached, and inert
+  elements are excluded. Shared screen construction rejects duplicate
+  combinations across body/header, including hidden elements. No per-screen
+  listeners survive replacement; Enter callbacks use a WeakMap. Ignore
+  composition and already-consumed events; suppress handled repeats and prevent
+  defaults only when a target/action exists. Browser/OS interception remains
+  outside the shell's control; preserve ordinary UI access.
 - Every field group uses exact row metrics, including when all fields default to
   one row. Clamp controls to their declared `rowSpan`; one-row textareas match
   ordinary inputs, and multiline textareas end at the corresponding ordinary
@@ -103,11 +141,21 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
   `test:lists-browser`, `test:programs-browser`, or `test:download-browser` for
   the affected end-to-end path. `test:native-back-browser` uses Xvfb and xdotool
   to test actual browser Back with CDP userGesture disabled for assertions.
-- `test:presentation-browser --field-help` checks native Tab/Shift+Tab, F1–F6,
-  relative and wrapping navigation, read-only/hidden/disabled/inert exclusions,
-  modal focus, native disclosures, and dialog/page Back.
+- `test:presentation-browser --field-help` checks native Tab/Shift+Tab, F1–F4
+  and Shift+F2/Shift+F3, relative and wrapping navigation,
+  read-only/hidden/disabled/inert exclusions, modal focus, native disclosures,
+  and dialog/page Back.
+
+- `deno task test:keyboard-browser` exercises named Enter events through the
+  real session engine, key/modifier matching, hidden/disabled/inert exclusions,
+  modal scope, stale DOM, composition, repeats, explicit/inferred list focus,
+  and backend draft application.
 
 # Child DOX Index
+
+- [components/code-editor/AGENTS.md](components/code-editor/AGENTS.md): Own the
+  optional code field, local syntax diagnostics, line markers, and vendored
+  editor.
 
 - [components/list/AGENTS.md](components/list/AGENTS.md): Own list rendering,
   spreadsheet viewing, range export, clipboard actions, and local dependencies.

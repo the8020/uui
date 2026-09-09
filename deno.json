@@ -15,14 +15,16 @@
     "exclude": [
       "services/shell/.generated",
       "services/shell/frontend/assets",
-      "services/shell/frontend/components/list/vendor"
+      "services/shell/frontend/components/list/vendor",
+      "services/shell/frontend/components/code-editor/vendor"
     ]
   },
   "lint": {
     "exclude": [
       "services/shell/.generated",
       "services/shell/frontend/assets",
-      "services/shell/frontend/components/list/vendor"
+      "services/shell/frontend/components/list/vendor",
+      "services/shell/frontend/components/code-editor/vendor"
     ]
   },
   "imports": {
@@ -38,7 +40,7 @@
     "@the8020/context": "file:///opt/runtime/context/mod.ts"
   },
   "tasks": {
-    "check": "deno fmt --check . && deno lint . && deno check --import-map=deno.local.json mod.ts tables/sessions.ts services/login/service.ts services/shell/service.ts services/shell/asset_delivery_e2e.ts services/session/service.ts programs/home/program.ts programs/program-terminated/program.ts programs/sessions/program.ts services/shell/frontend/main.ts presentation_browser_e2e.ts download_browser_e2e.ts",
+    "check": "deno fmt --check . && deno lint . && deno check --import-map=deno.local.json mod.ts tables/sessions.ts services/login/service.ts services/shell/service.ts services/shell/asset_delivery_e2e.ts services/session/service.ts programs/home/program.ts programs/program-terminated/program.ts programs/sessions/program.ts services/shell/frontend/main.ts presentation_browser_e2e.ts keyboard_browser_fixture.ts download_browser_e2e.ts services/shell/frontend/components/code-editor/editor.ts",
     "test": "deno test --import-map=deno.local.json --allow-read --allow-write .",
     "test:presentation-browser": "deno run -A --import-map=deno.local.json presentation_browser_e2e.ts",
     "test:native-back-browser": "xvfb-run -a deno run -A --import-map=deno.local.json presentation_browser_e2e.ts --native-back",
@@ -47,6 +49,8 @@
     "test:lists-browser": "deno run -A --import-map=deno.local.json presentation_browser_e2e.ts --lists",
     "test:programs-browser": "deno run -A --import-map=deno.local.json presentation_browser_e2e.ts --programs",
     "test:custom-elements-browser": "deno run -A --import-map=deno.local.json presentation_browser_e2e.ts --custom-elements",
-    "test:asset-delivery": "deno run -A --unstable-worker-options --import-map=deno.local.json services/shell/asset_delivery_e2e.ts"
+    "test:asset-delivery": "deno run -A --unstable-worker-options --import-map=deno.local.json services/shell/asset_delivery_e2e.ts",
+    "test:code-editor-browser": "deno run -A --import-map=deno.local.json presentation_browser_e2e.ts --fixture=./services/shell/frontend/components/code-editor/browser_fixture.ts",
+    "test:keyboard-browser": "deno run -A --import-map=deno.local.json presentation_browser_e2e.ts --fixture=./keyboard_browser_fixture.ts"
   }
 }

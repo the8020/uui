@@ -153,6 +153,17 @@ export function resolveLayoutReferences(
     return id;
   };
   visit(layout.root, (node) => {
+    if (node.type === "list") {
+      const candidates = controls.filter((control) =>
+        control.bind === node.bind && control.shortcut !== undefined
+      );
+      if (candidates.length > 1) {
+        throw new TypeError(
+          `list binding ${node.bind} has multiple shortcuts; place separate list controls by ID`,
+        );
+      }
+      candidates.forEach((control) => place(control.id));
+    }
     node.controls = node.controls?.flatMap((reference) => {
       const candidates = byID.has(reference)
         ? [byID.get(reference)!]

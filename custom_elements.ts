@@ -1,6 +1,7 @@
 import type {
   CustomElementDeclaration,
   CustomElementDescriptor,
+  CustomFallback,
 } from "./protocol.ts";
 import { resolveElementIDs } from "./identifiers.ts";
 import { validBrowserAssetURL } from "./browser_assets.ts";
@@ -36,7 +37,9 @@ export function validateCustomElements(
       throw new TypeError("invalid custom element descriptor");
     }
     const unknown = Object.keys(item).find((key) =>
-      !["id", "module", "styles", "preserve", "config"].includes(key)
+      !["id", "module", "styles", "preserve", "config", "fallback"].includes(
+        key,
+      )
     );
     if (unknown !== undefined) {
       throw new TypeError(
@@ -47,6 +50,7 @@ export function validateCustomElements(
       throw new TypeError(`duplicate custom element ID ${id}`);
     }
     ids.add(id);
+    if (item.fallback !== undefined) validateFallback(item.fallback);
     validateJSON(config, 0, new Set());
     const encoded = JSON.stringify(config);
     if (encoded.length > 32_768) {
@@ -62,11 +66,65 @@ export function validateCustomElements(
         : { styles: [...new Set(styles as string[])] }),
       preserve: item.preserve,
       config: structuredClone(config),
+      ...(item.fallback === undefined
+        ? {}
+        : { fallback: structuredClone(item.fallback) }),
     };
   });
 }
 
-function validateJSON(
+function validateFallback(value: unknown): asserts value is CustomFallback {
+  if (
+    !isRecord(value) ||
+    Object.keys(value).some((key) =>
+      !["inputs", "outputs", "actions"].includes(key)
+    )
+  ) throw new TypeError("invalid custom fallback");
+  const names = new Set<string>();
+  for (const kind of ["inputs", "outputs", "actions"]) {
+    const entries = value[kind] ?? [];
+    if (!Array.isArray(entries) || entries.length > 32) {
+      throw new TypeError(
+        "custom fallback capabilities must be bounded arrays",
+      );
+    }
+    for (const entry of entries) {
+      if (
+        !isRecord(entry) || typeof entry.name !== "string" ||
+        !identifier.test(entry.name) || names.has(entry.name)
+      ) {
+        throw new TypeError("custom fallback requires unique capability names");
+      }
+      names.add(entry.name);
+      if (
+        entry.label !== undefined && typeof entry.label !== "string" ||
+        entry.description !== undefined && typeof entry.description !== "string"
+      ) throw new TypeError("fallback labels and descriptions must be text");
+      if (kind === "actions") {
+        if (
+          typeof entry.label !== "string" || typeof entry.event !== "string" ||
+          !entry.event || entry.event.length > 256
+        ) {
+          throw new TypeError("fallback actions require a label and event");
+        }
+      } else if (
+        typeof entry.path !== "string" || entry.path.length > 256 ||
+        entry.path.split(".").some((part) =>
+          ["__proto__", "constructor", "prototype"].includes(part)
+        ) || entry.path !== "" && !/^[\w]+(?:\.[\w]+)*$/.test(entry.path) ||
+        entry.multiline !== undefined && typeof entry.multiline !== "boolean"
+      ) {
+        throw new TypeError("invalid fallback value path");
+      }
+      validateJSON(entry, 0, new Set());
+    }
+  }
+  if (JSON.stringify(value).length > 16_384) {
+    throw new TypeError("custom fallback is too large");
+  }
+}
+
+export function validateJSON(
   value: unknown,
   depth: number,
   seen: Set<object>,

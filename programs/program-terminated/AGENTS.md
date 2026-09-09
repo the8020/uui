@@ -17,6 +17,10 @@ Parent DOX: [uui/programs DOX](../AGENTS.md).
 - Keep the UUI session alive, expose bounded exception/stack/source context,
   support copying, and allow direct Home recovery.
 - Use package configuration for Home and termination identities.
+- Use the prebuilt read-only code field for stack, raw source, and complete
+  dump. Source excerpts retain original line numbers and mark the exception
+  line; disable structural checking because excerpts can begin inside a
+  construct. Copy short dump retains the complete formatted report.
 
 # Work Guidance
 

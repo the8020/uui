@@ -1520,7 +1520,7 @@ async function verifyUUI(
       exceptionType: document.querySelector('[data-bind="exceptionType"]')?.value,
       exceptionMessage: document.querySelector('[data-bind="message"]')?.value,
       exceptionLocation: document.querySelector('[data-bind="location"]')?.value,
-      exceptionDump: document.querySelector('[data-bind="dumpText"]')?.value,
+      exceptionDump: document.querySelector('[data-bind="dumpText"]')?.textContent,
       notice: document.querySelector('#notice')?.textContent,
       noticeHidden: document.querySelector('#notice')?.hidden,
       rows: [...document.querySelectorAll('[data-layout-id="changed-packages"] tbody tr')].map((row) => row.textContent),
@@ -3157,12 +3157,18 @@ async function verifyUUI(
   );
   await clickButton(first, "Throw TypeError");
   await waitForScreen(first, "Program terminated");
+  await waitForPage(
+    first,
+    `document.querySelector('[data-custom-element-id=source]')?.dataset.language === 'typescript' &&
+      document.querySelector('[data-bind="stack"]')?.textContent.includes('demo-form/program.ts')`,
+    "optional terminated-screen editors",
+  );
   assert(
     await first.evaluate<boolean>(`(() => {
       const text = document.querySelector(".screen")?.textContent ?? "";
       const message = document.querySelector('[data-bind="message"]')?.value ?? "";
-      const stack = document.querySelector('[data-bind="stack"]')?.value ?? "";
-      const source = document.querySelector('[data-bind="source"]')?.value ?? "";
+      const stack = document.querySelector('[data-bind="stack"]')?.textContent ?? "";
+      const source = document.querySelector('[data-bind="source"]')?.textContent ?? "";
       const titleIcon = document.querySelector('.screen-title [data-material-icon="error"]');
       return text.includes("TypeError") &&
         message.includes("intentionally raised an uncaught TypeError") &&

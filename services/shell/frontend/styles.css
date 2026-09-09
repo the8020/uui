@@ -613,6 +613,11 @@ textarea {
   backdrop-filter: blur(2px);
 }
 
+.uui-control-dialog {
+  width: min(30rem, calc(100vw - 24px));
+  padding: 2rem;
+}
+
 .uui-dialog-frame {
   position: relative;
   display: flex;
@@ -1182,9 +1187,19 @@ body:has(.uui-content-fullscreen) {
   align-self: end;
 }
 
-.field-group-fields > .field[data-control-kind="textarea"] .field-input-shell {
+.field-group-fields > .field:is([data-control-kind="textarea"], [data-control-kind="custom"]) .field-input-shell {
   align-self: stretch;
   min-height: 0;
+}
+
+.field[data-control-kind="custom"] .custom-element-host:not(.uui-content-fullscreen) {
+  height: 100%;
+  min-height: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.field[data-control-kind="custom"] .custom-element-host:focus-within {
+  border-bottom-color: var(--primary);
 }
 
 .field-group-fields > .field[data-control-kind="textarea"] textarea {
@@ -1316,9 +1331,14 @@ body:has(.uui-content-fullscreen) {
   pointer-events: none;
 }
 
+.field[data-control-kind="custom"] .field-help-button,
 .field[data-control-kind="textarea"] .field-help-button {
   inset-block-start: auto;
   inset-block-end: calc(19px - 0.9rem);
+}
+
+.field[data-control-kind="custom"].field-has-edit-affordance .field-input-shell {
+  padding-inline-end: 1.8rem;
 }
 
 .field:is([data-control-kind="checkbox"], [data-control-kind="switch"]) .field-input-shell {

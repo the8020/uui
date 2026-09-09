@@ -1,5 +1,6 @@
 import { resolveElementIDs } from "./identifiers.ts";
 import { validateListOptions } from "./list_options.ts";
+import { validateCustomElements } from "./custom_elements.ts";
 import { z } from "@the8020/http";
 import {
   field as defineField,
@@ -12,16 +13,24 @@ import type {
   ControlDeclaration,
   ControlDescriptor,
   ControlKind,
+  CustomElementOptions,
   FieldDescriptor,
   FieldLength,
   FieldOption,
+  KeyboardShortcut,
   ListOptions,
 } from "./protocol.ts";
-import { MAX_FIELD_ROW_SPAN } from "./protocol.ts";
+import {
+  ACCOUNT_EVENT,
+  BACK_EVENT,
+  MAX_FIELD_ROW_SPAN,
+  validateShortcut,
+} from "./protocol.ts";
 
 export interface FieldMetadata<Value = unknown>
   extends SharedFieldMetadata<Value> {
   control?: ControlKind;
+  custom?: CustomElementOptions;
   group?: string;
   length?: FieldLength;
   rowSpan?: number;
@@ -32,6 +41,8 @@ export interface FieldMetadata<Value = unknown>
   required?: boolean;
   placeholder?: string;
   reactive?: boolean;
+  enterEvent?: string;
+  shortcut?: KeyboardShortcut;
   minimum?: number;
   maximum?: number;
   step?: number;
@@ -50,6 +61,7 @@ export function field<T extends z.ZodType>(
   options: FieldMetadata<z.output<T>>,
 ): T {
   normalizeRowSpan(options.rowSpan);
+  validateKeyboardMetadata(options);
   const { valueHelp, open, storage, ...presentation } = {
     ...fieldMetadata(schema),
     ...options,
@@ -113,6 +125,7 @@ export function buildControls(
       return {
         ...base,
         ...structuredClone(item),
+        control: item.control ?? (item.custom ? "custom" : base.control),
         id: item.id,
         bind: item.bind,
       };
@@ -130,6 +143,18 @@ export function buildControls(
   );
   const ids = new Set<string>();
   for (const control of controls) {
+    validateKeyboardMetadata(control);
+    if (control.control === "custom" || control.custom !== undefined) {
+      if (control.control !== "custom" || control.custom === undefined) {
+        throw new TypeError(
+          "custom controls require a custom element descriptor",
+        );
+      }
+      const { id: _id, ...custom } = validateCustomElements([
+        { ...control.custom, id: control.id },
+      ])[0]!;
+      control.custom = custom;
+    }
     if (control.list !== undefined) validateListOptions(control.list);
     if (control.id.length === 0 || ids.has(control.id)) {
       throw new TypeError(`duplicate or empty control ID ${control.id}`);
@@ -170,11 +195,13 @@ function visitShape(
     const declaredSchema = declared as z.ZodType;
     const bind = prefix.length === 0 ? name : `${prefix}.${name}`;
     const unwrapped = unwrap(declaredSchema);
-    if (unwrapped.schema instanceof z.ZodObject) {
+    const configured = fieldMetadata(declaredSchema) ?? {};
+    if (
+      unwrapped.schema instanceof z.ZodObject && configured.custom === undefined
+    ) {
       visitShape(unwrapped.schema.shape, bind, output);
       continue;
     }
-    const configured = fieldMetadata(declaredSchema) ?? {};
     output.push({
       bind,
       label: configured.label ?? humanize(name),
@@ -194,6 +221,12 @@ function visitShape(
       required: configured.required ?? !unwrapped.optional,
       placeholder: configured.placeholder,
       reactive: configured.reactive,
+      ...(configured.enterEvent === undefined
+        ? {}
+        : { enterEvent: configured.enterEvent }),
+      ...(configured.shortcut === undefined
+        ? {}
+        : { shortcut: configured.shortcut }),
       minimum: configured.minimum,
       maximum: configured.maximum,
       step: configured.step,
@@ -203,6 +236,7 @@ function visitShape(
       semanticType: configured.semanticType ??
         (configured.storage?.type === "decimal" ? "decimal" : undefined),
       list: configured.list,
+      ...(configured.custom === undefined ? {} : { custom: configured.custom }),
     });
   }
 }
@@ -271,6 +305,7 @@ function inferControl(
   schema: z.ZodType,
   configured: FieldMetadata,
 ): ControlKind {
+  if (configured.custom !== undefined) return "custom";
   if (configured.semanticType === "long-string") return "textarea";
   if (configured.semanticType === "date") return "date";
   if (configured.semanticType === "datetime") return "datetime";
@@ -290,4 +325,20 @@ function inferredOptions(schema: z.ZodType): FieldOption[] | undefined {
     value,
     label: humanize(String(value)),
   }));
+}
+
+function validateKeyboardMetadata(
+  value: Pick<ControlDescriptor, "enterEvent" | "shortcut">,
+): void {
+  validateShortcut(value.shortcut);
+  if (
+    value.enterEvent !== undefined &&
+    (typeof value.enterEvent !== "string" ||
+      value.enterEvent.trim().length === 0 || value.enterEvent === BACK_EVENT ||
+      value.enterEvent === ACCOUNT_EVENT)
+  ) {
+    throw new TypeError(
+      "enterEvent must be a non-empty, non-reserved event name",
+    );
+  }
 }

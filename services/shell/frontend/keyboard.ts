@@ -1,3 +1,29 @@
+import { type KeyboardShortcut, shortcutKey } from "../../../protocol.ts";
+
+const enterActions = new WeakMap<HTMLInputElement, () => void>();
+
+export function bindEnterEvent(
+  input: HTMLInputElement,
+  action: () => void,
+): void {
+  enterActions.set(input, action);
+}
+
+export function bindShortcut(
+  element: HTMLElement,
+  shortcut?: KeyboardShortcut,
+): void {
+  if (shortcut === undefined) return;
+  element.dataset.shortcut = shortcutKey(shortcut);
+  element.setAttribute("aria-keyshortcuts", shortcutKey(shortcut));
+}
+
+function available(element: HTMLElement): boolean {
+  return element.isConnected && !element.matches(":disabled") &&
+    !element.closest('[inert], [hidden], [aria-disabled="true"]') &&
+    element.checkVisibility({ visibilityProperty: true });
+}
+
 const keyActions: Readonly<
   Record<string, "help" | "click" | "back" | "previous" | "next">
 > = {
@@ -5,8 +31,8 @@ const keyActions: Readonly<
   F2: "click",
   F3: "back",
   F4: "help",
-  F5: "previous",
-  F6: "next",
+  "Shift+F2": "previous",
+  "Shift+F3": "next",
 };
 
 /** Native modal focus takes priority over the underlying presentation. */
@@ -22,8 +48,7 @@ export function focusableControls(roots: ParentNode[]): HTMLElement[] {
     )].filter((element) =>
       (element.tabIndex >= 0 ||
         element.isContentEditable && !element.hasAttribute("tabindex")) &&
-      !element.matches(":disabled") && !element.closest("[inert]") &&
-      element.checkVisibility({ visibilityProperty: true })
+      available(element)
     )
   );
 }
@@ -48,39 +73,80 @@ function moveFocus(roots: ParentNode[], forward: boolean): void {
   target?.focus();
 }
 
-/** Keep bindings here; renderers supply ordinary controls and click actions. */
+/** One bubbling listener reads only the current surface; removed DOM owns no listeners. */
 export function installKeyboardShortcuts(options: {
   roots(): HTMLElement[];
-  back(): void;
-}): void {
-  document.addEventListener("keydown", (event) => {
+  back(): boolean;
+}): () => void {
+  const handle = (event: KeyboardEvent) => {
     if (
-      event.defaultPrevented || event.isComposing || event.altKey ||
-      event.ctrlKey || event.metaKey || event.shiftKey
+      event.defaultPrevented || event.isComposing || event.keyCode === 229 ||
+      event.metaKey
     ) return;
-    const action = keyActions[event.key];
-    if (action === undefined) return;
+    const dialog = activeDialog();
+    const roots = dialog ? [dialog] : options.roots();
+    const key = shortcutKey({
+      key: event.key as KeyboardShortcut["key"],
+      control: event.ctrlKey,
+      alt: event.altKey,
+      shift: event.shiftKey,
+    });
+    const active = document.activeElement;
+    let run: (() => void | boolean) | undefined;
+    if (
+      key === "Enter" && active instanceof HTMLInputElement &&
+      event.target === active && available(active) && !active.readOnly &&
+      roots.some((root) => root.contains(active))
+    ) {
+      run = enterActions.get(active);
+    } else if (/^F(?:[5-9]|1[0-2])$/.test(event.key)) {
+      for (const root of roots) {
+        const element = [
+          ...root.querySelectorAll<HTMLElement>("[data-shortcut]"),
+        ]
+          .find((element) =>
+            element.dataset.shortcut === key && available(element)
+          );
+        if (!element) continue;
+        const target = element instanceof HTMLButtonElement
+          ? element
+          : focusableControls([element])[0];
+        if (!target) continue;
+        run = () =>
+          target instanceof HTMLButtonElement && target === element
+            ? target.click()
+            : target.focus();
+        break;
+      }
+    } else {
+      const action = keyActions[key];
+      if (action === "back") run = options.back;
+      else if (action === "previous" || action === "next") {
+        if (
+          focusableControls(roots).some((element) =>
+            !element.closest('[readonly], [aria-readonly="true"]')
+          )
+        ) {
+          run = () => {
+            moveFocus(roots, action === "next");
+          };
+        }
+      } else if (active instanceof HTMLElement && available(active)) {
+        const target = action === "help"
+          ? active.closest(".field")?.querySelector<HTMLButtonElement>(
+            ".field-help-button",
+          )
+          : action === "click"
+          ? active
+          : undefined;
+        if (target && available(target)) run = () => target.click();
+      }
+    }
+    if (!run) return;
+    if (!event.repeat && run() === false) return;
     event.preventDefault();
     event.stopPropagation();
-    if (action === "back") {
-      options.back();
-      return;
-    }
-    if (action === "previous" || action === "next") {
-      const dialog = activeDialog();
-      moveFocus(dialog ? [dialog] : options.roots(), action === "next");
-      return;
-    }
-    const active = document.activeElement;
-    if (
-      !(active instanceof HTMLElement) ||
-      active.closest("[inert]") || active.matches(":disabled") ||
-      !active.checkVisibility({ visibilityProperty: true })
-    ) return;
-    if (action === "help") {
-      active.closest(".field")?.querySelector<HTMLButtonElement>(
-        ".field-help-button",
-      )?.click();
-    } else active.click();
-  });
+  };
+  document.addEventListener("keydown", handle);
+  return () => document.removeEventListener("keydown", handle);
 }

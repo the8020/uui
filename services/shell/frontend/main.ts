@@ -20,18 +20,22 @@ import {
 } from "/p/the8020/uui/protocol.ts";
 import {
   DirtyBindings,
+  getPath,
   reconnectDelay,
+  setPath,
   shouldAcceptServerMessage,
   shouldReconnectWebSocket,
   synchronizeClientSequence,
 } from "./model.ts";
 import { CustomElementRenderer } from "./custom_elements.ts";
+import { writeClipboard } from "./clipboard.ts";
 import {
   changesForBindings,
   disposeFieldMessages,
   type RenderCallbacks,
   renderScreen,
   renderScreenHeader,
+  synchronizeBinding,
 } from "./renderer.ts";
 import { ResponsiveProgramHeader } from "./responsive_header.ts";
 import { type Theme, ThemePreferences } from "./theme.ts";
@@ -153,13 +157,36 @@ const themePreferences = new ThemePreferences(
   boot.websocketUrl,
   matchMedia("(prefers-color-scheme: dark)").matches,
 );
-let routeToken = sessionStorage.getItem(routeKey);
+let routeToken: string | null = null;
 let lastServerSequence = 0;
 let clientSequence = 0;
 let socket: WebSocket | undefined;
 let reconnectAttempt = 0;
 let ended = false;
-let currentSessionID = "";
+let currentSessionID = new URL(location.href).searchParams.get("session") ?? "";
+const clientId = crypto.randomUUID();
+let control = 0;
+let initialClaim = true;
+let suspended = false;
+let connecting = false;
+const controlDialog = document.createElement("dialog");
+controlDialog.className = "uui-dialog uui-control-dialog";
+controlDialog.setAttribute("aria-label", "Session connection");
+const controlText = document.createElement("p");
+controlText.textContent = "This session is connected in another window.";
+const takeControl = document.createElement("button");
+takeControl.type = "button";
+takeControl.textContent = "Take control";
+controlDialog.append(controlText, takeControl);
+document.body.append(controlDialog);
+controlDialog.addEventListener("cancel", (event) => event.preventDefault());
+takeControl.addEventListener("click", () => {
+  initialClaim = true;
+  connect();
+});
+setInterval(() => {
+  if (suspended && !ended) connect();
+}, 2000);
 let interactionSequence: number | undefined;
 const listData = new ListDataChannel((sequence) => {
   if (interactionSequence === sequence) setInteractionPending(undefined);
@@ -250,15 +277,16 @@ installKeyboardShortcuts({
 synchronizeWindowTitle();
 connect();
 
-function requestBack(): void {
+function requestBack(): boolean {
   const dialog = activeDialog();
   if (dialog) {
     dialog.requestClose();
-    return;
+    return true;
   }
-  if (activeLayer()?.lists.closeTools()) return;
-  if (screenBack.disabled) return;
+  if (activeLayer()?.lists.closeTools()) return true;
+  if (screenBack.disabled || activeLayer() === undefined) return false;
   dispatch(BACK_EVENT, BACK_EVENT);
+  return true;
 }
 
 function installBrowserBack(): void {
@@ -298,13 +326,64 @@ function connect(): void {
 }
 
 async function connectAttempt(): Promise<void> {
-  if (ended) return;
+  if (ended || connecting || socket?.readyState === WebSocket.OPEN) return;
+  connecting = true;
   setConnectionState("Connecting…", "connecting");
   try {
-    if (routeToken === null) await establishRoute(false);
+    if (currentSessionID === "" && routeToken === null) {
+      await establishRoute(false);
+    }
+    if (currentSessionID !== "") {
+      const response = await fetch(new URL("control", location.href), {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          sessionId: currentSessionID,
+          clientId,
+          operation: "claim",
+          takeover: initialClaim,
+        }),
+      });
+      if (response.redirected) {
+        ended = true;
+        replaceRoute(undefined);
+        location.assign(response.url);
+        return;
+      }
+      if (response.status === 404 || response.status === 410) {
+        ended = true;
+        controlText.textContent =
+          "This session has ended. Open UUI again to start a new session.";
+        takeControl.disabled = true;
+        if (!controlDialog.open) controlDialog.showModal();
+        return;
+      }
+      if (!response.ok) throw new Error("Could not connect to the session");
+      const result = await response.json();
+      initialClaim = false;
+      if (!result.active) {
+        suspendConnection();
+        return;
+      }
+      routeToken = result.route;
+      sessionStorage.setItem(routeKey, routeToken!);
+      control = result.control;
+      // A new controller starts from the server's complete presentation.
+      // Never replay edits made before another client took control.
+      if (suspended) {
+        pending.clear();
+        for (const layer of layers.values()) layer.dirty.clear();
+      }
+      suspended = false;
+      lastServerSequence = 0;
+      setInteractionPending(undefined);
+    }
   } catch {
     scheduleReconnect();
     return;
+  } finally {
+    connecting = false;
   }
   if (ended) return;
   let opened = false;
@@ -320,15 +399,22 @@ async function connectAttempt(): Promise<void> {
       resumeToken: currentSessionID === "" ? null : routeToken,
       lastServerSequence,
       browser: browserContext(),
+      clientId,
+      control,
     });
     for (const item of pending.values()) socket?.send(item.encoded);
   });
   socket.addEventListener("message", (event) => receive(event.data));
   socket.addEventListener("close", (event) => {
+    socket = undefined;
     listData.fail(
       "The connection closed. Try the list action again after reconnecting.",
     );
     downloads.close();
+    if (event.code === 4001) {
+      suspendConnection();
+      return;
+    }
     if (!shouldReconnectWebSocket(ended, event.code)) {
       if (terminalRedirect !== undefined) {
         if (logoutFallback !== undefined) clearTimeout(logoutFallback);
@@ -343,7 +429,7 @@ async function connectAttempt(): Promise<void> {
       return;
     }
     setConnectionState("Reconnecting…", "reconnecting");
-    if (!opened || event.code === 1008) {
+    if (currentSessionID === "" && (!opened || event.code === 1008)) {
       void establishRoute(true).catch(() => {}).finally(scheduleReconnect);
       return;
     }
@@ -391,6 +477,23 @@ async function establishRoute(reuse: boolean): Promise<void> {
     throw new Error("route establishment returned no route token");
   }
   if (token !== routeToken) replaceRoute(token);
+  currentSessionID = response.headers.get("the8020-session") ?? "";
+  if (currentSessionID !== "") rememberSession();
+}
+
+function suspendConnection(): void {
+  suspended = true;
+  activeSurfaceID = null;
+  pending.clear();
+  setInteractionPending(undefined);
+  setConnectionState("Connected in another window", "reconnecting");
+  if (!controlDialog.open) controlDialog.showModal();
+}
+
+function rememberSession(): void {
+  const url = new URL(location.href);
+  url.searchParams.set("session", currentSessionID);
+  history.replaceState(history.state, "", url);
 }
 
 function browserContext(): BrowserContext {
@@ -462,6 +565,7 @@ function receive(raw: unknown): void {
   ) {
     if (currentSessionID !== "") clearPresentation();
     currentSessionID = message.sessionId;
+    rememberSession();
     applyTheme(themePreferences.bindSession(currentSessionID));
   }
   if (
@@ -511,6 +615,7 @@ function receive(raw: unknown): void {
       notice.hidden = true;
       try {
         reconcilePresentation(message.presentation);
+        if (!suspended && controlDialog.open) controlDialog.close();
       } catch {
         showNotice("The server sent an invalid presentation.");
       }
@@ -522,8 +627,16 @@ function receive(raw: unknown): void {
       messageCenter.show(message);
       break;
     case "clipboard.write":
-      void writeClipboard(message.text);
+      void writeClipboard(message.text).catch(() =>
+        showNotice("The browser did not allow copying.")
+      );
       break;
+    case "session.open": {
+      const url = new URL(location.href);
+      url.searchParams.set("session", message.targetSessionId);
+      location.assign(url);
+      break;
+    }
     case "server.ack":
       if (message.clientSequence !== undefined) {
         for (const sequence of pending.keys()) {
@@ -632,28 +745,6 @@ function requestLogout(): void {
     return;
   }
   location.assign(logoutUrl);
-}
-
-async function writeClipboard(text: string): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return;
-  } catch {
-    const textarea = document.createElement("textarea");
-    textarea.value = text;
-    textarea.setAttribute("readonly", "");
-    textarea.style.position = "fixed";
-    textarea.style.opacity = "0";
-    document.body.append(textarea);
-    textarea.select();
-    try {
-      if (!document.execCommand("copy")) {
-        showNotice("The browser did not allow copying the short dump.");
-      }
-    } finally {
-      textarea.remove();
-    }
-  }
 }
 
 function reconcilePresentation(presentation: PresentationSnapshot): void {
@@ -851,6 +942,7 @@ function updateLayer(
     layer.viewState.instanceId === surface.screen.state.instanceId &&
     layer.viewState.version === surface.screen.state.version;
   if (!sameInstance) {
+    layer.customElements.dispose();
     const local = localScreenStates.get(surface.screen.state.instanceId);
     layer.viewState = local?.state.version === surface.screen.state.version
       ? local.state
@@ -894,8 +986,12 @@ function updateLayer(
 function renderLayer(layer: PresentationLayer): void {
   const callbacks: RenderCallbacks = {
     elementState: (id) => screenElement(layer.viewState, id),
-    changed(bind, _value, control) {
+    changed(bind, value, control) {
       if (!layerIsActive(layer)) return;
+      for (const root of [layer.root, ...layer.headerItems]) {
+        synchronizeBinding(root, bind, value);
+      }
+      layer.customElements.updateBinding(bind, control.id);
       layer.dirty.mark(bind);
       if (control.reactive) {
         dispatchFromLayer(layer, "change", "change", undefined, bind);
@@ -917,6 +1013,12 @@ function renderLayer(layer: PresentationLayer): void {
     },
     list(id) {
       return layer.lists.render(id);
+    },
+    custom(control) {
+      return layer.customElements.render(
+        { ...control.custom!, id: control.id },
+        control,
+      );
     },
   };
   layer.lists.begin(
@@ -947,9 +1049,16 @@ function renderLayer(layer: PresentationLayer): void {
         }, signal),
     },
   );
-  layer.customElements.begin((action, value) =>
-    callbacks.action(action, "action", value)
-  );
+  layer.customElements.begin({
+    send: (action, value) => callbacks.action(action, "action", value),
+    state: callbacks.elementState,
+    value: (control) => getPath(layer.model, control.bind),
+    change: (control, value) => {
+      if (!layerIsActive(layer)) return;
+      setPath(layer.model, control.bind, value);
+      callbacks.changed(control.bind, value, control);
+    },
+  });
   renderScreen(
     layer.root,
     layer.screen,
@@ -1086,6 +1195,7 @@ function captureLayerState(layer: PresentationLayer): void {
     };
   }
   layer.lists.capture();
+  layer.customElements.captureState();
   for (const [target, id] of elementScrollTargets(layer)) {
     layer.viewState.elements[id]!.scroll = {
       x: target.scrollLeft,
@@ -1111,6 +1221,7 @@ function elementScrollTargets(
       if (
         !Object.hasOwn(layer.viewState.elements, id) ||
         layer.viewState.elements[id]!.list !== undefined ||
+        element.dataset.controlKind === "custom" ||
         element.closest("[hidden], [data-custom-element-id]") !== null ||
         element.getClientRects().length === 0
       ) return [];
@@ -1140,6 +1251,9 @@ function screenStateUpdate(layer: PresentationLayer): ScreenStateUpdate {
       ...(state.selectedTab === undefined
         ? {}
         : { selectedTab: state.selectedTab }),
+      ...(state.data === undefined
+        ? {}
+        : { data: structuredClone(state.data) }),
     }]),
   );
   return {

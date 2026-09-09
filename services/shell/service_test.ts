@@ -116,6 +116,12 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   );
   assertEquals(body.includes('"the8020.uui.theme:initial"'), true);
   const themeNonce = body.match(/<script nonce="([a-f0-9]{32})">/)?.[1];
+  assertEquals(
+    response.headers.get("content-security-policy")?.includes(
+      `style-src 'self' 'nonce-${themeNonce}'`,
+    ),
+    true,
+  );
   assertEquals(typeof themeNonce, "string");
   assertEquals(
     response.headers.get("content-security-policy")?.includes(
@@ -134,6 +140,21 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   );
   assertEquals(browserClient.headers.get("cache-control"), "no-cache");
   const browserSource = await browserClient.text();
+  assertEquals(browserSource.includes("uui-code-editor"), false);
+  for (const asset of ["editor.js", "editor.css", "vendor/library.js"]) {
+    const response = await service.fetch(
+      new Request(`https://service/components/code-editor/${asset}`),
+      context,
+    );
+    assertEquals(response.status, 200);
+    assertEquals(
+      response.headers.get("content-type"),
+      asset.endsWith(".css")
+        ? "text/css; charset=utf-8"
+        : "text/javascript; charset=utf-8",
+    );
+    await response.body?.cancel();
+  }
   assertEquals(/^import .*from ["']node:/m.test(browserSource), false);
   const sourceMap = await service.fetch(
     new Request("https://service/main.js.map"),

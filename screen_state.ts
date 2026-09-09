@@ -1,5 +1,6 @@
 /** Serializable screen state and list contracts, shared with the browser. */
 import type { ListQuery } from "/p/the8020/db/fields.ts";
+import { validateJSON } from "./custom_elements.ts";
 export type { ListQuery } from "/p/the8020/db/fields.ts";
 export interface ScrollPosition {
   x: number;
@@ -62,6 +63,8 @@ export interface ScreenElementState {
   toolbarOpen: boolean;
   selectedTab?: string;
   list?: ListState;
+  /** Component-owned metadata; at most 32,768 JSON characters per element. */
+  data?: Record<string, unknown>;
 }
 
 export interface ScreenState {
@@ -77,7 +80,7 @@ export interface ScreenStateUpdate {
   scroll: ScrollPosition;
   elements: Record<
     string,
-    { scroll: ScrollPosition; toolbarOpen: boolean; selectedTab?: string }
+    Pick<ScreenElementState, "scroll" | "toolbarOpen" | "selectedTab" | "data">
   >;
 }
 
@@ -193,16 +196,27 @@ export function validScreenStateUpdate(
     Object.values(value.elements).every((item) =>
       isRecord(item) && validScroll(item.scroll) &&
       typeof item.toolbarOpen === "boolean" &&
+      (item.data === undefined || validElementData(item.data)) &&
       (item.selectedTab === undefined ||
         typeof item.selectedTab === "string" && item.selectedTab.length > 0 &&
           item.selectedTab.length <= 256) &&
       Object.keys(item).every((key) =>
-        key === "scroll" || key === "toolbarOpen" || key === "selectedTab"
+        ["scroll", "toolbarOpen", "selectedTab", "data"].includes(key)
       )
     ) &&
     Object.keys(value).every((key) =>
       ["version", "scroll", "elements"].includes(key)
     );
+}
+
+function validElementData(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  try {
+    validateJSON(value, 0, new Set());
+    return JSON.stringify(value).length <= 32_768;
+  } catch {
+    return false;
+  }
 }
 
 export function validListQuery(value: unknown): value is ListQuery {

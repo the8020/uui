@@ -4,7 +4,9 @@ import {
   type PlatformService,
   type RequestMetadata,
   type WebSocketSession,
+  z,
 } from "@the8020/http";
+import { context } from "@the8020/context";
 import { kernel, newId } from "@the8020/kernel";
 import uiConfig from "./ui-config.json" with { type: "json" };
 import {
@@ -22,7 +24,13 @@ import {
   type UUIServerMessage,
   type UUIWorkerOutbound,
 } from "./protocol.ts";
-import { bindSession, cancelDownloads } from "./session.ts";
+import { bindSession, cancelDownloads, commandScreen } from "./session.ts";
+import {
+  agentRequest,
+  type AgentResponse,
+  controlRequest,
+  transcribe,
+} from "./agent.ts";
 import type {
   SessionMetadata,
   SessionMetadataStore,
@@ -32,6 +40,8 @@ export interface UUISessionContext {
   readonly sessionId: string;
   readonly auth: RequestMetadata["auth"];
   readonly signal: AbortSignal;
+  readonly program?: string;
+  readonly inputs?: unknown[];
 }
 
 interface ReplayItem {
@@ -70,8 +80,14 @@ interface SessionRecord {
   controller: AbortController;
   unbind: () => void;
   socket?: WebSocketSession;
+  clients: Array<{ id: string; seen: number }>;
+  control: number;
+  commanding: boolean;
+  commandError?: string;
+  notifications: Array<{ level: string; message: string }>;
   hasConnected: boolean;
   serverSequence: number;
+  presentationRevision: number;
   lastClientSequence: number;
   replay: ReplayItem[];
   replayBytes: number;
@@ -127,20 +143,122 @@ export function defineSessionService(
     { summary: "Establish a persistent UUI execution" },
     async ({ meta, request }) => {
       let browser: BrowserContext | undefined;
+      let program: string | undefined;
+      let inputs: unknown[] | undefined;
       const body = await request.text();
       if (body !== "") {
         try {
-          browser = parseBrowserContext(JSON.parse(body));
+          const value = JSON.parse(body);
+          if (value.origin !== undefined) browser = parseBrowserContext(value);
+          else {
+            const start = z.object({
+              browser: z.unknown().optional(),
+              program: z.string().min(1).max(256).optional(),
+              inputs: z.array(z.unknown()).max(32).optional(),
+            }).strict().parse(value);
+            if (start.browser !== undefined) {
+              browser = parseBrowserContext(start.browser);
+            }
+            program = start.program;
+            inputs = start.inputs;
+          }
         } catch {
           throw new HTTPError(400, { error: "invalid_browser_context" });
         }
       }
-      return establish(meta, handler, options, browser);
+      return establish(meta, handler, options, browser, program, inputs);
     },
   );
   service.websocket("/connect", async ({ meta, socket }) => {
     await connect(meta, socket);
   });
+  service.post(
+    "/command",
+    { summary: "Operate the current UUI screen" },
+    async ({ meta, request }) => {
+      const record = sessions.get(meta.persistentExecutionId ?? "");
+      if (record === undefined) {
+        throw new HTTPError(404, {
+          error: "uui_session_not_found",
+        });
+      }
+      if (
+        !meta.auth.authenticated || meta.auth.userId !== record.auth.userId
+      ) throw new HTTPError(403, { error: "session_owner_mismatch" });
+      const parsed = agentRequest.safeParse(await request.json());
+      if (!parsed.success) {
+        return Response.json(agentResponse(record, "Invalid screen command"), {
+          status: 400,
+        });
+      }
+      const command = parsed.data;
+      if (
+        record.socket !== undefined || record.commanding ||
+        record.clients.at(-1)?.id !== command.clientId ||
+        record.control !== command.control
+      ) {
+        return Response.json(
+          agentResponse(record, "Session control changed; attach again."),
+          { status: 409 },
+        );
+      }
+      record.commanding = true;
+      record.commandError = undefined;
+      if (command.command.op !== "screen") record.notifications = [];
+      if (record.disconnectTimer !== undefined) {
+        clearTimeout(
+          record.disconnectTimer,
+        );
+      }
+      record.disconnectTimer = undefined;
+      try {
+        const current = agentResponse(record);
+        if (command.command.op !== "screen") {
+          const expected = command.expected;
+          if (
+            expected === undefined || current.expected === undefined ||
+            expected.surfaceId !== current.expected.surfaceId ||
+            expected.screenId !== current.expected.screenId ||
+            expected.instanceId !== current.expected.instanceId ||
+            !command.force && expected.revision !== current.expected.revision
+          ) {
+            return Response.json(
+              agentResponse(
+                record,
+                "The screen changed. Review the refreshed transcript; use --force to act despite refreshes of this same screen.",
+              ),
+              { status: 409 },
+            );
+          }
+        }
+        const result = command.command.op === "screen"
+          ? undefined
+          : await commandScreen(command.command, record.lastClientSequence + 1);
+        // A program may still be working after accepting its event. Wait for its
+        // next interactive screen, never for a quiet period between redraws.
+        const deadline = Date.now() + 2000;
+        while (
+          !record.ended &&
+          record.currentPresentation?.presentation.activeSurfaceId == null &&
+          Date.now() < deadline
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        return Response.json({
+          ...agentResponse(record, record.commandError),
+          ...(result === undefined ? {} : { result }),
+        });
+      } catch (error) {
+        return Response.json(agentResponse(record, errorMessage(error)), {
+          status: 400,
+        });
+      } finally {
+        record.commanding = false;
+        releaseClient(record, command.clientId);
+        startDisconnectTimer(record);
+      }
+    },
+  );
   return service;
 }
 
@@ -149,6 +267,8 @@ async function establish(
   handler: (context: UUISessionContext) => Promise<void>,
   options: SessionServiceOptions,
   browser?: BrowserContext,
+  program?: string,
+  inputs?: unknown[],
 ): Promise<Response> {
   if (!meta.auth.authenticated || meta.auth.userId === undefined) {
     throw new HTTPError(401, { error: "authentication_required" });
@@ -163,7 +283,10 @@ async function establish(
       throw new HTTPError(403, { error: "session_owner_mismatch" });
     }
     if (browser !== undefined) existing.browser = browser;
-    return new Response(null, { status: 204 });
+    return new Response(null, {
+      status: 204,
+      headers: { "the8020-session": existing.sessionId },
+    });
   }
   if (sessions.size > 0) {
     throw new HTTPError(503, { error: "worker_execution_slot_occupied" });
@@ -198,7 +321,12 @@ async function establish(
       controller,
       unbind,
       hasConnected: false,
+      clients: [],
+      control: 0,
+      commanding: false,
+      notifications: [],
       serverSequence: 0,
+      presentationRevision: 0,
       lastClientSequence: 0,
       replay: [],
       replayBytes: 0,
@@ -226,10 +354,13 @@ async function establish(
     });
   }
   startHeartbeat(record);
+  startDisconnectTimer(record);
   void handler({
     sessionId,
     auth: record.auth,
     signal: controller.signal,
+    program,
+    inputs,
   }).then(
     () => {
       if (!record.ended) void end(record, "session handler returned");
@@ -244,7 +375,10 @@ async function establish(
       void end(record, "session handler failed");
     },
   );
-  return new Response(null, { status: 204 });
+  return new Response(null, {
+    status: 204,
+    headers: { "the8020-session": sessionId },
+  });
 }
 
 async function connect(
@@ -279,6 +413,19 @@ async function connect(
     socket.close(1003, "first UUI message must be session.connect");
     return;
   }
+  // Direct protocol clients may create their first connection without a claim.
+  // Once control has been claimed, every connection needs its current ticket.
+  const clientId = message.clientId ?? "direct";
+  if (record.clients.length === 0 && message.control === undefined) {
+    record.clients.push({ id: clientId, seen: Date.now() });
+    record.control++;
+  } else if (
+    record.commanding || record.clients.at(-1)?.id !== clientId ||
+    record.control !== message.control
+  ) {
+    socket.close(4001, "Session control changed");
+    return;
+  }
   if (record.socket !== undefined) {
     cancelDownloads("UUI connection replaced");
     record.socket.close(1000, "replaced by reconnected client");
@@ -296,8 +443,12 @@ async function connect(
   record.lastPongAt = record.lastConnectionAt;
   log(record, "lifecycle", resumed ? "resumed" : "connected");
   updateMetadata(record);
-  if (resumed) replay(record, message.lastServerSequence);
-  else {
+  if (resumed) {
+    replay(
+      record,
+      message.control === undefined ? message.lastServerSequence : 0,
+    );
+  } else {
     for (const item of record.replay) socket.send(item.encoded);
     send(record, {
       type: "session.ready",
@@ -413,11 +564,23 @@ function workerMessage(
     void end(record, value.message ?? "session ended", value.redirectUrl);
     return;
   }
+  if (value.type === "session.error" && record.commanding) {
+    record.commandError = value.message ?? value.code;
+  }
+  if (value.type === "presentation.show") record.presentationRevision++;
+  if (value.type === "notification.show") {
+    record.notifications.push({ level: value.level, message: value.message });
+    record.notifications = record.notifications.slice(-10);
+  }
   if (
     value.type === "server.ack" &&
     value.clientSequence > record.lastClientSequence
   ) record.lastClientSequence = value.clientSequence;
-  emit(record, value, value.type !== "clipboard.write");
+  emit(
+    record,
+    value,
+    value.type !== "clipboard.write" && value.type !== "session.open",
+  );
 }
 
 function emit(
@@ -503,9 +666,16 @@ function replay(record: SessionRecord, lastSequence: number): void {
 function disconnected(record: SessionRecord): void {
   if (record.socket === undefined) return;
   record.socket = undefined;
+  const client = record.clients.at(-1);
+  if (client !== undefined) releaseClient(record, client.id);
   cancelDownloads("UUI connection closed");
   log(record, "lifecycle", "disconnected");
   updateMetadata(record);
+  startDisconnectTimer(record);
+}
+
+function startDisconnectTimer(record: SessionRecord): void {
+  if (record.ended) return;
   if (record.disconnectTimer !== undefined) {
     clearTimeout(record.disconnectTimer);
   }
@@ -662,6 +832,8 @@ function defaultMetadataStore(): Promise<SessionMetadataStore> {
 }
 
 export const workerFunctions = Object.freeze({
+  "uui.session.control": (input: unknown) =>
+    controlSession(input, context.userId),
   "uui.session.inspect": (input: unknown): Record<string, unknown> =>
     sessionRecordStatus(sessionByInput(input)),
   "uui.session.message-log": (input: unknown): Record<string, unknown> => ({
@@ -674,6 +846,91 @@ export const workerFunctions = Object.freeze({
     return { terminated: true };
   },
 });
+
+/** Called through the ordinary, authenticated Worker control-function path. */
+export function controlSession(input: unknown, userId: string) {
+  const request = controlRequest.parse(input);
+  const record = sessionByID(request.sessionId);
+  if (record.auth.userId !== userId) {
+    throw new HTTPError(403, { error: "session_owner_mismatch" });
+  }
+  const now = Date.now();
+  record.clients = record.clients.filter((client, index, all) =>
+    client.seen > now - 120_000 || index === all.length - 1
+  );
+  const existing = record.clients.find((client) =>
+    client.id === request.clientId
+  );
+  if (existing) existing.seen = now;
+  if (request.operation === "release") {
+    if (record.commanding) {
+      throw new HTTPError(409, { error: "screen_command_in_progress" });
+    }
+    if (record.clients.at(-1)?.id === request.clientId) detachSocket(record);
+    releaseClient(record, request.clientId);
+  } else if (
+    request.operation === "claim" &&
+    (request.takeover || record.clients.length === 0 ||
+      record.clients.at(-1)?.id === request.clientId)
+  ) {
+    if (record.commanding) {
+      throw new HTTPError(409, { error: "screen_command_in_progress" });
+    }
+    if (record.clients.at(-1)?.id !== request.clientId) {
+      detachSocket(record);
+      record.clients = record.clients.filter((client) =>
+        client.id !== request.clientId
+      );
+      record.clients.push({ id: request.clientId, seen: now });
+      record.clients = record.clients.slice(-16);
+      record.control++;
+    }
+  }
+  return {
+    active: record.clients.at(-1)?.id === request.clientId,
+    control: record.control,
+  };
+}
+
+function detachSocket(record: SessionRecord): void {
+  const socket = record.socket;
+  record.socket = undefined;
+  cancelDownloads("UUI connection replaced");
+  socket?.close(4001, "This session is connected in another window");
+  if (record.disconnectTimer === undefined) startDisconnectTimer(record);
+  updateMetadata(record);
+}
+
+function releaseClient(record: SessionRecord, clientId: string): void {
+  if (record.clients.at(-1)?.id === clientId) record.control++;
+  record.clients = record.clients.filter((client) => client.id !== clientId);
+}
+
+function agentResponse(record: SessionRecord, error?: string): AgentResponse {
+  const presentation = record.currentPresentation;
+  const surface = presentation?.presentation.surfaces.at(-1);
+  return {
+    sessionId: record.sessionId,
+    ...(surface === undefined ? {} : {
+      expected: {
+        revision: record.presentationRevision,
+        surfaceId: surface.surfaceId,
+        screenId: surface.screen.id,
+        instanceId: surface.screen.state.instanceId,
+      },
+    }),
+    transcript: transcribe(presentation?.presentation),
+    ...(error === undefined ? {} : { error }),
+    ...(record.ended
+      ? { ended: true }
+      : presentation?.presentation.activeSurfaceId == null
+      ? { busy: true }
+      : {}),
+    ...(record.notifications.length
+      ? { messages: structuredClone(record.notifications) }
+      : {}),
+  };
+}
 
 function sessionByInput(input: unknown): SessionRecord {
   if (
@@ -711,12 +968,12 @@ class OversizedMessageError extends Error {}
 
 async function runConfiguredSession(context: UUISessionContext): Promise<void> {
   const programs = {
-    home: uiConfig.homeProgram,
+    home: context.program ?? uiConfig.homeProgram,
     terminated: uiConfig.terminatedProgram,
   };
   while (!context.signal.aborted) {
     try {
-      await invokeProgram(programs.home);
+      await invokeProgram(programs.home, context.inputs);
       return;
     } catch (error) {
       if (context.signal.aborted) return;

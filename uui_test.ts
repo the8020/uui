@@ -4,6 +4,8 @@ import { Model } from "./model.ts";
 import { assertEquals, assertRejects, assertThrows } from "@std/assert";
 import { z } from "zod";
 import { validateCustomElements } from "./custom_elements.ts";
+import { validScreenStateUpdate } from "./screen_state.ts";
+import { codeEditor } from "./services/shell/frontend/components/code-editor/mod.ts";
 import {
   buildControls,
   buildFieldCatalog,
@@ -11,7 +13,11 @@ import {
   fieldMetadata,
 } from "./fields.ts";
 import { field as sharedField, money } from "/p/the8020/db/fields.ts";
-import { applyLayoutOverride, validateLayout } from "./layout.ts";
+import {
+  applyLayoutOverride,
+  resolveLayoutReferences,
+  validateLayout,
+} from "./layout.ts";
 import {
   ACCOUNT_EVENT,
   BACK_EVENT,
@@ -378,6 +384,48 @@ Deno.test("layout validates data nodes and applies future overrides", () => {
   );
 });
 
+Deno.test("explicit lists resolve shortcuts to one control placement", () => {
+  const fields = buildFieldCatalog(z.object({ rows: z.array(z.string()) }));
+  const controls = buildControls(fields, [{
+    id: "rows-control",
+    bind: "rows",
+    shortcut: { key: "F10" },
+  }]);
+  const layout = validateLayout({
+    schema: 1,
+    id: "lists",
+    root: {
+      type: "stack",
+      children: [{ type: "list", bind: "rows" }],
+    },
+  });
+  resolveLayoutReferences(structuredClone(layout), controls);
+  assertThrows(
+    () =>
+      resolveLayoutReferences(structuredClone(layout), [
+        ...controls,
+        { ...controls[0]!, id: "other", shortcut: { key: "F11" } },
+      ]),
+    TypeError,
+    "multiple shortcuts",
+  );
+  layout.root.controls = ["rows-control"];
+  assertThrows(
+    () => resolveLayoutReferences(structuredClone(layout), controls),
+    TypeError,
+    "placed more than once",
+  );
+  delete layout.root.controls;
+  layout.root.children!.push({ id: "second", type: "list", bind: "rows" });
+  assertThrows(
+    () => resolveLayoutReferences(structuredClone(layout), controls),
+    TypeError,
+    "placed more than once",
+  );
+  // Repeated bindings without shortcuts retain independent list views.
+  resolveLayoutReferences(layout, buildControls(fields));
+});
+
 Deno.test("custom screen elements stay bounded and declarative", () => {
   const config = {
     enabled: true,
@@ -456,6 +504,23 @@ Deno.test("custom screen elements stay bounded and declarative", () => {
     TypeError,
     "unsupported property",
   );
+  for (
+    const input of [
+      { name: "value", path: "__proto__.value" },
+      { name: "value", path: "", label: 42 },
+      { name: "value", path: "", description: {} },
+    ]
+  ) {
+    assertThrows(
+      () =>
+        validateCustomElements([{
+          module: "/component.js",
+          config: {},
+          fallback: { inputs: [input] },
+        } as never]),
+      TypeError,
+    );
+  }
 });
 
 Deno.test({
@@ -506,6 +571,122 @@ Deno.test({
       unbind();
     }
   },
+});
+
+Deno.test("custom fields share validated edits and component metadata with ordinary screens", async () => {
+  const test = new TestChannel();
+  const unbind = bindSession(test);
+  try {
+    const schema = z.object({
+      code: field(z.string().min(1), {
+        custom: codeEditor({ language: "typescript" }),
+      }),
+      reference: field(z.string(), { custom: codeEditor(), readOnly: true }),
+    });
+    const model = new Model({ code: "original", reference: "fixed" });
+    const pending = callScreen({
+      id: "custom-field",
+      schema,
+      model,
+      controls: [{ id: "code", bind: "code" }, {
+        id: "reference",
+        bind: "reference",
+      }],
+      customElements: [{ id: "widget", module: "/widget.js", config: {} }],
+      actions: [{ id: "save", label: "Save" }],
+    });
+    await flushMicrotasks();
+    const snapshot = topScreen(lastPresentation(test));
+    assertEquals(snapshot.controls[0]!.control, "custom");
+    assertEquals(snapshot.controls[0]!.custom?.config, {
+      language: "typescript",
+    });
+    const element = {
+      scroll: { x: 42, y: 300 },
+      toolbarOpen: false,
+      data: {
+        selection: { anchor: 2, head: 3 },
+        arbitrary: [true, null, "value"],
+      },
+    };
+    const state = {
+      version: 0,
+      scroll: { x: 0, y: 5 },
+      elements: { code: element, widget: element, save: element },
+    };
+    assertEquals(validScreenStateUpdate(state), true);
+    for (
+      const data of [{ invalid: NaN }, { invalid: undefined }, {
+        tooBig: "x".repeat(32_769),
+      }, { tooMany: Array(257).fill(0) }]
+    ) {
+      assertEquals(
+        validScreenStateUpdate({
+          ...state,
+          elements: { code: { ...element, data } },
+        }),
+        false,
+      );
+    }
+    let sequence = 0;
+    for (
+      const change of [{ bind: "reference", value: "forged" }, {
+        bind: "code",
+        value: "",
+      }]
+    ) {
+      test.push({
+        ...eventFor(lastPresentation(test), "save", ++sequence),
+        changes: [change],
+        screenState: state,
+      });
+      await flushMicrotasks();
+      assertEquals(model.data, { code: "original", reference: "fixed" });
+      assertEquals(model.screen.elements.code!.data, undefined);
+    }
+    test.push({
+      ...eventFor(lastPresentation(test), "save", ++sequence),
+      changes: [{ bind: "code", value: "edited" }],
+      screenState: state,
+    });
+    assertEquals((await pending).action, "save");
+    assertEquals(model.data.code, "edited");
+    for (const id of ["code", "widget", "save"]) {
+      assertEquals(model.screen.elements[id]!.data, element.data);
+    }
+    assertEquals(model.screen.elements.code!.scroll, element.scroll);
+    model.resetScreen();
+    assertEquals(model.screen.elements, {});
+    assertThrows(
+      () =>
+        buildControls(buildFieldCatalog(schema), [{
+          bind: "code",
+          custom: {
+            module: "https://external.example/code.js",
+            config: {},
+          },
+        }]),
+      TypeError,
+      "invalid custom element",
+    );
+    await assertRejects(
+      () =>
+        callScreen({
+          id: "too-many-custom-fields",
+          schema,
+          model,
+          customElements: Array.from({ length: 15 }, (_, index) => ({
+            id: `widget-${index}`,
+            module: "/widget.js",
+            config: {},
+          })),
+        }),
+      TypeError,
+      "at most 16 custom elements",
+    );
+  } finally {
+    unbind();
+  }
 });
 
 Deno.test("client protocol rejects malformed event metadata", () => {

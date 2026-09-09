@@ -22,6 +22,9 @@ Parent DOX: [uui/programs DOX](../AGENTS.md).
   main detail never reads that log. End session confirms the selected user
   before stopping interactive work. Runtime/service/user fields open their
   owning programs.
+- Connect is available for the authenticated owner's live sessions and calls
+  `openSession()`. The shell rechecks ownership and resolves the existing
+  Worker.
 - Use registered package functions for bounded logs and termination; stale
   metadata cleanup does not scan kernel Workers.
 - Stale-row deletion validates the canonical `uis-` ID through the shared kernel

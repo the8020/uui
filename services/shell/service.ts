@@ -1,4 +1,6 @@
-import { defineService, type RequestMetadata } from "@the8020/http";
+import { defineService, HTTPError, type RequestMetadata } from "@the8020/http";
+import { kernel, WorkerInvokeError } from "@the8020/kernel";
+import { controlRequest } from "../../agent.ts";
 import { AssetServer } from "./assets.ts";
 import uiConfig from "../../ui-config.json" with { type: "json" };
 
@@ -8,6 +10,68 @@ const generated = new URL("./.generated/", import.meta.url);
 const staticRoots = [generated, frontend, sharedFrontend] as const;
 const assets = new AssetServer();
 const service = defineService();
+
+service.get(
+  "/sessions",
+  { summary: "List your UUI sessions" },
+  async ({ meta }) => {
+    const { default: Sessions } = await import("../../tables/sessions.ts");
+    const sessions = await Sessions.selectAll().where(
+      Sessions.authenticatedUserId,
+      "=",
+      meta.user.userId,
+    )
+      .orderBy(Sessions.updatedAt, "desc").limit(100).execute();
+    return Response.json({
+      sessions: sessions.map((session) => ({
+        sessionId: session.sessionId,
+        state: session.state,
+        screen: session.currentScreenId,
+        updatedAt: session.updatedAt,
+      })),
+    });
+  },
+);
+
+service.post("/control", {
+  summary: "Claim, release, or check control of your UUI session",
+}, async ({ meta, request }) => {
+  const input = controlRequest.parse(await request.json());
+  const { default: Sessions } = await import("../../tables/sessions.ts");
+  const session = await Sessions.selectAll().where(
+    Sessions.sessionId,
+    "=",
+    input.sessionId,
+  ).executeTakeFirst();
+  if (
+    session === undefined || session.authenticatedUserId !== meta.user.userId
+  ) throw new HTTPError(404, { error: "uui_session_not_found" });
+  const target = {
+    nodeId: session.nodeId,
+    sandboxId: session.sandboxId,
+    workerId: session.workerId,
+    persistentExecutionId: session.persistentExecutionId,
+  };
+  try {
+    const control = await kernel.worker.invoke<
+      { active: boolean; control: number }
+    >({ ...target, function: "uui.session.control", input });
+    return Response.json({
+      ...control,
+      ...(control.active ? { route: await kernel.services.route(target) } : {}),
+    });
+  } catch (error) {
+    throw new HTTPError(
+      error instanceof WorkerInvokeError && error.code === "target_not_found"
+        ? 410
+        : 409,
+      {
+        error: "session_unavailable",
+        message: error instanceof Error ? error.message : "Session unavailable",
+      },
+    );
+  }
+});
 
 service.get(
   "/",
@@ -60,7 +124,7 @@ async function shellResponse(meta: RequestMetadata): Promise<Response> {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store",
       "content-security-policy":
-        `default-src 'self'; connect-src 'self' ws: wss:; script-src 'self' 'nonce-${themeNonce}'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`,
+        `default-src 'self'; connect-src 'self' ws: wss:; script-src 'self' 'nonce-${themeNonce}'; style-src 'self' 'nonce-${themeNonce}'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`,
       "referrer-policy": "no-referrer",
       "x-content-type-options": "nosniff",
     },

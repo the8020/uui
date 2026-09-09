@@ -1,3 +1,4 @@
+import { bindEnterEvent, bindShortcut } from "./keyboard.ts";
 import type {
   ControlDescriptor,
   CustomElementDescriptor,
@@ -24,6 +25,7 @@ export interface RenderCallbacks {
     value?: unknown,
   ): void;
   list(id: string): HTMLElement;
+  custom(control: ControlDescriptor): HTMLElement;
   elementState(id: string): ScreenElementState;
 }
 
@@ -186,6 +188,10 @@ function renderLayout(
     region.setAttribute("role", "group");
   }
   if (node.type === "list" && node.bind) {
+    const control = byBind.get(node.bind)?.find((control) =>
+      control.shortcut !== undefined
+    );
+    if (!control?.hidden) bindShortcut(region, control?.shortcut);
     region.append(
       callbacks.list(node.id),
     );
@@ -307,6 +313,7 @@ function renderAction(
 ): HTMLButtonElement {
   const button = document.createElement("button");
   button.type = "button";
+  bindShortcut(button, action.shortcut);
   button.id = `action-${action.id}`;
   button.dataset.elementId = action.id;
   renderIconText(button, action.label);
@@ -397,6 +404,16 @@ export function renderControl(
   model: Record<string, unknown>,
   callbacks: RenderCallbacks,
 ): HTMLElement | undefined {
+  const rendered = renderControlBody(control, model, callbacks);
+  if (rendered) bindShortcut(rendered, control.shortcut);
+  return rendered;
+}
+
+function renderControlBody(
+  control: ControlDescriptor,
+  model: Record<string, unknown>,
+  callbacks: RenderCallbacks,
+): HTMLElement | undefined {
   if (control.hidden) return undefined;
   if (control.control === "list") {
     const card = element("div", "layout-list has-group-title");
@@ -418,6 +435,22 @@ export function renderControl(
   const label = document.createElement("label");
   label.htmlFor = `control-${control.id}`;
   renderIconText(label, control.label ?? control.id);
+  if (control.control === "custom" && control.custom !== undefined) {
+    const inputShell = element("div", "field-input-shell");
+    inputShell.append(callbacks.custom(control));
+    label.addEventListener("click", () => {
+      inputShell.querySelector<HTMLElement>(
+        "[contenteditable], input, textarea, [tabindex]",
+      )?.focus();
+    });
+    addFieldHelp(wrapper, inputShell, control, callbacks, false);
+    wrapper.append(
+      label,
+      inputShell,
+      renderFieldMessage(control.label ?? control.id, hintFor(control)),
+    );
+    return wrapper;
+  }
   const value = getPath(model, control.bind);
   let input: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
   if (control.control === "textarea") {
@@ -469,12 +502,25 @@ export function renderControl(
     if (control.readOnly) return;
     const next = inputValue(input, control.control);
     setPath(model, control.bind, next);
-    synchronizeBinding(control.bind, next, input);
     if (input instanceof HTMLInputElement && input.type === "range") {
       updateRangeOutput(input);
     }
     callbacks.changed(control.bind, next, control);
   });
+  if (
+    control.enterEvent !== undefined && input instanceof HTMLInputElement &&
+    !control.readOnly
+  ) {
+    bindEnterEvent(
+      input,
+      () =>
+        callbacks.action(
+          control.enterEvent!,
+          "action",
+          getPath(model, control.bind),
+        ),
+    );
+  }
   const inputShell = element("div", "field-input-shell");
   inputShell.append(input);
   if (control.control === "range" && input instanceof HTMLInputElement) {
@@ -531,7 +577,6 @@ function renderRadioControl(
     input.addEventListener("change", () => {
       if (!input.checked) return;
       setPath(model, control.bind, option.value);
-      synchronizeBinding(control.bind, option.value, input);
       callbacks.changed(control.bind, option.value, control);
     });
     label.htmlFor = input.id;
@@ -628,24 +673,26 @@ export function disposeFieldMessages(root: ParentNode): void {
   }
 }
 
-function synchronizeBinding(
+export function synchronizeBinding(
+  root: ParentNode,
   bind: string,
   value: unknown,
-  source: Element,
 ): void {
   for (
-    const candidate of document.querySelectorAll<
+    const candidate of root.querySelectorAll<
       HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
-    >("[data-bind]")
+    >("input[data-bind], textarea[data-bind], select[data-bind]")
   ) {
-    if (candidate === source || candidate.dataset.bind !== bind) continue;
+    if (candidate.dataset.bind !== bind) continue;
     if (candidate instanceof HTMLInputElement && candidate.type === "radio") {
       candidate.checked = candidate.value === String(value);
     } else if (
       candidate instanceof HTMLInputElement && candidate.type === "checkbox"
     ) {
       candidate.checked = Boolean(value);
-    } else candidate.value = value == null ? "" : String(value);
+    } else if (candidate.value !== (value == null ? "" : String(value))) {
+      candidate.value = value == null ? "" : String(value);
+    }
     if (candidate instanceof HTMLInputElement && candidate.type === "range") {
       updateRangeOutput(candidate);
     }

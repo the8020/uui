@@ -1,0 +1,156 @@
+.uui-code-editor {
+  --code-keyword: #7134a6;
+  --code-string: #207543;
+  --code-number: #a14019;
+  --code-type: #075f85;
+  --code-function: #4141ad;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--surface);
+  color: var(--text);
+}
+
+[data-theme="dark"] .uui-code-editor {
+  --code-keyword: #c5a0fa;
+  --code-string: #a0d6a2;
+  --code-number: #efb077;
+  --code-type: #8ccfe9;
+  --code-function: #b3b3ff;
+}
+
+.uui-code-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex: 0 0 auto;
+  height: 28px;
+}
+
+.uui-code-toolbar .button {
+  min-height: 24px;
+  padding: 0 0.3rem;
+  border: 0;
+  box-shadow: none;
+}
+
+.uui-code-status {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.uui-code-body {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+}
+
+.uui-code-editor .cm-editor {
+  height: 100%;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.uui-code-editor .cm-editor.cm-focused {
+  outline: none;
+}
+.uui-code-editor .cm-scroller {
+  overflow: auto;
+  font-family: monospace;
+}
+.uui-code-editor .cm-content {
+  caret-color: var(--text);
+}
+.uui-code-editor .cm-cursor {
+  border-left-color: var(--text);
+}
+.uui-code-editor .cm-gutters {
+  background: var(--surface);
+  color: var(--muted);
+  border-right-color: var(--border);
+}
+.uui-code-editor .cm-selectionBackground,
+.uui-code-editor .cm-focused .cm-selectionBackground {
+  background: var(--primary-soft);
+}
+.uui-code-editor .cm-selectionMatch {
+  background: var(--primary-soft);
+}
+.uui-code-editor .cm-tooltip {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border);
+}
+.uui-code-editor .cm-matchingBracket {
+  background: var(--primary-soft);
+}
+.uui-code-editor .uui-code-keyword {
+  color: var(--code-keyword);
+}
+.uui-code-editor .uui-code-string {
+  color: var(--code-string);
+}
+.uui-code-editor .uui-code-number {
+  color: var(--code-number);
+}
+.uui-code-editor .uui-code-type {
+  color: var(--code-type);
+}
+.uui-code-editor .uui-code-function {
+  color: var(--code-function);
+}
+.uui-code-editor .uui-code-comment {
+  color: var(--muted);
+  font-style: italic;
+}
+.uui-code-editor .uui-code-invalid {
+  color: var(--danger);
+}
+.uui-code-editor .uui-code-line-added {
+  background: var(--success-soft);
+}
+.uui-code-editor .uui-code-line-removed,
+.uui-code-editor .uui-code-line-error {
+  background: var(--danger-soft);
+}
+.uui-code-editor .uui-code-marker {
+  display: inline-flex;
+  align-items: center;
+  max-width: 12ch;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 0.85em;
+  padding-inline: 3px;
+}
+.uui-code-editor .uui-code-breakpoint,
+.uui-code-editor .uui-code-error,
+.uui-code-editor .uui-code-removed {
+  color: var(--danger);
+}
+.uui-code-editor .uui-code-added {
+  color: var(--success);
+}
+.uui-code-editor .uui-code-marker .material-icon {
+  font-size: 1em;
+}
+.uui-code-editor.uui-content-fullscreen {
+  height: auto;
+  padding: 12px;
+}
+
+.field[data-field-row-span="1"] .uui-code-editor:not(.uui-content-fullscreen) {
+  flex-direction: row-reverse;
+}
+
+.field[data-field-row-span="1"] .uui-code-editor:not(.uui-content-fullscreen) .uui-code-toolbar {
+  height: auto;
+}
+
+.field[data-field-row-span="1"] .uui-code-editor:not(.uui-content-fullscreen) .uui-code-status {
+  display: none;
+}

@@ -133,11 +133,68 @@ for a particular control.
 
 Tab visits fields, controls, and standalone buttons, skipping field-help icons
 and overflow ellipses. F2 clicks the focused element. F3 goes Back, closing the
-active modal before returning to a previous screen. F5/F6 loop backward/forward
-through editable fields, controls, and buttons in the active screen or modal.
-They skip read-only, disabled, hidden, and inert controls. From another focused
-element they move relative to its position; with no focus they select the first
-eligible control. These shortcuts use unmodified function keys.
+active modal before returning to a previous screen. Shift+F2/Shift+F3 loop
+backward/forward through editable fields, controls, and buttons in the active
+screen or modal. They skip read-only, disabled, hidden, and inert controls. From
+another focused element they move relative to its position; with no focus they
+select the first eligible control. F1–F4 otherwise use unmodified function keys.
+
+### Screen keyboard actions
+
+UUI field metadata and control declarations accept `enterEvent`, an optional
+non-empty event name (excluding reserved `back` and `uui.account`). Unmodified
+Enter on an editable native input dispatches that name as the ordinary
+`screen.event` action (`eventType: "action"`), with the current field value and
+all dirty model bindings through the existing interaction gate. Handle
+`event.action` exactly as for a button. Omitting it sends nothing; there is no
+boolean option or default event. Textareas, custom editors, selects, and radio
+groups retain their own Enter behavior. Composition and held keys do not
+dispatch additional actions. An explicitly named event can request a round trip
+even when a program does no work for that name.
+
+```ts
+const schema = z.object({
+  where: field(z.string(), { enterEvent: "run", shortcut: { key: "F5" } }),
+});
+const model = new Model({ where: "" });
+const event = await callScreen({
+  id: "query",
+  schema,
+  model,
+  actions: [{
+    id: "run",
+    label: "Execute",
+    shortcut: { key: "F6", control: true },
+  }],
+});
+if (event.action === "run") await executeQuery(model.data.where);
+```
+
+`shortcut` is available on fields, control declarations, and body/header
+actions. Its `key` is F5–F12; optional `control`, `alt`, and `shift` booleans
+match exactly (omitted means false). F1–F4 are reserved even with modifiers.
+Screen construction rejects duplicate combinations across body and header,
+including hidden controls. Separate screens and modals may reuse a combination.
+Buttons click their normal action; other controls focus their first eligible
+native/custom descendant, including read-only text. Lists focus their first
+eligible control. An explicit `{ type: "list", bind: "rows" }` layout uses the
+shortcut of its bound list control, just like an inferred list. A shortcut may
+identify only one placement: ambiguous bindings and repeated placements of a
+shortcut-bearing control are rejected. For repeated list bindings, declare
+separate list controls with distinct shortcuts and place them by ID in the
+layout's `controls`. Hidden, disabled, inert, detached, and inactive surfaces
+are excluded. The top native modal takes priority, including shell dialogs;
+closed header overflow stays hidden. Component handlers run first and may
+consume a key. Unhandled keys keep browser defaults. The shell installs one
+listener and reads the current DOM on each key.
+
+Browser/OS shortcuts can intercept function keys before a page receives them
+(for example browser refresh, fullscreen, or developer tools), and some
+keyboards require Fn. These declarations cannot guarantee interception on every
+platform. Chromium CDP checks exercise Enter, F5/F6, action keys, and a
+combined-modifier key; synthetic events check every supported combination and do
+not prove native OS interception. Keep ordinary clickable/focusable controls
+available.
 
 The optional `valueHelp` callback runs on the server. A **Value help** list
 below the value field opens with its standard search toolbar visible. Search
@@ -342,19 +399,100 @@ customElements: [{
 ```
 
 The browser module default-exports `mount(context)` using the browser-only types
-in `/p/the8020/uui/custom_element.ts`. The context supplies `host`, `config`, an
-abort `signal`, and `send(action, value)` through the owning screen's normal
-interaction gate. Return an object with optional `update`, `setActive`, and
+in `/p/the8020/uui/custom_element.ts`. The context supplies `host`, live
+`config`, an abort `signal`, `renderText` for text and `[[icon=...]]` markup,
+and `send(action, value)` through the owning screen's normal interaction gate.
+Return an object with optional `update`, `captureState`, `setActive`, and
 `dispose` methods. Async mounts must observe cancellation; a late returned
 instance is disposed automatically. The program owns the wrapper's contents,
 scoped CSS, dependencies, and any additional assets. Use content-hashed build
 filenames for immutable caching; unversioned files use ETag revalidation.
 
-Protocol version 8 adds independent list reads alongside custom-element modules
-and supports exact decimal list semantics and the `field-help` event, and
-carries `state` and element-specific `lists` in each screen snapshot. List
-bindings in the wire business `model` are empty arrays; displayed rows live
-exclusively in `lists[].rows`. Every interaction includes instance and
+Custom fields use the same descriptor in
+`field(schema, { custom: descriptor })`. The host exposes the current `control`,
+`value`, and `setValue(value)`; writes use ordinary dirty bindings and reactive
+change events, and read-only/hidden controls reject edits. `length` and
+`rowSpan` use the normal field grid. A component's `update` reads the current
+context after server redraws or another control changes the same binding.
+
+Define an agent fallback once in the component descriptor. Inputs and outputs
+address named paths relative to its bound value; `""` means the whole value.
+Outputs are read-only, and actions use the component's existing screen events:
+
+```ts
+fallback: {
+  inputs: [{ name: "input", path: "input", label: "Input", multiline: true }],
+  outputs: [{ name: "output", path: "output", label: "Output" }],
+  actions: [{ name: "run", label: "Run", event: "run" }],
+}
+```
+
+The code editor already supplies its `value` input. The sandbox's `uui` command
+can inspect it with `uui screen` and edit it with
+`uui set FIELD/value --file source.ts`. The shipped `the8020-dev-uui-control`
+skill documents session creation, commands, value help, and browser takeover
+through the URL returned by `uui url`.
+
+Every component can write presentation metadata through `context.state`, which
+is its entry in `model.screen.elements[id]`. Use `scroll` for its scroll offsets
+and `data` for component-specific JSON such as selection or expansion. `data`
+has a 32,768-character JSON limit, eight nesting levels, 128 properties per
+object, and 256 items per array. Built-in components use the same
+`screenElement(state, id)` accessor. Optional `captureState()` flushes pending
+local metadata before normal interactions and redraws. State survives redraw,
+navigation, and reload after synchronization; `Model.resetScreen()` clears it.
+Scroll never sends standalone network messages. Business values belong in the
+model rather than metadata.
+
+## Code editor
+
+```ts
+import { codeEditor, field, z } from "/p/the8020/uui/mod.ts";
+
+const schema = z.object({
+  source: field(z.string(), {
+    label: "Source",
+    custom: codeEditor({
+      language: "typescript",
+      markers: [{ line: 12, kind: "added", label: "+" }],
+    }),
+    length: "long",
+    rowSpan: 5,
+    readOnly: false,
+    reactive: false,
+  }),
+});
+```
+
+The optional [CodeMirror 6](https://codemirror.net/) component and its selected
+language load on demand from vendored shell assets. The checked-in browser
+bundles need no editor installation or CDN access at runtime; `vendor.sh` only
+refreshes dependencies during development. Supported modes are `text`,
+`javascript`, `typescript`, `jsx`, `tsx`, `json`, `html`, `css`, `sql`,
+`python`, `markdown`, `yaml`, `go`, `shell`, and `toml`. Structural diagnostics
+use the local parser, without resolving imports, types, or external symbols.
+Text, Markdown, SQL, Go, shell, and TOML have highlighting only.
+`syntaxCheck: false` disables checks; use it for partial source excerpts.
+Diagnostics do not block model submission or replace schema validation.
+
+The editor follows the UUI light/dark palette and includes Copy all, undo/redo,
+content fullscreen, and remembered scroll/selection. Tab retains native focus
+navigation. `wrap` enables line wrapping. `firstLine` offsets source-excerpt
+line numbers; `revealLine` selects the initial viewport until retained state
+exists. `markers` accepts one-based line numbers with `added`, `removed`,
+`error`, or `breakpoint` styling and optional gutter labels (including icon
+markup). Markers refer to displayed lines; callers supply diff or debugger data.
+The terminated program uses a read-only excerpt with original line numbers and
+an error marker. Program-owned custom modules can wrap the editor's default
+mount and use the returned `editor` (native `EditorView`) for commands and
+extensions; the vendored library exports the shared CodeMirror state/view
+primitives.
+
+Protocol version 9 supports model-bound custom fields, general component
+metadata, independent list reads, exact decimal list semantics, and the
+`field-help` event. Each screen snapshot carries `state` and element-specific
+`lists`. List bindings in the wire business `model` are empty arrays; displayed
+rows live exclusively in `lists[].rows`. Every interaction includes instance and
 screen/reset revisions plus presentation-only metadata. `screen.list` carries
 page/capacity/query requests, or an exclusive
 `{ read: { id, revision, offset, limit }, updates: [],

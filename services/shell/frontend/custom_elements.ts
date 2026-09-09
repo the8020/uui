@@ -1,10 +1,21 @@
-import type { CustomElementDescriptor } from "../../../protocol.ts";
+import type {
+  ControlDescriptor,
+  CustomElementDescriptor,
+  ScreenElementState,
+} from "../../../protocol.ts";
 import type {
   CustomElementInstance,
   MountCustomElement,
 } from "../../../custom_element.ts";
 import { validBrowserAssetURL } from "../../../browser_assets.ts";
 import { renderIconText } from "./icon_text.ts";
+
+interface HostCallbacks {
+  send(action: string, value?: unknown): void;
+  state(id: string): ScreenElementState;
+  value(control: ControlDescriptor): unknown;
+  change(control: ControlDescriptor, value: unknown): void;
+}
 
 interface Style {
   element: HTMLLinkElement;
@@ -56,17 +67,20 @@ class Entry {
   #config: Record<string, unknown>;
   #instance?: CustomElementInstance;
   #active: boolean;
+  #control?: ControlDescriptor;
   used = true;
   failed = false;
 
   constructor(
     descriptor: CustomElementDescriptor,
     active: boolean,
-    readonly send: (action: string, value?: unknown) => void,
+    readonly callbacks: HostCallbacks,
+    control?: ControlDescriptor,
   ) {
     this.signature = assetSignature(descriptor);
     this.#config = descriptor.config;
     this.#active = active;
+    this.#control = control;
     this.host.className = "custom-element-host";
     this.host.dataset.customElementId = descriptor.id;
     this.host.setAttribute("aria-busy", "true");
@@ -97,15 +111,39 @@ class Entry {
       );
     }
     const mountedConfig = this.#config;
+    // Live context getters follow updates to this retained entry.
+    // deno-lint-ignore no-this-alias
+    const entry = this;
     const instance = await module.default({
       host: this.host,
-      config: mountedConfig,
+      get config() {
+        return entry.#config;
+      },
+      get control() {
+        return entry.#control;
+      },
+      get value() {
+        return entry.#control === undefined
+          ? undefined
+          : entry.callbacks.value(entry.#control);
+      },
+      get state() {
+        return entry.callbacks.state(descriptor.id);
+      },
+      setValue: (value) => {
+        if (
+          !this.#lifetime.signal.aborted && this.#active &&
+          this.#control && !this.#control.readOnly && !this.#control.hidden
+        ) {
+          this.callbacks.change(this.#control, value);
+        }
+      },
       signal: this.#lifetime.signal,
       renderText: (target, text) =>
         renderIconText(target, text, { decorativeIcons: true }),
       send: (action, value) => {
         if (!this.#lifetime.signal.aborted && this.#active) {
-          this.send(action, value);
+          this.callbacks.send(action, value);
         }
       },
     });
@@ -125,8 +163,9 @@ class Entry {
     this.host.removeAttribute("aria-busy");
   }
 
-  update(config: Record<string, unknown>): void {
+  update(config: Record<string, unknown>, control?: ControlDescriptor): void {
     this.#config = config;
+    this.#control = control;
     try {
       this.#instance?.update?.(config);
     } catch (error) {
@@ -142,6 +181,20 @@ class Entry {
       this.#instance?.setActive?.(active);
     } catch (error) {
       this.#fail(error);
+    }
+  }
+
+  captureState(): void {
+    try {
+      this.#instance?.captureState?.();
+    } catch (error) {
+      this.#fail(error);
+    }
+  }
+
+  updateBinding(bind: string, source: string): void {
+    if (this.#control?.bind === bind && this.#control.id !== source) {
+      this.update(this.#config, this.#control);
     }
   }
 
@@ -187,14 +240,17 @@ function whileMounted<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
 export class CustomElementRenderer {
   readonly #entries = new Map<string, Entry>();
   #active = false;
-  #send: (action: string, value?: unknown) => void = () => {};
+  #callbacks!: HostCallbacks;
 
-  begin(send: (action: string, value?: unknown) => void): void {
-    this.#send = send;
+  begin(callbacks: HostCallbacks): void {
+    this.#callbacks = callbacks;
     for (const entry of this.#entries.values()) entry.used = false;
   }
 
-  render(descriptor: CustomElementDescriptor): HTMLElement {
+  render(
+    descriptor: CustomElementDescriptor,
+    control?: ControlDescriptor,
+  ): HTMLElement {
     let entry = this.#entries.get(descriptor.id);
     if (
       entry &&
@@ -209,10 +265,16 @@ export class CustomElementRenderer {
       entry = new Entry(
         descriptor,
         this.#active,
-        (action, value) => this.#send(action, value),
+        {
+          send: (action, value) => this.#callbacks.send(action, value),
+          state: (id) => this.#callbacks.state(id),
+          value: (field) => this.#callbacks.value(field),
+          change: (field, value) => this.#callbacks.change(field, value),
+        },
+        control,
       );
       this.#entries.set(descriptor.id, entry);
-    } else entry.update(descriptor.config);
+    } else entry.update(descriptor.config, control);
     return entry.host;
   }
 
@@ -221,6 +283,16 @@ export class CustomElementRenderer {
       if (entry.used) continue;
       entry.dispose();
       this.#entries.delete(id);
+    }
+  }
+
+  captureState(): void {
+    for (const entry of this.#entries.values()) entry.captureState();
+  }
+
+  updateBinding(bind: string, source: string): void {
+    for (const entry of this.#entries.values()) {
+      entry.updateBinding(bind, source);
     }
   }
 

@@ -135,6 +135,10 @@ let submitted: JobInput | undefined;
 let sessionLogReads = 0;
 const developmentCommands: string[] = [];
 let developmentActivated = false;
+let developmentConflicted = false;
+const developmentConflicts = new Set(["label.ts", "removed.ts"]);
+const conflictWorktree =
+  "/workspace/packages/.conflicts/0123456789abcdef01234567/example/testing";
 
 export async function runProgramsBrowser(root: string): Promise<void> {
   const programRoot = `${root}/packages/example/testing/programs/interactive`;
@@ -187,6 +191,7 @@ export async function runProgramsBrowser(root: string): Promise<void> {
       fullName TEXT NOT NULL DEFAULT '');
     CREATE TABLE the8020__users__sessions (
       sessionId TEXT PRIMARY KEY, username TEXT NOT NULL, authVersion INTEGER NOT NULL,
+      type TEXT NOT NULL DEFAULT 'username', transport TEXT NOT NULL DEFAULT 'remote',
       createdAt TEXT NOT NULL, expiresAt TEXT NOT NULL);
     CREATE TABLE the8020__uui__sessions (
       sessionId TEXT PRIMARY KEY, serviceId TEXT, persistentExecutionId TEXT, nodeId TEXT,
@@ -307,10 +312,85 @@ export async function runProgramsBrowser(root: string): Promise<void> {
         data.message === "Browser reviewed changes",
         "activation lost its commit message",
       );
+      if (developmentConflicts.size) {
+        developmentConflicted = true;
+        return Promise.resolve({
+          success: true,
+          result: {
+            activation: {
+              success: false,
+              status: "conflicted",
+              packages: [{
+                package_id: "example/testing",
+                conflict_worktree: conflictWorktree,
+              }],
+            },
+          },
+        });
+      }
       developmentActivated = true;
+      developmentConflicted = false;
       return Promise.resolve({
         success: true,
         result: { activation: { success: true, status: "complete" } },
+      });
+    }
+    if (name === "development.sandbox.shell") {
+      const command = (input.input as { command: string }).command;
+      const encoded = command.match(/printf %s '([A-Za-z0-9+/=]+)'/)?.[1];
+      assert(
+        typeof encoded === "string",
+        "conflict adapter must send a safely encoded request",
+      );
+      const request = JSON.parse(
+        new TextDecoder().decode(
+          Uint8Array.from(atob(encoded!), (value) => value.charCodeAt(0)),
+        ),
+      );
+      assert(
+        request.worktree === conflictWorktree,
+        "UI changed the activation worktree",
+      );
+      let result: unknown = { resolved: true };
+      if (request.action === "list") {
+        result = {
+          files: [...developmentConflicts].map((path) => ({
+            path,
+            kind: path === "removed.ts" ? "Deleted by you" : "Both changed",
+          })),
+        };
+      } else if (request.action === "read") {
+        result = {
+          path: request.path,
+          content:
+            "<<<<<<< HEAD\nconst label = 'private';\n||||||| original\nconst label = 'base';\n=======\nconst label = 'shared';\n>>>>>>> shared\n",
+          version: "fixture",
+          binary: false,
+          original: "const label = 'base';\n",
+          private: "const label = 'private';\n",
+          shared: "const label = 'shared';\n",
+          hasPrivate: request.path !== "removed.ts",
+          hasShared: true,
+        };
+      } else if (request.action === "save" || request.action === "delete") {
+        assert(request.version === "fixture", "UI lost the conflict version");
+        if (request.action === "save") {
+          assert(
+            request.content === "const label = 'resolved';\n",
+            "editor lost the resolution",
+          );
+        } else {assert(
+            request.path === "removed.ts",
+            "UI deleted the wrong conflict",
+          );}
+        developmentConflicts.delete(request.path);
+      } else {assert(
+          request.action === "finish" && developmentConflicts.size === 0,
+          "UI continued with unresolved conflicts",
+        );}
+      return Promise.resolve({
+        success: true,
+        result: { shell: { output: JSON.stringify(result) } },
       });
     }
     const packageResults: Record<string, unknown> = {
@@ -372,6 +452,20 @@ export async function runProgramsBrowser(root: string): Promise<void> {
           sandbox_id: "sbx-development01",
           state: "READY",
         }],
+      },
+      "development.sandbox.inspect": {
+        sandbox: {
+          last_activation_result: developmentConflicted
+            ? {
+              success: false,
+              status: "conflicted",
+              packages: [{
+                package_id: "example/testing",
+                conflict_worktree: conflictWorktree,
+              }],
+            }
+            : undefined,
+        },
       },
       "development.activate.preview": {
         preview: {
@@ -1092,8 +1186,25 @@ async function verifyDatabase(page: BrowserDriver): Promise<void> {
   await title(page, "Database tables");
   await button(page, "Back");
   await title(page, "Rows · people");
+  await wait(
+    page,
+    `document.querySelectorAll('[data-layout-id="rows"] tbody tr[data-row-index]').length === 2`,
+    "unfiltered table browse after initial list measurement",
+  );
   await input(page, "where", "name = 'Avery'");
-  await button(page, "Run query");
+  await wait(
+    page,
+    `(() => { const input = document.querySelector('[data-bind=where]'); if (!input || input.closest('[inert],[hidden]') || input.disabled || !input.checkVisibility()) return false; input.focus(); return document.activeElement === input; })()`,
+    "WHERE input ready for Enter",
+  );
+  for (const type of ["keyDown", "keyUp"]) {
+    await page.command("Input.dispatchKeyEvent", {
+      type,
+      key: "Enter",
+      code: "Enter",
+      windowsVirtualKeyCode: 13,
+    });
+  }
   await wait(
     page,
     `document.querySelectorAll('[data-layout-id="rows"] tbody tr[data-row-index]').length === 1`,
@@ -1183,6 +1294,45 @@ async function verifyDevelopment(page: BrowserDriver): Promise<void> {
   );
   await screenshot(page, "development-activation");
   await button(page, "Activate all changes");
+  try {
+    await title(page, "Resolve activation conflicts");
+  } catch (error) {
+    throw new Error(
+      `Conflict screen failed: ${await fieldValue(page, "status")}; ${error}`,
+    );
+  }
+  await wait(
+    page,
+    `document.querySelector('.presentation-page-layer:not([hidden]) .uui-code-line-added') !== null`,
+    "Git conflict line annotations",
+  );
+  await screenshot(page, "development-conflicts");
+  await page.evaluate(
+    `document.querySelector('.presentation-page-layer:not([hidden]) .uui-code-editor .cm-content[contenteditable="true"]').focus()`,
+  );
+  await page.command("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: "a",
+    code: "KeyA",
+    modifiers: 2,
+  });
+  await page.command("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: "a",
+    code: "KeyA",
+    modifiers: 2,
+  });
+  await page.command("Input.insertText", {
+    text: "const label = 'resolved';\n",
+  });
+  await button(page, "Save resolution");
+  await wait(
+    page,
+    `document.querySelector('.presentation-page-layer:not([hidden]) .screen-description')?.textContent.includes('removed.ts')`,
+    "next deletion conflict",
+  );
+  await button(page, "Delete file");
+  await button(page, "Continue activation");
   await wait(
     page,
     `document.querySelector('.presentation-page-layer:not([hidden]) [data-bind="status"]')?.value === 'No private changes'`,

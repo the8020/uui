@@ -10,8 +10,17 @@ Parent DOX: [uui/services DOX](../AGENTS.md).
   owns authored browser source.
 - The `.generated/` bundle and source map are build outputs from
   frontend/main.ts. Build minified JavaScript with an external source map.
+- Build the code editor entry separately in
+  `.generated/components/code-editor/`; its external vendored modules remain in
+  the frontend component folder. Neither editor code nor language dependencies
+  enter the main shell bundle.
 
 # Local Contracts
+
+- Authenticated `/sessions` lists at most 100 of the caller's UUI sessions.
+  `/control` checks ownership, invokes the exact persistent Worker's registered
+  control function, and returns a signed route only to its eligible controller.
+  These short requests remain on the ordinary stateless shell service.
 
 - `assets.ts` owns constrained browser asset delivery: content versions, ETags,
   304 responses, and a 32 MiB/128-entry cache of source bytes. Native file
@@ -32,6 +41,8 @@ Parent DOX: [uui/services DOX](../AGENTS.md).
 - Build from this repository's deno.json and keep runtime browser imports on the
   browser-safe protocol surface.
 - Theme preferences stay in browser storage and initialize before first paint.
+- The page nonce authorizes the theme initializer and trusted runtime-generated
+  styles, including CodeMirror's base styles; keep external assets same-origin.
 
 # Work Guidance
 

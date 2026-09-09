@@ -26,6 +26,11 @@ Deno.test("short dump preserves exception type, fields, stack, and source contex
   assertStringIncludes(dump.properties, "<circular>");
   assertStringIncludes(dump.location, "short_dump_test.ts:8:3");
   assertStringIncludes(dump.source, ">  8 |");
+  assertEquals(dump.sourceDocument?.firstLine, 3);
+  assertEquals(dump.sourceDocument?.line, 8);
+  assertEquals(dump.sourceDocument?.path, source);
+  const lines = (await Deno.readTextFile(source)).split("\n");
+  assertEquals(dump.sourceDocument?.text, lines.slice(2, 13).join("\n"));
   assertStringIncludes(dump.dumpText, "CALL STACK");
 });
 
@@ -42,4 +47,37 @@ Deno.test("short dump handles non-Error thrown values", async () => {
   assertEquals(dump.exceptionType, "Object");
   assertStringIncludes(dump.message, "plain object");
   assertEquals(dump.source, "Source location is unavailable.");
+});
+
+Deno.test("source truncation keeps original line numbers and rejects out-of-file locations", async () => {
+  const path = await Deno.makeTempFile({ suffix: ".ts" });
+  try {
+    await Deno.writeTextFile(
+      path,
+      `${"x".repeat(1500)}\nthrow new Error('failed');\n`,
+    );
+    const error = new Error("failed");
+    const input = {
+      exception: error,
+      programId: "the8020/uui/test",
+      entrypoint: path,
+      occurredAt: "2026-09-08T00:00:00Z",
+      homeProgram: "the8020/uui/home",
+      terminatedProgram: "the8020/uui/program-terminated",
+    };
+    error.stack = `Error: failed\n    at file://${path}:2:1`;
+    const dump = await buildShortDump(input);
+    assertEquals(dump.sourceDocument?.text.split("\n").length, 3);
+    assertEquals(
+      dump.sourceDocument?.text.split("\n")[1],
+      "throw new Error('failed');",
+    );
+    assertEquals(dump.sourceDocument?.line, 2);
+    error.stack = `Error: failed\n    at file://${path}:999:1`;
+    const unavailable = await buildShortDump(input);
+    assertEquals(unavailable.sourceDocument, undefined);
+    assertEquals(unavailable.source, "Source location is outside the file.");
+  } finally {
+    await Deno.remove(path);
+  }
 });

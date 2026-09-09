@@ -750,6 +750,12 @@ async function serve(request: Request): Promise<Response> {
       headers: { "the8020-route": routeToken },
     });
   }
+  if (request.method === "POST" && url.pathname === "/control") {
+    connectionRequests.push({ method: "CONTROL", route: routeToken });
+    const rejection = connectionRejection ?? establishmentResponses.shift();
+    if (rejection !== undefined) return new Response(null, rejection);
+    return Response.json({ active: true, control: 1, route: routeToken });
+  }
   if (request.method === "GET" && url.pathname === "/session") {
     if (url.searchParams.get("route") !== routeToken) {
       return new Response("invalid route", { status: 403 });
@@ -837,7 +843,7 @@ async function serve(request: Request): Promise<Response> {
 
 async function staticAsset(request: Request): Promise<Response | undefined> {
   const pathname = new URL(request.url).pathname;
-  const relative = pathname.replace(/^\/+/, "");
+  const relative = pathname.replace(/^\/(?:the8020\/uui\/shell\/)?/, "");
   if (
     relative.length === 0 ||
     !relative.split("/").every((part) =>
@@ -892,87 +898,65 @@ async function verifyConnectionFlow(page: BrowserPage): Promise<void> {
   };
   await connected();
 
-  // Lost executions are replaced through HTTP without reusing the stale route.
-  connectionRequests.length = 0;
-  const oldRoute = routeToken;
-  routeToken = "replacement-browser-route";
-  establishmentResponses.push({ status: 409 });
-  let previous = connectionSequence;
-  currentSocket!.close(1008, "execution lost");
-  await reconnected(previous);
-  assertEquals(connectionRequests, [
-    { method: "POST", route: oldRoute },
-    { method: "POST", route: null },
-    { method: "GET", route: routeToken },
-  ]);
-  assertEquals(await storedRoute(), routeToken);
-
-  // Transient establishment failure preserves both the route and dirty values.
+  // Reconnection resolves the same execution through the stateless control path.
   await setValue(page, '[data-bind="user"]', "pending edit");
   connectionRequests.length = 0;
   establishmentResponses.push({ status: 503 });
-  previous = connectionSequence;
+  let previous = connectionSequence;
   currentSocket!.close(1008, "retry admission");
   await reconnected(previous);
-  assertEquals(connectionRequests, [
-    { method: "POST", route: routeToken },
-    { method: "GET", route: routeToken },
+  assertEquals(connectionRequests.map((request) => request.method), [
+    "CONTROL",
+    "CONTROL",
+    "GET",
   ]);
   assertEquals(
-    await page.evaluate(
-      `document.querySelector('[data-bind="user"]')?.value`,
-    ),
+    await page.evaluate(`document.querySelector('[data-bind="user"]')?.value`),
     "pending edit",
   );
 
-  // The real service declaration supplies the same redirect for HTTP and upgrades.
+  routeToken = "renewed-route-to-the-same-execution";
+  previous = connectionSequence;
+  currentSocket!.close(1008, "refresh routing");
+  await reconnected(previous);
+  assertEquals(await storedRoute(), routeToken);
+
   const access = declaration(
     await Deno.readTextFile(
       new URL("./services/session/service.toml", import.meta.url),
     ),
   ).access;
   assertEquals(access.mode, "authenticated");
-  assertEquals(access.unauthenticated.action, "redirect");
   redirectTarget = access.unauthenticated.redirect_url!;
   connectionRejection = {
     status: access.unauthenticated.status,
     headers: { location: redirectTarget, "cache-control": "no-store" },
   };
-  connectionRequests.length = 0;
   currentSocket!.close(4000, "authentication expired");
   await redirected();
-  assertEquals(connectionRequests, [
-    { method: "GET", route: routeToken },
-    { method: "POST", route: routeToken },
-  ]);
 
-  // A fresh shell honors any server-selected destination, even an error page.
+  // Initial creation still follows the server's chosen authentication destination.
   redirectTarget = "/identity/continue?reason=expired";
   redirectPageStatus = 409;
   connectionRejection = {
     status: 303,
     headers: { location: redirectTarget, "cache-control": "no-store" },
   };
-  connectionRequests.length = 0;
   await page.command("Page.navigate", { url: origin });
   await redirected();
-  assertEquals(connectionRequests, [{ method: "POST", route: null }]);
 
-  // Authentication can fail between rejecting a stale route and creating its replacement.
   connectionRejection = undefined;
   await page.command("Page.navigate", { url: origin });
   await connected();
-  connectionRequests.length = 0;
-  establishmentResponses.push({ status: 409 }, {
-    status: 302,
-    headers: { location: redirectTarget, "cache-control": "no-store" },
-  });
+  previous = connectionSequence;
+  establishmentResponses.push({ status: 410 });
   currentSocket!.close(1008, "execution lost");
-  await redirected();
-  assertEquals(connectionRequests, [
-    { method: "POST", route: routeToken },
-    { method: "POST", route: null },
-  ]);
+  await waitForPage(
+    page,
+    `document.querySelector('.uui-control-dialog')?.open && document.querySelector('.uui-control-dialog')?.textContent.includes('ended')`,
+    "lost execution is not replayed",
+  );
+  assertEquals(connectionSequence, previous);
 }
 
 async function runNativeBackProgram(): Promise<void> {
@@ -1430,15 +1414,15 @@ async function verifyFieldHelp(page: BrowserPage): Promise<void> {
   );
   for (
     const [key, selector] of [
-      ["F6", "[data-element-id=done]"],
-      ["F6", ".uui-dialog-close"],
-      ["F6", "[data-bind=value]"],
-      ["F5", ".uui-dialog-close"],
-      ["F5", "[data-element-id=done]"],
-      ["F5", "[data-bind=value]"],
+      ["F3", "[data-element-id=done]"],
+      ["F3", ".uui-dialog-close"],
+      ["F3", "[data-bind=value]"],
+      ["F2", ".uui-dialog-close"],
+      ["F2", "[data-element-id=done]"],
+      ["F2", "[data-bind=value]"],
     ] as const
   ) {
-    await pressKey(page, key);
+    await pressKey(page, key, 8);
     assert(
       await page.evaluate<boolean>(
         `document.activeElement === document.querySelector('${modal} ${selector}')`,
@@ -1803,18 +1787,18 @@ async function verifyKeyboardNavigation(page: BrowserPage): Promise<void> {
       [note, "Tab", recorded],
       [recorded, "Tab", user],
       [note, "Tab", amount, 8],
-      ["", "F5", next],
-      ["", "F6", next],
-      [amount, "F5", next],
-      [next, "F5", user],
-      [user, "F6", next],
-      [next, "F6", amount],
-      [amount, "F6", note],
-      [note, "F5", amount],
-      [recorded, "F5", note],
-      [recorded, "F6", user],
-      [ellipsis, "F5", user],
-      [ellipsis, "F6", next],
+      ["", "F2", next, 8],
+      ["", "F3", next, 8],
+      [amount, "F2", next, 8],
+      [next, "F2", user, 8],
+      [user, "F3", next, 8],
+      [next, "F3", amount, 8],
+      [amount, "F3", note, 8],
+      [note, "F2", amount, 8],
+      [recorded, "F2", note, 8],
+      [recorded, "F3", user, 8],
+      [ellipsis, "F2", user, 8],
+      [ellipsis, "F3", next, 8],
     ] as const
   ) {
     await page.evaluate(
@@ -1845,12 +1829,12 @@ async function verifyKeyboardNavigation(page: BrowserPage): Promise<void> {
     await page.evaluate(
       `document.querySelector('${selector}').setAttribute('${attribute}', '${value}'); document.querySelector('${amount}').focus()`,
     );
-    await pressKey(page, "F6");
+    await pressKey(page, "F3", 8);
     assert(
       await page.evaluate<boolean>(
         `document.activeElement === document.querySelector('${user}')`,
       ),
-      `F6 skips ${attribute} controls`,
+      `Shift+F3 skips ${attribute} controls`,
     );
     await page.evaluate(
       `document.querySelector('${selector}').removeAttribute('${attribute}')`,

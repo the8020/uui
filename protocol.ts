@@ -52,6 +52,7 @@ export type UUIMessageType =
   | "session.resync_required"
   | "session.error"
   | "session.end"
+  | "session.open"
   | "session.logout"
   | "session.ping"
   | "session.pong"
@@ -70,6 +71,8 @@ export interface SessionConnectMessage {
   resumeToken: string | null;
   lastServerSequence: number;
   browser?: BrowserContext;
+  clientId?: string;
+  control?: number;
 }
 
 /** Browser-reported presentation metadata, never authentication or routing authority. */
@@ -217,6 +220,11 @@ export interface ClipboardWriteMessage extends ServerMessageBase {
   text: string;
 }
 
+export interface SessionOpenMessage extends ServerMessageBase {
+  type: "session.open";
+  targetSessionId: string;
+}
+
 export interface AcknowledgementMessage extends ServerMessageBase {
   type: "server.ack" | "client.ack";
   sessionId: string;
@@ -237,6 +245,7 @@ export type UUIServerMessage =
   | ScreenListDataMessage
   | NotificationMessage
   | ClipboardWriteMessage
+  | SessionOpenMessage
   | AcknowledgementMessage
   | PingMessage;
 
@@ -259,11 +268,46 @@ export type ControlKind =
   | "date"
   | "datetime"
   | "file"
+  | "custom"
   | "list";
 
 export type FieldLength = "short" | "medium" | "long";
 
 export const MAX_FIELD_ROW_SPAN = 8;
+
+/** Application keys; F1–F4 belong to the framework. */
+export interface KeyboardShortcut {
+  key: "F5" | "F6" | "F7" | "F8" | "F9" | "F10" | "F11" | "F12";
+  control?: boolean;
+  alt?: boolean;
+  shift?: boolean;
+}
+
+export function shortcutKey(shortcut: KeyboardShortcut): string {
+  return `${shortcut.control ? "Control+" : ""}${shortcut.alt ? "Alt+" : ""}${
+    shortcut.shift ? "Shift+" : ""
+  }${shortcut.key}`;
+}
+
+export function validateShortcut(
+  value: unknown,
+): asserts value is KeyboardShortcut | undefined {
+  if (value === undefined) return;
+  if (
+    !isRecord(value) || !/^F(?:[5-9]|1[0-2])$/.test(String(value.key)) ||
+    typeof value.key !== "string" ||
+    Object.keys(value).some((key) =>
+      !["key", "control", "alt", "shift"].includes(key)
+    ) ||
+    [value.control, value.alt, value.shift].some((flag) =>
+      flag !== undefined && typeof flag !== "boolean"
+    )
+  ) {
+    throw new TypeError(
+      "shortcut requires F5–F12 and optional boolean control, alt, shift modifiers",
+    );
+  }
+}
 
 export interface FieldDescriptor {
   bind: string;
@@ -279,14 +323,19 @@ export interface FieldDescriptor {
   required: boolean;
   placeholder?: string;
   reactive?: boolean;
+  enterEvent?: string;
+  shortcut?: KeyboardShortcut;
   minimum?: number;
   maximum?: number;
   step?: number;
   valueSuffix?: string;
   options?: FieldOption[];
   fieldHelp?: boolean;
+  valueHelp?: boolean;
   semanticType?: string;
   list?: ListOptions;
+  /** A model-bound instance of the ordinary custom-element host. */
+  custom?: CustomElementOptions;
 }
 
 export interface ControlDescriptor extends Partial<FieldDescriptor> {
@@ -299,6 +348,7 @@ export type ControlDeclaration = Omit<ControlDescriptor, "id"> & {
 };
 
 export interface ScreenAction {
+  shortcut?: KeyboardShortcut;
   id: string;
   label: string;
   kind?: "primary" | "secondary" | "danger";
@@ -320,13 +370,31 @@ export interface CustomElementDescriptor {
   styles?: string[];
   preserve?: boolean;
   config: Record<string, unknown>;
+  fallback?: CustomFallback;
+}
+
+/** Paths are relative to the component's bound value; an empty path is the value. */
+export interface CustomFallbackField {
+  name: string;
+  path: string;
+  label?: string;
+  description?: string;
+  multiline?: boolean;
+}
+
+export interface CustomFallback {
+  inputs?: CustomFallbackField[];
+  outputs?: CustomFallbackField[];
+  actions?: Array<{ name: string; label: string; event: string }>;
 }
 export type CustomElementDeclaration = Omit<CustomElementDescriptor, "id"> & {
   id?: string;
 };
+export type CustomElementOptions = Omit<CustomElementDescriptor, "id">;
 
 export interface ScreenSnapshot {
   id: string;
+  screenCall?: string;
   revision: number;
   title?: string;
   description?: string;
@@ -371,6 +439,7 @@ export type UUIWorkerOutbound =
     message: string;
   }
   | { type: "clipboard.write"; text: string }
+  | { type: "session.open"; targetSessionId: string }
   | { type: "server.ack"; clientSequence: number }
   | { type: "session.error"; code: string; message: string }
   | { type: "session.end"; message?: string; redirectUrl?: string };
@@ -385,6 +454,10 @@ export function parseClientMessage(value: unknown): UUIClientMessage {
   if (value.type === "session.connect") {
     if (
       value.resumeToken !== null && typeof value.resumeToken !== "string" ||
+      value.clientId !== undefined &&
+        (typeof value.clientId !== "string" ||
+          !/^[A-Za-z0-9_-]{1,64}$/.test(value.clientId)) ||
+      value.control !== undefined && !isSequence(value.control) ||
       !isSequence(value.lastServerSequence)
     ) throw new TypeError("invalid session.connect message");
     return {

@@ -17,6 +17,10 @@ Parent DOX: [uui DOX](../AGENTS.md).
   presentation hints.
 
 - Bound exception, stack, and source context before presenting recovery output.
+- Short dumps retain formatted copy text and expose a bounded raw source
+  document with its path, first line, and exception line for source viewers.
+- Stack location and canonical source-path formatting also supply `screenCall`
+  provenance for the shared screen engine.
 - Home tests retain manifest-driven filtering and silent program returns.
 
 # Work Guidance

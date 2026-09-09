@@ -1,4 +1,10 @@
 export { Model } from "./model.ts";
+export {
+  codeEditor,
+  type CodeEditorOptions,
+  type CodeLanguage,
+  type CodeLineMarker,
+} from "./services/shell/frontend/components/code-editor/mod.ts";
 export { type ListReader, queryValueHelp } from "./lists.ts";
 export { z } from "@the8020/http";
 export { validateCustomElements } from "./custom_elements.ts";
@@ -21,6 +27,7 @@ export {
   endSession,
   type ListPageScreenEvent,
   type ListQueryScreenEvent,
+  openSession,
   presentModal,
   presentPage,
   ScreenChannel,

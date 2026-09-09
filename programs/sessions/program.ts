@@ -4,6 +4,7 @@ import {
   callScreen,
   field,
   Model,
+  openSession,
   presentModal,
   presentPage,
   sendMessage,
@@ -15,6 +16,7 @@ import { sessionInfo } from "../../src/session_fields.ts";
 import type { SessionMetadata } from "../../session_metadata.ts";
 import Sessions from "../../tables/sessions.ts";
 import { username } from "/p/the8020/users/types/user.ts";
+import { currentUser } from "/p/the8020/users/mod.ts";
 import { serviceId } from "/p/the8020/services/types/service.ts";
 import { sandboxId, workerId } from "/p/the8020/admin-core/types/runtime.ts";
 
@@ -198,6 +200,10 @@ async function sessionDetail(
         actions: [
           { id: "refresh", label: "[[icon=refresh]] Refresh" },
           ...(!advanced ? [{ id: "advanced", label: "Advanced" }] : []),
+          ...(live.ok && !advanced &&
+              currentUser()?.id === metadata.authenticatedUserId
+            ? [{ id: "connect", label: "Connect" }]
+            : []),
           ...(live.ok && !advanced
             ? [{
               id: "terminate",
@@ -219,6 +225,10 @@ async function sessionDetail(
     if (event.action === "advanced") {
       await presentPage(() => sessionDetail(metadata, true));
     }
+    if (
+      event.action === "connect" &&
+      currentUser()?.id === metadata.authenticatedUserId
+    ) openSession(metadata.sessionId);
     if (event.action === "clean") {
       await removeMetadata(metadata.sessionId);
       sendMessage("Stale session metadata removed", "success");

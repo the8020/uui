@@ -1,3 +1,4 @@
+import { getPath, setPath } from "./bindings.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { z } from "@the8020/http";
 import { buildControls, buildFieldCatalog, schemaAtPath } from "./fields.ts";
@@ -5,7 +6,9 @@ import { validateCustomElements } from "./custom_elements.ts";
 import { resolveLayoutReferences, validateLayout } from "./layout.ts";
 import { type ListReader, ScreenLists, StaleListView } from "./lists.ts";
 import { Model } from "./model.ts";
-import { runFieldHelp } from "./field_help.ts";
+import { readValueHelp, runFieldHelp, valueHelpFor } from "./field_help.ts";
+import type { AgentOperation } from "./agent.ts";
+import { displayPath, locationFromStack } from "./src/short_dump.ts";
 import { explicitElementIDs, resolveElementIDs } from "./identifiers.ts";
 import {
   type ListChange,
@@ -39,8 +42,11 @@ import {
   ACCOUNT_EVENT,
   BACK_EVENT,
   MAX_UUI_MESSAGE_BODY_LENGTH,
+  shortcutKey,
   UUI_MESSAGE_KINDS,
+  UUI_PROTOCOL_VERSION,
   type UUIMessageKind,
+  validateShortcut,
 } from "./protocol.ts";
 
 interface ScreenEventBase {
@@ -137,6 +143,10 @@ interface ActiveScreenCall {
   readonly snapshot: () => ScreenSnapshot;
   readonly receive: (message: ScreenEventMessage | ScreenListMessage) => void;
   readonly open: (target: ControlDescriptor | typeof ACCOUNT_EVENT) => void;
+  readonly command: (
+    command: AgentOperation,
+    sequence: number,
+  ) => Promise<unknown>;
   readonly resolve: (event: ScreenEvent) => void;
   readonly reject: (error: unknown) => void;
   detachChannel?: () => void;
@@ -269,6 +279,12 @@ export function presentPage<T>(
 export async function callScreen<T extends z.ZodRawShape>(
   options: CallScreenOptions<T>,
 ): Promise<ScreenEvent> {
+  const source = locationFromStack(
+    new Error().stack?.split("\n").slice(2).join("\n") ?? "",
+  );
+  const screenCall = source
+    ? `${displayPath(source.path)}:${source.line}`
+    : undefined;
   const state = requireBoundSession();
   const surface = currentSurface(state);
   if (surface.pending !== undefined) {
@@ -333,6 +349,13 @@ export async function callScreen<T extends z.ZodRawShape>(
       );
   const controls = resolvedControls.slice(0, bodyDeclarations.length);
   const headerControls = resolvedControls.slice(bodyDeclarations.length);
+  for (const control of resolvedControls) {
+    if (control.control !== "list") {
+      control.valueHelp =
+        valueHelpFor(schemaAtPath(options.schema, control.bind)!, control) !==
+          undefined;
+    }
+  }
   const resolvedActions = resolveElementIDs(
     structuredClone([
       ...(options.actions ?? []),
@@ -342,12 +365,30 @@ export async function callScreen<T extends z.ZodRawShape>(
     "action",
     reserved,
   );
+  const shortcuts = new Set<string>();
+  for (const element of [...resolvedControls, ...resolvedActions]) {
+    validateShortcut(element.shortcut);
+    if (element.shortcut === undefined) continue;
+    const key = shortcutKey(element.shortcut);
+    if (shortcuts.has(key)) {
+      throw new TypeError(`duplicate screen shortcut ${key}`);
+    }
+    shortcuts.add(key);
+  }
   const actions = resolvedActions.slice(0, options.actions?.length ?? 0);
   const headerActions = resolvedActions.slice(options.actions?.length ?? 0);
   const customElements = validateCustomElements(
     options.customElements,
     reserved,
   );
+  if (
+    customElements.length +
+        resolvedControls.filter((control) => control.custom).length > 16
+  ) {
+    throw new TypeError(
+      "a screen supports at most 16 custom elements, including custom fields",
+    );
+  }
   const actionIDs = new Set<string>();
   for (const action of [...actions, ...headerActions]) {
     if (
@@ -402,6 +443,7 @@ export async function callScreen<T extends z.ZodRawShape>(
     const presented = lists.present(options.model.data);
     return {
       id: options.id,
+      screenCall,
       revision: screenRevision,
       title: options.title,
       description: options.description,
@@ -445,6 +487,189 @@ export async function callScreen<T extends z.ZodRawShape>(
       ),
     open: (target) => {
       void showRelated(target);
+    },
+    command: async (command, sequence) => {
+      if (command.op === "screen") return;
+      const current = snapshot();
+      const base = {
+        protocol: UUI_PROTOCOL_VERSION,
+        sessionId: state.channel.sessionId,
+        clientSequence: sequence,
+        surfaceId: surface.id,
+        screenId: call.screenId,
+        screenRevision: call.revision,
+        instanceId: current.state.instanceId,
+        screenState: {
+          version: current.state.version,
+          scroll: current.state.scroll,
+          elements: {},
+        },
+        changes: [] as ScreenChange[],
+      };
+      const dispatch = (
+        event: Partial<ScreenEventMessage> & { action: string },
+      ) =>
+        routeScreenMessage(state, {
+          ...base,
+          type: "screen.event",
+          eventType: "action",
+          ...event,
+        });
+      if (command.op === "back") {
+        return dispatch({ action: BACK_EVENT, eventType: BACK_EVENT });
+      }
+      if (command.op === "event") {
+        return dispatch({
+          action: command.action,
+          controlId: command.id,
+          value: command.value,
+        });
+      }
+      if (command.op === "select" || command.op === "list") {
+        const list = current.lists.find((item) => item.id === command.id);
+        if (!list) throw new TypeError(`Unknown list ${command.id}`);
+        if (command.op === "select") {
+          return dispatch({
+            action: "select",
+            eventType: "select",
+            selection: {
+              id: list.id,
+              revision: list.revision,
+              index: command.index,
+            },
+          });
+        }
+        const updates: import("./screen_state.ts").ListRequest[] = [];
+        if (command.search !== undefined) {
+          updates.push({
+            id: list.id,
+            revision: list.revision,
+            operation: "query",
+            query: { ...list.state.query, search: command.search },
+          });
+        }
+        if (command.pageSize !== undefined) {
+          updates.push({
+            id: list.id,
+            revision: list.revision,
+            operation: "capacity",
+            pageSize: command.pageSize,
+          });
+        }
+        if (command.page !== undefined) {
+          updates.push({
+            id: list.id,
+            revision: list.revision,
+            operation: "page",
+            page: command.page,
+          });
+        }
+        if (updates.length) {
+          routeScreenMessage(state, { ...base, type: "screen.list", updates });
+        }
+        return;
+      }
+      if (command.op === "click") {
+        const action = [...actions, ...headerActions].find((item) =>
+          item.id === command.id
+        );
+        if (action) return dispatch({ action: action.id });
+        for (
+          const custom of [
+            ...customElements,
+            ...resolvedControls.filter((control) =>
+              control.custom && !control.hidden
+            ).map((
+              control,
+            ) => ({ ...control.custom!, id: control.id })),
+          ]
+        ) {
+          const capability = custom.fallback?.actions?.find((action) =>
+            `${custom.id}/${action.name}` === command.id
+          );
+          if (capability) {
+            return dispatch({ action: capability.event, controlId: custom.id });
+          }
+        }
+        throw new TypeError(`Unknown button ${command.id}`);
+      }
+      const control = resolvedControls.find((control) =>
+        !control.hidden &&
+        (control.id === command.id ||
+          control.custom?.fallback?.inputs?.some((input) =>
+            `${control.id}/${input.name}` === command.id
+          ))
+      );
+      if (!control) throw new TypeError(`Unknown field ${command.id}`);
+      const schema = schemaAtPath(options.schema, control.bind)!;
+      if (command.op === "value-help") {
+        const provider = valueHelpFor(schema, control);
+        if (!provider) throw new TypeError(`No value help for ${command.id}`);
+        const page = await readValueHelp(provider, {
+          query: { search: command.search, filters: {}, sort: null },
+          offset: command.offset,
+          limit: command.limit,
+        });
+        return {
+          columns: buildFieldCatalog(page.schema).map((
+            { bind, label, description },
+          ) => ({ id: bind, label, description })),
+          rows: page.rows,
+          more: page.more,
+          total: page.totalItems,
+        };
+      }
+      if (command.op === "enter") {
+        if (control.readOnly || !control.enterEvent) {
+          throw new TypeError(`Enter is unavailable for ${command.id}`);
+        }
+        return dispatch({
+          action: control.enterEvent,
+          controlId: control.id,
+          bind: control.bind,
+          value: getPath(options.model.data, control.bind),
+        });
+      }
+      let value = command.value;
+      if (control.custom) {
+        const inputs = control.custom.fallback?.inputs ?? [];
+        const input = inputs.find((input) =>
+          `${control.id}/${input.name}` === command.id
+        ) ??
+          (inputs.length === 1 && inputs[0]!.path === ""
+            ? inputs[0]
+            : undefined);
+        if (!input) {
+          throw new TypeError(`Use a named input of ${control.id}`);
+        }
+        if (input.path !== "") {
+          value = structuredClone(getPath(options.model.data, control.bind));
+          setPath(value, input.path, command.value);
+        }
+      }
+      const changes = [{ bind: control.bind, controlId: control.id, value }];
+      if (control.reactive) {
+        return dispatch({
+          action: "change",
+          eventType: "change",
+          bind: control.bind,
+          controlId: control.id,
+          value,
+          changes,
+        });
+      }
+      applyChanges(
+        options.schema,
+        options.model.data,
+        changes,
+        lists,
+        [],
+        resolvedControls,
+      );
+      state.lastClientSequence = sequence;
+      state.channel.send({ type: "server.ack", clientSequence: sequence });
+      surface.snapshot = snapshot();
+      publishPresentation(state);
     },
     resolve: resolveResult,
     reject: rejectResult,
@@ -626,6 +851,16 @@ function requireBoundSession(): BoundSession {
   return boundSession;
 }
 
+/** The JSON transport uses the same live screen, validation and event dispatcher. */
+export async function commandScreen(
+  command: AgentOperation,
+  sequence: number,
+): Promise<unknown> {
+  const call = requireBoundSession().surfaces.at(-1)?.pending;
+  if (!call || call.settled) throw new Error("The screen is still working");
+  return await call.command(command, sequence);
+}
+
 function currentSurface(state: BoundSession): PresentationSurface {
   const stored = surfaceContext.getStore();
   if (stored === undefined) return state.root;
@@ -805,6 +1040,7 @@ function receiveScreenMessage<T extends z.ZodRawShape>(
       const element = screenElement(model.screen, id);
       element.scroll = structuredClone(update.scroll);
       element.toolbarOpen = update.toolbarOpen;
+      element.data = structuredClone(update.data);
       if (update.selectedTab !== undefined) {
         element.selectedTab = update.selectedTab;
       }
@@ -1041,6 +1277,17 @@ export function endSession(message?: string, redirectUrl?: string): void {
   boundSession.channel.send({ type: "session.end", message, redirectUrl });
 }
 
+/** Ask the browser to connect to another live session through the UUI shell. */
+export function openSession(sessionId: string): void {
+  if (boundSession === undefined) {
+    throw new Error("UUI session channel is not bound");
+  }
+  boundSession.channel.send({
+    type: "session.open",
+    targetSessionId: sessionId,
+  });
+}
+
 export function currentSessionId(): string {
   if (boundSession === undefined) {
     throw new Error("UUI session channel is not bound");
@@ -1094,32 +1341,4 @@ function applyChanges<T extends z.ZodRawShape>(
   for (const bind of changed) {
     setPath(model as Record<string, unknown>, bind, getPath(parsed, bind));
   }
-}
-
-function setPath(
-  target: Record<string, unknown>,
-  path: string,
-  value: unknown,
-): void {
-  const parts = path.split(".");
-  let current = target;
-  for (const part of parts.slice(0, -1)) {
-    const next = current[part];
-    if (next === null || typeof next !== "object" || Array.isArray(next)) {
-      throw new TypeError(`binding ${path} does not resolve to an object`);
-    }
-    current = next as Record<string, unknown>;
-  }
-  current[parts.at(-1)!] = value;
-}
-
-function getPath(target: Record<string, unknown>, path: string): unknown {
-  let current: unknown = target;
-  for (const part of path.split(".")) {
-    if (
-      current === null || typeof current !== "object" || Array.isArray(current)
-    ) return undefined;
-    current = (current as Record<string, unknown>)[part];
-  }
-  return current;
 }

@@ -104,6 +104,47 @@ Default section order:
 When the user requests a durable behavior change, record it here or in the
 relevant child AGENTS.md
 
+- Provide the code editor as a prebuilt custom field in its own shell component
+  folder. Vendor libraries, load only on demand, inherit field binding/sizing
+  and light/dark colors, and include copy/fullscreen plus optional line markers.
+- All components may keep bounded JSON presentation data in their screen element
+  metadata, synchronized with ordinary interactions; persistence is not
+  list-only.
+- UUI sessions must support creation, inspection, and control by external
+  clients without a browser. Agent clients connect to the backend session;
+  operating an existing frontend must not be a prerequisite.
+- Agent screen transcriptions preserve actual placement, including fields and
+  buttons in headers and field groups. Start with `screenCall`, the source path
+  and line of the actual `callScreen()` invocation; omit the program ID. Show
+  labels, descriptions, values, editability, and compact capabilities such as
+  `value-help: true`; keep bindings, raw events, and transport bookkeeping
+  inside the adapter. Ordinary commands address element IDs; raw event emission
+  is an escape hatch for agents that inspect the owning screen code.
+- Agent value-help commands query the field's value-help provider directly; they
+  do not open the field-help modal. Screen commands carry the observed revision
+  and return the latest transcription, including on stale rejection. A stale
+  warning explains `--force`, which may bypass the revision mismatch for the
+  same available target but never authorization or field validation.
+- Session discovery and attachment must serve ordinary UUI clients as well as
+  agents. Owners must be able to list and take over their live sessions while
+  retaining the original presentation and pending `callScreen()` promise. Keep
+  one active client connection per session. Displaced clients show a full
+  blurred, inert backdrop with a Take control button and receive no screen
+  updates. Preserve controller order so releasing control can return it to the
+  previous available client. Session timeout starts after the last active
+  connection disconnects. Keep authorization separate from controller identity
+  so future authorized administration can reuse takeover.
+- Prefer ordinary JSON request/response commands for sandbox agents, with
+  temporary client attachment and the existing persistent execution retained
+  after the request. Build on standard services, signed reconnection routes, and
+  registered Worker functions; UUI remains an ordinary persistent service.
+- Custom component definitions own their agent fallback: named inputs, outputs,
+  and actions, reused unchanged by every screen. Inputs/outputs address paths
+  relative to the bound value (`""` is the whole value); actions declare the
+  existing event. Object-valued custom fields remain one binding. Terminal
+  fallback is deferred. Component-specific terminal behavior stays with the
+  providing package.
+
 ## Child DOX Index
 
 This root retains repository-wide contracts and files outside the child scopes
@@ -190,6 +231,38 @@ below.
   program lifecycle, metadata, and registered Worker administration functions.
   The supervisor provides only generic persistent execution binding/completion,
   exact registered-function invocation, and physical WebSocket relay.
+- `POST /connect` also accepts `{program?, inputs?, browser?}` and returns
+  `the8020-session` with the ordinary signed route. Omitted program starts Home.
+  Headless creation starts the same program continuation as browser creation.
+- `agent.ts` projects the actual header/layout into compact YAML beginning with
+  `screenCall`, captured at `callScreen()` using shared stack-path parsing.
+  Expose IDs, values, labels/help, read-only status and value-help availability;
+  hide bindings/events, hidden fields/columns and password text. Lists include
+  up to 100 displayed rows and their selection indices; page for more.
+- `POST /command` uses the claimed client ticket and existing screen validation
+  and dispatch. `set` commits through the complete schema without resolving an
+  ordinary nonreactive screen; click/enter/custom actions resolve its original
+  promise. Direct value help shares the field-help provider reader. Every
+  accepted or rejected command returns a fresh transcript. Expected references
+  include presentation revision and surface/screen/model identity; `force` skips
+  only the revision check. Replayed snapshots do not advance revision.
+- Commands release control when their request finishes. After an event, wait up
+  to two seconds for the next interactive presentation, then return `busy` for
+  later inspection without repeating the action. Commands in progress prevent
+  competing claims. Responses include session completion and up to ten recent
+  notifications. Worker control functions never perform the screen command.
+- The shell resolves a session ID to its stored placement, checks its owner,
+  invokes `uui.session.control`, and signs a route using
+  `kernel.services.route`. Claims close the previous socket before ordinary
+  concurrency-one admission. The session keeps at most 16 client IDs in takeover
+  order; waiting clients refresh their presence through stateless polling and
+  expire after two minutes. Release/disconnect promotes the previous client;
+  polling never resets the disconnect grace. New sessions also start this grace
+  before their first client.
+- Browser URLs carry `?session=uis-...`. A missing execution remains
+  unavailable; a URL never recreates its program. Only the owner can attach
+  today; ownership checks are separate from client IDs and tickets.
+  `openSession()` asks the browser to navigate through this same shell path.
 - The handler atomically maintains one row per live session in
   `the8020__uui__sessions`, containing exact execution placement, authenticated
   user identity, lifecycle timestamps/state, latest kernel-observed client IP
@@ -246,13 +319,12 @@ below.
   bounded tail of completed frames remains until connection/page cleanup because
   native attachment registration has no DOM completion event. See `README.md`
   for the API, limits, and browser requirements.
-- Browser startup performs normal `POST /connect`, reads `the8020-route`, and
-  stores it only in `sessionStorage` under the WebSocket URL. It
-  opens/reconnects the standard `the8020.uui.v1` WebSocket with the same opaque
-  token as the `route` query parameter; invalid/lost routes are cleared and
-  re-established. A kernel restart may preserve the browser token after its
-  exact Worker is gone; the kernel returns `409`, and the shell replaces that
-  stale route automatically without a page reload. Transient establishment
+- Browser startup without a session ID performs normal `POST /connect`, reads
+  `the8020-session` and `the8020-route`, and records the session ID in its URL.
+  Existing session URLs resolve through the stateless shell control endpoint. It
+  opens/reconnects the standard `the8020.uui.v1` WebSocket using the signed
+  token as the `route` query parameter and a current client/control ticket. Lost
+  executions require starting a new session explicitly. Transient establishment
   failures stay inside the bounded reconnect loop rather than escaping as
   unhandled browser errors. HTTP redirects from establishment or recovery end
   reconnecting, clear the stored route, and navigate to the response URL before
@@ -353,6 +425,18 @@ below.
   Declared decimal storage supplies text controls with decimal input mode and
   exact decimal list semantics. Forms and help retain strings; sorting and
   comparison filters never convert monetary values to floating point.
+- UUI `enterEvent` is optional non-empty per-input action metadata; it is not a
+  boolean and has no default event. Native editable inputs dispatch the named
+  ordinary action with dirty values; textareas retain multiline behavior.
+  `KeyboardShortcut` descriptors on fields/controls/actions allow F5–F12 with
+  exact optional Control/Alt/Shift flags. Validate at field/control construction
+  and reject duplicate combinations across screen body/header before publishing.
+  Explicit list layouts inherit the bound control's shortcut. Layout reference
+  resolution rejects ambiguous shortcut bindings and repeated placement of a
+  shortcut-bearing control; repeated lists can use separate controls placed by
+  ID with distinct shortcuts. Lists without shortcuts retain existing placement.
+  Browser keyboard dispatch and focus remain owned by the browser child
+  contract.
 - Scalar fields expose a pencil or read-only Chevron Right button and
   focused-field F1/F4 help. The modal owns an isolated draft and keeps the
   caller Model and surface reserved. Only Done validates against the complete
@@ -390,16 +474,17 @@ below.
   references resolve to control IDs centrally, and each descriptor has one
   placement. Column IDs are list-local; framework DOM IDs also include surface
   and Model identity. Component internals remain owned by the providing package.
-- Protocol version 8 adds independent list reads alongside custom-element
-  modules and retains exact decimal list semantics and the validated
-  `field-help` screen event, and puts Model state and independent list snapshots
-  in each screen. Wire business list bindings contain empty arrays; displayed
-  values live exclusively in `screen.lists`. `ScreenLists` owns search/filter,
-  stable typed sort, pagination, and displayed-to-source mappings for explicit
-  and inferred lists. Views never reorder or truncate the source array. Mapping
-  validation checks the exact source identity, row order/content, and view
-  revision before applying a selection or edit. Stale views reject and publish a
-  fresh snapshot; invalid dirty edits change neither business nor screen state.
+- Protocol version 9 adds model-bound custom fields and general component
+  metadata to independent list reads alongside custom-element modules and
+  retains exact decimal list semantics and the validated `field-help` screen
+  event, and puts Model state and independent list snapshots in each screen.
+  Wire business list bindings contain empty arrays; displayed values live
+  exclusively in `screen.lists`. `ScreenLists` owns search/filter, stable typed
+  sort, pagination, and displayed-to-source mappings for explicit and inferred
+  lists. Views never reorder or truncate the source array. Mapping validation
+  checks the exact source identity, row order/content, and view revision before
+  applying a selection or edit. Stale views reject and publish a fresh snapshot;
+  invalid dirty edits change neither business nor screen state.
 - `screen.list` carries bounded page, query, or browser-measured capacity
   requests on the existing WebSocket. Queries reset only their list to page 1.
   Default queries remain inside the pending call; `triggerFilterEvents: true`
@@ -430,6 +515,11 @@ below.
   updates. Browser-local positions survive redraw and surface/instance returns;
   reload needs only the last synchronized position. Persistence ends with the
   live Worker. A new Model starts at the top even on an existing surface.
+- `ScreenElementState.data` is bounded component-owned JSON, available to every
+  component. Custom contexts expose current state, control/value, and
+  `setValue`; custom fields use ordinary schema validation, read-only checks,
+  dirty edits, reactivity, and field geometry. Custom state captures run before
+  interactions.
 - Browser lists measure a bounded row capacity from page/modal and card
   geometry, including toolbar, headers, footer, and horizontal scrollbar. The
   first snapshot has one measurement row; there is no fixed 25-row default.
@@ -650,10 +740,16 @@ below.
   CSS, assets, and behavior. Never put a terminal or another program-specific
   implementation in the shell bundle or a framework initializer registry.
 - Descriptors contain same-origin `module` URLs, optional `styles`, bounded JSON
-  `config`, and optional `preserve`. Modules default-export the browser-only
-  `custom_element.ts` mount contract. Styles finish loading before mount;
-  asynchronous removal aborts the signal and disposes late instances. Preserved
-  elements receive updates and presentation activity without DOM replacement.
+  `config`, optional `preserve`, and optional component-owned `fallback`
+  capabilities. Modules default-export the browser-only `custom_element.ts`
+  mount contract. Styles finish loading before mount; asynchronous removal
+  aborts the signal and disposes late instances. Preserved elements receive
+  updates and presentation activity without DOM replacement.
+- The prebuilt `codeEditor()` descriptor lives in the shell's standalone code
+  editor folder and uses this same host as a model-bound field. Its CodeMirror
+  dependencies and language chunks are vendored and loaded on demand. Local
+  parser diagnostics never resolve external references. The terminated program
+  uses read-only source excerpts with original line numbers and error markers.
 - Custom-element hosts expose `renderText(target, text)` for the shared plain
   text/Material icon renderer. `uui-content-fullscreen` is a generic CSS hook
   for filling the content viewport; the shell measures `--uui-content-top` from
@@ -673,7 +769,9 @@ below.
   the Apache-2.0 license and pinned source for the local Material Symbols font.
   It also records the MIT Tabulator and Apache-2.0 SheetJS dependencies,
   vendored inside the list component and loaded only for its data tools. Program
-  component dependency notices remain in their owning packages.
+  component dependency notices remain in their owning packages. The optional
+  CodeMirror/Lezer editor dependency licenses are retained in the code editor's
+  vendor folder and indexed in the root notices.
 - Reload resume synchronizes the Worker-acknowledged client sequence before a
   new event is emitted, preventing post-reload actions from being mistaken for
   duplicates.
@@ -715,9 +813,10 @@ below.
   conditional-request, and HEAD behavior. See the shell service DOX for scope.
 - `deno task test:connection-browser` uses the existing Chromium harness to
   cover the session manifest's login redirect after a rejected reconnect,
-  redirects during initial establishment and stale-route replacement, terminal
-  navigation without further connection attempts, and transient recovery with
-  retained dirty values. Redirected error pages remain navigation outcomes.
+  redirects during initial establishment and session lookup, missing execution
+  handling without recreation, terminal navigation without further connection
+  attempts, and transient recovery with retained dirty values. Redirected error
+  pages remain navigation outcomes.
 - `deno task test:presentation-browser` covers page/modal restoration and exact
   field heights and underlines across desktop, tablet, and mobile widths,
   including default one-row textareas and explicit multiple-row controls.
@@ -832,6 +931,10 @@ below.
   shared interaction helpers. The default UUI scenario remains the default;
   fixture runs share exception checks and bounded teardown and add no
   application behavior to the runtime.
+- `--fixture=./agent_native_fixture.ts` verifies the real sandbox CLI, code
+  editor fallback, direct value help, browser takeover/automatic return, exact
+  Worker retention, cross-node routing, and local allowance
+  rejection/revocation.
 - `presentation_browser_e2e.ts` is the focused presentation-stack browser
   harness. It serves the built shell, connects it to the real UUI session engine
   over a local WebSocket, and verifies page/modal stacking, exact hidden layer
@@ -846,10 +949,14 @@ below.
   unit-test glob. Pass `--browser=/path/to/chromium` when Chromium is not at the
   default path. `--field-help` focuses on field help, all local icon glyphs,
   Chevron Right sizing, and editing after an identical retained snapshot.
+- The Programs browser suite checks the development conflict screen with the
+  existing code editor, Git line annotations, saved text, file deletion, and
+  activation continuation. Its kernel replies are deterministic doubles; the
+  development native fixture verifies the adapter against real Git state.
   Keyboard checks cover Tab exclusions, F2 clicks, F3 dialog/page Back, and
-  F5/F6 editable-control looping and relative focus in the active surface.
-  `--programs --runtime` focuses the program suite through service configuration
-  and Sandbox/Worker navigation.
+  Shift+F2/Shift+F3 editable-control looping and relative focus in the active
+  surface. `--programs --runtime` focuses the program suite through service
+  configuration and Sandbox/Worker navigation.
 - The presentation harness accepts `--fixture=<module>` for package-owned
   browser checks. The module's default factory receives the temporary root and
   returns `run`, `serve`, `verify`, and `close`; `verify` receives the browser
@@ -888,3 +995,8 @@ below.
   reload in the middle, repeated home Back, and unchanged history entry IDs.
   Read assertions disable CDP userGesture so they cannot mask Chromium's history
   manipulation intervention. Xvfb and xdotool are test-only dependencies.
+
+- `deno task test:keyboard-browser` runs the focused keyboard fixture through
+  the real browser/session boundary, including explicit and inferred list
+  shortcuts; the Programs browser suite waits for the WHERE input's interaction
+  gate before verifying Enter through the existing database row-browser action.

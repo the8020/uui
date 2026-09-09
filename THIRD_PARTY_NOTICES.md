@@ -1,5 +1,16 @@
 # Third-party notices
 
+The optional code editor uses [CodeMirror 6](https://codemirror.net/) and Lezer
+under the MIT license. The shell vendors its core, JavaScript/TypeScript/JSX,
+JSON, HTML, CSS, Python, SQL, Markdown, YAML, Go, shell, and TOML modules.
+Pinned direct versions are in
+[`library.ts`](services/shell/frontend/components/code-editor/library.ts), and
+the complete dependency versions and integrity hashes are in `deno.lock`.
+[`vendor/LICENSES.txt`](services/shell/frontend/components/code-editor/vendor/LICENSES.txt)
+retains every dependency's license and copyright notice. Run the component's
+`vendor.sh` to regenerate the split browser bundles and notices from those
+packages. The editor and selected language load only when used.
+
 The browser bundle includes `markdown-it` 14.1.0 and its browser-reachable
 `linkify-it` 5.0.2, `mdurl` 2.1.0, `punycode.js` 2.3.1, and `uc.micro` 2.1.0
 dependencies under the MIT license.

@@ -44,7 +44,14 @@ export const shortDumpFields = z.object({
   programId,
   entrypoint: sourceInfo.shape.entrypoint,
 });
-export type ShortDump = z.infer<typeof shortDumpFields>;
+export type ShortDump = z.infer<typeof shortDumpFields> & {
+  sourceDocument?: {
+    text: string;
+    firstLine: number;
+    line: number;
+    path: string;
+  };
+};
 
 export const copyStatus = field(z.string(), {
   label: "Copy status",
@@ -74,9 +81,10 @@ export async function buildShortDump(
     : `${
       displayPath(sourceLocation.path)
     }:${sourceLocation.line}:${sourceLocation.column}`;
-  const source = sourceLocation === undefined
+  const context = sourceLocation === undefined
     ? "Source location is unavailable."
     : await sourceContext(sourceLocation);
+  const source = typeof context === "string" ? context : context.formatted;
   const properties = bounded(inspectException(input.exception));
   const entrypoint = displayPath(input.entrypoint) || "Unavailable";
   const dumpText = bounded([
@@ -108,6 +116,9 @@ export async function buildShortDump(
     stack,
     source,
     dumpText,
+    ...(typeof context === "string"
+      ? {}
+      : { sourceDocument: context.document }),
   };
 }
 
@@ -185,7 +196,7 @@ function formatValue(
   return `{ ${entries.join(", ")} }`;
 }
 
-function locationFromStack(stack: string): SourceLocation | undefined {
+export function locationFromStack(stack: string): SourceLocation | undefined {
   const pattern = /((?:file:\/\/)?\/[^\s()]+):(\d+):(\d+)/g;
   for (const match of stack.matchAll(pattern)) {
     const path = filePath(match[1]!);
@@ -214,27 +225,43 @@ function filePath(value: string): string {
   return value.startsWith("/") ? value : "";
 }
 
-function displayPath(value: string): string {
+export function displayPath(value: string): string {
   const path = filePath(value);
   const prefix = "/workspace/packages/";
   if (path.startsWith(prefix)) return path.slice(prefix.length);
   return path;
 }
 
-async function sourceContext(location: SourceLocation): Promise<string> {
+async function sourceContext(location: SourceLocation): Promise<
+  string | {
+    formatted: string;
+    document: NonNullable<ShortDump["sourceDocument"]>;
+  }
+> {
   try {
     const source = await Deno.readTextFile(location.path);
     const lines = source.split("\n");
     const first = Math.max(1, location.line - 5);
     const last = Math.min(lines.length, location.line + 5);
+    if (first > last) return "Source location is outside the file.";
     const width = String(last).length;
-    return Array.from({ length: last - first + 1 }, (_, offset) => {
+    const excerpt = lines.slice(first - 1, last).map((line) =>
+      line.slice(0, 1_000) + (line.length > 1_000 ? " … truncated …" : "")
+    );
+    const formatted = excerpt.map((text, offset) => {
       const number = first + offset;
       const marker = number === location.line ? ">" : " ";
-      return `${marker} ${String(number).padStart(width)} | ${
-        bounded(lines[number - 1] ?? "", 1_000)
-      }`;
+      return `${marker} ${String(number).padStart(width)} | ${text}`;
     }).join("\n");
+    return {
+      formatted,
+      document: {
+        text: excerpt.join("\n"),
+        firstLine: first,
+        line: location.line,
+        path: location.path,
+      },
+    };
   } catch (error) {
     return `Source could not be read: ${exceptionMessage(error)}`;
   }

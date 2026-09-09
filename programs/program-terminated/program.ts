@@ -1,6 +1,8 @@
 import {
   BACK_EVENT,
   callScreen,
+  codeEditor,
+  type CodeLanguage,
   copyText,
   endSession,
   field,
@@ -46,17 +48,20 @@ const TerminationScreen = z.object({
   copyStatus: field(copyStatus, { readOnly: true }),
   stack: field(shortDumpFields.shape.stack, {
     length: "long",
-    control: "textarea",
+    custom: codeEditor(),
+    rowSpan: 5,
     readOnly: true,
   }),
   source: field(shortDumpFields.shape.source, {
     length: "long",
-    control: "textarea",
+    custom: codeEditor({ syntaxCheck: false }),
+    rowSpan: 5,
     readOnly: true,
   }),
   dumpText: field(shortDumpFields.shape.dumpText, {
     length: "long",
-    control: "textarea",
+    custom: codeEditor(),
+    rowSpan: 5,
     readOnly: true,
   }),
 });
@@ -65,8 +70,23 @@ export default async function programTerminated(
   input: TerminatedProgramInput,
 ): Promise<"home" | "end"> {
   assertInput(input);
-  const dump = await buildShortDump(input);
-  const model = { ...dump, copyStatus: "" };
+  const { sourceDocument, ...dump } = await buildShortDump(input);
+  const model = {
+    ...dump,
+    source: sourceDocument?.text ?? dump.source,
+    copyStatus: "",
+  };
+  const extension = sourceDocument?.path.split(".").at(-1)?.toLowerCase() ?? "";
+  const language: CodeLanguage = ({
+    ts: "typescript",
+    tsx: "tsx",
+    js: "javascript",
+    mjs: "javascript",
+    jsx: "jsx",
+    json: "json",
+    go: "go",
+    py: "python",
+  } as Record<string, CodeLanguage>)[extension] ?? "text";
   const screenModel = new Model(model);
   while (true) {
     screenModel.data = model;
@@ -88,7 +108,22 @@ export default async function programTerminated(
         { id: "occurred-at", bind: "occurredAt" },
         { id: "copy-status", bind: "copyStatus" },
         { id: "stack", bind: "stack" },
-        { id: "source", bind: "source" },
+        {
+          id: "source",
+          bind: "source",
+          custom: codeEditor({
+            language,
+            syntaxCheck: false,
+            firstLine: sourceDocument?.firstLine,
+            revealLine: sourceDocument?.line,
+            markers: sourceDocument
+              ? [{
+                line: sourceDocument.line,
+                kind: "error",
+              }]
+              : [],
+          }),
+        },
         { id: "dump-text", bind: "dumpText" },
       ],
       header: {

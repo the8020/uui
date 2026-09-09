@@ -7,14 +7,10 @@ import { callScreen, presentPage, sendMessage } from "./session.ts";
 import type { ValueHelpPage, ValueHelpRequest } from "/p/the8020/db/fields.ts";
 import { initialListState, screenElement } from "./screen_state.ts";
 
-/** An isolated draft: only Done commits through the caller's complete schema. */
-export async function runFieldHelp(
-  schema: z.ZodType,
-  control: ControlDescriptor,
-  binding: { get(): unknown; set(value: unknown): void },
-): Promise<void> {
+/** Shared provider selection for field help and direct agent value-help queries. */
+export function valueHelpFor(schema: z.ZodType, control: ControlDescriptor) {
   const metadata = fieldMetadata(schema);
-  const valueHelp = control.readOnly ? undefined : metadata?.valueHelp ??
+  return control.readOnly ? undefined : metadata?.valueHelp ??
     (control.options === undefined
       ? undefined
       : (request: ValueHelpRequest) =>
@@ -29,6 +25,40 @@ export async function runFieldHelp(
           control.options!.map(({ value, label }) => ({ value, label })),
           request,
         ));
+}
+
+export async function readValueHelp(
+  provider: NonNullable<ReturnType<typeof valueHelpFor>>,
+  request: ValueHelpRequest,
+): Promise<ValueHelpPage> {
+  const result = await provider(request);
+  if (
+    !(result.schema instanceof z.ZodObject) ||
+    Object.keys(result.schema.shape).length === 0
+  ) {
+    throw new TypeError(
+      "Value help requires a row schema with a selection key first",
+    );
+  }
+  if (
+    !Array.isArray(result.rows) || result.rows.length > request.limit ||
+    typeof result.more !== "boolean"
+  ) {
+    throw new TypeError(
+      "Value help returned an invalid page or more than the requested limit",
+    );
+  }
+  return { ...result, rows: result.schema.array().parse(result.rows) };
+}
+
+/** An isolated draft: only Done commits through the caller's complete schema. */
+export async function runFieldHelp(
+  schema: z.ZodType,
+  control: ControlDescriptor,
+  binding: { get(): unknown; set(value: unknown): void },
+): Promise<void> {
+  const metadata = fieldMetadata(schema);
+  const valueHelp = valueHelpFor(schema, control);
   let rowSchema: z.ZodObject = z.object({});
   const model = new Model({
     value: structuredClone(binding.get()),
@@ -57,26 +87,8 @@ export async function runFieldHelp(
       );
     }
   };
-  const read = async (request: ValueHelpRequest): Promise<ValueHelpPage> => {
-    const result = await valueHelp!(request);
-    if (
-      !(result.schema instanceof z.ZodObject) ||
-      Object.keys(result.schema.shape).length === 0
-    ) {
-      throw new TypeError(
-        "Value help requires a row schema with a selection key first",
-      );
-    }
-    if (
-      !Array.isArray(result.rows) || result.rows.length > request.limit ||
-      typeof result.more !== "boolean"
-    ) {
-      throw new TypeError(
-        "Value help returned an invalid page or more than the requested limit",
-      );
-    }
-    return { ...result, rows: result.schema.array().parse(result.rows) };
-  };
+  const read = (request: ValueHelpRequest) =>
+    readValueHelp(valueHelp!, request);
   await load();
   while (true) {
     const event = await callScreen({
