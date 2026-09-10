@@ -3544,14 +3544,9 @@ async function prepareWorkspaces(
       `${options.runtimeRoot}/node/kernel/runtime/images/development`,
       `${root}/node/kernel/runtime/images/development`,
     );
-    await Deno.mkdir(`${root}/node/kernel/bin`, { recursive: true });
-    await linkFile(
-      `${options.runtimeRoot}/node/kernel/bin/runsc`,
-      `${root}/node/kernel/bin/runsc`,
-    );
     await linkTree(
-      `${options.runtimeRoot}/node/kernel/bin/gvisor-bin`,
-      `${root}/node/kernel/bin/gvisor-bin`,
+      `${options.runtimeRoot}/node/kernel/bin`,
+      `${root}/node/kernel/bin`,
     );
   }
   const manifest = await Deno.readTextFile(

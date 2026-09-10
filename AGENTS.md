@@ -906,25 +906,26 @@ below.
   visibly rendered mouse selection, confirmed source and factory reset controls
   with preserved source-reset identity and a fresh canonical sandbox identity
   after factory reset, development activation preview statistics,
-  required-message validation, independent package commits, and clean overlay
-  reset, per-session theme persistence and future-tab theme inheritance, dark
-  and light reload initialization before first paint, responsive two/four-group
-  layouts, semantic field lengths, reserved hinted/unhinted supporting-message
-  alignment, accessible full-hint popovers, and source-ordered multi-row field
-  placement including its message slot at desktop/tablet/mobile widths,
-  persistent standard Back navigation, header action/control rendering, one-row
-  right-to-left responsive hiding, synchronized browser titles, vertical
-  overflow disclosure, and mobile viewport-edge clamping; an open disclosure
-  remains open across responsive refits while overflow is still required. It
-  also covers modal stacking/focus/inertness, modal-local headers, Escape and
-  browser-Back routing, page-over-modal suspension, later-page reload and exact
-  continuation restoration, dirty background redraws, immediate rapid-event
-  suppression and delayed loading feedback, direct home-list invocation, the
-  summary-only core-admin package list and selected package manifest/Git/content
-  detail with vertically spaced content cards and service clickthrough, live
-  database catalog list/detail/synchronization through the DB package, the
-  core-admin service/sandbox lists and linked details, the package-owned UUI
-  session list/detail with exact-Worker inspection, bounded log, stale cleanup,
+  required-message validation, independent package commits, and process
+  preservation, per-session theme persistence and future-tab theme inheritance,
+  dark and light reload initialization before first paint, responsive
+  two/four-group layouts, semantic field lengths, reserved hinted/unhinted
+  supporting-message alignment, accessible full-hint popovers, and
+  source-ordered multi-row field placement including its message slot at
+  desktop/tablet/mobile widths, persistent standard Back navigation, header
+  action/control rendering, one-row right-to-left responsive hiding,
+  synchronized browser titles, vertical overflow disclosure, and mobile
+  viewport-edge clamping; an open disclosure remains open across responsive
+  refits while overflow is still required. It also covers modal
+  stacking/focus/inertness, modal-local headers, Escape and browser-Back
+  routing, page-over-modal suspension, later-page reload and exact continuation
+  restoration, dirty background redraws, immediate rapid-event suppression and
+  delayed loading feedback, direct home-list invocation, the summary-only
+  core-admin package list and selected package manifest/Git/content detail with
+  vertically spaced content cards and service clickthrough, live database
+  catalog list/detail/synchronization through the DB package, the core-admin
+  service/sandbox lists and linked details, the package-owned UUI session
+  list/detail with exact-Worker inspection, bounded log, stale cleanup,
   termination, and session-service clickthrough, authorized service
   enable/disable and capacity changes including percentage sliders, nested
   demos, dirty reconnect, reload resume, semantic and asynchronous messages,
@@ -939,7 +940,8 @@ below.
   table evaluation and ordinary per-package index jobs. Enabled `IDLE` services
   are accepted before first-request lazy provisioning, staged rootfs fixtures
   dereference symlinks only through a component-wise resolver contained by the
-  source root, and process cleanup is time-bounded.
+  source root, and process cleanup is time-bounded. Stage the complete native
+  `bin/` owner so its relative sentry alias resolves to the same runsc engine.
 - The native browser harness accepts `--fixture=<module>` to run a package's
   default-exported scenario after its normal node setup and real login. The
   `NativeBrowserFixtureContext` supplies the browser, disposable node
