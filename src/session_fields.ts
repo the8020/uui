@@ -1,4 +1,4 @@
-import { field, z } from "/p/the8020/db/fields.ts";
+import { choiceHelp, field, z } from "/p/the8020/db/fields.ts";
 import { accountInfo } from "/p/the8020/users/types/user.ts";
 import { runtimeInfo } from "/p/the8020/admin-core/types/runtime.ts";
 
@@ -12,6 +12,13 @@ export const sessionInfo = z.object({
     label: "Status",
     description:
       "The latest connection or lifecycle status of this UUI session. Unavailable means the live execution could not be reached.",
+    valueHelp: choiceHelp(z.string(), [
+      "CONNECTED",
+      "DISCONNECTED",
+      "ENDED",
+      "STALE",
+      "Unavailable",
+    ]),
   }),
   latestIpAddress: field(z.string(), {
     label: "Latest IP address",
@@ -21,6 +28,13 @@ export const sessionInfo = z.object({
     label: "Network scope",
     description:
       "Whether the most recent client address is loopback, private, link-local, public, or special-use.",
+    valueHelp: choiceHelp(z.string(), [
+      "loopback",
+      "private",
+      "link_local",
+      "public",
+      "special",
+    ]),
   }),
   persistentExecutionId: field(z.string(), {
     label: "Persistent execution",

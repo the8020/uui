@@ -846,21 +846,23 @@ below.
   password-mismatch clearing, authenticated self-targeting, password
   replacement, profile cancellation, and pending configuration drafts across My
   account, enable/disable, Advanced confirmation, user-filtered UUI sessions,
-  and shared user-field record navigation at desktop/mobile widths.
-  Program/package clickthrough covers the compact overview, Advanced, row/tag
-  version selection, and a package credential opening the real empty secret
-  editor through shared help. Package tests cover Home filtering and silent
-  returns. The same fixture covers service settings/draft retention and Service
-  → Sandbox → Worker navigation, with desktop and mobile inspection. It covers a
-  selected session older than 200 unrelated rows, exact refresh, lazy Advanced
-  message logs, sandbox clickthrough, and cancelling session termination.
-  Database coverage includes compact/Advanced/field views, related tables, table
-  help in SQL, executing the prepared SELECT, and row filtering with return
-  navigation. Development coverage checks the combined settings group, SSH
-  subtitle, reset confirmation, activation validation, changed-file navigation
-  with edit/add/remove icons, lazily loaded read-only code-editor diffs
-  including deletion and binary notices, retained draft messages, and console
-  DOM preservation without starting a real sandbox.
+  and shared user-field record navigation at desktop/mobile widths. Service
+  status help checks searchable known states, read-only values, and returning to
+  the original overview. Program/package clickthrough covers the compact
+  overview, Advanced, row/tag version selection, and a package credential
+  opening the real empty secret editor through shared help. Package tests cover
+  Home filtering and silent returns. The same fixture covers service
+  settings/draft retention and Service → Sandbox → Worker navigation, with
+  desktop and mobile inspection. It covers a selected session older than 200
+  unrelated rows, exact refresh, lazy Advanced message logs, sandbox
+  clickthrough, and cancelling session termination. Database coverage includes
+  compact/Advanced/field views, related tables, table help in SQL, executing the
+  prepared SELECT, and row filtering with return navigation. Development
+  coverage checks the combined settings group, SSH subtitle, reset confirmation,
+  activation validation, changed-file navigation with edit/add/remove icons,
+  lazily loaded read-only code-editor diffs including deletion and binary
+  notices, retained draft messages, and console DOM preservation without
+  starting a real sandbox.
 - Deno checks cover all services/programs, including login template/error
   injection and constrained static asset routing. UUI and frontend tests cover
   discovery and containment failures, dynamic/default-export loading, static and

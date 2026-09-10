@@ -15,6 +15,8 @@ Parent DOX: [uui DOX](../AGENTS.md).
 - `session_fields.ts` owns reusable UUI-session labels and help. `short_dump.ts`
   also owns the short-dump field schema; standard programs add only their
   presentation hints.
+- Session lifecycle and client network-scope fields offer known choices while
+  retaining open diagnostic strings.
 
 - Bound exception, stack, and source context before presenting recovery output.
 - Short dumps retain formatted copy text and expose a bounded raw source

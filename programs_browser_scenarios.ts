@@ -1015,6 +1015,26 @@ async function verifyRuntime(page: BrowserDriver): Promise<void> {
     mobile: false,
   });
   await title(page, "Service api");
+  await button(page, "View Status: field help");
+  await title(page, "Status");
+  await searchHelp(page, "PENDING_CAPACITY");
+  await wait(
+    page,
+    `document.querySelector('[data-layout-id="choices"]')?.textContent.includes('PENDING_CAPACITY')`,
+    "known service states",
+  );
+  assert(
+    await fieldValue(page, "value") === "READY",
+    "status help changed the read-only value",
+  );
+  assert(
+    await page.evaluate<boolean>(
+      `![...document.querySelectorAll('button')].filter(button => button.getClientRects().length).some(button => button.textContent.trim() === 'Done')`,
+    ),
+    "read-only status help offers editing",
+  );
+  await button(page, "Close");
+  await title(page, "Service api");
   assert(
     await page.evaluate<boolean>(
       `!document.querySelector('[data-bind="minimumWorkers"]') && !document.querySelector('[data-bind="desiredVersion"]')`,
