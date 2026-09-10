@@ -852,9 +852,10 @@ below.
   overview, Advanced, row/tag version selection, and a package credential
   opening the real empty secret editor through shared help. Package tests cover
   Home filtering and silent returns. The same fixture covers service
-  settings/draft retention and Service → Sandbox → Worker navigation, with
-  desktop and mobile inspection. It covers a selected session older than 200
-  unrelated rows, exact refresh, lazy Advanced message logs, sandbox
+  settings/draft retention, ordered visibility controls, Public/Private saves
+  through SQLite and the services indexer, and Service → Sandbox → Worker
+  navigation at desktop/mobile widths. It covers a selected session older than
+  200 unrelated rows, exact refresh, lazy Advanced message logs, sandbox
   clickthrough, and cancelling session termination. Database coverage includes
   compact/Advanced/field views, related tables, table help in SQL, executing the
   prepared SELECT, and row filtering with return navigation. Development

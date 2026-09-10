@@ -5,6 +5,7 @@ import {
   type LogPage,
   type LogQuery,
   type ProgramSummary,
+  type ServiceIndexState,
 } from "@the8020/kernel";
 import { installContextProvider } from "../kernel/defaults/config/runtime/deno/context/runtime.ts";
 import type { JobInput, JobRun } from "/p/the8020/jobs/src/types.ts";
@@ -240,6 +241,81 @@ export async function runProgramsBrowser(root: string): Promise<void> {
       'robot', '', 1, 1, '2026-09-01T10:00:00.000Z', '2026-09-01T10:00:00.000Z');
   `);
   globals[kernelDatabaseBackendSymbol] = "sqlite";
+  const { descriptorOf } = await import("/p/the8020/db/mod.ts");
+  for (
+    const module of [
+      "services/tables/services",
+      "services/tables/overrides",
+      "services/tables/versions",
+      "system/tables/revisions",
+      "system/tables/settings",
+      "packages/tables/packages",
+    ]
+  ) {
+    const descriptor = descriptorOf(
+      (await import(`/p/the8020/${module}.ts`)).default,
+    );
+    const columns = descriptor.columns.map((column) =>
+      `"${column.name}" ${
+        ["integer", "boolean"].includes(column.logical_type)
+          ? "INTEGER"
+          : column.logical_type === "float"
+          ? "REAL"
+          : "TEXT"
+      }`
+    );
+    columns.push(
+      `PRIMARY KEY (${
+        descriptor.primary_key.map((key) => `"${key}"`).join(",")
+      })`,
+    );
+    database.exec(
+      `CREATE TABLE "${descriptor.table_id}" (${columns.join(",")})`,
+    );
+  }
+  database.exec(
+    `INSERT INTO the8020__packages__packages (packageId, state, activeCommit) VALUES ('example/testing', 'ready', 'abc123')`,
+  );
+  const serviceRoot = `${root}/packages/example/testing/services/api`;
+  await Deno.mkdir(serviceRoot, { recursive: true });
+  await Deno.writeTextFile(`${serviceRoot}/service.ts`, "export default {};");
+  await Deno.writeTextFile(
+    `${serviceRoot}/service.toml`,
+    `schema = 2
+description = "Example API"
+[lifecycle]
+default_enabled = true
+session_keep_alive = "30m"
+[execution]
+anonymous_user = "robot"
+[scaling]
+maximum_workers = 8
+concurrency_per_worker = 4
+worker_keep_alive = "30s"
+`,
+  );
+  async function publishService() {
+    const { buildIndex } = await import("/p/the8020/services/src/indexing.ts");
+    const state: ServiceIndexState = {
+      packages: { "example/testing": { services: [] } },
+    };
+    await buildIndex(state, {
+      packages: [{
+        package_id: "example/testing",
+        package_commit: "abc123",
+        active: true,
+      }],
+    }, new URL(`file://${root}/packages/`));
+    const fragment = state.packages["example/testing"]!;
+    assert(!fragment.error, fragment.error ?? "service indexing failed");
+    const service = fragment.services[0]!;
+    runtimeService.access_mode = service.access.mode;
+    runtimeService.enabled = service.enabled;
+    runtimeService.service_type = service.configuration.lifecycle.service_type;
+    runtimeService.effective_configuration = service.configuration;
+    runtimeService.desired_version = runtimeService.loaded_version = service
+      .version;
+  }
   globals[kernelInvokeSymbol] = ((operation, input) => {
     if (operation === "worker.invoke") {
       assert(
@@ -312,6 +388,18 @@ export async function runProgramsBrowser(root: string): Promise<void> {
     const name = String(
       operation === "admin.execute" ? input.command_id : input.operation,
     );
+    if (name === "kernel.reindex") {
+      assert(
+        (input.arguments as { packages: string }).packages ===
+          "example/testing",
+        "service publication must target its package",
+      );
+      return publishService().then(() => ({
+        protocol_version: 2,
+        success: true,
+        result: {},
+      }));
+    }
     if (name === "program.list") {
       return Promise.resolve({
         success: true,
@@ -615,6 +703,7 @@ export async function runProgramsBrowser(root: string): Promise<void> {
     }
     throw new Error(`Unexpected browser fixture operation ${name}`);
   }) satisfies KernelInvoke;
+  await publishService();
   const restoreContext = installContextProvider(() => ({
     authenticated: true,
     type: "service",
@@ -1044,6 +1133,20 @@ async function verifyRuntime(page: BrowserDriver): Promise<void> {
   await screenshot(page, "service-detail");
   await button(page, "Configure");
   await title(page, "Configure api");
+  assert(
+    await page.evaluate<string>(
+      `JSON.stringify([...document.querySelector('.layout-field-group').querySelectorAll('[data-bind]')].map(input => input.dataset.bind))`,
+    ) ===
+      JSON.stringify(["enabled", "accessMode", "anonymousUser", "serviceType"]),
+    "the first service group must order enabled, visibility, user, and service type",
+  );
+  assert(
+    await page.evaluate<string>(
+      `JSON.stringify([...document.querySelector('[data-bind="accessMode"]').options].map(option => [option.value, option.textContent]))`,
+    ) === JSON.stringify([["public", "Public"], ["authenticated", "Private"]]),
+    "visibility must offer Public and Private",
+  );
+  await input(page, "accessMode", "authenticated");
   await input(page, "minimumWorkers", "2");
   await input(page, "serviceType", "session");
   await wait(
@@ -1064,6 +1167,7 @@ async function verifyRuntime(page: BrowserDriver): Promise<void> {
   await title(page, "Configure api");
   assert(
     await fieldValue(page, "minimumWorkers") === "2" &&
+      await fieldValue(page, "accessMode") === "authenticated" &&
       await fieldValue(page, "sessionKeepAlive") === "45m" &&
       await fieldValue(page, "targetUtilization") === "65.5",
     "My account lost the pending configuration draft",
@@ -1116,8 +1220,39 @@ async function verifyRuntime(page: BrowserDriver): Promise<void> {
     `document.body.innerText.includes('Maximum Workers must be zero or at least Minimum Workers.')`,
     "invalid capacity feedback",
   );
+  assert(
+    runtimeService.access_mode === "public",
+    "invalid settings changed visibility",
+  );
+  await input(page, "maximumWorkers", "8");
+  await button(page, "Save settings");
+  await title(page, "Service api");
+  assert(
+    await fieldValue(page, "accessMode") === "authenticated",
+    "saved Private visibility was not published",
+  );
+  await button(page, "Configure");
+  await title(page, "Configure api");
+  assert(
+    await fieldValue(page, "accessMode") === "authenticated",
+    "reopening lost Private visibility",
+  );
+  await input(page, "accessMode", "public");
+  await button(page, "Save settings");
+  await title(page, "Service api");
+  assert(
+    await fieldValue(page, "accessMode") === "public",
+    "saved Public visibility was not published",
+  );
+  await button(page, "Configure");
+  await title(page, "Configure api");
+  await input(page, "accessMode", "authenticated");
   await button(page, "Back");
   await title(page, "Service api");
+  assert(
+    await fieldValue(page, "accessMode") === "public",
+    "Back saved the visibility draft",
+  );
   await row(page, "sbx-runtime001");
   await title(page, "Sandbox sbx-runtime001");
   assert(
