@@ -244,6 +244,10 @@ export async function runProgramsBrowser(root: string): Promise<void> {
   const { descriptorOf } = await import("/p/the8020/db/mod.ts");
   for (
     const module of [
+      "auth/tables/roles",
+      "auth/tables/user_roles",
+      "auth/tables/role_includes",
+      "auth/tables/failures",
       "services/tables/services",
       "services/tables/overrides",
       "services/tables/versions",
@@ -276,6 +280,9 @@ export async function runProgramsBrowser(root: string): Promise<void> {
   database.exec(
     `INSERT INTO the8020__packages__packages (packageId, state, activeCommit) VALUES ('example/testing', 'ready', 'abc123')`,
   );
+  database.prepare(
+    "INSERT INTO the8020__auth__roles (name, description, permissions) VALUES (?, ?, ?)",
+  ).run("robot", "Browser administrator", JSON.stringify({ "*": "*" }));
   const serviceRoot = `${root}/packages/example/testing/services/api`;
   await Deno.mkdir(serviceRoot, { recursive: true });
   await Deno.writeTextFile(`${serviceRoot}/service.ts`, "export default {};");
