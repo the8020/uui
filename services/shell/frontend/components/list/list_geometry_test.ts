@@ -4,9 +4,9 @@ import { listColumnWidths, listRowCapacity } from "./list_geometry.ts";
 Deno.test("list capacity only budgets pagination when the source needs it", () => {
   // Exactly ten rows fit without a footer; reserving it would create a page
   // solely to hold that footer and could oscillate on each resize observation.
-  assertEquals(listRowCapacity(521, 64, 0, 73, 36, 10, 46), 10);
-  assertEquals(listRowCapacity(521, 64, 0, 73, 36, 11, 46), 8);
-  assertEquals(listRowCapacity(521, 64, 0, 73, 36, 0, 46), 10);
+  assertEquals(listRowCapacity(433, 73, 36, 10, 46), 10);
+  assertEquals(listRowCapacity(433, 73, 36, 11, 46), 8);
+  assertEquals(listRowCapacity(433, 73, 36, 0, 46), 10);
 });
 
 Deno.test("list data columns use the full viewport without a tools column", () => {

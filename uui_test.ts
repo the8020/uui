@@ -1,8 +1,9 @@
+import { agentOperation, transcribe } from "./agent.ts";
 import { queryValueHelp } from "./lists.ts";
 import { type ListQuery, type ValueHelpRequest } from "/p/the8020/db/fields.ts";
 import { Model } from "./model.ts";
 import { assertEquals, assertRejects, assertThrows } from "@std/assert";
-import { z } from "zod";
+import { z } from "/p/the8020/db/fields.ts";
 import { validateCustomElements } from "./custom_elements.ts";
 import { validScreenStateUpdate } from "./screen_state.ts";
 import { codeEditor } from "./services/shell/frontend/components/code-editor/mod.ts";
@@ -30,6 +31,7 @@ import {
 import {
   bindSession,
   callScreen,
+  commandScreen,
   copyText,
   presentModal,
   presentPage,
@@ -2353,6 +2355,162 @@ Deno.test("list reads use the pending screen channel without committing edits or
     assertEquals(settled, false);
     channel.push(eventFor(shown, "done", 2));
     await pending;
+  } finally {
+    unbind();
+  }
+});
+
+Deno.test("list toolbars share controls, identities and atomic whole-table selection", async () => {
+  const channel = new TestChannel();
+  const unbind = bindSession(channel);
+  const schema = z.object({
+    note: z.string().min(1),
+    rows: z.array(
+      z.object({ id: z.number(), flags: z.object({ selected: z.boolean() }) }),
+    ),
+  });
+  const model = new Model({
+    note: "before",
+    rows: Array.from(
+      { length: 12 },
+      (_, id) => ({ id, flags: { selected: false } }),
+    ),
+  });
+  const options = {
+    id: "selection",
+    schema,
+    model,
+    layout: {
+      schema: 1,
+      id: "main",
+      root: {
+        type: "list",
+        id: "rows",
+        bind: "rows",
+        key: "id",
+        display: ["id"],
+        selection: "flags.selected",
+        toolbar: [
+          { id: "note", bind: "note", shortcut: { key: "F6" } },
+          { type: "separator" },
+          { id: "save", label: "Save" },
+        ],
+      },
+    },
+  };
+  try {
+    const pending = callScreen(options);
+    let settled = false;
+    pending.then(() => settled = true, () => {});
+    let shown = lastPresentation(channel);
+    let list = topScreen(shown).lists[0]!;
+    assertEquals(list.toolbar?.map((item) => item.id), [
+      "note",
+      list.toolbar![1]!.id,
+      "save",
+    ]);
+    assertEquals(
+      Object.keys(topScreen(shown).state.elements).includes("save"),
+      true,
+    );
+    assertEquals(list.selection, { bind: "flags.selected", selectedItems: 0 });
+    let sequence = 0;
+    const request = async (
+      update: Record<string, unknown>,
+      changes: Array<{ bind: string; value: unknown }> = [],
+    ) => {
+      shown = lastPresentation(channel);
+      list = topScreen(shown).lists[0]!;
+      channel.push(parseClientMessage({
+        ...eventFor(shown, "", ++sequence),
+        type: "screen.list",
+        updates: [{ id: list.id, revision: list.revision, ...update }],
+        changes,
+      }));
+      await flushMicrotasks();
+    };
+    await request({ operation: "capacity", pageSize: 3 });
+    await request({ operation: "page", page: 2 });
+    await request({ operation: "selection", selected: true }, [{
+      bind: "note",
+      value: "",
+    }]);
+    assertEquals(model.data.rows.some((row) => row.flags.selected), false);
+    assertEquals(model.data.note, "before");
+    await request({ operation: "selection", selected: true }, [{
+      bind: "note",
+      value: "after",
+    }]);
+    assertEquals(model.data.rows.every((row) => row.flags.selected), true);
+    assertEquals(model.data.note, "after");
+    assertEquals(topScreen(lastPresentation(channel)).lists[0]!.state.page, 2);
+    assertEquals(settled, false);
+    await request({ operation: "selection", selected: false });
+    await request({
+      operation: "query",
+      query: {
+        search: "",
+        filters: { id: ">= 3" },
+        sort: { column: "id", direction: "desc" },
+      },
+    });
+    await request({
+      operation: "selection",
+      selected: true,
+      range: { from: 1, to: 4 },
+    });
+    assertEquals(
+      model.data.rows.filter((row) => row.flags.selected).map((row) => row.id),
+      [7, 8, 9, 10],
+    );
+    await request({ operation: "selection", selected: true });
+    assertEquals(
+      model.data.rows.filter((row) => row.flags.selected).length,
+      12,
+    );
+    const stale = topScreen(lastPresentation(channel)).lists[0]!;
+    model.data.rows.reverse();
+    await request({
+      operation: "selection",
+      selected: false,
+      revision: stale.revision,
+    });
+    assertEquals(model.data.rows.every((row) => row.flags.selected), true);
+    await commandScreen(
+      agentOperation.parse({
+        op: "list",
+        id: "rows",
+        selection: { selected: false, range: { from: 0, to: 1 } },
+      }),
+      ++sequence,
+    );
+    assertEquals(
+      model.data.rows.filter((row) => row.flags.selected).length,
+      10,
+    );
+    const transcript = transcribe(lastPresentation(channel).presentation);
+    assertEquals(transcript.includes('button: "save"'), true);
+    assertEquals(transcript.includes("flags.selected"), false);
+    await commandScreen({ op: "click", id: "save" }, ++sequence);
+    assertEquals((await pending).action, "save");
+    await assertRejects(
+      () =>
+        callScreen({
+          ...options,
+          header: { actions: [{ id: "save", label: "Duplicate" }] },
+        }),
+      TypeError,
+      "duplicate",
+    );
+    await assertRejects(
+      () =>
+        callScreen({
+          ...options,
+          header: { controls: [{ bind: "note", shortcut: { key: "F6" } }] },
+        }),
+      TypeError,
+      "duplicate screen shortcut",
+    );
   } finally {
     unbind();
   }

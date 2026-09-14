@@ -1,19 +1,15 @@
-// The public loader is imported under other packages' and the runtime's maps.
-// deno-lint-ignore no-import-prefix
-import { parse } from "npm:smol-toml@1.8.0";
+import {
+  type ProgramManifest,
+  readProgramManifest,
+} from "/p/the8020/packages/programs.ts";
+export {
+  type ProgramManifest,
+  readProgramManifest,
+} from "/p/the8020/packages/programs.ts";
 
 export interface DiscoveredProgram {
   id: string;
   description: string;
-}
-
-export interface ProgramManifest {
-  schema: 1;
-  description: string;
-  entrypoint: string;
-  defaultLayout?: string;
-  discoverable: boolean;
-  uui: boolean;
 }
 
 export interface TerminatedProgramInput {
@@ -123,58 +119,6 @@ export async function invokeProgram(
   }
 }
 
-export async function readProgramManifest(
-  path: string,
-): Promise<ProgramManifest> {
-  const text = await Deno.readTextFile(path);
-  let source: Record<string, unknown>;
-  try {
-    source = parse(text, { integersAsBigInt: true });
-  } catch (cause) {
-    throw new TypeError(`invalid program manifest ${path}`, { cause });
-  }
-  const {
-    schema,
-    description,
-    entrypoint: declaredEntrypoint = "program.ts",
-    default_layout: defaultLayout,
-    discoverable = true,
-    uui = false,
-  } = source;
-  const entrypoint = declaredEntrypoint === ""
-    ? "program.ts"
-    : declaredEntrypoint;
-  if (
-    schema !== 1n || typeof description !== "string" ||
-    description.trim().length === 0 || typeof entrypoint !== "string" ||
-    !safeRelativePath(entrypoint) || typeof discoverable !== "boolean" ||
-    typeof uui !== "boolean" ||
-    (defaultLayout !== undefined &&
-      (typeof defaultLayout !== "string" ||
-        (defaultLayout !== "" && !safeRelativePath(defaultLayout)))) ||
-    Object.keys(source).some((key) =>
-      ![
-        "schema",
-        "description",
-        "entrypoint",
-        "default_layout",
-        "discoverable",
-        "uui",
-      ].includes(key)
-    )
-  ) {
-    throw new TypeError(`invalid program manifest ${path}`);
-  }
-  return {
-    schema: 1,
-    description,
-    entrypoint,
-    defaultLayout: defaultLayout || undefined,
-    discoverable,
-    uui,
-  };
-}
-
 export function validProgramID(value: string): boolean {
   const parts = value.split("/");
   return parts.length === 3 && parts.every(validSegment);
@@ -183,12 +127,6 @@ export function validProgramID(value: string): boolean {
 function validSegment(value: string | undefined): value is string {
   return value !== undefined && value !== "." && value !== ".." &&
     segmentPattern.test(value);
-}
-
-function safeRelativePath(value: string): boolean {
-  return value.length > 0 && !value.startsWith("/") && !value.includes("\\") &&
-    !value.includes("\0") &&
-    value.split("/").every((part) => validSegment(part));
 }
 
 function beneath(path: string, root: string): boolean {

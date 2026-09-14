@@ -33,6 +33,7 @@ import {
   changesForBindings,
   disposeFieldMessages,
   type RenderCallbacks,
+  renderElements,
   renderScreen,
   renderScreenHeader,
   synchronizeBinding,
@@ -1050,6 +1051,7 @@ function renderLayer(layer: PresentationLayer): void {
     layer.viewState,
     `${layer.surfaceId}-${layer.viewState.instanceId}`,
     {
+      elements: (elements) => renderElements(elements, layer.model, callbacks),
       request: (updates) => requestLists(layer, updates),
       select: (selection) => selectListRow(layer, selection),
       read: (read, signal) =>

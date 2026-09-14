@@ -8,6 +8,7 @@ import {
   type ScreenListSnapshot,
   type ScreenState,
 } from "../../../../../screen_state.ts";
+import type { ScreenElement } from "../../../../../protocol.ts";
 import { listValueText } from "../../../../../list_values.ts";
 import { AnchoredPopover } from "../../popover.ts";
 import {
@@ -21,6 +22,7 @@ import { listColumnWidths, listRowCapacity } from "./list_geometry.ts";
 import { getPath, paginationItems } from "../../model.ts";
 
 export interface ListCallbacks extends ListToolCallbacks {
+  elements(elements: ScreenElement[]): HTMLElement[];
   request(updates: ListRequest[]): boolean;
   select(selection: ListSelection): void;
 }
@@ -152,6 +154,8 @@ class ListController {
   #prefix = "";
   #rendering = false;
   #restoreScroll = false;
+  #selectionAnchor: number | undefined;
+  #drag: AbortController | undefined;
   #filterFocus: { start: number | null; end: number | null } | undefined;
 
   constructor(readonly schedule: () => void) {
@@ -167,6 +171,13 @@ class ListController {
     callbacks: ListCallbacks,
   ): HTMLElement {
     this.capture();
+    this.#drag?.abort();
+    if (
+      this.#snapshot &&
+      (JSON.stringify(this.#snapshot.state.query) !==
+          JSON.stringify(snapshot.state.query) ||
+        this.#snapshot.totalSourceItems !== snapshot.totalSourceItems)
+    ) this.#selectionAnchor = undefined;
     if (
       !this.#draftPending ||
       JSON.stringify(snapshot.state.query) === JSON.stringify(this.#draft)
@@ -198,6 +209,12 @@ class ListController {
     this.reserveRows(snapshot.state.pageSize);
     this.host.id = this.#prefix;
     this.#measures = [];
+    if (snapshot.toolbar?.length) {
+      const customToolbar = document.createElement("div");
+      customToolbar.className = "uui-elements data-list-custom-toolbar";
+      customToolbar.append(...callbacks.elements(snapshot.toolbar));
+      this.host.append(customToolbar);
+    }
     const toolbar = document.createElement("div");
     toolbar.className = "data-list-toolbar";
     toolbar.id = `${this.#prefix}-toolbar`;
@@ -248,11 +265,51 @@ class ListController {
     this.#table = document.createElement("table");
     this.#table.className = "data-list";
     const colgroup = document.createElement("colgroup");
-    for (let index = 0; index < snapshot.columns.length; index++) {
+    for (
+      let index = 0;
+      index < snapshot.columns.length + (snapshot.selection ? 1 : 0);
+      index++
+    ) {
       colgroup.append(document.createElement("col"));
     }
     this.#table.append(colgroup);
     const head = this.#table.createTHead().insertRow();
+    if (snapshot.selection) {
+      const cell = document.createElement("th");
+      cell.scope = "col";
+      cell.className = "data-list-selection";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.id = `${this.#prefix}-select-all`;
+      checkbox.checked = snapshot.totalSourceItems > 0 &&
+        snapshot.selection.selectedItems === snapshot.totalSourceItems;
+      checkbox.indeterminate = snapshot.selection.selectedItems > 0 &&
+        !checkbox.checked;
+      checkbox.disabled = snapshot.totalSourceItems === 0;
+      checkbox.setAttribute(
+        "aria-label",
+        checkbox.checked ? "Select none" : "Select all",
+      );
+      cell.title = checkbox.checked ? "Select none" : "Select all";
+      cell.addEventListener("click", (event) => {
+        if (event.target !== checkbox && !checkbox.disabled) checkbox.click();
+      });
+      checkbox.addEventListener("change", () => {
+        this.#selectionAnchor = undefined;
+        callbacks.request([{
+          id: snapshot.id,
+          revision: snapshot.revision,
+          operation: "selection",
+          selected: checkbox.checked,
+        }]);
+        checkbox.checked = snapshot.totalSourceItems > 0 &&
+          snapshot.selection!.selectedItems === snapshot.totalSourceItems;
+        checkbox.indeterminate = snapshot.selection!.selectedItems > 0 &&
+          !checkbox.checked;
+      });
+      cell.append(checkbox);
+      head.append(cell);
+    }
     for (const column of snapshot.columns) {
       const cell = document.createElement("th");
       cell.scope = "col";
@@ -346,6 +403,7 @@ class ListController {
           select();
         }
       });
+      if (snapshot.selection) this.selectionCell(row, item, index);
       for (const column of snapshot.columns) {
         const cell = row.insertCell();
         const value = listValueText(
@@ -363,7 +421,7 @@ class ListController {
     });
     if (snapshot.rows.length === 0) {
       const cell = body.insertRow().insertCell();
-      cell.colSpan = snapshot.columns.length;
+      cell.colSpan = snapshot.columns.length + (snapshot.selection ? 1 : 0);
       cell.className = "data-list-empty";
       cell.textContent = snapshot.filtered ? "No matching items" : "No items";
     }
@@ -406,11 +464,13 @@ class ListController {
     if (!this.#restoreScroll) this.capture();
     const snapshot = this.#snapshot;
     this.host.dataset.narrow = String(this.host.clientWidth < 600);
+    const selectionWidth = snapshot.selection ? 36 : 0;
     const widths = listColumnWidths(
       snapshot.columns.map((column) => column.length),
       // clientWidth rounds up fractional card widths and can create overflow.
-      this.#scroll.getBoundingClientRect().width,
+      this.#scroll.getBoundingClientRect().width - selectionWidth,
     );
+    if (selectionWidth) widths.unshift(selectionWidth);
     const cols = this.#table.querySelectorAll("col");
     widths.forEach((width, index) => cols[index]!.style.width = `${width}px`);
     this.#table.style.width = `${
@@ -453,7 +513,9 @@ class ListController {
     const card = this.host.closest<HTMLElement>(".layout-list") ?? this.host;
     const cardStyle = getComputedStyle(card);
     const cardPadding = Number.parseFloat(cardStyle.paddingTop) +
-      Number.parseFloat(cardStyle.paddingBottom);
+      Number.parseFloat(cardStyle.paddingBottom) +
+      Number.parseFloat(cardStyle.borderTopWidth) +
+      Number.parseFloat(cardStyle.borderBottomWidth);
     // Measure footer chrome even when hidden, then decide whether the source
     // needs it. Its own visibility must never change the capacity calculation.
     this.#pagination.hidden = false;
@@ -463,38 +525,35 @@ class ListController {
       this.#scroll.getBoundingClientRect().height - paginationHeight +
       tableChrome + scrollbar +
       (card === this.host ? 0 : cardPadding);
-    this.#pagination.hidden = snapshot.totalPages <= 1;
+    this.#pagination.hidden = snapshot.totalPages <= 1 && !snapshot.selection;
     const modal = this.host.closest<HTMLElement>(".presentation-modal-body");
     const viewport = globalThis.visualViewport?.height ?? innerHeight;
-    const chrome = modal === null
-      ? document.querySelector(".navbar")?.getBoundingClientRect().height ?? 64
-      : (modal.parentElement?.querySelector(".uui-dialog-toolbar")
-        ?.getBoundingClientRect().height ?? 48) + 32;
-    const preceding = modal === null
-      ? card.getBoundingClientRect().top + scrollY - chrome
-      : card.getBoundingClientRect().top - modal.getBoundingClientRect().top +
-        modal.scrollTop;
+    let available = viewport -
+      (document.querySelector(".navbar")?.getBoundingClientRect().height ??
+        64) -
+      24;
+    if (modal !== null) {
+      const frame = modal.parentElement!;
+      const style = getComputedStyle(modal);
+      available = Math.min(
+        viewport,
+        Number.parseFloat(getComputedStyle(frame).maxHeight),
+      ) - (frame.querySelector(".uui-dialog-toolbar")
+        ?.getBoundingClientRect().height ?? 48) -
+        Number.parseFloat(style.paddingTop) -
+        Number.parseFloat(style.paddingBottom);
+    }
     const pageSize = listRowCapacity(
-      viewport,
-      chrome,
-      preceding,
-      overhead,
+      available,
+      overhead + (snapshot.selection ? paginationHeight : 0),
       rowHeight,
       snapshot.pageSource?.more ? Infinity : snapshot.totalSourceItems,
-      paginationHeight,
+      snapshot.selection ? 0 : paginationHeight,
     );
     // Use the full source count even when the first view after reload is short
     // or empty. Leave rows at their natural height and reserve space below them.
     this.host.style.setProperty("--list-table-chrome", `${tableChrome}px`);
     this.host.style.setProperty("--list-scrollbar-height", `${scrollbar}px`);
-    this.host.style.setProperty(
-      "--list-pagination-reserve",
-      `${
-        snapshot.pageSource?.more || snapshot.totalSourceItems > pageSize
-          ? paginationHeight
-          : 0
-      }px`,
-    );
     this.reserveRows(pageSize);
     if (pageSize !== snapshot.state.pageSize || !snapshot.state.measured) {
       return {
@@ -508,6 +567,11 @@ class ListController {
   }
 
   private reserveRows(pageSize: number): void {
+    this.host.toggleAttribute(
+      "data-pagination",
+      !!this.#snapshot.selection || !!this.#snapshot.pageSource?.more ||
+        this.#snapshot.totalSourceItems > pageSize,
+    );
     this.host.style.setProperty(
       "--list-reserved-rows",
       String(
@@ -522,7 +586,7 @@ class ListController {
     const snapshot = this.#snapshot;
     const navigation = document.createElement("nav");
     navigation.className = "data-list-pagination";
-    navigation.hidden = snapshot.totalPages <= 1;
+    navigation.hidden = snapshot.totalPages <= 1 && !snapshot.selection;
     navigation.setAttribute("aria-label", `Pages for ${snapshot.bind}`);
     const summary = document.createElement("span");
     summary.className = "data-list-page-summary";
@@ -541,9 +605,14 @@ class ListController {
           ? ` (filtered, total ${snapshot.totalSourceItems})`
           : ""
       }`;
+    if (snapshot.selection) {
+      summary.textContent =
+        `(${snapshot.selection.selectedItems} of ${snapshot.totalSourceItems} selected) · ${summary.textContent}`;
+    }
     summary.title = summary.textContent;
     const pages = document.createElement("span");
     pages.className = "data-list-page-numbers";
+    if (snapshot.totalPages <= 1) pages.style.visibility = "hidden";
     for (
       const item of paginationItems(snapshot.state.page, snapshot.totalPages)
     ) {
@@ -576,6 +645,119 @@ class ListController {
     }
     navigation.append(summary, pages);
     return navigation;
+  }
+
+  private selectionCell(
+    row: HTMLTableRowElement,
+    item: unknown,
+    index: number,
+  ): void {
+    const snapshot = this.#snapshot;
+    const cell = row.insertCell();
+    cell.className = "data-list-selection";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.id = `${this.#prefix}-select-row-${
+      (snapshot.state.page - 1) * snapshot.state.pageSize + index
+    }`;
+    checkbox.checked = getPath(item, snapshot.selection!.bind) === true;
+    checkbox.setAttribute(
+      "aria-label",
+      `Select row ${
+        (snapshot.state.page - 1) * snapshot.state.pageSize + index + 1
+      }`,
+    );
+    cell.append(checkbox);
+    const position = (snapshot.state.page - 1) * snapshot.state.pageSize +
+      index;
+    const range = (extend: boolean, end = position) => ({
+      from: extend ? this.#selectionAnchor ?? position : position,
+      to: end,
+    });
+    const commit = (
+      selected: boolean,
+      selectedRange: { from: number; to: number },
+    ) => {
+      if (
+        this.#callbacks.request([{
+          id: snapshot.id,
+          revision: snapshot.revision,
+          operation: "selection",
+          selected,
+          range: selectedRange,
+        }])
+      ) this.#selectionAnchor = selectedRange.from;
+    };
+    cell.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.detail === 0) {
+        commit(
+          getPath(item, snapshot.selection!.bind) !== true,
+          range(event.shiftKey),
+        );
+      }
+    });
+    cell.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 || !event.isPrimary) return;
+      event.preventDefault();
+      checkbox.focus({ preventScroll: true });
+      this.#drag?.abort();
+      const drag = this.#drag = new AbortController();
+      const selected = getPath(item, snapshot.selection!.bind) !== true;
+      const selectedRange = range(event.shiftKey);
+      const paint = () => {
+        for (const visible of this.#table.tBodies[0]!.rows) {
+          const rowIndex = Number(visible.dataset.rowIndex);
+          const input = visible.querySelector<HTMLInputElement>(
+            ".data-list-selection input",
+          );
+          if (!input) continue;
+          const absolute = (snapshot.state.page - 1) * snapshot.state.pageSize +
+            rowIndex;
+          input.checked =
+            absolute >= Math.min(selectedRange.from, selectedRange.to) &&
+              absolute <= Math.max(selectedRange.from, selectedRange.to)
+              ? selected
+              : getPath(snapshot.rows[rowIndex], snapshot.selection!.bind) ===
+                true;
+        }
+      };
+      paint();
+      const options = { signal: drag.signal };
+      globalThis.addEventListener("pointermove", (move) => {
+        if (move.pointerId !== event.pointerId) return;
+        const target = document.elementFromPoint(move.clientX, move.clientY)
+          ?.closest<HTMLTableRowElement>("tr[data-row-index]");
+        if (target && this.#table.contains(target)) {
+          selectedRange.to =
+            (snapshot.state.page - 1) * snapshot.state.pageSize +
+            Number(target.dataset.rowIndex);
+          paint();
+        }
+      }, options);
+      const cancel = () => {
+        drag.abort();
+        for (const visible of this.#table.tBodies[0]!.rows) {
+          const input = visible.querySelector<HTMLInputElement>(
+            ".data-list-selection input",
+          );
+          if (input) {
+            input.checked = getPath(
+              snapshot.rows[Number(visible.dataset.rowIndex)],
+              snapshot.selection!.bind,
+            ) === true;
+          }
+        }
+      };
+      globalThis.addEventListener("pointerup", (up) => {
+        if (up.pointerId !== event.pointerId) return;
+        cancel();
+        commit(selected, selectedRange);
+      }, options);
+      globalThis.addEventListener("pointercancel", cancel, options);
+      globalThis.addEventListener("blur", cancel, options);
+    });
   }
 
   private openColumn(
@@ -755,6 +937,7 @@ class ListController {
     }]);
   }
   dispose(): void {
+    this.#drag?.abort();
     this.tools.close();
     if (this.#timer !== undefined) clearTimeout(this.#timer);
     this.#resize.disconnect();

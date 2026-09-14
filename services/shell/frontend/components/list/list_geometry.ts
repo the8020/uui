@@ -4,28 +4,20 @@ import {
 } from "../../../../../screen_state.ts";
 
 export function listRowCapacity(
-  viewport: number,
-  chrome: number,
-  preceding: number,
+  available: number,
   overhead: number,
   rowHeight: number,
   totalItems: number,
   paginationHeight: number,
 ): number {
-  const usable = Math.max(0, viewport - chrome - 24);
-  const capacity = (chromeHeight: number): number => {
-    // A list further down the page gets a full viewport once scrolled into view.
-    const before = preceding + chromeHeight + rowHeight * 3 <= usable
-      ? Math.max(0, preceding)
-      : 0;
-    return Math.max(
+  const capacity = (chromeHeight: number): number =>
+    Math.max(
       1,
       Math.min(
         MAX_LIST_PAGE_SIZE,
-        Math.floor((usable - before - chromeHeight) / Math.max(1, rowHeight)),
+        Math.floor((available - chromeHeight) / Math.max(1, rowHeight)),
       ),
     );
-  };
   const withoutPagination = capacity(overhead);
   return totalItems > withoutPagination
     ? capacity(overhead + paginationHeight)

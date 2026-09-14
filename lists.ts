@@ -1,4 +1,5 @@
-import { z } from "@the8020/http";
+import { setPath } from "./bindings.ts";
+import { z } from "/p/the8020/db/fields.ts";
 import type { ValueHelpPage, ValueHelpRequest } from "/p/the8020/db/fields.ts";
 import { fieldMetadata, schemaAtPath, unwrap } from "./fields.ts";
 import { humanize } from "./humanize.ts";
@@ -10,7 +11,7 @@ import {
   listValueText,
   matchesListFilter,
 } from "./list_values.ts";
-import type { ControlDescriptor } from "./protocol.ts";
+import type { ControlDescriptor, ScreenElement } from "./protocol.ts";
 import {
   initialListState,
   isRecord,
@@ -181,6 +182,9 @@ export class ScreenLists {
             : Math.max(state.sourceItems ?? 0, observed));
       }
       const snapshot: ScreenListSnapshot = {
+        ...(definition.toolbar === undefined
+          ? {}
+          : { toolbar: definition.toolbar as ScreenElement[] }),
         id: definition.id,
         bind: definition.bind,
         revision: ++this.#sequence,
@@ -197,6 +201,14 @@ export class ScreenLists {
         totalPages,
         filtered,
         triggerFilterEvents: definition.triggerFilterEvents ?? false,
+        ...(definition.selection === undefined ? {} : {
+          selection: {
+            bind: definition.selection,
+            selectedItems: source.filter((row) =>
+              getPath(row, definition.selection!) === true
+            ).length,
+          },
+        }),
         readable: definition.pageSource === undefined ||
           Object.hasOwn(this.readers, definition.id),
       };
@@ -298,6 +310,18 @@ export class ScreenLists {
           !Number.isSafeInteger(request.pageSize) || request.pageSize < 1 ||
           request.pageSize > MAX_LIST_PAGE_SIZE
         ) throw new TypeError("invalid list capacity");
+      } else if (request.operation === "selection") {
+        if (
+          this.#definitions.get(request.id)!.selection === undefined ||
+          typeof request.selected !== "boolean" ||
+          request.range !== undefined &&
+            [request.range.from, request.range.to].some((index) =>
+              !Number.isSafeInteger(index) || index < 0 ||
+              index >= view.allIndices.length
+            )
+        ) {
+          throw new TypeError("invalid list selection range or binding");
+        }
       } else {
         normalizeQuery(request.query, view.snapshot.columns);
         if (
@@ -321,6 +345,7 @@ export class ScreenLists {
   } | undefined {
     const definition = this.#definitions.get(request.id)!;
     const state = this.state(request.id);
+    if (request.operation === "selection") return undefined;
     if (request.operation === "page") state.page = request.page;
     else if (request.operation === "capacity") {
       const offset = (state.page - 1) * state.pageSize;
@@ -379,6 +404,31 @@ export class ScreenLists {
       bind: definition.bind,
       controlId: definition.id,
     };
+  }
+
+  applySelection(
+    requests: readonly ListRequest[],
+    source: object,
+    candidate: Record<string, unknown>,
+  ): Set<string> {
+    const changed = new Set<string>();
+    for (const request of requests) {
+      if (request.operation !== "selection") continue;
+      const view = this.view(request.id, request.revision, source);
+      const definition = this.#definitions.get(request.id)!;
+      const rows = getPath(candidate, definition.bind) as unknown[];
+      const indices = request.range === undefined
+        ? view.source.map((_, index) => index)
+        : view.allIndices.slice(
+          Math.min(request.range.from, request.range.to),
+          Math.max(request.range.from, request.range.to) + 1,
+        );
+      for (const index of indices) {
+        setPath(rows[index], definition.selection!, request.selected);
+      }
+      changed.add(definition.bind);
+    }
+    return changed;
   }
 
   applyEdits(
@@ -483,8 +533,23 @@ function buildColumns(
   ) {
     throw new TypeError(`unknown list selection key ${options.key}`);
   }
-  const keys = options.display ??
-    (unwrapped instanceof z.ZodObject ? Object.keys(unwrapped.shape) : [""]);
+  if (options.selection !== undefined) {
+    const selected = unwrapped instanceof z.ZodObject
+      ? schemaAtPath(unwrapped, options.selection)
+      : undefined;
+    if (
+      selected === undefined ||
+      !(unwrap(selected).schema instanceof z.ZodBoolean) ||
+      selected instanceof z.ZodReadonly || fieldMetadata(selected)?.readOnly
+    ) {
+      throw new TypeError(
+        "list selection must bind an editable boolean row field",
+      );
+    }
+  }
+  const keys = (options.display ??
+    (unwrapped instanceof z.ZodObject ? Object.keys(unwrapped.shape) : [""]))
+    .filter((key) => key !== options.selection);
   return resolveElementIDs(
     keys.map((key) => {
       const declared = key === ""

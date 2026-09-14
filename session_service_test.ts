@@ -7,7 +7,7 @@ import {
   type WebSocketInboundEvent,
   type WebSocketSession,
   z,
-} from "@the8020/http";
+} from "/p/the8020/services/http.ts";
 import {
   callScreen,
   currentBrowser,

@@ -186,27 +186,32 @@ export async function runProgramsBrowser(root: string): Promise<void> {
     }
   `,
   );
+  const backgroundRoot = `${root}/packages/example/testing/programs/background`;
+  await Deno.mkdir(backgroundRoot, { recursive: true });
+  await Deno.writeTextFile(
+    `${backgroundRoot}/program.toml`,
+    'schema = 1\ndescription = "Background fixture"\ndiscoverable = false\n',
+  );
+  await Deno.writeTextFile(
+    `${backgroundRoot}/program.ts`,
+    "export default () => {};\n",
+  );
   const definitions: ProgramSummary[] = [
     {
       program_id: backgroundId,
       name: "background",
-      description: "Background fixture",
-      uui: false,
-      discoverable: false,
     },
     {
       program_id: interactiveId,
       name: "interactive",
-      description: "Interactive fixture",
-      uui: true,
-      discoverable: true,
     },
   ].map((program) => ({
     ...program,
     package_id: "example/testing",
     commit: "abc123",
     entrypoint: "program.ts",
-    entrypoint_url: `file://${programRoot}/program.ts`,
+    entrypoint_url:
+      `file://${root}/packages/example/testing/programs/${program.name}/program.ts`,
   }));
   const globals = globalThis as unknown as Record<symbol, unknown>;
   const previousInvoke = globals[kernelInvokeSymbol];
@@ -369,6 +374,8 @@ worker_keep_alive = "30s"
           const tagged = value as { type: string; value: string | boolean };
           return tagged.type === "boolean"
             ? Number(tagged.value)
+            : tagged.type === "json"
+            ? JSON.stringify(tagged.value)
             : tagged.value;
         }
         return typeof value === "boolean" ? Number(value) : value;

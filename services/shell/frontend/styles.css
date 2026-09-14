@@ -593,8 +593,8 @@ textarea {
 
   width: min(var(--uui-dialog-width), calc(100vw - 24px));
   max-width: none;
-  max-height: min(90vh, 54rem);
-  max-height: min(90dvh, 54rem);
+  max-height: 90vh;
+  max-height: 90dvh;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -621,8 +621,8 @@ textarea {
 .uui-dialog-frame {
   position: relative;
   display: flex;
-  max-height: min(90vh, 54rem);
-  max-height: min(90dvh, 54rem);
+  max-height: 90vh;
+  max-height: 90dvh;
   flex-direction: column;
   overflow: hidden;
 }
@@ -1978,4 +1978,47 @@ body:has(.uui-content-fullscreen) {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Ordered UUI controls/actions share flexible gaps in headers, toolbars and dialogs. */
+.uui-elements {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+
+.uui-elements > .field {
+  flex: 0 1 12rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.uui-elements > .field[data-field-length="short"] {
+  flex-basis: 8rem;
+}
+
+.uui-elements > .field[data-field-length="long"] {
+  flex-basis: 20rem;
+}
+
+.uui-separator,
+.program-header .uui-separator {
+  flex: 1 1 0;
+  min-width: 0;
+  align-self: stretch;
+}
+
+.program-header-visible:has(> .uui-separator) {
+  flex: 1 1 auto;
+}
+
+.program-header-overflow-items > .uui-separator {
+  display: none;
+}
+
+.data-list-custom-toolbar {
+  padding-block: 8px;
 }

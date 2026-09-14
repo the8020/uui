@@ -1,4 +1,5 @@
 /** Serializable screen state and list contracts, shared with the browser. */
+import type { ScreenElement, ScreenElementDeclaration } from "./protocol.ts";
 import type { ListQuery } from "/p/the8020/db/fields.ts";
 import { validateJSON } from "./custom_elements.ts";
 export type { ListQuery } from "/p/the8020/db/fields.ts";
@@ -26,7 +27,11 @@ export interface ListColumnOptions {
 }
 
 export interface ListOptions {
+  /** Ordinary UUI elements displayed above the list, independent of List tools. */
+  toolbar?: ScreenElementDeclaration[];
   key?: string;
+  /** Boolean path relative to each row; enables whole-table checkbox selection. */
+  selection?: string;
   display?: string[];
   headings?: Record<string, string>;
   columnOptions?: Record<string, ListColumnOptions>;
@@ -85,6 +90,7 @@ export interface ScreenStateUpdate {
 }
 
 export interface ScreenListSnapshot {
+  toolbar?: ScreenElement[];
   id: string;
   bind: string;
   revision: number;
@@ -98,6 +104,7 @@ export interface ScreenListSnapshot {
   triggerFilterEvents: boolean;
   /** Page sources require a server-side list reader for independent reads. */
   readable?: boolean;
+  selection?: { bind: string; selectedItems: number };
   pageSource?: ListOptions["pageSource"];
 }
 
@@ -132,7 +139,15 @@ export function validListRead(value: unknown): value is ListReadRequest {
 export type ListRequest =
   | { id: string; revision: number; operation: "page"; page: number }
   | { id: string; revision: number; operation: "capacity"; pageSize: number }
-  | { id: string; revision: number; operation: "query"; query: ListQuery };
+  | { id: string; revision: number; operation: "query"; query: ListQuery }
+  | {
+    id: string;
+    revision: number;
+    operation: "selection";
+    selected: boolean;
+    /** Inclusive positions in the complete filtered/sorted view; omit for all source rows. */
+    range?: { from: number; to: number };
+  };
 
 export interface ListSelection {
   id: string;

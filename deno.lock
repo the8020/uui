@@ -23,6 +23,7 @@
     "npm:@lezer/highlight@1.2.3": "1.2.3",
     "npm:@noble/hashes@2.4.0": "2.4.0",
     "npm:@xterm/headless@5.5.0": "5.5.0",
+    "npm:@xterm/headless@6.0.0": "6.0.0",
     "npm:kysely@0.29.4": "0.29.4",
     "npm:markdown-it@14.1.0": "14.1.0",
     "npm:smol-toml@1.8.0": "1.8.0",
@@ -277,6 +278,9 @@
     "@xterm/headless@5.5.0": {
       "integrity": "sha512-5xXB7kdQlFBP82ViMJTwwEc3gKCLGKR/eoxQm4zge7GPBl86tCdI0IdPJjoKd8mUSFXz5V7i/25sfsEkP4j46g=="
     },
+    "@xterm/headless@6.0.0": {
+      "integrity": "sha512-5Yj1QINYCyzrZtf8OFIHi47iQtI+0qYFPHmouEfG8dHNxbZ9Tb9YGSuLcsEwj9Z+OL75GJqPyJbyoFer80a2Hw=="
+    },
     "argparse@2.0.1": {
       "integrity": "sha512-8+9WqebbFzpX9OR+Wa6O29asIogeRMzcGtAINdpMHHyAg10f05aSFVBbcEqGf/PXw1EjAZ+q2/bEBg3DvurK3Q=="
     },
@@ -331,11 +335,8 @@
   },
   "workspace": {
     "dependencies": [
-      "jsr:@hono/hono@4.9.8",
       "jsr:@std/assert@1.0.14",
-      "npm:kysely@0.29.4",
-      "npm:markdown-it@14.1.0",
-      "npm:zod@4.1.5"
+      "npm:markdown-it@14.1.0"
     ]
   }
 }

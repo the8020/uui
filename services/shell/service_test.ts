@@ -189,7 +189,7 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   );
   assertMatch(
     cssBody,
-    /\.uui-dialog\s*\{[^}]*max-height:\s*min\(90dvh, 54rem\);[^}]*overflow:\s*hidden;[^}]*border-radius:\s*16px;/s,
+    /\.uui-dialog\s*\{[^}]*max-height:\s*90dvh;[^}]*overflow:\s*hidden;[^}]*border-radius:\s*16px;/s,
   );
   assertMatch(
     cssBody,

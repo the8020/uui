@@ -1,4 +1,8 @@
-import { defineService, HTTPError, type RequestMetadata } from "@the8020/http";
+import {
+  defineService,
+  HTTPError,
+  type RequestMetadata,
+} from "/p/the8020/services/http.ts";
 import { kernel, WorkerInvokeError } from "@the8020/kernel";
 import { controlRequest } from "../../agent.ts";
 import { AssetServer } from "./assets.ts";

@@ -106,62 +106,6 @@ async function copyDirectory(source: string, destination: string) {
   }
 }
 
-Deno.test("program manifests parse TOML and reject invalid UUI flags", async () => {
-  const root = await Deno.makeTempDir({ prefix: "the8020-manifest-test-" });
-  const path = `${root}/program.toml`;
-  try {
-    for (
-      const [flag, expected] of [["", false], ["uui = false", false], [
-        "uui = true # Interactive",
-        true,
-      ]] as const
-    ) {
-      await Deno.writeTextFile(
-        path,
-        `schema = 1\ndescription = 'Example' # Description\n${flag}\n`,
-      );
-      const manifest = await readProgramManifest(path);
-      assertEquals(manifest.uui, expected);
-      assertEquals(manifest.description, "Example");
-    }
-    await Deno.writeTextFile(
-      path,
-      'schema = 1\ndescription = "Default entrypoint"\nentrypoint = ""\n',
-    );
-    assertEquals((await readProgramManifest(path)).entrypoint, "program.ts");
-    await Deno.writeTextFile(
-      path,
-      'schema = 1.0\ndescription = "Invalid schema type"\n',
-    );
-    await assertRejects(
-      () => readProgramManifest(path),
-      TypeError,
-      "invalid program manifest",
-    );
-    for (
-      const flag of [
-        'uui = "true"',
-        "uui = 1",
-        "uui = true\nuui = false",
-        "uui = yes",
-        "unknown = true",
-      ]
-    ) {
-      await Deno.writeTextFile(
-        path,
-        `schema = 1\ndescription = "Example"\n${flag}\n`,
-      );
-      await assertRejects(
-        () => readProgramManifest(path),
-        TypeError,
-        "invalid program manifest",
-      );
-    }
-  } finally {
-    await Deno.remove(root, { recursive: true });
-  }
-});
-
 Deno.test("dynamic invocation validates identity, containment, and default export", async () => {
   const root = await Deno.makeTempDir({ prefix: "the8020-program-test-" });
   try {

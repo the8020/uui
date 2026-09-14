@@ -6,7 +6,7 @@ export {
   type CodeLineMarker,
 } from "./services/shell/frontend/components/code-editor/mod.ts";
 export { type ListReader, queryValueHelp } from "./lists.ts";
-export { z } from "@the8020/http";
+export { z } from "/p/the8020/db/fields.ts";
 export { validateCustomElements } from "./custom_elements.ts";
 export { packageAssetURL } from "./browser_assets.ts";
 export type {

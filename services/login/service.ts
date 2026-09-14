@@ -1,4 +1,4 @@
-import { defineService } from "@the8020/http";
+import { defineService } from "/p/the8020/services/http.ts";
 import { login, logout as logoutUser } from "/p/the8020/users/mod.ts";
 import uiConfig from "../../ui-config.json" with { type: "json" };
 

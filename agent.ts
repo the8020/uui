@@ -1,4 +1,4 @@
-import { z } from "@the8020/http";
+import { z } from "/p/the8020/db/fields.ts";
 import { getPath } from "./bindings.ts";
 import type { LayoutDocument, LayoutNode } from "./layout.ts";
 import type {
@@ -6,6 +6,7 @@ import type {
   CustomElementDescriptor,
   PresentationSnapshot,
   ScreenAction,
+  ScreenElement,
   ScreenSnapshot,
 } from "./protocol.ts";
 
@@ -44,6 +45,13 @@ export const agentOperation = z.discriminatedUnion("op", [
     search: z.string().max(2000).optional(),
     page: z.number().int().positive().optional(),
     pageSize: z.number().int().min(1).max(500).optional(),
+    selection: z.object({
+      selected: z.boolean(),
+      range: z.object({
+        from: z.number().int().nonnegative(),
+        to: z.number().int().nonnegative(),
+      }).strict().optional(),
+    }).strict().optional(),
   }).strict(),
   z.object({
     op: z.literal("select"),
@@ -115,6 +123,13 @@ function screenText(screen: ScreenSnapshot): Element {
     if (item === undefined) return [];
     return [{
       list: id,
+      toolbar: item.toolbar?.flatMap(element),
+      selection: item.selection
+        ? {
+          selected: item.selection.selectedItems,
+          total: item.totalSourceItems,
+        }
+        : undefined,
       columns: item.columns.map((column) => ({
         id: column.id,
         label: column.heading,
@@ -122,6 +137,9 @@ function screenText(screen: ScreenSnapshot): Element {
       })),
       rows: item.rows.slice(0, 100).map((row, index) => ({
         index,
+        ...(item.selection
+          ? { selected: getPath(row, item.selection.bind) === true }
+          : {}),
         ...Object.fromEntries(
           item.columns.map((column) => [column.id, getPath(row, column.key)]),
         ),
@@ -190,6 +208,12 @@ function screenText(screen: ScreenSnapshot): Element {
       ...(control.enterEvent ? { enter: true } : {}),
     }];
   };
+  const element = (item: ScreenElement): Element[] =>
+    "type" in item
+      ? [{ separator: true }]
+      : "bind" in item
+      ? field(item)
+      : [button(item)];
   const actions = (ids: string[]): Element[] =>
     ids.flatMap((id) => {
       const action = screen.actions.find((item) => item.id === id);
@@ -198,7 +222,7 @@ function screenText(screen: ScreenSnapshot): Element {
       return [button(action)];
     });
   const visit = (node: LayoutNode): Element[] => {
-    const elements: Element[] = [];
+    const elements: Element[] = node.elements?.flatMap(element) ?? [];
     if (node.type === "list") elements.push(...list(node.id));
     else if (node.type === "custom") {
       const descriptor = screen.customElements.find((item) =>
@@ -213,7 +237,7 @@ function screenText(screen: ScreenSnapshot): Element {
       }}
     elements.push(
       ...actions(
-        node.type === "actions"
+        node.type === "actions" && node.elements === undefined
           ? node.actions ?? screen.actions.map((action) => action.id)
           : node.actions ?? [],
       ),
@@ -256,6 +280,7 @@ function screenText(screen: ScreenSnapshot): Element {
     title: text(screen.title),
     description: screen.description,
     header: [
+      ...(screen.header.elements?.flatMap(element) ?? []),
       ...screen.header.controls.flatMap(field),
       ...screen.header.actions.map(button),
     ],

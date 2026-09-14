@@ -1,7 +1,7 @@
 import { resolveElementIDs } from "./identifiers.ts";
 import { validateListOptions } from "./list_options.ts";
 import { validateCustomElements } from "./custom_elements.ts";
-import { z } from "@the8020/http";
+import { z } from "/p/the8020/db/fields.ts";
 import {
   field as defineField,
   type FieldMetadata as SharedFieldMetadata,

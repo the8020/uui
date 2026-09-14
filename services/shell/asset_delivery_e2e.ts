@@ -36,6 +36,8 @@ const worker = await supervisor.startWorker({
   permissions: {
     read: [
       new URL("../../", import.meta.url).pathname,
+      new URL("../../../services/", import.meta.url).pathname,
+      new URL("../../../db/", import.meta.url).pathname,
       new URL("../../../kernel/defaults/config/runtime/", import.meta.url)
         .pathname,
     ],

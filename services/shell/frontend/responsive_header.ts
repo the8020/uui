@@ -150,7 +150,9 @@ export class ResponsiveProgramHeader {
     this.#overflowItems.replaceChildren();
     this.#visible.replaceChildren(...this.#items);
     const widths = this.#items.map((item) =>
-      item.getBoundingClientRect().width
+      item.classList.contains("uui-separator")
+        ? 0
+        : item.getBoundingClientRect().width
     );
     const gap = Number.parseFloat(getComputedStyle(this.#visible).columnGap) ||
       0;
@@ -158,12 +160,16 @@ export class ResponsiveProgramHeader {
       gap * Math.max(0, widths.length - 1);
     if (allItemsWidth <= this.#root.clientWidth) return;
     this.#overflow.hidden = false;
-    const visibleCount = fittingHeaderItemCount(
+    let visibleCount = fittingHeaderItemCount(
       widths,
       this.#root.clientWidth,
       this.#overflow.getBoundingClientRect().width,
       gap,
     );
+    while (
+      visibleCount > 0 &&
+      this.#items[visibleCount - 1]!.classList.contains("uui-separator")
+    ) visibleCount--;
     this.#visible.replaceChildren(...this.#items.slice(0, visibleCount));
     this.#overflowItems.replaceChildren(...this.#items.slice(visibleCount));
     this.#overflow.open = wasOpen;

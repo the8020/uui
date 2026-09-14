@@ -194,8 +194,9 @@ below.
 - `program.toml` declares `uui` as an optional boolean defaulting to false. Home
   includes only programs with `uui = true` and `discoverable = true`, and
   returns silently after invocation. Hidden helpers retain their UUI flag. The
-  program loader parses real TOML, rejects invalid flags and duplicate keys, and
-  invokes default exports with a positional argument array.
+  program loader uses the shared `the8020/packages/programs.ts` manifest reader,
+  which validates application metadata and duplicate keys. UUI owns Home
+  filtering and invokes default exports with positional arguments.
   `the8020/admin-core/programs` owns the complete catalog and delegates custom
   execution inputs to `the8020/jobs/run-program`.
 - `ui-config.json` is the sole current UUI configuration source. It owns login,
@@ -381,6 +382,26 @@ below.
   while retaining the production compiler options.
 - Layouts and future overrides are serializable data without executable code;
   user-specific layout variants are not persisted in this phase.
+- List options accept `toolbar: ScreenElementDeclaration[]`, rendered above the
+  list independently of the collapsible List tools. The same ordered element
+  arrays are available as `header.elements` and layout-node `elements`. Entries
+  are ordinary control declarations (`bind`), action declarations (`label`), or
+  `{ type: "separator", id? }` flexible gaps. Screen construction resolves all
+  inline controls/actions through the normal schema, identity, shortcut, help,
+  custom-host, and event contracts; toolbar fields bind the screen model.
+- Lists opt into checkbox selection with `selection: "row.boolean.path"` on
+  explicit layout lists or inferred control list options. The first column edits
+  that boolean, independently of the ordinary row navigation action. The header
+  selects/clears every source row, including other pages and filtered-out rows.
+  Shift and pointer-drag ranges use the current filtered/sorted order across
+  pages. Selection uses validated source mappings and commits atomically with
+  dirty controls without resolving the pending call. Source arrays stay ordered.
+  The footer shows selected/source totals even for a single or empty page.
+  Headless `list` commands accept
+  `selection: { selected, range?: { from, to } }` through the same validation
+  path; transcripts show selected row flags and totals. Selection requires the
+  complete bound array and an editable boolean row field; `pageSource` cannot
+  supply whole-table row-model updates and rejects this option.
 - Layout regions may place their ordered `actions` alongside their controls,
   including buttons inside field groups. Those buttons are omitted from the
   fallback screen action bar; an explicit `actions` region still owns screen
@@ -550,9 +571,9 @@ below.
   descriptions, typed filters, sort, and clear actions; icons use the vendored
   `[[icon=...]]` registry. The rightmost List tools disclosure opens the search
   toolbar. Drafts, focus/caret, expansion, and horizontal scroll survive
-  updates. The pagination footer is hidden for single-page and empty results;
-  sources that fit on one page reserve no footer space. Clearing controls appear
-  only for active queries. The
+  updates. The pagination footer is hidden for single-page and empty results
+  without selection; sources that fit on one page reserve no footer space.
+  Clearing controls appear only for active queries. The
   [browser contract](services/shell/frontend/AGENTS.md) owns list control layout
   and confirmation behavior. Encapsulate browser lists and their data tools in
   `services/shell/frontend/components/list/`. The expanded toolbar includes
@@ -794,6 +815,12 @@ below.
 
 # Work Guidance
 
+- Build only what the request and established contracts require. Before adding a
+  mechanism, identify that need and why existing owners or standard tools cannot
+  meet it. Do not invent stronger guarantees for hypothetical cases. Remove
+  unsupported additions at closeout; agent-written tests and DOX do not
+  authorize them. Preserve required correctness, security, and data integrity.
+
 - Keep the framework generic and application workflows in their providing
   packages. Reuse ordinary Zod schemas, UUI models, and presentation mechanisms;
   new components carry their own code, dependencies, and assets through generic
@@ -1026,3 +1053,10 @@ below.
   the real browser/session boundary, including explicit and inferred list
   shortcuts; the Programs browser suite waits for the WHERE input's interaction
   gate before verifying Enter through the existing database row-browser action.
+
+- `deno task test:list-selection-browser` exercises the actual master-detail
+  demo's add, bulk confirm, delete/cancel, and delete-all flows through the
+  built shell and real session engine. It verifies checkbox/keyboard/drag/Shift
+  selection, cross-page ranges, filtered whole-table selection, reload, selected
+  counts, explicit/inferred toolbars, native/custom field binding, and flexible
+  separators in desktop/mobile list, program-header, and modal action rows.

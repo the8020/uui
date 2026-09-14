@@ -5,7 +5,7 @@ import {
   type RequestMetadata,
   type WebSocketSession,
   z,
-} from "@the8020/http";
+} from "/p/the8020/services/http.ts";
 import { context } from "@the8020/context";
 import { kernel, newId } from "@the8020/kernel";
 import uiConfig from "./ui-config.json" with { type: "json" };

@@ -48,8 +48,16 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
   guard with `history.forward()`, then dispatches UUI Back. Never push a new
   guard after traversal; Chromium may skip it on later native Back presses.
   Reload adopts the current guard.
+- `renderElements` shares ordered native/custom controls, actions, and
+  `{ type: "separator" }` gaps between list toolbars, program/modal headers, and
+  layout element rows. Separators share free flex space, have no focus target,
+  and are ignored when measuring the header's minimum item widths. Header
+  overflow hides its separators; ordinary element rows wrap at narrow widths.
 - Use the shared responsive geometry, accessible dialogs, complete local
   Material Symbols catalogue, and browser-only theme state.
+- Dialogs grow with their content up to 90% of the dynamic viewport height;
+  mobile dialogs leave a 12px outer height gutter. Keep tall-window list pages
+  governed by the viewport instead of a fixed maximum height.
 - Startup and failed WebSocket admission share HTTP route establishment. A
   redirected response ends reconnecting, clears the route, and navigates to its
   final URL before checking status or route headers. Preserve retry behavior for
@@ -156,6 +164,9 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
   and Shift+F2/Shift+F3, relative and wrapping navigation,
   read-only/hidden/disabled/inert exclusions, modal focus, native disclosures,
   and dialog/page Back.
+
+- `deno task test:list-selection-browser` checks shared element rows, bound
+  toolbar controls, and list selection through the real demo and session engine.
 
 - `deno task test:keyboard-browser` exercises named Enter events through the
   real session engine, key/modifier matching, hidden/disabled/inert exclusions,

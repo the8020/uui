@@ -1,4 +1,4 @@
-import { z } from "@the8020/http";
+import { z } from "/p/the8020/db/fields.ts";
 import { field, fieldMetadata } from "./fields.ts";
 import { queryValueHelp } from "./lists.ts";
 import { Model } from "./model.ts";

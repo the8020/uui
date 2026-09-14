@@ -1170,7 +1170,7 @@ async function paginationVisibility(
   const geometry = await page.evaluate<{ visible: boolean; footer: number }>(
     `(() => { const host=document.querySelector(${
       JSON.stringify(selector)
-    }); const footer=host.querySelector('.data-list-pagination'); return { visible:footer.getClientRects().length>0, footer:host.getBoundingClientRect().bottom-host.querySelector('.data-list-scroll').getBoundingClientRect().bottom }; })()`,
+    }); const footer=host.querySelector('.data-list-pagination'); return { visible:footer.getClientRects().length>0 && getComputedStyle(footer).visibility!=='hidden', footer:host.getBoundingClientRect().bottom-host.querySelector('.data-list-scroll').getBoundingClientRect().bottom }; })()`,
   );
   assert(
     geometry.visible === visible,

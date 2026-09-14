@@ -1593,12 +1593,14 @@ async function verifyFieldHelp(page: BrowserPage): Promise<void> {
     "measured choices",
   );
   const collapsedCapacity = fieldHelpRequests.at(-1)!.limit;
+  await verifyValueHelpViewport(page);
   await click(page, `${modal} [aria-label="List tools"]`);
   await waitForPage(
     page,
     `(() => { const rows = document.querySelectorAll('${modal} tr[data-row-index]').length; return rows > 1 && rows < ${collapsedCapacity}; })()`,
     "expanded tools remeasure the choice list",
   );
+  await verifyValueHelpViewport(page);
   await fieldHelpScreenshot(page, "desktop");
   const firstPage = fieldHelpRequests.at(-1)!;
   await click(page, `${modal} [aria-label="Display in table processor"]`);
@@ -1645,6 +1647,9 @@ async function verifyFieldHelp(page: BrowserPage): Promise<void> {
     ),
     "value-help UUI page is retained",
   );
+  const listScroll = await page.evaluate<number>(
+    `document.querySelector('${modal} .presentation-modal-body').scrollTop`,
+  );
   await click(page, `${modal} [aria-label="Page 2"]`);
   await waitFor(
     () => fieldHelpRequests.at(-1)?.offset === firstPage.limit,
@@ -1655,6 +1660,13 @@ async function verifyFieldHelp(page: BrowserPage): Promise<void> {
     page,
     `document.querySelector('${modal} [aria-current="page"]')?.textContent === '2'`,
     "page two selected",
+  );
+  assertEquals(
+    await page.evaluate(
+      `document.querySelector('${modal} .presentation-modal-body').scrollTop`,
+    ),
+    listScroll,
+    "paging keeps the scrolled choice list in view",
   );
   const geometry = () =>
     page.evaluate<number[]>(`(() => {
@@ -1858,11 +1870,19 @@ async function verifyFieldHelp(page: BrowserPage): Promise<void> {
     "reload restores field help",
   );
   await page.command("Emulation.setDeviceMetricsOverride", {
+    width: 1280,
+    height: 1440,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await verifyValueHelpViewport(page);
+  await page.command("Emulation.setDeviceMetricsOverride", {
     width: 390,
     height: 844,
     deviceScaleFactor: 1,
     mobile: false,
   });
+  await verifyValueHelpViewport(page);
   await fieldHelpScreenshot(page, "mobile");
   assert(
     await page.evaluate<boolean>(
@@ -1987,6 +2007,35 @@ async function pressKey(
       modifiers,
     });
   }
+}
+
+async function verifyValueHelpViewport(page: BrowserPage): Promise<void> {
+  await waitForPage(
+    page,
+    `(() => {
+      const modal = document.querySelector('dialog.presentation-modal[open]');
+      const body = modal.querySelector('.presentation-modal-body');
+      const list = body.querySelector('.layout-list');
+      const style = getComputedStyle(body);
+      const available = body.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+      const height = list.getBoundingClientRect().height;
+      const row = list.querySelector('tr[data-row-index]').getBoundingClientRect().height;
+      const modalHeight = innerWidth <= 680 ? innerHeight - 12 : innerHeight * 0.9;
+      return !modal.inert && modal.getBoundingClientRect().height >= modalHeight - 1 && height <= available + 1 && height + row > available;
+    })()`,
+    "value-help list fills the modal content viewport within one row",
+  );
+  assert(
+    await page.evaluate<boolean>(`(() => {
+      const body = document.querySelector('dialog.presentation-modal[open] .presentation-modal-body');
+      const list = body.querySelector('.layout-list');
+      const bounds = body.getBoundingClientRect();
+      body.scrollTop += list.getBoundingClientRect().top - bounds.top - parseFloat(getComputedStyle(body).paddingTop);
+      const card = list.getBoundingClientRect();
+      return card.top >= bounds.top && card.bottom <= bounds.bottom;
+    })()`),
+    "one scroll shows the entire choice list and pager",
+  );
 }
 
 async function fieldHelpScreenshot(

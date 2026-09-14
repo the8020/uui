@@ -357,7 +357,19 @@ export type ScreenActionDeclaration = Omit<ScreenAction, "id"> & {
   id?: string;
 };
 
+/** Flexible empty space in an ordered row of UUI elements. */
+export interface Separator {
+  id: string;
+  type: "separator";
+}
+export type ScreenElement = ControlDescriptor | ScreenAction | Separator;
+export type ScreenElementDeclaration =
+  | ControlDeclaration
+  | ScreenActionDeclaration
+  | Omit<Separator, "id"> & { id?: string };
+
 export interface ScreenHeader {
+  elements?: ScreenElement[];
   controls: ControlDescriptor[];
   actions: ScreenAction[];
 }
@@ -527,7 +539,11 @@ export function parseClientMessage(value: unknown): UUIClientMessage {
         (item.operation === "page" && isPositiveSequence(item.page) ||
           item.operation === "capacity" && isPositiveSequence(item.pageSize) &&
             Number(item.pageSize) <= MAX_LIST_PAGE_SIZE ||
-          item.operation === "query" && validListQuery(item.query))
+          item.operation === "query" && validListQuery(item.query) ||
+          item.operation === "selection" &&
+            typeof item.selected === "boolean" &&
+            (item.range === undefined || isRecord(item.range) &&
+                isSequence(item.range.from) && isSequence(item.range.to)))
       )
     ) {
       throw new TypeError("invalid screen.list message");

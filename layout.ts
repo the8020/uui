@@ -1,7 +1,14 @@
 import { resolveElementIDs } from "./identifiers.ts";
 import type { ListOptions } from "./screen_state.ts";
-import { validateListOptions } from "./list_options.ts";
-import type { ControlDescriptor } from "./protocol.ts";
+import {
+  validateElementDeclarations,
+  validateListOptions,
+} from "./list_options.ts";
+import type {
+  ControlDescriptor,
+  ScreenElement,
+  ScreenElementDeclaration,
+} from "./protocol.ts";
 export type LayoutNodeType =
   | "stack"
   | "split"
@@ -22,6 +29,7 @@ export interface LayoutNode extends ListOptions {
   key?: string;
   display?: string[];
   headings?: Record<string, string>;
+  elements?: ScreenElement[];
   controls?: string[];
   actions?: string[];
   children?: LayoutNode[];
@@ -41,10 +49,13 @@ export interface LayoutDocument {
   id: string;
   root: LayoutNode;
 }
-export type LayoutNodeDeclaration = Omit<LayoutNode, "id" | "children"> & {
-  id?: string;
-  children?: LayoutNodeDeclaration[];
-};
+export type LayoutNodeDeclaration =
+  & Omit<LayoutNode, "id" | "children" | "elements">
+  & {
+    id?: string;
+    elements?: ScreenElementDeclaration[];
+    children?: LayoutNodeDeclaration[];
+  };
 export type LayoutDeclaration = Omit<LayoutDocument, "root"> & {
   root: LayoutNodeDeclaration;
 };
@@ -78,11 +89,14 @@ const nodeKeys = new Set([
   "title",
   "bind",
   "key",
+  "selection",
   "display",
   "headings",
   "columnOptions",
   "triggerFilterEvents",
   "pageSource",
+  "toolbar",
+  "elements",
   "controls",
   "actions",
   "children",
@@ -223,6 +237,7 @@ function validateNode(
   ) throw new TypeError("invalid layout node");
   rejectUnknownKeys(value, nodeKeys, `layout node ${value.id}`);
   if (value.type === "list") validateListOptions(value);
+  if (value.elements !== undefined) validateElementDeclarations(value.elements);
   if (ids.has(value.id)) {
     throw new TypeError(`duplicate layout node ID ${value.id}`);
   }

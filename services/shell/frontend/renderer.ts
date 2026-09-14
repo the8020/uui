@@ -4,6 +4,7 @@ import type {
   CustomElementDescriptor,
   ScreenAction,
   ScreenChange,
+  ScreenElement,
   ScreenElementState,
   ScreenEventType,
   ScreenSnapshot,
@@ -34,7 +35,12 @@ export function renderScreenHeader(
   model: Record<string, unknown>,
   callbacks: RenderCallbacks,
 ): HTMLElement[] {
-  const items: HTMLElement[] = [];
+  const items = renderElements(
+    snapshot.header?.elements ?? [],
+    model,
+    callbacks,
+  );
+  for (const item of items) item.classList.add("program-header-item");
   for (const control of snapshot.header?.controls ?? []) {
     const rendered = renderControl(control, model, callbacks);
     if (rendered === undefined) continue;
@@ -200,6 +206,11 @@ function renderLayout(
     const descriptor = customElements.get(node.customElement);
     if (descriptor !== undefined) region.append(custom.render(descriptor));
   }
+  if (node.elements !== undefined) {
+    const flow = element("div", "uui-elements");
+    flow.append(...renderElements(node.elements, model, callbacks));
+    region.append(flow);
+  }
   const renderedControls: RenderedControl[] = [];
   for (const controlID of node.controls ?? []) {
     const candidates = controls.get(controlID) === undefined
@@ -219,7 +230,10 @@ function renderLayout(
       region.append(...renderImplicitFieldGroups(renderedControls));
     }
   }
-  if (node.type === "actions" || node.actions !== undefined) {
+  if (
+    node.type === "actions" && node.elements === undefined ||
+    node.actions !== undefined
+  ) {
     const selected = node.actions === undefined
       ? actions
       : node.actions.map((id) => actions.find((action) => action.id === id)!)
@@ -293,6 +307,25 @@ function renderLayout(
     }
   }
   return region;
+}
+
+export function renderElements(
+  elements: readonly ScreenElement[],
+  model: Record<string, unknown>,
+  callbacks: RenderCallbacks,
+): HTMLElement[] {
+  return elements.flatMap((item) => {
+    if ("type" in item) {
+      const separator = element("div", "uui-separator");
+      separator.dataset.elementId = item.id;
+      separator.setAttribute("aria-hidden", "true");
+      return [separator];
+    }
+    const rendered = "bind" in item
+      ? renderControl(item, model, callbacks)
+      : renderAction(item, callbacks);
+    return rendered === undefined ? [] : [rendered];
+  });
 }
 
 function renderActions(

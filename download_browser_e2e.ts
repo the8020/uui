@@ -5,7 +5,7 @@ import type {
   RequestMetadata,
   WebSocketInboundEvent,
   WebSocketSession,
-} from "@the8020/http";
+} from "/p/the8020/services/http.ts";
 import {
   callScreen,
   currentBrowser,
@@ -14,7 +14,7 @@ import {
   type DownloadHandle,
   z,
 } from "./mod.ts";
-import { workerFunctions } from "./session_service.ts";
+import { controlSession, workerFunctions } from "./session_service.ts";
 import shell from "./services/shell/service.ts";
 import demoForm from "/p/the8020/demo/programs/demo-form/program.ts";
 
@@ -147,6 +147,13 @@ const server = Deno.serve({
   url.pathname = url.pathname.slice(prefix.length) || "/";
   const relative = new Request(url, request);
   const context = { meta: metadata, signal: request.signal };
+  if (!isSession && url.pathname === "/control") {
+    const control = controlSession(await request.json(), metadata.user.userId);
+    return Response.json({
+      ...control,
+      ...(control.active ? { route: "download-browser-route" } : {}),
+    });
+  }
   if (request.headers.get("upgrade") === "websocket") {
     const { socket, response } = Deno.upgradeWebSocket(request, {
       protocol: "the8020.uui.v1",

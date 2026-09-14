@@ -6,7 +6,7 @@ import {
   assertStrictEquals,
   assertThrows,
 } from "@std/assert";
-import { z } from "@the8020/http";
+import { z } from "/p/the8020/db/fields.ts";
 import { buildControls, buildFieldCatalog } from "./fields.ts";
 import { resolveElementIDs } from "./identifiers.ts";
 import { validateLayout } from "./layout.ts";
@@ -588,4 +588,43 @@ Deno.test("value help uses ordinary multi-column typed queries before paging", (
     rows[1]!,
   ]);
   assertThrows(() => read({ missing: "x" }, "key"), TypeError);
+});
+
+Deno.test("selection requires an editable boolean in a complete row collection", () => {
+  const make = (selection: string, extra = {}) =>
+    new ScreenLists(
+      schema,
+      [{
+        id: "rows",
+        bind: "rows",
+        control: "list",
+        list: { selection, ...extra },
+      }],
+      undefined,
+      new Model({ rows: [] }).screen,
+    );
+  assertThrows(() => make("id"), TypeError, "boolean");
+  assertThrows(() => make("missing"), TypeError, "boolean");
+  assertThrows(() => make("__proto__.selected"), TypeError, "field path");
+  assertThrows(
+    () => make("enabled", { pageSource: { more: true } }),
+    TypeError,
+    "complete bound array",
+  );
+  const lists = make("enabled");
+  const model = { rows: [{ id: 1, name: "One", enabled: false }] };
+  const snapshot = lists.present(model)[0]!;
+  assertEquals(snapshot.columns.map((column) => column.key), ["id", "name"]);
+  assertThrows(
+    () =>
+      lists.validateRequests([{
+        id: "rows",
+        revision: snapshot.revision,
+        operation: "selection",
+        selected: true,
+        range: { from: 0, to: 1 },
+      }], model),
+    TypeError,
+    "selection range",
+  );
 });

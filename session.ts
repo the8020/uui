@@ -1,8 +1,9 @@
 import { getPath, setPath } from "./bindings.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { z } from "@the8020/http";
+import { z } from "/p/the8020/db/fields.ts";
 import { buildControls, buildFieldCatalog, schemaAtPath } from "./fields.ts";
 import { validateCustomElements } from "./custom_elements.ts";
+import { validateElementDeclarations } from "./list_options.ts";
 import { resolveLayoutReferences, validateLayout } from "./layout.ts";
 import { type ListReader, ScreenLists, StaleListView } from "./lists.ts";
 import { Model } from "./model.ts";
@@ -13,6 +14,7 @@ import { explicitElementIDs, resolveElementIDs } from "./identifiers.ts";
 import {
   type ListChange,
   type ListQuery,
+  type ListRequest,
   screenElement,
   type ScreenStateUpdate,
   validScreenStateUpdate,
@@ -31,10 +33,13 @@ import type {
   PresentationSurfaceKind,
   ScreenActionDeclaration,
   ScreenChange,
+  ScreenElement,
+  ScreenElementDeclaration,
   ScreenEventMessage,
   ScreenHeader,
   ScreenListMessage,
   ScreenSnapshot,
+  Separator,
   UUIClientMessage,
   UUIWorkerOutbound,
 } from "./protocol.ts";
@@ -106,6 +111,7 @@ export interface CallScreenOptions<T extends z.ZodRawShape> {
   controls?: ControlDeclaration[];
   actions?: ScreenActionDeclaration[];
   header?: {
+    elements?: ScreenElementDeclaration[];
     controls?: ControlDeclaration[];
     actions?: ScreenActionDeclaration[];
   };
@@ -317,38 +323,106 @@ export async function callScreen<T extends z.ZodRawShape>(
   const initial = options.schema.safeParse(options.model.data);
   if (!initial.success) throw initial.error;
   const fields = buildFieldCatalog(options.schema);
-  const headerDeclarations = options.header?.controls ?? [];
-  const headerBindings = new Set(headerDeclarations.map((item) => item.bind));
-  const bodyDeclarations: ControlDeclaration[] = options.controls?.length
-    ? options.controls
+  const headerDeclarations = structuredClone(options.header?.controls ?? []);
+  const headerElements = structuredClone(options.header?.elements);
+  const layoutDeclaration = structuredClone(options.layout);
+  const inline: ScreenElementDeclaration[] = [];
+  const collect = (elements: unknown, depth = 0): void => {
+    if (elements === undefined) return;
+    if (depth > 16) {
+      throw new TypeError("UUI element nesting exceeds 16 levels");
+    }
+    validateElementDeclarations(elements);
+    for (const item of elements as ScreenElementDeclaration[]) {
+      inline.push(item);
+      if ("bind" in item) {
+        item.list ??= structuredClone(
+          fields.find((field) => field.bind === item.bind)?.list,
+        );
+        collect(item.list?.toolbar, depth + 1);
+      }
+    }
+  };
+  const layoutNodes: Array<
+    {
+      id?: string;
+      elements?: ScreenElementDeclaration[];
+      toolbar?: ScreenElementDeclaration[];
+      children?: unknown[];
+    }
+  > = [];
+  const collectLayout = (value: unknown): void => {
+    if (value === null || typeof value !== "object") return;
+    const node = value as typeof layoutNodes[number];
+    layoutNodes.push(node);
+    collect(node.elements);
+    collect(node.toolbar);
+    if (Array.isArray(node.children)) node.children.forEach(collectLayout);
+  };
+  collectLayout((layoutDeclaration as { root?: unknown } | undefined)?.root);
+  collect(headerElements);
+  const headerBindings = new Set(
+    [
+      ...headerDeclarations,
+      ...inline.filter((item): item is ControlDeclaration => "bind" in item),
+    ].map((item) => item.bind),
+  );
+  let bodyDeclarations: ControlDeclaration[] = options.controls?.length
+    ? structuredClone(options.controls)
     : fields.filter((field) => !headerBindings.has(field.bind)).map((
       field,
     ) => ({ ...field, id: undefined }));
-  const authored: Array<{ id?: string }> = [
+  for (const control of [...bodyDeclarations, ...headerDeclarations]) {
+    control.list ??= structuredClone(
+      fields.find((field) => field.bind === control.bind)?.list,
+    );
+    collect(control.list?.toolbar);
+  }
+  const inlineControls = inline.filter((item): item is ControlDeclaration =>
+    "bind" in item
+  );
+  const inlineActions = inline.filter((item): item is ScreenActionDeclaration =>
+    !("bind" in item) && !("type" in item)
+  );
+  const separators = inline.filter((
+    item,
+  ): item is Omit<Separator, "id"> & { id?: string } => "type" in item);
+  if (!options.controls?.length) {
+    const inlineBindings = new Set(
+      inlineControls.map((control) => control.bind),
+    );
+    bodyDeclarations = bodyDeclarations.filter((control) =>
+      !inlineBindings.has(control.bind)
+    );
+  }
+  const allDeclarations = [
     ...bodyDeclarations,
     ...headerDeclarations,
+    ...inlineControls,
+  ];
+  const actionDeclarations = [
     ...(options.actions ?? []),
     ...(options.header?.actions ?? []),
-    ...(options.customElements ?? []),
+    ...inlineActions,
   ];
-  const collectAuthored = (value: unknown): void => {
-    if (value === null || typeof value !== "object") return;
-    const node = value as { id?: string; children?: unknown[] };
-    authored.push(node);
-    if (Array.isArray(node.children)) node.children.forEach(collectAuthored);
-  };
-  collectAuthored((options.layout as { root?: unknown } | undefined)?.root);
+  const authored = [
+    ...allDeclarations,
+    ...actionDeclarations,
+    ...separators,
+    ...(options.customElements ?? []),
+    ...layoutNodes,
+  ];
   const reserved = explicitElementIDs(authored);
-  const resolvedControls =
-    bodyDeclarations.length + headerDeclarations.length === 0
-      ? []
-      : buildControls(
-        fields,
-        [...bodyDeclarations, ...headerDeclarations],
-        reserved,
-      );
+  const resolvedControls = allDeclarations.length === 0 ? [] : buildControls(
+    fields,
+    allDeclarations,
+    reserved,
+  );
   const controls = resolvedControls.slice(0, bodyDeclarations.length);
-  const headerControls = resolvedControls.slice(bodyDeclarations.length);
+  const headerControls = resolvedControls.slice(
+    bodyDeclarations.length,
+    bodyDeclarations.length + headerDeclarations.length,
+  );
   for (const control of resolvedControls) {
     if (control.control !== "list") {
       control.valueHelp =
@@ -357,10 +431,7 @@ export async function callScreen<T extends z.ZodRawShape>(
     }
   }
   const resolvedActions = resolveElementIDs(
-    structuredClone([
-      ...(options.actions ?? []),
-      ...(options.header?.actions ?? []),
-    ]),
+    structuredClone(actionDeclarations),
     (action) => ({ label: action.label, kind: action.kind }),
     "action",
     reserved,
@@ -376,7 +447,35 @@ export async function callScreen<T extends z.ZodRawShape>(
     shortcuts.add(key);
   }
   const actions = resolvedActions.slice(0, options.actions?.length ?? 0);
-  const headerActions = resolvedActions.slice(options.actions?.length ?? 0);
+  const headerActions = resolvedActions.slice(
+    options.actions?.length ?? 0,
+    (options.actions?.length ?? 0) + (options.header?.actions?.length ?? 0),
+  );
+  const resolvedSeparators = resolveElementIDs(
+    separators,
+    () => ({ type: "separator" }),
+    "separator",
+    reserved,
+  );
+  const resolved = new Map<ScreenElementDeclaration, ScreenElement>([
+    ...allDeclarations.map((item, i) => [item, resolvedControls[i]!] as const),
+    ...actionDeclarations.map((item, i) =>
+      [item, resolvedActions[i]!] as const
+    ),
+    ...separators.map((item, i) => [item, resolvedSeparators[i]!] as const),
+  ]);
+  const elements = (
+    items: ScreenElementDeclaration[] | undefined,
+  ): ScreenElement[] | undefined => items?.map((item) => resolved.get(item)!);
+  allDeclarations.forEach((item, index) => {
+    if (item.list?.toolbar) {
+      resolvedControls[index]!.list!.toolbar = elements(item.list.toolbar);
+    }
+  });
+  for (const node of layoutNodes) {
+    if (node.elements) node.elements = elements(node.elements);
+    if (node.toolbar) node.toolbar = elements(node.toolbar);
+  }
   const customElements = validateCustomElements(
     options.customElements,
     reserved,
@@ -390,7 +489,7 @@ export async function callScreen<T extends z.ZodRawShape>(
     );
   }
   const actionIDs = new Set<string>();
-  for (const action of [...actions, ...headerActions]) {
+  for (const action of resolvedActions) {
     if (
       action.id.length === 0 || action.label.length === 0 ||
       actionIDs.has(action.id) || action.id === BACK_EVENT ||
@@ -403,11 +502,14 @@ export async function callScreen<T extends z.ZodRawShape>(
     actionIDs.add(action.id);
   }
   const header: ScreenHeader = {
+    ...(options.header?.elements === undefined
+      ? {}
+      : { elements: elements(headerElements) }),
     controls: headerControls,
     actions: headerActions,
   };
-  const layout = options.layout === undefined ? undefined : validateLayout(
-    options.layout,
+  const layout = layoutDeclaration === undefined ? undefined : validateLayout(
+    layoutDeclaration,
     new Set(controls.flatMap((item) => [item.id, item.bind])),
     new Set(actions.map((item) => item.id)),
     new Set(customElements.map((item) => item.id)),
@@ -420,15 +522,19 @@ export async function callScreen<T extends z.ZodRawShape>(
     controls,
     layout,
     options.model.screen,
-    headerControls,
+    [
+      ...headerControls,
+      ...resolvedControls.slice(
+        bodyDeclarations.length + headerDeclarations.length,
+      ),
+    ],
     options.listReaders,
   );
   const elementIDs = new Set(
     [
-      ...controls,
-      ...headerControls,
-      ...actions,
-      ...headerActions,
+      ...resolvedControls,
+      ...resolvedActions,
+      ...resolvedSeparators,
       ...customElements,
     ].map((item) => item.id),
   );
@@ -482,6 +588,7 @@ export async function callScreen<T extends z.ZodRawShape>(
         options.schema,
         options.model,
         lists,
+        resolvedControls,
         elementIDs,
         message,
       ),
@@ -564,15 +671,21 @@ export async function callScreen<T extends z.ZodRawShape>(
             page: command.page,
           });
         }
+        if (command.selection !== undefined) {
+          updates.push({
+            id: list.id,
+            revision: list.revision,
+            operation: "selection",
+            ...command.selection,
+          });
+        }
         if (updates.length) {
           routeScreenMessage(state, { ...base, type: "screen.list", updates });
         }
         return;
       }
       if (command.op === "click") {
-        const action = [...actions, ...headerActions].find((item) =>
-          item.id === command.id
-        );
+        const action = resolvedActions.find((item) => item.id === command.id);
         if (action) return dispatch({ action: action.id });
         for (
           const custom of [
@@ -953,6 +1066,7 @@ function receiveScreenMessage<T extends z.ZodRawShape>(
   schema: z.ZodObject<T>,
   model: Model<z.infer<z.ZodObject<T>>>,
   lists: ScreenLists,
+  controls: readonly ControlDescriptor[],
   elementIDs: ReadonlySet<string>,
   message: ScreenEventMessage | ScreenListMessage,
 ): void {
@@ -962,10 +1076,6 @@ function receiveScreenMessage<T extends z.ZodRawShape>(
     | undefined;
   let queryEvent: ListQueryScreenEvent | ListPageScreenEvent | undefined;
   let helpControl: ControlDescriptor | undefined;
-  const controls = [
-    ...call.surface.snapshot!.controls,
-    ...(call.surface.snapshot!.header?.controls ?? []),
-  ];
   try {
     if (message.instanceId !== model.screen.instanceId) {
       throw new TypeError("screen instance mismatch");
@@ -1034,6 +1144,7 @@ function receiveScreenMessage<T extends z.ZodRawShape>(
       lists,
       message.listChanges ?? [],
       controls,
+      message.type === "screen.list" ? message.updates : [],
     );
     model.screen.scroll = structuredClone(message.screenState.scroll);
     for (const [id, update] of Object.entries(message.screenState.elements)) {
@@ -1310,11 +1421,18 @@ function applyChanges<T extends z.ZodRawShape>(
   lists: ScreenLists,
   listChanges: readonly ListChange[],
   controls: readonly ControlDescriptor[],
+  requests: readonly ListRequest[] = [],
 ): void {
-  if (changes.length === 0 && listChanges.length === 0) return;
+  if (
+    changes.length === 0 && listChanges.length === 0 &&
+    !requests.some((request) => request.operation === "selection")
+  ) return;
   const candidate = structuredClone(model) as Record<string, unknown>;
   const bindings = lists.bindings();
   const changed = lists.applyEdits(listChanges, model, candidate);
+  for (const bind of lists.applySelection(requests, model, candidate)) {
+    changed.add(bind);
+  }
   for (const change of changes) {
     const target = schemaAtPath(schema, change.bind);
     if (target === undefined) {

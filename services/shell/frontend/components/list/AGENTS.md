@@ -19,6 +19,18 @@ Parent DOX: [shell frontend](../../AGENTS.md).
 
 # Local Contracts
 
+- Optional custom toolbars render ordinary UUI element arrays above the list and
+  stay visible independently of List tools. Include their actual height in
+  capacity measurement; reuse the shared element renderer and surface callbacks.
+- A selection binding adds a fixed-width first checkbox column outside data
+  columns, queries, copy, and exports. The header checkbox exposes all/none and
+  an indeterminate state across the complete source. Selection-cell click or
+  Space toggles its row; Shift ranges follow displayed order across pages.
+  Pointer drag previews a range and commits once on release; cancellation
+  restores the published state. Row-value clicks retain navigation.
+- Selection footers remain visible on single/empty pages, display
+  selected/source counts, and reserve their chrome during capacity measurement.
+  Lists without selection keep the existing hidden-footer behavior.
 - Keep list functionality encapsulated here and reuse the ordinary WebSocket.
   `screen.list` with an exclusive `read` returns `screen.list.data`, at most
   1,000 rows per request. Reads never commit dirty values, change the UUI page,
@@ -61,16 +73,23 @@ Parent DOX: [shell frontend](../../AGENTS.md).
   so filtering and shorter pages retain the card and footer geometry after
   reload. Reserved blank body space never enters capacity overhead; viewport,
   toolbar, and visibility changes may still remeasure capacity.
+- Size pages from the full page or modal content viewport, excluding fixed
+  headers, modal height limits/padding, and list chrome. Content above a list
+  scrolls away and never reduces its capacity. One scroll must expose the whole
+  list and pager; pagination then retains that position. Small sources still
+  reserve only their own rows, and scrolling never changes capacity.
 - Page sources use the same search toolbar and pagination as local arrays. Show
   their current range and optional known total; `more` makes the next page
   available. The server retains source size independently of filtered page
   length so card, modal, and footer geometry survive filtering and reload.
   Search-only sources retain heading help but omit column sort/filter controls.
-- Hide the entire pagination footer for zero or one result page. Sources that
-  fit on one page reserve no footer space; filtering larger sources retains the
-  original card height while hiding pagination. Determine capacity from source
-  totals and measured footer chrome, independent of current footer visibility,
-  so a footer cannot create a second page merely by occupying space.
+- Without selection, hide the entire pagination footer for zero or one result
+  page. Sources that fit on one page reserve no footer space; filtering larger
+  sources retains the original card height while hiding pagination. Retain that
+  footer's layout before the first measurement so reload restores scroll against
+  full geometry. Determine capacity from source totals and measured footer
+  chrome, independent of current footer visibility, so a footer cannot create a
+  second page merely by occupying space.
 - Column popovers place ascending and descending `Sort` buttons in one row,
   followed by the direction icon. Use the Material `sort` bars, flipped
   vertically for ascending, in both buttons and headers. Only the selected
@@ -103,6 +122,9 @@ Parent DOX: [shell frontend](../../AGENTS.md).
 # Verification
 
 - Run UUI `deno task check`, `deno task test`, and `services/shell/build.sh`.
+- `deno task test:list-selection-browser` covers native/Shift/drag/keyboard
+  selection, all pages and filters, reload, selected totals, toolbar controls,
+  and actual demo bulk actions.
 - `data_test.ts` checks column projection, formats/quoting, and read
   correlation; `list_geometry_test.ts` checks layout. Root list/session tests
   cover bounded, stale, filtered/sorted reads and preservation of source and
@@ -112,5 +134,8 @@ Parent DOX: [shell frontend](../../AGENTS.md).
   downloaded formats/ranges, desktop/mobile geometry, and the existing list
   interactions. `test:presentation-browser --field-help` covers page-source
   readers through real field help.
+- Field-help browser checks verify viewport-filling choice lists with collapsed
+  and expanded tools, stable scrolling across pages, and desktop, tall-window,
+  and mobile modal bounds.
 
 # Child DOX Index
