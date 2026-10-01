@@ -22,6 +22,8 @@ import {
 import {
   ACCOUNT_EVENT,
   BACK_EVENT,
+  type ComponentStyle,
+  CUSTOMIZATION_EVENT,
   MAX_UUI_MESSAGE_BODY_LENGTH,
   parseClientMessage,
   UUI_PROTOCOL_VERSION,
@@ -891,7 +893,7 @@ Deno.test({
         TypeError,
         "duplicate",
       );
-      for (const id of [BACK_EVENT, ACCOUNT_EVENT]) {
+      for (const id of [BACK_EVENT, ACCOUNT_EVENT, CUSTOMIZATION_EVENT]) {
         await assertRejects(
           () =>
             callScreen({
@@ -2511,6 +2513,84 @@ Deno.test("list toolbars share controls, identities and atomic whole-table selec
       TypeError,
       "duplicate screen shortcut",
     );
+  } finally {
+    unbind();
+  }
+});
+
+Deno.test("component styling validates every declaration path and preserves identity", async () => {
+  const appearance = { class: "attention", style: "border: 1px solid red;" };
+  const fields = buildFieldCatalog(
+    z.object({ note: field(z.string(), appearance) }),
+  );
+  const [control] = buildControls(fields);
+  assertEquals([control!.class, control!.style], [
+    appearance.class,
+    appearance.style,
+  ]);
+  assertEquals(
+    buildControls(fields, [{ bind: "note", class: "", style: "" }])[0]!.id,
+    control!.id,
+  );
+  const test = new TestChannel();
+  const unbind = bindSession(test);
+  try {
+    const options = {
+      id: "styled",
+      schema: z.object({ note: z.string() }),
+      model: new Model({ note: "Text" }),
+    };
+    for (
+      const invalid of [{ class: 42 }, { style: { border: "red" } }, {
+        style: null,
+      }]
+    ) {
+      const bad = invalid as unknown as ComponentStyle;
+      assertThrows(() => field(z.string(), bad), TypeError, "must be a string");
+      assertThrows(
+        () => buildControls(fields, [{ bind: "note", ...bad }]),
+        TypeError,
+        "must be a string",
+      );
+      for (
+        const declaration of [
+          bad,
+          { actions: [{ label: "Action", ...bad }] },
+          { header: { controls: [{ bind: "note", ...bad }] } },
+          { header: { elements: [{ type: "separator" as const, ...bad }] } },
+          {
+            layout: {
+              schema: 1,
+              id: "layout",
+              root: { type: "field-group", ...bad },
+            },
+          },
+          {
+            layout: {
+              schema: 1,
+              id: "layout",
+              root: {
+                type: "actions",
+                elements: [{ label: "Action", ...bad }],
+              },
+            },
+          },
+          {
+            controls: [{
+              bind: "note",
+              list: { toolbar: [{ label: "Action", ...bad }] },
+            }],
+          },
+          { customElements: [{ module: "/widget.js", config: {}, ...bad }] },
+        ]
+      ) {
+        await assertRejects(
+          () => callScreen({ ...options, ...declaration }),
+          TypeError,
+          "must be a string",
+        );
+      }
+    }
   } finally {
     unbind();
   }

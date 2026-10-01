@@ -711,6 +711,12 @@ async function serve(request: Request): Promise<Response> {
   const supplied = await fixture?.serve(request);
   if (supplied) return supplied;
   const url = new URL(request.url);
+  if (url.pathname === "/preferences" && Deno.args.includes("--programs")) {
+    const { fetchUserPreferences } = await import("./preferences.ts");
+    return Response.json(await fetchUserPreferences("robot"), {
+      headers: { "cache-control": "no-store" },
+    });
+  }
   if (url.pathname === "/before-uui") {
     return new Response('<a href="/">Enter UUI</a>', {
       headers: { "content-type": "text/html" },
@@ -837,6 +843,9 @@ async function serve(request: Request): Promise<Response> {
     );
     const boot = {
       username: "Browser test",
+      preferencesUrl: Deno.args.includes("--programs")
+        ? "/preferences"
+        : undefined,
       logoutUrl: "/logout",
       websocketUrl: `ws://127.0.0.1:${httpPort}/session`,
       protocol: UUI_PROTOCOL_VERSION,

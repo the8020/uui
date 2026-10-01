@@ -26,6 +26,7 @@ import {
 } from "./downloads.ts";
 import type {
   BrowserContext,
+  ComponentStyle,
   ControlDeclaration,
   ControlDescriptor,
   CustomElementDeclaration,
@@ -46,11 +47,13 @@ import type {
 import {
   ACCOUNT_EVENT,
   BACK_EVENT,
+  CUSTOMIZATION_EVENT,
   MAX_UUI_MESSAGE_BODY_LENGTH,
   shortcutKey,
   UUI_MESSAGE_KINDS,
   UUI_PROTOCOL_VERSION,
   type UUIMessageKind,
+  validateComponentStyle,
   validateShortcut,
 } from "./protocol.ts";
 
@@ -103,7 +106,8 @@ export type ScreenEvent =
 
 type ScreenOutcome = { event: ScreenEvent } | { error: unknown };
 
-export interface CallScreenOptions<T extends z.ZodRawShape> {
+export interface CallScreenOptions<T extends z.ZodRawShape>
+  extends ComponentStyle {
   id: string;
   schema: z.ZodObject<T>;
   model: Model<z.infer<z.ZodObject<T>>>;
@@ -148,7 +152,12 @@ interface ActiveScreenCall {
   readonly revision: number;
   readonly snapshot: () => ScreenSnapshot;
   readonly receive: (message: ScreenEventMessage | ScreenListMessage) => void;
-  readonly open: (target: ControlDescriptor | typeof ACCOUNT_EVENT) => void;
+  readonly open: (
+    target:
+      | ControlDescriptor
+      | typeof ACCOUNT_EVENT
+      | typeof CUSTOMIZATION_EVENT,
+  ) => void;
   readonly command: (
     command: AgentOperation,
     sequence: number,
@@ -305,6 +314,7 @@ export async function callScreen<T extends z.ZodRawShape>(
     throw new Error("callScreen() requires a bound UUI session Worker");
   }
   if (options.id.length === 0) throw new TypeError("screen ID is required");
+  validateComponentStyle(options);
   if (!(options.model instanceof Model)) {
     throw new TypeError("callScreen model must be a Model instance");
   }
@@ -438,6 +448,7 @@ export async function callScreen<T extends z.ZodRawShape>(
   );
   const shortcuts = new Set<string>();
   for (const element of [...resolvedControls, ...resolvedActions]) {
+    validateComponentStyle(element);
     validateShortcut(element.shortcut);
     if (element.shortcut === undefined) continue;
     const key = shortcutKey(element.shortcut);
@@ -493,7 +504,7 @@ export async function callScreen<T extends z.ZodRawShape>(
     if (
       action.id.length === 0 || action.label.length === 0 ||
       actionIDs.has(action.id) || action.id === BACK_EVENT ||
-      action.id === ACCOUNT_EVENT
+      action.id === ACCOUNT_EVENT || action.id === CUSTOMIZATION_EVENT
     ) {
       throw new TypeError(
         `duplicate, empty, unlabeled, or reserved action ${action.id}`,
@@ -550,6 +561,8 @@ export async function callScreen<T extends z.ZodRawShape>(
     return {
       id: options.id,
       screenCall,
+      ...(options.class === undefined ? {} : { class: options.class }),
+      ...(options.style === undefined ? {} : { style: options.style }),
       revision: screenRevision,
       title: options.title,
       description: options.description,
@@ -791,9 +804,12 @@ export async function callScreen<T extends z.ZodRawShape>(
     presenting: false,
   };
   async function showRelated(
-    target: ControlDescriptor | typeof ACCOUNT_EVENT,
+    target:
+      | ControlDescriptor
+      | typeof ACCOUNT_EVENT
+      | typeof CUSTOMIZATION_EVENT,
   ): Promise<void> {
-    const control = target === ACCOUNT_EVENT ? undefined : target;
+    const control = typeof target === "string" ? undefined : target;
     if (call.presenting || call.settled) return;
     call.presenting = true;
     let changed = false;
@@ -803,6 +819,13 @@ export async function callScreen<T extends z.ZodRawShape>(
         () =>
           control === undefined
             ? presentPage(async () => {
+              if (target === CUSTOMIZATION_EVENT) {
+                const { default: customization } = await import(
+                  "./programs/customization/program.ts"
+                );
+                await customization();
+                return;
+              }
               const { default: myAccount } = await import(
                 "/p/the8020/users/programs/my-account/program.ts"
               );
@@ -1223,8 +1246,11 @@ function receiveScreenMessage<T extends z.ZodRawShape>(
     type: "server.ack",
     clientSequence: message.clientSequence,
   });
-  if (message.type === "screen.event" && message.action === ACCOUNT_EVENT) {
-    call.open(ACCOUNT_EVENT);
+  if (
+    message.type === "screen.event" &&
+    (message.action === ACCOUNT_EVENT || message.action === CUSTOMIZATION_EVENT)
+  ) {
+    call.open(message.action);
   } else if (helpControl !== undefined) {
     call.open(helpControl);
   } else if (queryEvent !== undefined) {

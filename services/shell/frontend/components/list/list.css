@@ -288,7 +288,7 @@
 .data-list-page-numbers button[aria-current="page"] {
   border-color: var(--primary);
   background: var(--primary);
-  color: white;
+  color: var(--primary-foreground);
   cursor: default;
   opacity: 1;
 }

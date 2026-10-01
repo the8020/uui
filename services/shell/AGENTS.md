@@ -17,6 +17,10 @@ Parent DOX: [uui/services DOX](../AGENTS.md).
 
 # Local Contracts
 
+- Authenticated `GET /preferences` resolves only `meta.user.username` through
+  the shared UUI preferences API and returns `no-store` JSON. Boot data supplies
+  its canonical URL; the browser reads it on presentation updates.
+
 - Authenticated `/sessions` lists at most 100 of the caller's UUI sessions.
   `/control` checks ownership, invokes the exact persistent Worker's registered
   control function, and returns a signed route only to its eligible controller.
@@ -40,7 +44,9 @@ Parent DOX: [uui/services DOX](../AGENTS.md).
   and `no-store`.
 - Build from this repository's deno.json and keep runtime browser imports on the
   browser-safe protocol surface.
-- Theme preferences stay in browser storage and initialize before first paint.
+- Light/dark theme preferences stay in browser storage and initialize before
+  first paint. Accent preferences belong to the UUI database and update from the
+  shell endpoint.
 - The page nonce authorizes the theme initializer and trusted runtime-generated
   styles, including CodeMirror's base styles; keep external assets same-origin.
 

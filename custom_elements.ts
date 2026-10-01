@@ -5,6 +5,7 @@ import type {
 } from "./protocol.ts";
 import { resolveElementIDs } from "./identifiers.ts";
 import { validBrowserAssetURL } from "./browser_assets.ts";
+import { validateComponentStyle } from "./protocol.ts";
 
 const identifier = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
@@ -22,6 +23,8 @@ export function validateCustomElements(
     "custom",
     reserved,
   ).map((item) => {
+    validateComponentStyle(item);
+    const { class: className, style } = item;
     const id = isRecord(item) ? item.id : undefined;
     const module = isRecord(item) ? item.module : undefined;
     const styles = isRecord(item) ? item.styles : undefined;
@@ -37,7 +40,16 @@ export function validateCustomElements(
       throw new TypeError("invalid custom element descriptor");
     }
     const unknown = Object.keys(item).find((key) =>
-      !["id", "module", "styles", "preserve", "config", "fallback"].includes(
+      ![
+        "id",
+        "module",
+        "styles",
+        "preserve",
+        "config",
+        "fallback",
+        "class",
+        "style",
+      ].includes(
         key,
       )
     );
@@ -61,6 +73,8 @@ export function validateCustomElements(
     return {
       id,
       module,
+      ...(className === undefined ? {} : { class: className }),
+      ...(style === undefined ? {} : { style }),
       ...(styles === undefined
         ? {}
         : { styles: [...new Set(styles as string[])] }),

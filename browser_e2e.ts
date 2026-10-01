@@ -488,7 +488,7 @@ async function verifyUUI(
     const response = await fetch(
       `http://127.0.0.1:${secondaryPort}/the8020/uui/shell/`,
       {
-        headers: { cookie: `the8020_auth=${credential.value}` },
+        headers: { cookie: `${credential.name}=${credential.value}` },
         redirect: "manual",
       },
     );
@@ -3480,7 +3480,9 @@ async function verifyUUI(
   );
   const remainingCookies = await browserCookies(second);
   assert(
-    !remainingCookies.some((item) => item.name === "the8020_auth"),
+    !remainingCookies.some((item) =>
+      /^the8020_auth_sys-[a-z0-9]{10}$/.test(item.name)
+    ),
     "logout did not clear the authentication cookie",
   );
   await waitForUISessions(primaryRoot, 0);
@@ -3983,7 +3985,7 @@ async function authenticationCookie(
   page: BrowserPage,
 ): Promise<{ name: string; value: string; httpOnly?: boolean }> {
   const cookie = (await browserCookies(page)).find((item) =>
-    item.name === "the8020_auth"
+    /^the8020_auth_sys-[a-z0-9]{10}$/.test(item.name)
   );
   if (cookie === undefined) throw new Error("authentication cookie is missing");
   return cookie;

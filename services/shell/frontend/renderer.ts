@@ -1,4 +1,5 @@
 import { bindEnterEvent, bindShortcut } from "./keyboard.ts";
+import { applyComponentStyle } from "./component_style.ts";
 import type {
   ControlDescriptor,
   CustomElementDescriptor,
@@ -76,6 +77,7 @@ export function renderScreen(
   disposeFieldMessages(root);
   root.replaceChildren();
   const article = element("article", "screen");
+  applyComponentStyle(article, snapshot);
   const heading = element("h1", "screen-title");
   renderIconText(heading, snapshot.title ?? snapshot.id);
   article.append(heading);
@@ -306,6 +308,7 @@ function renderLayout(
       );
     }
   }
+  applyComponentStyle(region, node);
   return region;
 }
 
@@ -319,6 +322,7 @@ export function renderElements(
       const separator = element("div", "uui-separator");
       separator.dataset.elementId = item.id;
       separator.setAttribute("aria-hidden", "true");
+      applyComponentStyle(separator, item);
       return [separator];
     }
     const rendered = "bind" in item
@@ -351,6 +355,7 @@ function renderAction(
   button.dataset.elementId = action.id;
   renderIconText(button, action.label);
   button.className = `button button-${action.kind ?? "secondary"}`;
+  applyComponentStyle(button, action);
   button.addEventListener("click", () => callbacks.action(action.id));
   return button;
 }
@@ -438,7 +443,10 @@ export function renderControl(
   callbacks: RenderCallbacks,
 ): HTMLElement | undefined {
   const rendered = renderControlBody(control, model, callbacks);
-  if (rendered) bindShortcut(rendered, control.shortcut);
+  if (rendered) {
+    bindShortcut(rendered, control.shortcut);
+    applyComponentStyle(rendered, control);
+  }
   return rendered;
 }
 
@@ -527,7 +535,7 @@ function renderControlBody(
     if (
       input instanceof HTMLTextAreaElement ||
       input instanceof HTMLInputElement &&
-        !["checkbox", "range", "file"].includes(input.type)
+        !["checkbox", "range", "color", "file"].includes(input.type)
     ) input.readOnly = true;
     else input.disabled = true;
   }
@@ -771,6 +779,8 @@ function inputType(kind: ControlDescriptor["control"]): string {
       return "password";
     case "email":
       return "email";
+    case "color":
+      return "color";
     case "number":
       return "number";
     case "range":

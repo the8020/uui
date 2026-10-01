@@ -104,6 +104,11 @@ Default section order:
 When the user requests a durable behavior change, record it here or in the
 relevant child AGENTS.md
 
+- Customization opens from the hamburger menu as an ordinary UUI page and owns
+  user preferences. Accent color applies on Save in light and dark themes;
+  purple remains the built-in default. Nullable preference columns store only
+  personal overrides, inheriting the empty-username row and then built-ins.
+
 - Provide the code editor as a prebuilt custom field in its own shell component
   folder. Vendor libraries, load only on demand, inherit field binding/sizing
   and light/dark colors, and include copy/fullscreen plus optional line markers.
@@ -157,13 +162,15 @@ below.
 - [frontend/AGENTS.md](frontend/AGENTS.md): Provide shared browser Markdown
   rendering outside service-owned source trees.
 - [programs/AGENTS.md](programs/AGENTS.md): Own standard Home, Program
-  terminated, and session administration programs.
+  terminated, customization, user cleanup, and session administration programs.
+- [events/AGENTS.md](events/AGENTS.md): Subscribe to account deletion for UUI
+  preference cleanup.
 - [services/AGENTS.md](services/AGENTS.md): Declare and expose the login, shell,
   and persistent session services.
-- [src/AGENTS.md](src/AGENTS.md): Own shared session/short-dump fields,
-  short-dump shaping, and focused standard-program tests.
-- [tables/AGENTS.md](tables/AGENTS.md): Describe bounded persistent metadata for
-  UUI application sessions.
+- [src/AGENTS.md](src/AGENTS.md): Own shared preference/session/short-dump
+  fields, short-dump shaping, and focused standard-program tests.
+- [tables/AGENTS.md](tables/AGENTS.md): Own user preference overrides and
+  bounded persistent metadata for UUI application sessions.
 
 # Purpose
 
@@ -183,6 +190,25 @@ below.
   placement, physical WebSockets, or kernel routing.
 
 # Local Contracts
+
+- `preferences.ts` exposes `fetchUserPreferences(username?)`, resolving each
+  nullable field from the named user, the empty-username default, and built-ins.
+  Omitted username uses the authenticated identity. `saveUserPreferences` writes
+  only that identity's overrides; null or matching the current default removes
+  the override. With only accent color, an all-default personal row is deleted.
+  `tables/user_preferences.ts` owns storage; `users.deleted` asynchronously
+  deletes only the named user's row and preserves the system default.
+- The shell reads effective preferences through authenticated, uncached
+  `GET /preferences` on each presentation update. The most recent bounded
+  request owns application; no polling or browser preference persistence is
+  added. Theme switching immediately reapplies the last accent. Read failures
+  are visible and preserve the current accent.
+- The reserved `CUSTOMIZATION_EVENT` opens `the8020/uui/customization` through
+  the same protected page path as My account, retaining the pending caller and
+  draft. Back discards unsaved preferences. Use system default changes the
+  draft; Save commits it. The reusable `color` control uses native HTML color
+  input, ordinary string binding, schema validation, help, and disabled
+  read-only input.
 
 - Deployed service identity and canonical paths derive from
   `packages/the8020/uui`; login, shell, and session are ordinary default-enabled
@@ -382,6 +408,16 @@ below.
   while retaining the production compiler options.
 - Layouts and future overrides are serializable data without executable code;
   user-specific layout variants are not persisted in this phase.
+- Every component descriptor accepts optional string `class` and `style`:
+  controls (including inferred lists and custom fields), actions, separators,
+  layout regions (including explicit lists and field groups), and custom hosts.
+  `field()` metadata supplies defaults; control declarations may override them.
+  `callScreen` itself applies them to the screen article. Classes add to the
+  component root's existing classes; style contains native inline CSS
+  declarations, such as `border: 1px solid red;`. Header and toolbar elements
+  use the same contract. Changes do not affect element identity; omitted or
+  empty values clear previous authored styling on redraw, including preserved
+  hosts.
 - List options accept `toolbar: ScreenElementDeclaration[]`, rendered above the
   list independently of the collapsible List tools. The same ordered element
   arrays are available as `header.elements` and layout-node `elements`. Entries
@@ -605,22 +641,22 @@ below.
   green; connecting and reconnecting are red, while a visually hidden live label
   preserves the complete textual state. The username remains one line and
   ellipsizes at constrained widths. Its locally anchored, light-dismiss menu
-  owns My account, labeled light/dark theme switching, and clean logout. Logout
-  ends the persistent UUI session through the typed client protocol before
-  redirecting through the configured logout route, with direct navigation as a
-  disconnected-client fallback. The left brand/Back cluster and right session
-  cluster use explicit grid positions, so hiding or emptying the dynamic middle
-  never moves the right cluster away from the navbar's right edge. Page header
-  controls remain in this global area; modal header controls render inside their
-  own semantic native dialog. Program presentation dialogs and shell-owned
-  dialogs such as Messages share the same `uui-dialog` frame, toolbar, body,
-  close affordance, backdrop, responsive bounds, and scrolling design; their
-  distinct ownership changes behavior, not appearance. Dialog focus is contained
-  and restored, covered layers are inert, close and Escape route through
-  `BACK_EVENT`, and responsive modal bodies scroll within bounded viewport
-  dimensions. The navbar remains one row at every width. As the dynamic area
-  shrinks, a measured stable prefix remains visible while items move from right
-  to left into an accessible More disclosure without recreating their DOM
+  owns My account, Customization, labeled light/dark theme switching, and clean
+  logout. Logout ends the persistent UUI session through the typed client
+  protocol before redirecting through the configured logout route, with direct
+  navigation as a disconnected-client fallback. The left brand/Back cluster and
+  right session cluster use explicit grid positions, so hiding or emptying the
+  dynamic middle never moves the right cluster away from the navbar's right
+  edge. Page header controls remain in this global area; modal header controls
+  render inside their own semantic native dialog. Program presentation dialogs
+  and shell-owned dialogs such as Messages share the same `uui-dialog` frame,
+  toolbar, body, close affordance, backdrop, responsive bounds, and scrolling
+  design; their distinct ownership changes behavior, not appearance. Dialog
+  focus is contained and restored, covered layers are inert, close and Escape
+  route through `BACK_EVENT`, and responsive modal bodies scroll within bounded
+  viewport dimensions. The navbar remains one row at every width. As the dynamic
+  area shrinks, a measured stable prefix remains visible while items move from
+  right to left into an accessible More disclosure without recreating their DOM
   controls. More sits immediately after the last visible dynamic control, or at
   the dynamic area's start when none remain; opening it stacks every hidden
   control vertically in original order and clamps the popover to a `10px`
@@ -738,8 +774,10 @@ below.
   properties such as color, border, background, and shadow; it never transforms
   or repositions a pointer hitbox. Neutral elevation shadows are dark-tinted in
   light mode and black in dark mode; dark-mode surfaces never use text-derived
-  light shadows. Theme state is browser-only: `sessionStorage` keeps the current
-  UUI session override through redraw/reconnect/reload, while `localStorage`
+  light shadows. Custom accents derive readable theme shades and contrasting
+  primary-control text; built-in purple retains its existing theme tokens.
+  Light/dark theme state is browser-only: `sessionStorage` keeps the current UUI
+  session override through redraw/reconnect/reload, while `localStorage`
   supplies the default for future tabs. Shell markup defaults to dark, and a
   CSP-nonced initializer in the head resolves the browser-only stored or
   operating-system preference before CSS and first paint; theme state never
@@ -846,6 +884,19 @@ below.
   in the UI.
 
 # Verification
+
+- `preferences_test.ts` covers the actual nullable table descriptor through
+  SQLite, per-field inheritance, own-user saves, override removal, validation,
+  authenticated preference responses, and idempotent account-deletion cleanup.
+  `accent_test.ts` checks readable light/dark accents and default restoration.
+  `test:programs-browser --runtime` covers Customization from the menu, save,
+  cancellation, reset, external default changes, retained drafts, and mobile
+  sizing.
+
+- `deno task test:component-style-browser` verifies root classes, computed
+  borders, field binding, and replacing/clearing styling across fields, lists,
+  groups, actions, separators, header/toolbar elements, and preserved custom
+  hosts through the real session and built shell.
 
 - `deno task test:asset-delivery` checks the actual shell Worker, native Deno
   supervisor listener, and Go supervisor client together for encoding, cache,

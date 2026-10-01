@@ -67,6 +67,8 @@ Parent DOX: [shell frontend](../../AGENTS.md).
   grid and stop follow-up reads when the dialog or owning surface closes.
 - List row hover and focus change only the text color to primary. Keep the row
   background transparent.
+- Selected page buttons reuse the shell's contrasting primary foreground token
+  so custom accents remain readable in both themes.
 - Lists use precise fractional viewport widths and contain invisible
   full-heading measurements within their columns. Reserve fixed-height body rows
   from `min(totalSourceItems, pageSize)`, with one empty-state row at minimum,

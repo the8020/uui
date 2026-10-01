@@ -5,10 +5,12 @@ import {
   validateListOptions,
 } from "./list_options.ts";
 import type {
+  ComponentStyle,
   ControlDescriptor,
   ScreenElement,
   ScreenElementDeclaration,
 } from "./protocol.ts";
+import { validateComponentStyle } from "./protocol.ts";
 export type LayoutNodeType =
   | "stack"
   | "split"
@@ -21,7 +23,7 @@ export type LayoutNodeType =
   | "actions"
   | "custom";
 
-export interface LayoutNode extends ListOptions {
+export interface LayoutNode extends ListOptions, ComponentStyle {
   id: string;
   type: LayoutNodeType;
   title?: string;
@@ -84,6 +86,8 @@ const nodeTypes = new Set<LayoutNodeType>([
 ]);
 const layoutKeys = new Set(["schema", "id", "root"]);
 const nodeKeys = new Set([
+  "class",
+  "style",
   "id",
   "type",
   "title",
@@ -236,6 +240,7 @@ function validateNode(
     !nodeTypes.has(value.type as LayoutNodeType)
   ) throw new TypeError("invalid layout node");
   rejectUnknownKeys(value, nodeKeys, `layout node ${value.id}`);
+  validateComponentStyle(value);
   if (value.type === "list") validateListOptions(value);
   if (value.elements !== undefined) validateElementDeclarations(value.elements);
   if (ids.has(value.id)) {

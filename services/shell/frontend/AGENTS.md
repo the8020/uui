@@ -38,12 +38,28 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
 - Reconcile stable surfaces and retained DOM while preserving dirty values,
   focus, custom elements, and list state. Identical snapshots that retain DOM
   must also retain its bound model object so later edits reach submitted data.
+- Apply descriptor `class` and `style` through `component_style.ts` to each
+  component's root: field wrapper, list card, layout region, button, separator,
+  custom host, or screen article. Add classes and apply native CSS declarations
+  without replacing framework classes or unrelated inline styles. On retained
+  hosts, restore overridden styles and remove only added classes before applying
+  new descriptors; clearing styling preserves the host and its lifecycle.
 - Keep one shell-owned in-flight interaction gate, bounded message/history
   rendering, and consumption-based download flow control.
 - My account in the session menu sends the reserved `ACCOUNT_EVENT` with the
   active screen's dirty bindings through that same gate. Disable it while no
   screen is active, an interaction is pending, or My account is already active.
   The server calls the users program; no account code enters the browser bundle.
+- Customization uses reserved `CUSTOMIZATION_EVENT` through that same gate and
+  stays disabled while unavailable or already active. `presentation.show`
+  refreshes effective preferences from the uncached authenticated shell
+  endpoint. Abort superseded requests and bound reads to ten seconds; errors
+  preserve the applied accent and show a notice. `accent.ts` applies shared
+  accent/hover/soft and contrasting foreground tokens in both themes; built-in
+  purple clears overrides. Light/dark switching reapplies the last accent
+  immediately.
+- Native `color` fields reuse string binding and field geometry/help. Read-only
+  color inputs are disabled; field help remains available through the wrapper.
 - Native browser Back traverses the marked base entry, restores the existing
   guard with `history.forward()`, then dispatches UUI Back. Never push a new
   guard after traversal; Chromium may skip it on later native Back presses.
@@ -156,6 +172,8 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
 
 - Run UUI `deno task check` and `deno task test`, and rebuild with
   `services/shell/build.sh` for browser-source changes.
+- `deno task test:component-style-browser` checks root styling and redraws on
+  ordinary components and retained custom hosts through the session engine.
 - Use `deno task test:connection-browser`, `test:presentation-browser`,
   `test:lists-browser`, `test:programs-browser`, or `test:download-browser` for
   the affected end-to-end path. `test:native-back-browser` uses Xvfb and xdotool

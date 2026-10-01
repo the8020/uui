@@ -25,6 +25,7 @@ import {
 export const UUI_PROTOCOL_VERSION = uiConfig.protocolVersion;
 export const BACK_EVENT = "back" as const;
 export const ACCOUNT_EVENT = "uui.account" as const;
+export const CUSTOMIZATION_EVENT = "uui.customization" as const;
 export const UUI_MESSAGE_KINDS = [
   "info",
   "success",
@@ -258,6 +259,7 @@ export type ControlKind =
   | "text"
   | "password"
   | "email"
+  | "color"
   | "number"
   | "range"
   | "textarea"
@@ -309,7 +311,26 @@ export function validateShortcut(
   }
 }
 
-export interface FieldDescriptor {
+/** Applied to the component's root DOM element. */
+export interface ComponentStyle {
+  /** Space-separated CSS classes, added to the framework classes. */
+  class?: string;
+  /** Inline CSS declarations, for example `border: 1px solid red;`. */
+  style?: string;
+}
+
+export function validateComponentStyle(value: {
+  class?: unknown;
+  style?: unknown;
+}): asserts value is ComponentStyle {
+  for (const key of ["class", "style"] as const) {
+    if (value[key] !== undefined && typeof value[key] !== "string") {
+      throw new TypeError(`component ${key} must be a string`);
+    }
+  }
+}
+
+export interface FieldDescriptor extends ComponentStyle {
   bind: string;
   label: string;
   description?: string;
@@ -347,7 +368,7 @@ export type ControlDeclaration = Omit<ControlDescriptor, "id"> & {
   id?: string;
 };
 
-export interface ScreenAction {
+export interface ScreenAction extends ComponentStyle {
   shortcut?: KeyboardShortcut;
   id: string;
   label: string;
@@ -358,7 +379,7 @@ export type ScreenActionDeclaration = Omit<ScreenAction, "id"> & {
 };
 
 /** Flexible empty space in an ordered row of UUI elements. */
-export interface Separator {
+export interface Separator extends ComponentStyle {
   id: string;
   type: "separator";
 }
@@ -374,7 +395,7 @@ export interface ScreenHeader {
   actions: ScreenAction[];
 }
 
-export interface CustomElementDescriptor {
+export interface CustomElementDescriptor extends ComponentStyle {
   id: string;
   /** Same-origin browser module, loaded only when this element is rendered. */
   module: string;
@@ -404,7 +425,7 @@ export type CustomElementDeclaration = Omit<CustomElementDescriptor, "id"> & {
 };
 export type CustomElementOptions = Omit<CustomElementDescriptor, "id">;
 
-export interface ScreenSnapshot {
+export interface ScreenSnapshot extends ComponentStyle {
   id: string;
   screenCall?: string;
   revision: number;

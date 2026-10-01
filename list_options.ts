@@ -1,4 +1,5 @@
 import { isRecord, type ListOptions } from "./screen_state.ts";
+import { validateComponentStyle } from "./protocol.ts";
 
 export function validateElementDeclarations(value: unknown): void {
   if (!Array.isArray(value) || value.length > 200) {
@@ -8,9 +9,14 @@ export function validateElementDeclarations(value: unknown): void {
   }
   for (const element of value) {
     if (!isRecord(element)) throw new TypeError("invalid UUI element");
+    validateComponentStyle(element);
     if (element.type === "separator") {
-      if (Object.keys(element).some((key) => !["id", "type"].includes(key))) {
-        throw new TypeError("separator accepts only type and id");
+      if (
+        Object.keys(element).some((key) =>
+          !["id", "type", "class", "style"].includes(key)
+        )
+      ) {
+        throw new TypeError("separator accepts only type, id, class and style");
       }
     } else if (
       "type" in element ||

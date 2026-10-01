@@ -259,6 +259,7 @@ export async function runProgramsBrowser(root: string): Promise<void> {
       "system/tables/revisions",
       "system/tables/settings",
       "packages/tables/packages",
+      "uui/tables/user_preferences",
     ]
   ) {
     const descriptor = descriptorOf(
@@ -615,7 +616,6 @@ worker_keep_alive = "30s"
           }],
         },
       },
-      "secret.list": { secrets: [] },
       "development.sandbox.list": {
         sandboxes: [{
           user_id: "robot",
@@ -1170,6 +1170,11 @@ async function verifyRuntime(page: BrowserDriver): Promise<void> {
   );
   await input(page, "sessionKeepAlive", "45m");
   await input(page, "targetUtilization", "65.5");
+  await verifyCustomization(page);
+  assert(
+    await fieldValue(page, "minimumWorkers") === "2",
+    "Customization lost the configuration draft",
+  );
   await openMyAccount(page);
   await button(page, "Edit details");
   await title(page, "Edit details");
@@ -1300,6 +1305,122 @@ async function verifyRuntime(page: BrowserDriver): Promise<void> {
   await button(page, "Back");
   await title(page, "Service api");
   await button(page, "Back");
+}
+
+async function verifyCustomization(page: BrowserDriver): Promise<void> {
+  const { fetchUserPreferences } = await import("./preferences.ts");
+  const { default: Preferences } = await import("./tables/user_preferences.ts");
+  const menu = async () => {
+    await wait(
+      page,
+      "!document.querySelector('#screen-back').disabled",
+      "screen ready",
+    );
+    await page.evaluate("document.querySelector('#session-menu').open = true");
+    await button(page, "Customization");
+    await title(page, "Customization");
+  };
+  const saved = (color: string) =>
+    wait(
+      page,
+      `document.documentElement.style.getPropertyValue('--primary') !== '' && document.querySelector('[data-bind="accentColor"]')?.value === '${color}' && !document.querySelector('#screen-back').disabled`,
+      "saved accent",
+    );
+  await menu();
+  assert(
+    await page.evaluate(
+      "document.querySelector('[data-bind=accentColor]').type === 'color'",
+    ),
+    "Missing native color picker",
+  );
+  await input(page, "accentColor", "#ff8800");
+  assert(
+    await page.evaluate(
+      "document.documentElement.style.getPropertyValue('--primary') === ''",
+    ),
+    "Unsaved color changed the system accent",
+  );
+  await button(page, "Save");
+  await saved("#ff8800");
+  assert(
+    (await fetchUserPreferences("robot")).accentColor === "#ff8800",
+    "Accent was not persisted",
+  );
+  await page.evaluate(
+    "document.querySelector('#session-menu').open = true; document.querySelector('#theme-toggle').click()",
+  );
+  assert(
+    await page.evaluate(
+      "document.documentElement.style.getPropertyValue('--primary') !== '' && getComputedStyle(document.querySelector('[data-element-id=save]')).backgroundColor !== 'rgb(91, 91, 214)'",
+    ),
+    "Theme toggle discarded the accent",
+  );
+  await input(page, "accentColor", "#16803e");
+  await button(page, "Back");
+  await title(page, "Configure api");
+  assert(
+    (await fetchUserPreferences("robot")).accentColor === "#ff8800",
+    "Back saved an unsaved color",
+  );
+  await menu();
+  assert(
+    await fieldValue(page, "accentColor") === "#ff8800",
+    "Reopening lost the saved accent",
+  );
+  await page.command("Emulation.setDeviceMetricsOverride", {
+    width: 390,
+    height: 844,
+    deviceScaleFactor: 1,
+    mobile: true,
+  });
+  assert(
+    await page.evaluate("document.documentElement.scrollWidth <= innerWidth"),
+    "Mobile customization overflows",
+  );
+  await button(page, "Use system default");
+  await button(page, "Save");
+  await wait(
+    page,
+    "document.documentElement.style.getPropertyValue('--primary') === '' && !document.querySelector('#screen-back').disabled",
+    "default purple",
+  );
+  assert(
+    (await Preferences.selectAll().where(Preferences.username, "=", "robot")
+      .execute()).length === 0,
+    "Default retained a personal override",
+  );
+  // An external default change reaches this session on its next ordinary screen update.
+  const { db } = await import("/p/the8020/db/mod.ts");
+  await db.insertInto(Preferences.table).values({
+    username: "",
+    accentColor: "#16803e",
+  }).execute();
+  await button(page, "Back");
+  await title(page, "Configure api");
+  await wait(
+    page,
+    "document.documentElement.style.getPropertyValue('--primary') !== ''",
+    "updated system default",
+  );
+  await menu();
+  assert(
+    await fieldValue(page, "accentColor") === "#16803e",
+    "System default was not inherited",
+  );
+  await Preferences.delete().where(Preferences.username, "=", "").execute();
+  await button(page, "Back");
+  await title(page, "Configure api");
+  await wait(
+    page,
+    "document.documentElement.style.getPropertyValue('--primary') === ''",
+    "hardcoded default",
+  );
+  await page.command("Emulation.setDeviceMetricsOverride", {
+    width: 1280,
+    height: 900,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
 }
 
 async function verifySessions(page: BrowserDriver): Promise<void> {

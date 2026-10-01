@@ -10,6 +10,7 @@ import {
 } from "/p/the8020/db/fields.ts";
 import { humanize } from "./humanize.ts";
 import type {
+  ComponentStyle,
   ControlDeclaration,
   ControlDescriptor,
   ControlKind,
@@ -23,12 +24,14 @@ import type {
 import {
   ACCOUNT_EVENT,
   BACK_EVENT,
+  CUSTOMIZATION_EVENT,
   MAX_FIELD_ROW_SPAN,
+  validateComponentStyle,
   validateShortcut,
 } from "./protocol.ts";
 
 export interface FieldMetadata<Value = unknown>
-  extends SharedFieldMetadata<Value> {
+  extends SharedFieldMetadata<Value>, ComponentStyle {
   control?: ControlKind;
   custom?: CustomElementOptions;
   group?: string;
@@ -60,6 +63,7 @@ export function field<T extends z.ZodType>(
   schema: T,
   options: FieldMetadata<z.output<T>>,
 ): T {
+  validateComponentStyle(options);
   normalizeRowSpan(options.rowSpan);
   validateKeyboardMetadata(options);
   const { valueHelp, open, storage, ...presentation } = {
@@ -143,6 +147,7 @@ export function buildControls(
   );
   const ids = new Set<string>();
   for (const control of controls) {
+    validateComponentStyle(control);
     validateKeyboardMetadata(control);
     if (control.control === "custom" || control.custom !== undefined) {
       if (control.control !== "custom" || control.custom === undefined) {
@@ -204,6 +209,8 @@ function visitShape(
     }
     output.push({
       bind,
+      ...(configured.class === undefined ? {} : { class: configured.class }),
+      ...(configured.style === undefined ? {} : { style: configured.style }),
       label: configured.label ?? humanize(name),
       description: configured.description,
       control: configured.control ?? inferControl(unwrapped.schema, configured),
@@ -335,7 +342,8 @@ function validateKeyboardMetadata(
     value.enterEvent !== undefined &&
     (typeof value.enterEvent !== "string" ||
       value.enterEvent.trim().length === 0 || value.enterEvent === BACK_EVENT ||
-      value.enterEvent === ACCOUNT_EVENT)
+      value.enterEvent === ACCOUNT_EVENT ||
+      value.enterEvent === CUSTOMIZATION_EVENT)
   ) {
     throw new TypeError(
       "enterEvent must be a non-empty, non-reserved event name",

@@ -2,14 +2,22 @@ Parent DOX: [uui DOX](../AGENTS.md).
 
 # Purpose
 
-- Describe bounded persistent metadata for UUI application sessions.
+- Own user preference overrides and bounded metadata for UUI application
+  sessions.
 
 # Ownership
 
-- Own `sessions.ts` and their descriptor tests; physical schema deployment
-  remains kernel-owned.
+- Own `sessions.ts`, `user_preferences.ts`, and descriptor tests; schema
+  synchronization belongs to the db package and native database authority to the
+  kernel.
 
 # Local Contracts
+
+- `user_preferences.ts` has username as its primary key and nullable preferences
+  from `src/preference_fields.ts`. Empty username holds system defaults;
+  personal rows contain only overrides. Avoid an account foreign key so defaults
+  are valid. UUI's `users.deleted` subscriber removes personal rows after
+  account deletion.
 
 - Session identifiers, client address, screen ID, and execution references reuse
   `src/session_fields.ts`. Persisted lifecycle enums and logical datetime

@@ -9,6 +9,7 @@ import type {
 } from "../../../custom_element.ts";
 import { validBrowserAssetURL } from "../../../browser_assets.ts";
 import { renderIconText } from "./icon_text.ts";
+import { applyComponentStyle } from "./component_style.ts";
 
 interface HostCallbacks {
   send(action: string, value?: unknown): void;
@@ -275,6 +276,7 @@ export class CustomElementRenderer {
       );
       this.#entries.set(descriptor.id, entry);
     } else entry.update(descriptor.config, control);
+    applyComponentStyle(entry.host, descriptor);
     return entry.host;
   }
 

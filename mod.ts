@@ -1,4 +1,5 @@
 export { Model } from "./model.ts";
+export { fetchUserPreferences, saveUserPreferences } from "./preferences.ts";
 export {
   codeEditor,
   type CodeEditorOptions,

@@ -11,6 +11,7 @@
   --primary: #5b5bd6;
   --primary-dark: #4646bb;
   --primary-soft: #ececff;
+  --primary-foreground: #ffffff;
   --success: #14805e;
   --success-soft: #e4f6ef;
   --warning: #a65f00;
@@ -1395,7 +1396,7 @@ body:has(.uui-content-fullscreen) {
   inset-inline-start: 0.38rem;
   width: 0.32rem;
   height: 0.58rem;
-  border: solid #fff;
+  border: solid var(--primary-foreground);
   border-width: 0 2px 2px 0;
   rotate: 45deg;
 }
@@ -1487,6 +1488,21 @@ body:has(.uui-content-fullscreen) {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   text-align: end;
+}
+
+.field input[type="color"] {
+  cursor: pointer;
+  padding-block: 4px;
+}
+
+.field input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.field input[type="color"]::-webkit-color-swatch,
+.field input[type="color"]::-moz-color-swatch {
+  border: 1px solid var(--border);
+  border-radius: 4px;
 }
 
 .field-radio {
@@ -1671,7 +1687,7 @@ body:has(.uui-content-fullscreen) {
   border-color: var(--primary);
   background: var(--primary);
   box-shadow: 0 9px 22px color-mix(in srgb, var(--primary), transparent 70%);
-  color: white;
+  color: var(--primary-foreground);
 }
 
 .btn-primary:hover,

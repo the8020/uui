@@ -1,0 +1,4 @@
+schema = 1
+description = "Remove UUI preferences after user deletion"
+entrypoint = "program.ts"
+discoverable = false

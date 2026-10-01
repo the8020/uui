@@ -11,6 +11,7 @@ import {
   ACCOUNT_EVENT,
   BACK_EVENT,
   type BrowserContext,
+  CUSTOMIZATION_EVENT,
   type PresentationSnapshot,
   type PresentationSurfaceKind,
   type PresentationSurfaceSnapshot,
@@ -40,6 +41,7 @@ import {
 } from "./renderer.ts";
 import { ResponsiveProgramHeader } from "./responsive_header.ts";
 import { type Theme, ThemePreferences } from "./theme.ts";
+import { applyAccent } from "./accent.ts";
 import {
   createMaterialIcon,
   type MaterialIconName,
@@ -81,6 +83,7 @@ interface PresentationLayer {
 }
 
 interface BootData {
+  preferencesUrl?: string;
   username?: string;
   logoutUrl?: string;
   websocketUrl: string;
@@ -115,6 +118,9 @@ const sessionMenuIcon = requiredElement<HTMLElement>("session-menu-icon");
 const sessionUsername = requiredElement<HTMLElement>("session-username");
 const sessionLogout = requiredElement<HTMLButtonElement>("session-logout");
 const sessionAccount = requiredElement<HTMLButtonElement>("session-account");
+const sessionCustomization = requiredElement<HTMLButtonElement>(
+  "session-customization",
+);
 const themeToggle = requiredElement<HTMLButtonElement>("theme-toggle");
 const messagesOpen = requiredElement<HTMLButtonElement>("messages-open");
 const messagesCount = requiredElement<HTMLElement>("messages-count");
@@ -158,6 +164,8 @@ const themePreferences = new ThemePreferences(
   boot.websocketUrl,
   matchMedia("(prefers-color-scheme: dark)").matches,
 );
+let accentColor: string | undefined;
+let preferenceRequest: AbortController | undefined;
 let routeToken: string | null = null;
 let lastServerSequence = 0;
 let clientSequence = 0;
@@ -250,6 +258,7 @@ renderIconText(messageDialogClose, "[[icon=close]]", {
 });
 renderSessionMenuAction(sessionLogout, "logout", "Logout");
 renderSessionMenuAction(sessionAccount, "person", "My account");
+renderSessionMenuAction(sessionCustomization, "palette", "Customization");
 sessionUsername.textContent = username;
 sessionUsername.title = username;
 updateSessionMenuLabel();
@@ -266,6 +275,10 @@ sessionLogout.addEventListener("click", requestLogout);
 sessionAccount.addEventListener("click", () => {
   sessionMenu.open = false;
   dispatch(ACCOUNT_EVENT, "action");
+});
+sessionCustomization.addEventListener("click", () => {
+  sessionMenu.open = false;
+  dispatch(CUSTOMIZATION_EVENT, "action");
 });
 sessionMenu.addEventListener("toggle", () => {
   sessionMenuToggle.setAttribute("aria-expanded", String(sessionMenu.open));
@@ -635,6 +648,7 @@ function receive(raw: unknown): void {
       sendClient({ type: "session.pong" });
       break;
     case "presentation.show":
+      void refreshPreferences();
       listData.fail("The list changed. Try the list action again.");
       notice.hidden = true;
       try {
@@ -708,9 +722,41 @@ function receive(raw: unknown): void {
   }
 }
 
+async function refreshPreferences(): Promise<void> {
+  if (!boot.preferencesUrl) return;
+  preferenceRequest?.abort();
+  const request = preferenceRequest = new AbortController();
+  try {
+    const response = await fetch(boot.preferencesUrl, {
+      cache: "no-store",
+      signal: AbortSignal.any([request.signal, AbortSignal.timeout(10000)]),
+    });
+    if (!response.ok) throw new Error("Could not load your UUI preferences.");
+    const preferences = await response.json();
+    if (
+      typeof preferences.accentColor !== "string" ||
+      !/^#[0-9a-f]{6}$/i.test(preferences.accentColor)
+    ) {
+      throw new Error("Invalid UUI accent color.");
+    }
+    if (request.signal.aborted) return;
+    accentColor = preferences.accentColor;
+    applyAccent(document.documentElement, accentColor);
+  } catch (error) {
+    if (!request.signal.aborted) {
+      showNotice(
+        error instanceof Error
+          ? error.message
+          : "Could not load your UUI preferences.",
+      );
+    }
+  }
+}
+
 function applyTheme(theme: Theme): void {
   const dark = theme === "dark";
   document.documentElement.dataset.theme = theme;
+  applyAccent(document.documentElement, accentColor);
   themeToggle.setAttribute("aria-pressed", String(dark));
   themeToggle.setAttribute(
     "aria-label",
@@ -1362,6 +1408,9 @@ function updateInteractionState(): void {
   sessionAccount.disabled = logoutRequested || waiting ||
     active === undefined ||
     active.screen.id === "my-account";
+  sessionCustomization.disabled = logoutRequested || waiting ||
+    active === undefined ||
+    active.screen.id === "customization";
   if (pageWaiting) {
     app.setAttribute("aria-busy", "true");
     programHeaderRoot.setAttribute("aria-busy", "true");

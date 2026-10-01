@@ -1,0 +1,3 @@
+event = "users.deleted"
+description = "Remove the deleted user's UUI preference overrides"
+program = "the8020/uui/user-deleted"

@@ -16,6 +16,17 @@ const assets = new AssetServer();
 const service = defineService();
 
 service.get(
+  "/preferences",
+  { summary: "Read your effective UUI preferences" },
+  async ({ meta }) => {
+    const { fetchUserPreferences } = await import("../../preferences.ts");
+    return Response.json(await fetchUserPreferences(meta.user.username), {
+      headers: { "cache-control": "no-store" },
+    });
+  },
+);
+
+service.get(
   "/sessions",
   { summary: "List your UUI sessions" },
   async ({ meta }) => {
@@ -110,6 +121,7 @@ async function shellResponse(meta: RequestMetadata): Promise<Response> {
   const themeNonce = contentSecurityNonce();
   const boot = {
     username: meta.user.username,
+    preferencesUrl: `${meta.canonicalBasePath}/preferences`,
     logoutUrl: uiConfig.logoutUrl,
     websocketUrl:
       `${websocketScheme}//${requestURL.host}${uiConfig.sessionWebSocketPath}`,

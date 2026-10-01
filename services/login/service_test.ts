@@ -37,6 +37,18 @@ Deno.test("public login page, users-package login, and stale-cookie logout", asy
     ((operation, input) => {
       calls.push(operation);
       if (operation === "database.execute") {
+        if (String(input.statement).includes("the8020__system__settings")) {
+          return Promise.resolve({
+            columns: ["value"],
+            rows: [[
+              JSON.stringify({
+                id: "sys-aaaaaaaaaa",
+                name: "Development",
+                role: "development",
+              }),
+            ]],
+          });
+        }
         return Promise.resolve(
           input.return_rows
             ? {
@@ -74,7 +86,7 @@ Deno.test("public login page, users-package login, and stale-cookie logout", asy
   try {
     const page = await service.fetch(
       new Request("https://service/", {
-        headers: { cookie: "the8020_auth=expired" },
+        headers: { cookie: "the8020_auth_sys-aaaaaaaaaa=expired" },
       }),
       context,
     );
@@ -136,7 +148,7 @@ Deno.test("public login page, users-package login, and stale-cookie logout", asy
         body: new URLSearchParams({ username: "Invalid", password: "wrong" }),
         headers: {
           "content-type": "application/x-www-form-urlencoded",
-          cookie: "the8020_auth=expired",
+          cookie: "the8020_auth_sys-aaaaaaaaaa=expired",
         },
       }),
       context,
@@ -152,7 +164,7 @@ Deno.test("public login page, users-package login, and stale-cookie logout", asy
         body: new URLSearchParams({ username: "admin", password: "private" }),
         headers: {
           "content-type": "application/x-www-form-urlencoded",
-          cookie: "the8020_auth=expired",
+          cookie: "the8020_auth_sys-aaaaaaaaaa=expired",
         },
       }),
       context,
@@ -163,9 +175,15 @@ Deno.test("public login page, users-package login, and stale-cookie logout", asy
       login.headers.get("set-cookie")?.includes("issued-token"),
       true,
     );
+    assertEquals(
+      login.headers.get("set-cookie")?.startsWith(
+        "the8020_auth_sys-aaaaaaaaaa=",
+      ),
+      true,
+    );
     const logout = await service.fetch(
       new Request("https://service/logout", {
-        headers: { cookie: "the8020_auth=expired" },
+        headers: { cookie: "the8020_auth_sys-aaaaaaaaaa=expired" },
       }),
       context,
     );
@@ -174,6 +192,9 @@ Deno.test("public login page, users-package login, and stale-cookie logout", asy
     assertEquals(calls, [
       "database.execute",
       "runtime.operation",
+      "database.execute",
+      "database.execute",
+      "database.execute",
       "database.execute",
       "runtime.operation",
     ]);

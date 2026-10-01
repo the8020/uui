@@ -2,7 +2,8 @@ Parent DOX: [uui DOX](../AGENTS.md).
 
 # Purpose
 
-- Own standard Home, Program terminated, and session administration programs.
+- Own Home, Program terminated, Customization, user cleanup, and session
+  administration.
 
 # Ownership
 
@@ -23,6 +24,11 @@ Parent DOX: [uui DOX](../AGENTS.md).
 - From the repository root, run `deno task check` and `deno task test`.
 
 # Child DOX Index
+
+- [customization/AGENTS.md](customization/AGENTS.md): Edit authenticated UUI
+  preferences with save, default inheritance, and cancel behavior.
+- [user-deleted/AGENTS.md](user-deleted/AGENTS.md): Remove UUI-owned preference
+  overrides after account deletion.
 
 - [home/AGENTS.md](home/AGENTS.md): Launch discoverable UUI programs from the
   mounted package catalog.

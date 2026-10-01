@@ -2,15 +2,20 @@ Parent DOX: [uui DOX](../AGENTS.md).
 
 # Purpose
 
-- Own semantic session and short-dump fields, dump shaping, and focused
-  standard-program tests.
+- Own semantic preference, session, and short-dump fields, dump shaping, and
+  focused standard-program tests.
 
 # Ownership
 
-- Own `session_fields.ts`, `short_dump.ts`, `short_dump_test.ts`, and
-  `home_test.ts`.
+- Own `preference_fields.ts`, `session_fields.ts`, `short_dump.ts`,
+  `short_dump_test.ts`, and `home_test.ts`.
 
 # Local Contracts
+
+- `preference_fields.ts` owns the shared six-digit hex accent-color field,
+  effective preference schema, nullable override schema, and built-in purple.
+  Tables and Customization reuse these definitions; screens own the color
+  control.
 
 - `session_fields.ts` owns reusable UUI-session labels and help. `short_dump.ts`
   also owns the short-dump field schema; standard programs add only their
