@@ -58,9 +58,11 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
   accent/hover/soft and contrasting foreground tokens in both themes; built-in
   purple clears overrides. Light/dark switching reapplies the last accent
   immediately.
-- The navbar underline and field-group outline, including title-tab borders, use
-  the shared accent token in both themes and follow saved color and default
-  changes. Other card borders retain their existing neutral styling.
+- The shared CSS uses the accent token for navbar underlines, every field-group,
+  detail, and list card outline (including title tabs), and dialog frames and
+  toolbar underlines in both themes. Saved colors and defaults apply across all
+  screens, including field help and its value list. Primary buttons have no
+  colored elevation shadow; keyboard focus remains visible.
 - Native `color` fields reuse string binding and field geometry/help. Read-only
   color inputs are disabled; field help remains available through the wrapper.
 - Native browser Back traverses the marked base entry, restores the existing
@@ -177,6 +179,10 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
   `services/shell/build.sh` for browser-source changes.
 - `deno task test:component-style-browser` checks root styling and redraws on
   ordinary components and retained custom hosts through the session engine.
+- `test:programs-browser --runtime --screenshots` checks accent borders and
+  shadow-free primary buttons in both themes across Service detail, Configure,
+  Customization, read-only/editable field help, and mobile dialogs. Screenshots
+  are written to `/tmp/uui-accent-*.png` for visual review.
 - Use `deno task test:connection-browser`, `test:presentation-browser`,
   `test:lists-browser`, `test:programs-browser`, or `test:download-browser` for
   the affected end-to-end path. `test:native-back-browser` uses Xvfb and xdotool

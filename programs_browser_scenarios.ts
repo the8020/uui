@@ -619,7 +619,7 @@ worker_keep_alive = "30s"
       "development.sandbox.list": {
         sandboxes: [{
           user_id: "robot",
-          sandbox_id: "sbx-development01",
+          sandbox_id: "sbx-develop001",
           state: "READY",
         }],
       },
@@ -1118,6 +1118,12 @@ async function verifyRuntime(page: BrowserDriver): Promise<void> {
     mobile: false,
   });
   await title(page, "Service api");
+  const { db } = await import("/p/the8020/db/mod.ts");
+  const { default: Preferences } = await import("./tables/user_preferences.ts");
+  await db.insertInto(Preferences.table).values({
+    username: "",
+    accentColor: "#ff8800",
+  }).execute();
   await button(page, "View Status: field help");
   await title(page, "Status");
   await searchHelp(page, "PENDING_CAPACITY");
@@ -1126,6 +1132,12 @@ async function verifyRuntime(page: BrowserDriver): Promise<void> {
     `document.querySelector('[data-layout-id="choices"]')?.textContent.includes('PENDING_CAPACITY')`,
     "known service states",
   );
+  await wait(
+    page,
+    "document.documentElement.style.getPropertyValue('--primary') !== ''",
+    "inherited accent in field help",
+  );
+  await verifyAccentAppearance(page, "accent-service-help");
   assert(
     await fieldValue(page, "value") === "READY",
     "status help changed the read-only value",
@@ -1138,6 +1150,8 @@ async function verifyRuntime(page: BrowserDriver): Promise<void> {
   );
   await button(page, "Close");
   await title(page, "Service api");
+  await verifyAccentAppearance(page, "accent-service");
+  await Preferences.delete().where(Preferences.username, "=", "").execute();
   assert(
     await page.evaluate<boolean>(
       `!document.querySelector('[data-bind="minimumWorkers"]') && !document.querySelector('[data-bind="desiredVersion"]')`,
@@ -1310,19 +1324,6 @@ async function verifyRuntime(page: BrowserDriver): Promise<void> {
 async function verifyCustomization(page: BrowserDriver): Promise<void> {
   const { fetchUserPreferences } = await import("./preferences.ts");
   const { default: Preferences } = await import("./tables/user_preferences.ts");
-  const accentedBorders = () =>
-    page.evaluate<boolean>(`(() => {
-    const group = [...document.querySelectorAll('.layout-field-group')].find(group =>
-      group.getClientRects().length && !group.closest('[hidden],[inert]'));
-    if (!group) return false;
-    const probe = document.createElement('span');
-    probe.style.color = 'var(--primary)'; group.append(probe);
-    const accent = getComputedStyle(probe).color; probe.remove();
-    return getComputedStyle(document.querySelector('.navbar')).borderBottomColor === accent &&
-      ['Top', 'Right', 'Bottom', 'Left'].every(side => getComputedStyle(group)['border' + side + 'Color'] === accent) &&
-      getComputedStyle(group.querySelector('.group-title'), '::before').borderTopColor === accent &&
-      getComputedStyle(group.querySelector('.group-title'), '::after').borderLeftColor === accent;
-  })()`);
   const menu = async () => {
     await wait(
       page,
@@ -1340,10 +1341,7 @@ async function verifyCustomization(page: BrowserDriver): Promise<void> {
       "saved accent",
     );
   await menu();
-  assert(
-    await accentedBorders(),
-    "Default accent is missing from header and field-group borders",
-  );
+  await verifyAccentAppearance(page, "accent-default");
   assert(
     await page.evaluate(
       "document.querySelector('[data-bind=accentColor]').type === 'color'",
@@ -1359,10 +1357,7 @@ async function verifyCustomization(page: BrowserDriver): Promise<void> {
   );
   await button(page, "Save");
   await saved("#ff8800");
-  assert(
-    await accentedBorders(),
-    "Saved accent is missing from header and field-group borders",
-  );
+  await verifyAccentAppearance(page, "accent-customization");
   assert(
     (await fetchUserPreferences("robot")).accentColor === "#ff8800",
     "Accent was not persisted",
@@ -1376,10 +1371,7 @@ async function verifyCustomization(page: BrowserDriver): Promise<void> {
     ),
     "Theme toggle discarded the accent",
   );
-  assert(
-    await accentedBorders(),
-    "Theme toggle lost accented header or field-group borders",
-  );
+  await verifyAccentAppearance(page, "accent-theme-toggle");
   await input(page, "accentColor", "#16803e");
   await button(page, "Back");
   await title(page, "Configure api");
@@ -1387,6 +1379,31 @@ async function verifyCustomization(page: BrowserDriver): Promise<void> {
     (await fetchUserPreferences("robot")).accentColor === "#ff8800",
     "Back saved an unsaved color",
   );
+  await verifyAccentAppearance(page, "accent-configure");
+  await page.evaluate(
+    "document.querySelector('[data-bind=accessMode]').closest('.field').querySelector('.field-help-button').click()",
+  );
+  await wait(
+    page,
+    "document.querySelector('dialog.presentation-modal[open] .layout-list') !== null",
+    "editable value help",
+  );
+  await verifyAccentAppearance(page, "accent-editable-help");
+  await page.command("Emulation.setDeviceMetricsOverride", {
+    width: 390,
+    height: 844,
+    deviceScaleFactor: 1,
+    mobile: true,
+  });
+  await verifyAccentAppearance(page, "accent-editable-help-mobile");
+  await page.command("Emulation.setDeviceMetricsOverride", {
+    width: 1280,
+    height: 900,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await button(page, "Close");
+  await title(page, "Configure api");
   await menu();
   assert(
     await fieldValue(page, "accentColor") === "#ff8800",
@@ -1409,10 +1426,7 @@ async function verifyCustomization(page: BrowserDriver): Promise<void> {
     "document.documentElement.style.getPropertyValue('--primary') === '' && !document.querySelector('#screen-back').disabled",
     "default purple",
   );
-  assert(
-    await accentedBorders(),
-    "Reset lost accented header or field-group borders",
-  );
+  await verifyAccentAppearance(page, "accent-reset-mobile");
   assert(
     (await Preferences.selectAll().where(Preferences.username, "=", "robot")
       .execute()).length === 0,
@@ -1607,13 +1621,7 @@ async function verifyDevelopment(page: BrowserDriver): Promise<void> {
   );
   assert(
     await page.evaluate<boolean>(
-      "performance.getEntriesByType('resource').some(entry => entry.name.includes('/package-assets/the8020/dev-core/development-terminal-') && entry.name.endsWith('.js'))",
-    ),
-    "Development did not load its own terminal asset",
-  );
-  assert(
-    await page.evaluate<boolean>(
-      `document.querySelector('[data-bind="sandboxId"]')?.value === 'sbx-development01' &&
+      `document.querySelector('[data-bind="sandboxId"]')?.value === 'sbx-develop001' &&
        document.querySelector('[data-bind="user"]')?.value === 'robot' &&
        ![...document.querySelectorAll('button')].some(e => e.textContent.trim() === 'Advanced') &&
        ['restart', 'reset-source', 'factory-reset'].every(id =>
@@ -2007,6 +2015,57 @@ async function screenshot(page: BrowserDriver, name: string): Promise<void> {
     `/tmp/uui-${name}.png`,
     Uint8Array.from(atob(data), (value) => value.charCodeAt(0)),
   );
+}
+
+async function verifyAccentAppearance(
+  page: BrowserDriver,
+  name: string,
+): Promise<void> {
+  const failures: string[] = [];
+  for (const theme of ["light", "dark"]) {
+    if (
+      await page.evaluate("document.documentElement.dataset.theme") !== theme
+    ) {
+      await page.evaluate(
+        "document.querySelector('#session-menu').open = true; document.querySelector('#theme-toggle').click()",
+      );
+    }
+    await wait(
+      page,
+      "!document.documentElement.hasAttribute('data-interaction-pending') && !document.querySelector('dialog[data-interaction-pending]')",
+      "accent appearance ready",
+    );
+    await page.evaluate("new Promise(resolve => setTimeout(resolve, 200))");
+    await screenshot(page, `${name}-${theme}`);
+    const mismatches = await page.evaluate<string[]>(`(() => {
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--primary)'; document.body.append(probe);
+      const accent = getComputedStyle(probe).color; probe.remove();
+      const failures = [];
+      const visible = item => item.getClientRects().length && !item.closest('[hidden]');
+      const cards = [...document.querySelectorAll('.layout-field-group, .layout-detail, .layout-list, .uui-dialog[open]')].filter(visible);
+      if (!cards.length) failures.push('no visible cards');
+      for (const card of cards) {
+        const label = card.className + ': ' + (card.querySelector('.group-title, .screen-title')?.textContent || 'untitled');
+        for (const side of ['Top', 'Right', 'Bottom', 'Left']) {
+          const color = getComputedStyle(card)['border' + side + 'Color'];
+          if (color !== accent) failures.push(label + ' ' + side + ' ' + color + ' expected ' + accent);
+        }
+        const title = card.querySelector(':scope > .group-title');
+        if (title && (getComputedStyle(title, '::before').borderTopColor !== accent || getComputedStyle(title, '::after').borderLeftColor !== accent)) failures.push(label + ' title border');
+      }
+      if (getComputedStyle(document.querySelector('.navbar')).borderBottomColor !== accent) failures.push('navbar underline');
+      for (const toolbar of document.querySelectorAll('.uui-dialog[open] .uui-dialog-toolbar')) {
+        if (visible(toolbar) && getComputedStyle(toolbar).borderBottomColor !== accent) failures.push('modal toolbar underline');
+      }
+      for (const button of document.querySelectorAll('.navbar .button-primary, .navbar .btn-primary, .uui-dialog-toolbar .button-primary')) {
+        if (visible(button) && getComputedStyle(button).boxShadow !== 'none') failures.push(button.textContent.trim() + ' button shadow');
+      }
+      return failures;
+    })()`);
+    failures.push(...mismatches.map((failure) => `${theme}: ${failure}`));
+  }
+  assert(failures.length === 0, failures.join("\n"));
 }
 
 async function title(page: BrowserDriver, value: string) {

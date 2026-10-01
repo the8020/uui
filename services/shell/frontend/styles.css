@@ -597,7 +597,7 @@ textarea {
   max-height: 90vh;
   max-height: 90dvh;
   overflow: hidden;
-  border: 1px solid var(--border);
+  border: 1px solid var(--primary);
   border-radius: 16px;
   padding: 0;
   background: var(--surface);
@@ -634,7 +634,7 @@ textarea {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--primary);
   padding: 0.65rem 0.75rem;
 }
 
@@ -1070,7 +1070,7 @@ body:has(.uui-content-fullscreen) {
 .layout-field-group,
 .layout-detail,
 .layout-list {
-  --group-border-color: color-mix(in srgb, var(--border), transparent 12%);
+  --group-border-color: var(--primary);
   --group-radius: 14px;
   --group-padding-inline-start: 0.78rem;
   --group-padding-inline-end: 1.5rem;
@@ -1084,10 +1084,6 @@ body:has(.uui-content-fullscreen) {
     var(--group-padding-inline-start);
   background: var(--surface);
   box-shadow: var(--shadow);
-}
-
-.layout-field-group {
-  --group-border-color: var(--primary);
 }
 
 .layout-field-group,
@@ -1690,7 +1686,6 @@ body:has(.uui-content-fullscreen) {
 .button-primary {
   border-color: var(--primary);
   background: var(--primary);
-  box-shadow: 0 9px 22px color-mix(in srgb, var(--primary), transparent 70%);
   color: var(--primary-foreground);
 }
 
