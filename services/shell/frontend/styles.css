@@ -234,7 +234,7 @@ textarea {
   position: sticky;
   z-index: 20;
   top: 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--border), transparent 25%);
+  border-bottom: 1px solid var(--primary);
   background: color-mix(in srgb, var(--bg), transparent 8%);
   backdrop-filter: blur(18px);
 }
@@ -1084,6 +1084,10 @@ body:has(.uui-content-fullscreen) {
     var(--group-padding-inline-start);
   background: var(--surface);
   box-shadow: var(--shadow);
+}
+
+.layout-field-group {
+  --group-border-color: var(--primary);
 }
 
 .layout-field-group,

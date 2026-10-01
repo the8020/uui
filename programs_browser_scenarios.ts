@@ -1310,6 +1310,19 @@ async function verifyRuntime(page: BrowserDriver): Promise<void> {
 async function verifyCustomization(page: BrowserDriver): Promise<void> {
   const { fetchUserPreferences } = await import("./preferences.ts");
   const { default: Preferences } = await import("./tables/user_preferences.ts");
+  const accentedBorders = () =>
+    page.evaluate<boolean>(`(() => {
+    const group = [...document.querySelectorAll('.layout-field-group')].find(group =>
+      group.getClientRects().length && !group.closest('[hidden],[inert]'));
+    if (!group) return false;
+    const probe = document.createElement('span');
+    probe.style.color = 'var(--primary)'; group.append(probe);
+    const accent = getComputedStyle(probe).color; probe.remove();
+    return getComputedStyle(document.querySelector('.navbar')).borderBottomColor === accent &&
+      ['Top', 'Right', 'Bottom', 'Left'].every(side => getComputedStyle(group)['border' + side + 'Color'] === accent) &&
+      getComputedStyle(group.querySelector('.group-title'), '::before').borderTopColor === accent &&
+      getComputedStyle(group.querySelector('.group-title'), '::after').borderLeftColor === accent;
+  })()`);
   const menu = async () => {
     await wait(
       page,
@@ -1328,6 +1341,10 @@ async function verifyCustomization(page: BrowserDriver): Promise<void> {
     );
   await menu();
   assert(
+    await accentedBorders(),
+    "Default accent is missing from header and field-group borders",
+  );
+  assert(
     await page.evaluate(
       "document.querySelector('[data-bind=accentColor]').type === 'color'",
     ),
@@ -1343,6 +1360,10 @@ async function verifyCustomization(page: BrowserDriver): Promise<void> {
   await button(page, "Save");
   await saved("#ff8800");
   assert(
+    await accentedBorders(),
+    "Saved accent is missing from header and field-group borders",
+  );
+  assert(
     (await fetchUserPreferences("robot")).accentColor === "#ff8800",
     "Accent was not persisted",
   );
@@ -1354,6 +1375,10 @@ async function verifyCustomization(page: BrowserDriver): Promise<void> {
       "document.documentElement.style.getPropertyValue('--primary') !== '' && getComputedStyle(document.querySelector('[data-element-id=save]')).backgroundColor !== 'rgb(91, 91, 214)'",
     ),
     "Theme toggle discarded the accent",
+  );
+  assert(
+    await accentedBorders(),
+    "Theme toggle lost accented header or field-group borders",
   );
   await input(page, "accentColor", "#16803e");
   await button(page, "Back");
@@ -1383,6 +1408,10 @@ async function verifyCustomization(page: BrowserDriver): Promise<void> {
     page,
     "document.documentElement.style.getPropertyValue('--primary') === '' && !document.querySelector('#screen-back').disabled",
     "default purple",
+  );
+  assert(
+    await accentedBorders(),
+    "Reset lost accented header or field-group borders",
   );
   assert(
     (await Preferences.selectAll().where(Preferences.username, "=", "robot")
