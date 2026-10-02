@@ -10,6 +10,7 @@ import {
   z,
 } from "../../../../../mod.ts";
 import programTerminated from "../../../../../programs/program-terminated/program.ts";
+import demoForm from "/p/the8020/demo/programs/demo-form/program.ts";
 
 interface Browser {
   evaluate<T>(expression: string): Promise<T>;
@@ -66,6 +67,7 @@ export default function fixture() {
         const event = await callScreen({
           id: "editor-test",
           title: "Code editor",
+          description: "Content above the editor.\n\n".repeat(24),
           model,
           channel,
           schema: z.object({
@@ -120,6 +122,7 @@ export default function fixture() {
               { id: "reset", label: "Reset state" },
               { id: "page", label: "Other page" },
               { id: "modal", label: "Modal editor" },
+              { id: "demo", label: "Demo form" },
               { id: "terminate", label: "Terminate" },
             ],
           },
@@ -155,6 +158,7 @@ export default function fixture() {
             })
           );
         }
+        if (event.action === "demo") await presentPage(demoForm);
         if (event.action === "terminate") {
           const error = new TypeError("Editor source test");
           const path = new URL("browser_fixture.ts", import.meta.url).pathname;
@@ -276,6 +280,11 @@ async function verify(page: Browser): Promise<void> {
   })()`);
   await click(page, "Open editor");
   await editor(page);
+  assertEquals(
+    await page.evaluate("scrollY"),
+    0,
+    "Mount scrolled to the editor",
+  );
   await wait(page, `${host}.querySelector('.uui-code-keyword') !== null`);
   assertEquals(
     await page.evaluate(
@@ -460,10 +469,26 @@ async function verify(page: Browser): Promise<void> {
     page,
     "document.querySelector('[data-custom-element-id=stack] .cm-content')?.textContent.includes('Editor source test')",
   );
+  await page.evaluate(
+    "new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+  );
+  assertEquals(
+    await page.evaluate("scrollY"),
+    0,
+    "Program terminated scrolled to its stack editor",
+  );
   await click(page, "Source code");
   await wait(
     page,
     "document.querySelector('[data-custom-element-id=source] .uui-code-line-error') !== null && document.querySelector('[data-custom-element-id=source]').dataset.language === 'typescript'",
+  );
+  await page.evaluate(
+    "new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+  );
+  assertEquals(
+    await page.evaluate("scrollY"),
+    0,
+    "Revealing the error line scrolled the page",
   );
   assertEquals(
     await page.evaluate(
@@ -498,4 +523,18 @@ async function verify(page: Browser): Promise<void> {
     page,
     "document.querySelector('.screen-title')?.textContent === 'Code editor'",
   );
+  await click(page, "Demo form");
+  await wait(
+    page,
+    "[...document.querySelectorAll('[data-custom-element-id=source]')].some(host => !host.closest('[hidden]') && host.dataset.language === 'typescript')",
+  );
+  await page.evaluate(
+    "new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+  );
+  assertEquals(
+    await page.evaluate("scrollY"),
+    0,
+    "Demo form scrolled to its code",
+  );
+  await click(page, "Back");
 }

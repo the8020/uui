@@ -268,26 +268,30 @@ export default function mount(
         view.dispatch({
           selection: { anchor: clamp(saved.anchor), head: clamp(saved.head) },
         });
-      } else {
-        const options = context.config as CodeEditorOptions;
-        const line = (options.revealLine ?? options.firstLine ?? 1) -
-          (options.firstLine ?? 1) + 1;
-        view.dispatch({
-          effects: EditorView.scrollIntoView(
+      }
+      view.requestMeasure({
+        read() {
+          if (saved) return scroll.y;
+          const options = context.config as CodeEditorOptions;
+          const line = (options.revealLine ?? options.firstLine ?? 1) -
+            (options.firstLine ?? 1) + 1;
+          const block = view.lineBlockAt(
             view.state.doc.line(
               Math.max(1, Math.min(line, view.state.doc.lines)),
             ).from,
-            { y: "center" },
-          ),
-        });
-      }
-      view.requestMeasure({
-        read() {},
-        write() {
+          );
+          return Math.max(
+            0,
+            (block.top + block.bottom - view.scrollDOM.clientHeight) / 2 +
+              view.documentPadding.top,
+          );
+        },
+        write(top) {
           if (saved) {
             view.scrollDOM.scrollLeft = scroll.x;
-            view.scrollDOM.scrollTop = scroll.y;
           }
+          // Initial reveal must scroll only the editor, never its page or modal.
+          view.scrollDOM.scrollTop = top;
           restored = true;
           remember();
         },

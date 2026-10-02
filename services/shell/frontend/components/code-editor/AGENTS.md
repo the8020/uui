@@ -28,6 +28,9 @@ Parent DOX: [shell frontend](../../AGENTS.md).
   Copy all and content fullscreen; release fullscreen when deactivated.
 - Store scroll and selection in the host's screen element state. Synchronize
   only with ordinary interactions; reset with the owning Model.
+- Mount and initial line reveal scroll only the editor's own viewport. Never
+  scroll the surrounding page or modal into view; retained scroll takes
+  precedence over the initial reveal line.
 - Syntax checks report bounded local parser errors, never resolve imports or
   external symbols. Text, Markdown, SQL, and legacy stream modes have no
   structural checker. Disable checks for partial source snippets.
@@ -45,6 +48,7 @@ Parent DOX: [shell frontend](../../AGENTS.md).
 # Verification
 
 - Run UUI check/test, rebuild the shell, and run
-  `deno task test:code-editor-browser`.
+  `deno task test:code-editor-browser`. The browser fixture checks page position
+  on mount, Demo form, and Program terminated alongside retained editor state.
 
 # Child DOX Index
