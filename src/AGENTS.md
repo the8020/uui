@@ -25,7 +25,9 @@ Parent DOX: [uui DOX](../AGENTS.md).
 
 - Bound exception, stack, and source context before presenting recovery output.
 - Short dumps retain formatted copy text and expose a bounded raw source
-  document with its path, first line, and exception line for source viewers.
+  document with its path, first line, and exception line/column for source
+  viewers. This is the source read while displaying recovery, not a pinned crash
+  revision.
 - Stack location and canonical source-path formatting also supply `screenCall`
   provenance for the shared screen engine.
 - Home tests retain manifest-driven filtering and silent program returns.

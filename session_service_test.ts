@@ -1349,6 +1349,94 @@ async function until(
   throw new Error("condition was not reached");
 }
 
+Deno.test("first browser after headless actions resumes the sequence before the current screen", async () => {
+  const metadataStore = new MemorySessionMetadataStore();
+  let advances = 0;
+  let finished = false;
+  const service = defineSessionService(async () => {
+    const model = new Model({});
+    while (true) {
+      const event = await callScreen({
+        id: "headless-handoff",
+        title: `Stage ${advances}`,
+        model,
+        schema: z.object({}),
+        header: { actions: [{ id: "advance", label: "Advance" }] },
+      });
+      if (event.action === "done") {
+        finished = true;
+        return;
+      }
+      advances++;
+    }
+  }, { metadataStore, completePersistent: () => Promise.resolve() });
+  try {
+    const established = await service.fetch(
+      new Request("https://example.test/connect", { method: "POST" }),
+      context(metadata),
+    );
+    const sessionId = established.headers.get("the8020-session")!;
+    let expected: AgentResponse["expected"];
+    for (const command of [{ op: "screen" }, { op: "click", id: "advance" }]) {
+      const ticket = controlSession({
+        sessionId,
+        clientId: "agent",
+        operation: "claim",
+        takeover: true,
+      }, metadata.auth.userId!);
+      const response = await service.fetch(
+        new Request("https://example.test/command", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            clientId: "agent",
+            control: ticket.control,
+            expected,
+            command,
+          }),
+        }),
+        context(metadata),
+      );
+      const result = await response.json() as AgentResponse;
+      assertEquals(result.error, undefined);
+      expected = result.expected;
+    }
+    assertEquals(advances, 1);
+    const browser = new TestSocket();
+    const ticket = controlSession({
+      sessionId,
+      clientId: "browser",
+      operation: "claim",
+      takeover: true,
+    }, metadata.auth.userId!);
+    browser.message({
+      ...connectMessage(0),
+      clientId: "browser",
+      control: ticket.control,
+    });
+    await service.connectWebSocket(
+      new Request("https://example.test/connect"),
+      context(metadata),
+      browser,
+    );
+    await until(() => serverMessages(browser, "presentation.show").length > 0);
+    const resumed = serverMessages(browser, "session.resumed")[0];
+    assert(resumed && resumed.lastClientSequence > 0);
+    const presentation = serverMessages(browser, "presentation.show")[0]!;
+    assert(resumed.serverSequence < presentation.serverSequence);
+    assertEquals(
+      presentation.presentation.surfaces.at(-1)!.screen.title,
+      "Stage 1",
+    );
+    browser.message(
+      screenEvent(presentation, "done", resumed.lastClientSequence + 1),
+    );
+    await until(() => finished);
+  } finally {
+    await metadataStore.clear();
+  }
+});
+
 Deno.test("list reads acknowledge the session sequence so reload can submit the next screen event", async () => {
   const metadataStore = new MemorySessionMetadataStore();
   let action = "";
