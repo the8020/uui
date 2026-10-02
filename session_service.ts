@@ -434,7 +434,8 @@ async function connect(
     clearTimeout(record.disconnectTimer);
   }
   record.disconnectTimer = undefined;
-  const resumed = record.hasConnected;
+  // Headless commands already consumed client sequences before the first socket.
+  const resumed = record.hasConnected || record.lastClientSequence > 0;
   record.hasConnected = true;
   record.socket = socket;
   record.client = structuredClone(meta.client);

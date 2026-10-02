@@ -6,7 +6,10 @@ import {
   copyText,
   endSession,
   field,
+  invokeProgram,
   Model,
+  presentPage,
+  sendMessage,
   type TerminatedProgramInput,
   z,
 } from "/p/the8020/uui/mod.ts";
@@ -88,6 +91,11 @@ export default async function programTerminated(
     py: "python",
   } as Record<string, CodeLanguage>)[extension] ?? "text";
   const screenModel = new Model(model);
+  const browseSource =
+    sourceDocument?.path.startsWith("/workspace/packages/") &&
+    await Deno.stat(
+      "/workspace/packages/the8020/dev-core/programs/code-browser/program.toml",
+    ).then((file) => file.isFile, () => false);
   while (true) {
     screenModel.data = model;
     const event = await callScreen({
@@ -130,6 +138,9 @@ export default async function programTerminated(
         actions: [
           { id: "home", label: "Home", kind: "primary" },
           { id: "copy", label: "Copy short dump" },
+          ...(browseSource
+            ? [{ id: "browse-source", label: "[[icon=code]] Browse source" }]
+            : []),
           { id: "end", label: "End session", kind: "danger" },
         ],
       },
@@ -143,6 +154,24 @@ export default async function programTerminated(
     if (event.action === "copy") {
       copyText(model.dumpText);
       model.copyStatus = `Copied ${new Date().toISOString()}`;
+    }
+    if (event.action === "browse-source" && browseSource && sourceDocument) {
+      const path = sourceDocument.path.slice("/workspace/packages/".length);
+      try {
+        await presentPage(() =>
+          invokeProgram("the8020/dev-core/code-browser", [{
+            path,
+            line: sourceDocument.line,
+            column: sourceDocument.column,
+            origin: { ...sourceDocument, path },
+          }])
+        );
+      } catch (error) {
+        sendMessage(
+          error instanceof Error ? error.message : String(error),
+          "error",
+        );
+      }
     }
   }
 }

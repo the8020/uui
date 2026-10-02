@@ -251,6 +251,7 @@ export default function mount(
     const saved = context.state.data?.selection as {
       anchor?: number;
       head?: number;
+      reveal?: boolean;
     } | undefined;
     const scroll = { ...context.state.scroll };
     // The host can move during redraw. Restore after shell focus and DOM placement.
@@ -270,13 +271,25 @@ export default function mount(
         });
       }
       view.requestMeasure({
+        key: restore,
         read() {
-          if (saved) return scroll.y;
+          if (saved && !saved.reveal) return scroll.y;
+          // Off-screen line blocks may still have estimated heights.
+          const cursor = saved ? view.coordsAtPos(clamp(saved.head)) : null;
+          if (cursor) {
+            const viewport = view.scrollDOM.getBoundingClientRect();
+            return Math.max(
+              0,
+              view.scrollDOM.scrollTop +
+                (cursor.top + cursor.bottom - viewport.top - viewport.bottom) /
+                  2,
+            );
+          }
           const options = context.config as CodeEditorOptions;
           const line = (options.revealLine ?? options.firstLine ?? 1) -
             (options.firstLine ?? 1) + 1;
           const block = view.lineBlockAt(
-            view.state.doc.line(
+            saved ? clamp(saved.head) : view.state.doc.line(
               Math.max(1, Math.min(line, view.state.doc.lines)),
             ).from,
           );
@@ -287,6 +300,7 @@ export default function mount(
           );
         },
         write(top) {
+          if (signal.aborted) return;
           if (saved) {
             view.scrollDOM.scrollLeft = scroll.x;
           }

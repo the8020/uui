@@ -28,6 +28,7 @@ Deno.test("short dump preserves exception type, fields, stack, and source contex
   assertStringIncludes(dump.source, ">  8 |");
   assertEquals(dump.sourceDocument?.firstLine, 3);
   assertEquals(dump.sourceDocument?.line, 8);
+  assertEquals(dump.sourceDocument?.column, 3);
   assertEquals(dump.sourceDocument?.path, source);
   const lines = (await Deno.readTextFile(source)).split("\n");
   assertEquals(dump.sourceDocument?.text, lines.slice(2, 13).join("\n"));
