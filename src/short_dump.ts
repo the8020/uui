@@ -49,6 +49,7 @@ export type ShortDump = z.infer<typeof shortDumpFields> & {
     text: string;
     firstLine: number;
     line: number;
+    column: number;
     path: string;
   };
 };
@@ -259,6 +260,7 @@ async function sourceContext(location: SourceLocation): Promise<
         text: excerpt.join("\n"),
         firstLine: first,
         line: location.line,
+        column: location.column,
         path: location.path,
       },
     };

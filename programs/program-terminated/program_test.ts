@@ -44,9 +44,14 @@ Deno.test("Program terminated renders, copies its dump, and returns Home", async
     const model = firstScreen.model as Record<string, string>;
     assertEquals(model.exceptionType, "TypeError");
     assertStringIncludes(model.dumpText!, "program demonstration failed");
+    const browserInstalled = entrypoint.startsWith("/workspace/packages/") &&
+      await Deno.stat(
+        "/workspace/packages/the8020/dev-core/programs/code-browser/program.toml",
+      ).then((file) => file.isFile, () => false);
     assertEquals(firstScreen.header.actions.map((item) => item.id), [
       "home",
       "copy",
+      ...(browserInstalled ? ["browse-source"] : []),
       "end",
     ]);
 

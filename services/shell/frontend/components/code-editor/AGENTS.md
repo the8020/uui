@@ -31,6 +31,11 @@ Parent DOX: [shell frontend](../../AGENTS.md).
 - Mount and initial line reveal scroll only the editor's own viewport. Never
   scroll the surrounding page or modal into view; retained scroll takes
   precedence over the initial reveal line.
+- A program-owned extension may set `data.selection.reveal = true` with its
+  target anchor/head before update. This one-shot line reveal overrides retained
+  vertical scroll through the same editor-only restoration path, then captures
+  ordinary scroll/selection state; consumers must not race restoration with
+  delayed scroll writes.
 - Syntax checks report bounded local parser errors, never resolve imports or
   external symbols. Text, Markdown, SQL, and legacy stream modes have no
   structural checker. Disable checks for partial source snippets.

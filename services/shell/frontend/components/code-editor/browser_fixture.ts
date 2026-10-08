@@ -301,6 +301,45 @@ async function verify(page: Browser): Promise<void> {
       true,
     );
   }
+  // A package-owned jump must survive mount, activation and editor measurement.
+  await page.evaluate(`(async () => {
+    const {default: mount} = await import('/the8020/uui/shell/components/code-editor/editor.js');
+    const node = document.createElement('div');
+    node.style.cssText = 'position:absolute;top:calc(100vh + 80px);left:20px;width:640px;height:300px;z-index:10';
+    node.hidden = true;
+    document.body.append(node);
+    const text = ${JSON.stringify(longCode)};
+    const offset = text.split('\\n').slice(0, 184).join('\\n').length + 1;
+    const state = {scroll: {x: 0, y: 0}, toolbarOpen: false,
+      data: {selection: {anchor: offset, head: offset, reveal: true}}};
+    const controller = new AbortController();
+    const instance = mount({host: node, config: {language: 'typescript'},
+      control: {label: 'Jump probe', readOnly: true}, value: text, state,
+      signal: controller.signal, setValue() {}, send() {},
+      renderText(target, value) { target.textContent = value; }});
+    window.jumpProbe = {node, state, controller, instance, offset};
+    node.hidden = false;
+    instance.setActive(true);
+    instance.update({});
+  })()`);
+  await wait(
+    page,
+    `(() => {
+    const {instance, state, offset} = jumpProbe;
+    const view = instance.editor;
+    const cursor = view.coordsAtPos(offset);
+    const box = view.scrollDOM.getBoundingClientRect();
+    return view.state.selection.main.head === offset && state.scroll.y > 0 &&
+      cursor && cursor.top >= box.top && cursor.bottom <= box.bottom &&
+      state.data.selection.reveal === undefined && scrollY === 0;
+  })()`,
+  );
+  await page.evaluate(`(() => {
+    jumpProbe.controller.abort();
+    jumpProbe.instance.dispose();
+    jumpProbe.node.remove();
+    delete window.jumpProbe;
+  })()`);
   await type(
     page,
     'import { external } from "not-installed";\nconst value: MissingType = external();',

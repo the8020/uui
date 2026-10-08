@@ -282,6 +282,9 @@ below.
   later inspection without repeating the action. Commands in progress prevent
   competing claims. Responses include session completion and up to ten recent
   notifications. Worker control functions never perform the screen command.
+- The first browser attachment after headless actions is a resume: send the
+  current client-sequence watermark before the current presentation. Do not
+  replay stale screens as a new sequence-zero browser session.
 - The shell resolves a session ID to its stored placement, checks its owner,
   invokes `uui.session.control`, and signs a route using
   `kernel.services.route`. Claims close the previous socket before ordinary
