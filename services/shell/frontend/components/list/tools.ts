@@ -60,7 +60,7 @@ export class ListTools {
     }
     this.#snapshot = snapshot;
     this.#callbacks = callbacks;
-    const readable = snapshot.pageSource === undefined || snapshot.readable;
+    const readable = snapshot.source === undefined || snapshot.readable;
     this.#buttons = [
       iconButton(
         "Display in table processor",
@@ -195,12 +195,17 @@ export class ListTools {
     };
     do {
       signal?.throwIfAborted();
-      const page = await this.#callbacks.read({
-        id: snapshot.id,
-        revision: snapshot.revision,
-        offset: offset + result.rows.length,
-        limit: Math.min(MAX_LIST_READ_SIZE, limit - result.rows.length),
-      }, signal);
+      const page = await this.#callbacks.read(
+        {
+          id: snapshot.id,
+          revision: snapshot.revision,
+          offset: offset + result.rows.length,
+          limit: Math.min(MAX_LIST_READ_SIZE, limit - result.rows.length),
+        },
+        signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(30_000)])
+          : AbortSignal.timeout(30_000),
+      );
       signal?.throwIfAborted();
       if (page.more && page.rows.length === 0) {
         throw new Error("The list returned an empty page before its end.");
@@ -324,8 +329,8 @@ export class ListTools {
     grid.setAttribute("aria-label", "List data, read only");
     body.append(grid);
     let current = 1;
-    let total = snapshot.pageSource
-      ? snapshot.pageSource.totalItems
+    let total = snapshot.source
+      ? snapshot.source.totalItems
       : snapshot.totalItems;
     let table: {
       destroy(): void;
@@ -480,8 +485,8 @@ export class ListTools {
     }
     const first = document.createElement("input");
     const last = document.createElement("input");
-    const total = snapshot.pageSource
-      ? snapshot.pageSource.totalItems
+    const total = snapshot.source
+      ? snapshot.source.totalItems
       : snapshot.totalItems;
     for (const input of [first, last]) {
       input.type = "number";

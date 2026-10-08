@@ -1,3 +1,4 @@
+import { MessageHistory } from "../messages.ts";
 import { assertEquals, assertRejects } from "@std/assert";
 import {
   BACK_EVENT,
@@ -10,6 +11,7 @@ import type {
   UUIWorkerOutbound,
 } from "/p/the8020/uui/mod.ts";
 import { bindSession, type SessionChannel } from "/p/the8020/uui/internal.ts";
+import { commandScreen } from "../session.ts";
 import { runHome } from "../programs/home/program.ts";
 
 type PresentationShow = Extract<
@@ -19,6 +21,7 @@ type PresentationShow = Extract<
 
 class HomeChannel implements SessionChannel {
   readonly sessionId = "ui-session-home-test";
+  readonly messageHistory = new MessageHistory();
   readonly sent: UUIWorkerOutbound[] = [];
   #client: UUIClientMessage[] = [];
   #clientWaiters: Array<(message: UUIClientMessage) => void> = [];
@@ -53,31 +56,12 @@ class HomeChannel implements SessionChannel {
           !list.state.measured
         );
         if (unmeasured.length > 0) {
-          const input: UUIClientMessage = {
-            type: "screen.list",
-            protocol: UUI_PROTOCOL_VERSION,
-            sessionId: this.sessionId,
-            clientSequence: ++this.#clientSequence,
-            surfaceId: surface.surfaceId,
-            screenId: surface.screen.id,
-            screenRevision: surface.screen.revision,
-            instanceId: surface.screen.state.instanceId,
-            screenState: {
-              version: surface.screen.state.version,
-              scroll: surface.screen.state.scroll,
-              elements: {},
-            },
-            changes: [],
-            updates: unmeasured.map((list) => ({
-              id: list.id,
-              revision: list.revision,
-              operation: "capacity",
-              pageSize: 50,
-            })),
-          };
-          const waiter = this.#clientWaiters.shift();
-          if (waiter === undefined) this.#client.push(input);
-          else waiter(input);
+          for (const list of unmeasured) {
+            await commandScreen(
+              { op: "list", id: list.id, pageSize: 50 },
+              ++this.#clientSequence,
+            );
+          }
           continue;
         }
         return message;
@@ -191,9 +175,7 @@ for (const interactive of [false, true]) {
         const selected = await channel.screen();
         assertEquals(topSurface(selected).screen.id, "selected");
         assertEquals(
-          channel.sent.filter((message) =>
-            message.type === "notification.show"
-          ),
+          channel.messageHistory.snapshot(),
           [],
         );
         channel.event(selected, BACK_EVENT);
@@ -201,7 +183,7 @@ for (const interactive of [false, true]) {
       const returned = await channel.screen();
       assertEquals(topSurface(returned).screen.id, "home");
       assertEquals(
-        channel.sent.filter((message) => message.type === "notification.show"),
+        channel.messageHistory.snapshot(),
         [],
       );
       channel.event(returned, "logout");
@@ -235,7 +217,7 @@ Deno.test("Home propagates program failures without reporting success", async ()
     assertEquals(error.programId, "example/testing/failing");
     assertEquals(error.exception instanceof TypeError, true);
     assertEquals(
-      channel.sent.filter((message) => message.type === "notification.show"),
+      channel.messageHistory.snapshot(),
       [],
     );
   } finally {

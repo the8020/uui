@@ -7,10 +7,15 @@ import {
   assertThrows,
 } from "@std/assert";
 import { z } from "/p/the8020/db/fields.ts";
-import { buildControls, buildFieldCatalog } from "./fields.ts";
+import { buildControls, buildFieldCatalog, field } from "./fields.ts";
 import { resolveElementIDs } from "./identifiers.ts";
 import { validateLayout } from "./layout.ts";
-import { queryValueHelp, ScreenLists, StaleListView } from "./lists.ts";
+import {
+  queryValueHelp,
+  ScreenLists,
+  setListSource,
+  StaleListView,
+} from "./lists.ts";
 import { Model } from "./model.ts";
 import { emptyListQuery } from "./screen_state.ts";
 import { field as sharedField, money } from "/p/the8020/db/fields.ts";
@@ -340,7 +345,7 @@ Deno.test("empty and implicit scalar lists retain columns and handle capacity an
   assert(shown.rows.includes(40));
 });
 
-Deno.test("page sources retain remote ordering, selection mappings, and bounded next-page access", () => {
+Deno.test("retained providers preserve remote ordering and reject unsupported queries", async () => {
   const model = new Model({
     rows: [{ id: 20, name: "Remote match", enabled: true }, {
       id: 21,
@@ -348,33 +353,28 @@ Deno.test("page sources retain remote ordering, selection mappings, and bounded 
       enabled: false,
     }],
   });
-  const layout = validateLayout({
-    schema: 1,
-    id: "external",
-    root: {
-      id: "rows",
-      type: "list",
-      bind: "rows",
-      key: "id",
-      pageSource: { more: true, searchOnly: true },
-    },
+  setListSource(model, "rows", () => ({ rows: model.data.rows, more: true }), {
+    searchOnly: true,
   });
   const lists = new ScreenLists(
     schema,
-    buildControls(buildFieldCatalog(schema)),
-    layout,
+    [{ id: "rows", bind: "rows", control: "list", list: { key: "id" } }],
+    undefined,
     model.screen,
+    [],
+    model,
   );
-  const state = model.screen.elements.rows!.list!;
-  state.page = 11;
-  state.pageSize = 2;
-  state.query.search = "server-defined matching";
-  const view = lists.present(model.data)[0]!;
-  assertEquals(
-    view.rows,
-    model.data.rows,
-    "page sources are not filtered or sliced again",
-  );
+  model.screen.elements.rows!.list!.page = 11;
+  model.screen.elements.rows!.list!.pageSize = 2;
+  model.screen.elements.rows!.list!.query.search = "server-defined matching";
+  let view = lists.present(model.data)[0]!;
+  await browse(lists, model, [{
+    id: "rows",
+    revision: view.revision,
+    operation: "refresh",
+  }]);
+  view = lists.present(model.data)[0]!;
+  assertEquals(view.rows, model.data.rows);
   assertEquals(view.totalPages, 12);
   assertEquals(
     lists.select({ id: "rows", revision: view.revision, index: 1 }, model.data)
@@ -409,16 +409,29 @@ Deno.test("page sources retain remote ordering, selection mappings, and bounded 
     TypeError,
     "quick search only",
   );
-  const event = lists.update({
-    id: "rows",
-    revision: view.revision,
-    operation: "capacity",
-    pageSize: 4,
-  });
-  assertEquals(event?.change, "capacity");
-  assertEquals(state.page, 6);
-  assertEquals(model.data.rows.length, 2);
+  assertEquals(
+    lists.update({
+      id: "rows",
+      revision: view.revision,
+      operation: "capacity",
+      pageSize: 4,
+    }),
+    undefined,
+  );
 });
+
+async function browse(
+  lists: ScreenLists,
+  model: Model<{ rows: unknown[] }>,
+  requests: import("./screen_state.ts").ListRequest[],
+) {
+  const staged = await lists.prepareUpdates(
+    requests,
+    model.data,
+    new AbortController().signal,
+  );
+  staged.commit();
+}
 
 Deno.test("independent reads share the filtered sorted projection and preserve the displayed page", async () => {
   const { lists, model } = fixture();
@@ -481,22 +494,24 @@ Deno.test("page-source readers fill independent pages in bounded batches without
       id: "rows",
       type: "list",
       bind: "rows",
-      pageSource: { more: true },
     },
   });
   const requests: Array<{ offset: number; limit: number }> = [];
-  const lists = new ScreenLists(schema, [], layout, model.screen, [], {
-    rows: ({ offset, limit }) => {
-      requests.push({ offset, limit });
-      return {
-        rows: Array.from(
-          { length: Math.min(limit, 1205 - offset) },
-          (_, i) => ({ id: offset + i }),
-        ),
-        more: offset + limit < 1205,
-      };
-    },
+  setListSource(model, "rows", ({ offset, limit }) => {
+    requests.push({ offset, limit });
+    return {
+      rows: Array.from(
+        { length: Math.max(0, Math.min(limit, 1205 - offset)) },
+        (_, i) => ({
+          id: offset + i,
+          name: `Row ${offset + i}`,
+          enabled: true,
+        }),
+      ),
+      more: offset + limit < 1205,
+    };
   });
+  const lists = new ScreenLists(schema, [], layout, model.screen, [], model);
   const shown = lists.present(model.data)[0]!;
   const request = {
     id: shown.id,
@@ -521,41 +536,352 @@ Deno.test("page-source readers fill independent pages in bounded batches without
   assertStrictEquals(lists.present(model.data)[0], shown);
 });
 
-Deno.test("remote list source size survives filtered pages and rebuilt screens", () => {
-  const model = new Model({ rows: [{ id: 1, name: "One", enabled: true }] });
-  const show = (more: boolean, totalItems?: number) => {
-    const layout = validateLayout({
-      schema: 1,
-      id: "remote",
-      root: {
-        type: "list",
-        id: "rows",
-        bind: "rows",
-        key: "id",
-        pageSource: { more, totalItems },
-      },
-    });
-    return new ScreenLists(
-      schema,
-      buildControls(buildFieldCatalog(schema)),
-      layout,
-      model.screen,
-    ).present(model.data)[0]!;
+Deno.test("list source disposal cancels pending batches and typed results cannot bypass the owning row schema", async () => {
+  const model = new Model({ rows: [{ id: 0, name: "Row", enabled: true }] });
+  const layout = validateLayout({
+    schema: 1,
+    id: "source",
+    root: {
+      type: "list",
+      id: "rows",
+      bind: "rows",
+    },
+  });
+  const gate = Promise.withResolvers<{ rows: unknown[]; more: boolean }>();
+  let signal: AbortSignal | undefined;
+  let calls = 0;
+  const dispose = setListSource(model, "rows", (request) => {
+    signal = request.signal;
+    calls++;
+    return gate.promise;
+  });
+  const lists = new ScreenLists(schema, [], layout, model.screen, [], model);
+  const view = lists.present(model.data)[0]!;
+  const request = {
+    id: "rows",
+    revision: view.revision,
+    offset: 0,
+    limit: 1000,
   };
-  assertEquals(show(true).totalSourceItems, 2);
+  const pending = lists.read(request, model.data);
+  dispose();
+  assertEquals(signal?.aborted, true);
+  gate.resolve({ rows: [{ id: 1, name: "Late", enabled: true }], more: true });
+  await assertRejects(() => pending, DOMException);
+  assertEquals(calls, 1);
+  const remove = setListSource(
+    model,
+    "rows",
+    () => ({ rows: [{ id: "wrong" }], more: false }),
+  );
+  try {
+    await assertRejects(() => lists.read(request, model.data), StaleListView);
+    const fresh = lists.present(model.data)[0]!;
+    await assertRejects(
+      () => lists.read({ ...request, revision: fresh.revision }, model.data),
+      z.ZodError,
+    );
+    assertEquals(model.data.rows, [{ id: 0, name: "Row", enabled: true }]);
+  } finally {
+    remove();
+  }
+});
+
+Deno.test("provider updates stage rows and totals atomically and require explicit schema rebuilds", async () => {
+  const model = new Model({
+    rows: [{ id: 0, name: "Original", enabled: true }],
+  });
+  let result: unknown = { rows: [{ id: "wrong" }], more: false };
+  setListSource(
+    model,
+    "rows",
+    () => result as import("./lists.ts").ListSourcePage,
+  );
+  const lists = new ScreenLists(
+    schema,
+    [{ id: "rows", bind: "rows", control: "list" }],
+    undefined,
+    model.screen,
+    [],
+    model,
+  );
+  const view = lists.present(model.data)[0]!;
+  const before = structuredClone(model.screen);
+  const request = {
+    id: "rows",
+    revision: view.revision,
+    operation: "query" as const,
+    query: { search: "new", filters: {}, sort: null },
+  };
+  for (
+    const invalid of [
+      result,
+      { rows: [], more: true },
+      { rows: [], more: false, totalItems: -1 },
+      { rows: model.data.rows, more: true, totalItems: 1 },
+      {
+        rows: model.data.rows,
+        more: false,
+        totalItems: 1,
+        totalSourceItems: 0,
+      },
+      {
+        rows: model.data.rows,
+        more: false,
+        schema: z.object({ id: z.string() }),
+      },
+    ]
+  ) {
+    result = invalid;
+    await assertRejects(() => browse(lists, model, [request]));
+    assertEquals(model.screen, before);
+    assertEquals(model.data.rows, [{ id: 0, name: "Original", enabled: true }]);
+  }
+  result = {
+    rows: [{ id: 9, name: "Fresh", enabled: false }],
+    more: false,
+    totalItems: 1,
+    totalSourceItems: 7,
+  };
+  await browse(lists, model, [request]);
+  const fresh = lists.present(model.data)[0]!;
+  assertEquals([
+    fresh.state.query.search,
+    fresh.totalItems,
+    fresh.totalSourceItems,
+    fresh.source?.more,
+  ], ["new", 1, 7, false]);
+  assertNotEquals(fresh.revision, view.revision);
+  const rebuiltSchema = z.object({
+    rows: z.object({ key: z.string(), rank: z.number() }).array(),
+  });
+  model.data.rows = [];
+  result = {
+    rows: [{ key: "new-contract", rank: 2 }],
+    more: false,
+    schema: rebuiltSchema.shape.rows.element,
+  };
+  const rebuilt = new ScreenLists(
+    rebuiltSchema,
+    [{ id: "rows", bind: "rows", control: "list" }],
+    undefined,
+    model.screen,
+    [],
+    model,
+  );
+  const next = rebuilt.present(model.data)[0]!;
+  await browse(rebuilt, model, [{
+    id: "rows",
+    revision: next.revision,
+    operation: "refresh",
+  }]);
+  assertEquals(
+    rebuilt.present(model.data)[0]!.columns.map((column) => column.key),
+    ["key", "rank"],
+  );
+});
+
+Deno.test("provider replacement disposal and reset cancel visible work and invalidate cached mappings", async () => {
+  for (const action of ["replace", "dispose", "reset"]) {
+    const model = new Model({
+      rows: [{ id: 0, name: "Original", enabled: true }],
+    });
+    const gate = Promise.withResolvers<import("./lists.ts").ListSourcePage>();
+    let signal: AbortSignal | undefined;
+    const dispose = setListSource(model, "rows", (request) => {
+      signal = request.signal;
+      return gate.promise;
+    });
+    const lists = new ScreenLists(
+      schema,
+      [{ id: "rows", bind: "rows", control: "list" }],
+      undefined,
+      model.screen,
+      [],
+      model,
+    );
+    const view = lists.present(model.data)[0]!;
+    const pending = browse(lists, model, [{
+      id: "rows",
+      revision: view.revision,
+      operation: "refresh",
+    }]);
+    if (action === "reset") model.resetScreen();
+    else if (action === "dispose") dispose();
+    else setListSource(model, "rows", () => ({ rows: [], more: false }));
+    assertEquals(signal?.aborted, true);
+    gate.resolve({
+      rows: [{ id: 99, name: "Late", enabled: true }],
+      more: false,
+      totalItems: 100,
+    });
+    await assertRejects(() => pending, DOMException);
+    assertEquals(model.data.rows[0]!.name, "Original");
+    await assertRejects(
+      () =>
+        lists.read(
+          { id: "rows", revision: view.revision, offset: 0, limit: 1 },
+          model.data,
+        ),
+      StaleListView,
+    );
+    assertNotEquals(lists.present(model.data)[0]!.revision, view.revision);
+  }
+});
+
+Deno.test("mapped row edits preserve readonly schema fields and complete rows", () => {
+  const row = z.object({
+    key: field(z.string(), { readOnly: true }).optional(),
+    value: z.number(),
+    locked: z.string().readonly().optional(),
+  });
+  const model = new Model({
+    rows: [{ key: "original", value: 1, locked: "fixed" }],
+  });
+  const lists = new ScreenLists(
+    z.object({ rows: row.array() }),
+    [{ id: "rows", bind: "rows", control: "list" }],
+    undefined,
+    model.screen,
+  );
+  const view = lists.present(model.data)[0]!;
+  const edit = (value: unknown) =>
+    lists.applyEdits(
+      [{ id: "rows", revision: view.revision, rows: [{ index: 0, value }] }],
+      model.data,
+      structuredClone(model.data),
+    );
+  assertThrows(
+    () => edit({ key: "changed", value: 2, locked: "fixed" }),
+    TypeError,
+    "read-only",
+  );
+  assertThrows(
+    () => edit({ key: "original", value: 2, locked: "changed" }),
+    TypeError,
+    "read-only",
+  );
+  assertThrows(() => edit({ value: 2 }), TypeError, "read-only");
+  edit({ key: "original", value: 2, locked: "fixed" });
+  assertEquals(model.data.rows[0]!.value, 1);
+  const selectionModel = new Model({
+    rows: [{ key: "original", selected: false }],
+  });
+  const selected = new ScreenLists(
+    z.object({
+      rows: field(
+        z.object({ key: z.string(), selected: z.boolean() }).array(),
+        { readOnly: true },
+      ),
+    }),
+    [{
+      id: "rows",
+      bind: "rows",
+      control: "list",
+      readOnly: true,
+      list: { selection: "selected" },
+    }],
+    undefined,
+    selectionModel.screen,
+  );
+  const selectionView = selected.present(selectionModel.data)[0]!;
+  const candidate = structuredClone(selectionModel.data);
+  selected.applySelection(
+    [{
+      id: "rows",
+      revision: selectionView.revision,
+      operation: "selection",
+      selected: true,
+    }],
+    selectionModel.data,
+    candidate,
+  );
+  assertEquals(candidate.rows, [{ key: "original", selected: true }]);
+  const explicit = new ScreenLists(
+    z.object({
+      rows: z.object({ key: z.string(), selected: z.boolean() }).array(),
+    }),
+    [{ id: "control", bind: "rows", control: "list", readOnly: true }],
+    {
+      schema: 1,
+      id: "readonly-layout",
+      root: { id: "readonly-view", type: "list", bind: "rows" },
+    },
+    selectionModel.screen,
+  );
+  const explicitView = explicit.present(selectionModel.data)[0]!;
+  assertThrows(
+    () =>
+      explicit.applyEdits(
+        [{
+          id: explicitView.id,
+          revision: explicitView.revision,
+          rows: [{ index: 0, value: { key: "forged", selected: false } }],
+        }],
+        selectionModel.data,
+        candidate,
+      ),
+    TypeError,
+    "read-only",
+  );
+  assertThrows(
+    () =>
+      selected.applyEdits(
+        [{
+          id: "rows",
+          revision: selectionView.revision,
+          rows: [{ index: 0, value: { key: "forged", selected: true } }],
+        }],
+        selectionModel.data,
+        candidate,
+      ),
+    TypeError,
+    "read-only",
+  );
+});
+
+Deno.test("provider results retain unfiltered geometry across searches and rebuilds", async () => {
+  const model = new Model({ rows: [{ id: 1, name: "One", enabled: true }] });
+  let more = true;
+  let totalItems: number | undefined = undefined;
+  setListSource(
+    model,
+    "rows",
+    () => ({ rows: model.data.rows, more, totalItems }),
+  );
+  const show = async () => {
+    const lists = new ScreenLists(
+      schema,
+      [{ id: "rows", bind: "rows", control: "list" }],
+      undefined,
+      model.screen,
+      [],
+      model,
+    );
+    const view = lists.present(model.data)[0]!;
+    await browse(lists, model, [{
+      id: "rows",
+      revision: view.revision,
+      operation: "refresh",
+    }]);
+    return lists.present(model.data)[0]!;
+  };
+  assertEquals((await show()).totalSourceItems, 2);
   const state = model.screen.elements.rows!.list!;
   state.pageSize = 10;
   model.data.rows = Array.from(
     { length: 10 },
     (_, id) => ({ id, name: String(id), enabled: true }),
   );
-  assertEquals(show(true).totalSourceItems, 11);
+  assertEquals((await show()).totalSourceItems, 11);
   state.query.search = "no matches";
   model.data.rows = [];
-  assertEquals(show(false, 0).totalSourceItems, 11);
-  assertEquals(show(false, 0).totalPages, 1);
+  more = false;
+  totalItems = 0;
+  assertEquals((await show()).totalSourceItems, 11);
+  assertEquals((await show()).totalPages, 1);
   state.query.search = "";
-  assertEquals(show(false, 0).totalSourceItems, 0);
+  assertEquals((await show()).totalSourceItems, 0);
 });
 
 Deno.test("value help uses ordinary multi-column typed queries before paging", () => {
@@ -591,23 +917,30 @@ Deno.test("value help uses ordinary multi-column typed queries before paging", (
 });
 
 Deno.test("selection requires an editable boolean in a complete row collection", () => {
-  const make = (selection: string, extra = {}) =>
-    new ScreenLists(
+  const make = (selection: string, provider = false) => {
+    const model = new Model({ rows: [] });
+    if (provider) {
+      setListSource(model, "rows", () => ({ rows: [], more: false }));
+    }
+    return new ScreenLists(
       schema,
       [{
         id: "rows",
         bind: "rows",
         control: "list",
-        list: { selection, ...extra },
+        list: { selection },
       }],
       undefined,
-      new Model({ rows: [] }).screen,
+      model.screen,
+      [],
+      model,
     );
+  };
   assertThrows(() => make("id"), TypeError, "boolean");
   assertThrows(() => make("missing"), TypeError, "boolean");
   assertThrows(() => make("__proto__.selected"), TypeError, "field path");
   assertThrows(
-    () => make("enabled", { pageSource: { more: true } }),
+    () => make("enabled", true),
     TypeError,
     "complete bound array",
   );
@@ -627,4 +960,6 @@ Deno.test("selection requires an editable boolean in a complete row collection",
     TypeError,
     "selection range",
   );
+  setListSource(lists.model!, "rows", () => ({ rows: [], more: false }));
+  assertThrows(() => lists.present(model), TypeError, "complete bound array");
 });

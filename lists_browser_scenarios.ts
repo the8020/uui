@@ -1068,7 +1068,8 @@ async function screenshot(page: BrowserDriver, name: string): Promise<void> {
 
 function interactions(): number {
   return listBrowserProbe.messages.filter((m) =>
-    m.type === "screen.event" || m.type === "screen.list"
+    m.type === "screen.event" ||
+    m.type === "channel.frame" && m.kind === "message" && m.id === "update"
   ).length;
 }
 async function geometry(page: BrowserDriver, selector: string): Promise<void> {

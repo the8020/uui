@@ -1,3 +1,4 @@
+import { cloneDeclaration } from "./custom_elements.ts";
 import { resolveElementIDs } from "./identifiers.ts";
 import type { ListOptions } from "./screen_state.ts";
 import {
@@ -98,7 +99,6 @@ const nodeKeys = new Set([
   "headings",
   "columnOptions",
   "triggerFilterEvents",
-  "pageSource",
   "toolbar",
   "elements",
   "controls",
@@ -126,7 +126,7 @@ export function validateLayout(
     throw new TypeError("layout must have schema 1 and an ID");
   }
   rejectUnknownKeys(value, layoutKeys, "layout");
-  const normalized = structuredClone(value);
+  const normalized = cloneDeclaration(value);
   const nodes: Array<Record<string, unknown> & { id?: string }> = [];
   const collect = (node: unknown): void => {
     if (!isRecord(node)) throw new TypeError("invalid layout node");
@@ -158,7 +158,9 @@ export function validateLayout(
 export function resolveLayoutReferences(
   layout: LayoutDocument,
   controls: readonly ControlDescriptor[],
+  elements: readonly ScreenElement[] = controls,
 ): void {
+  const elementByID = new Map(elements.map((element) => [element.id, element]));
   const byID = new Map(controls.map((control) => [control.id, control]));
   const used = new Set<string>();
   const place = (id: string): string => {
@@ -171,6 +173,12 @@ export function resolveLayoutReferences(
     return id;
   };
   visit(layout.root, (node) => {
+    const resolveElements = (items: ScreenElementDeclaration[] | undefined) =>
+      items?.map((element) => elementByID.get(element.id ?? "") ?? element) as
+        | ScreenElement[]
+        | undefined;
+    node.elements = resolveElements(node.elements);
+    node.toolbar = resolveElements(node.toolbar);
     if (node.type === "list") {
       const candidates = controls.filter((control) =>
         control.bind === node.bind && control.shortcut !== undefined
@@ -203,7 +211,7 @@ export function applyLayoutOverride(
   if (override.baseLayoutId !== layout.id) {
     throw new TypeError("layout override base does not match layout");
   }
-  const result = structuredClone(layout);
+  const result = cloneDeclaration(layout);
   const hidden = new Set(override.hiddenControls ?? []);
   const collapsed = new Set(override.collapsedSections ?? []);
   visit(result.root, (node) => {

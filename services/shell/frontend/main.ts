@@ -1,5 +1,11 @@
+import { DOWNLOAD_POLICY } from "../../../download_metadata.ts";
 import { ListRenderer } from "./components/list/lists.ts";
-import { ListDataChannel } from "./components/list/data.ts";
+import {
+  decodeStreamChunk,
+  encodeStreamChunk,
+} from "../../../channel_streams.ts";
+import { type AttachedChannel, ChannelRouter } from "../../../channel.ts";
+import { validListDataPage } from "./components/list/data.ts";
 import {
   type ListRequest,
   type ListSelection,
@@ -48,9 +54,10 @@ import {
   renderIconText,
 } from "./icon_text.ts";
 import { MessageCenter } from "./message_center.ts";
+import { parseMessage, parseMessageHistory } from "../../../messages.ts";
 import { mergeServerModel, PresentationHistory } from "./presentation.ts";
 import { windowTitleForHeading } from "./window_title.ts";
-import { BrowserDownloads } from "./downloads.ts";
+import { attachNativeDownloads, closeNativeDownloads } from "./downloads.ts";
 import {
   activeDialog,
   focusableControls,
@@ -213,9 +220,178 @@ setInterval(() => {
   if (suspended && !ended) connect();
 }, 2000);
 let interactionSequence: number | undefined;
-const listData = new ListDataChannel((sequence) => {
-  if (interactionSequence === sequence) setInteractionPending(undefined);
+let channelConnection = "";
+const endpointEntries = new Map<
+  string,
+  {
+    endpoint: AttachedChannel;
+    lifetime: AbortController;
+    layer: PresentationLayer;
+  }
+>();
+const channels = new ChannelRouter("client", (frame) => {
+  if (socket?.readyState !== WebSocket.OPEN) {
+    throw new Error("UUI connection unavailable");
+  }
+  if (frame instanceof Uint8Array) {
+    const decoded = decodeStreamChunk(frame);
+    socket.send(
+      encodeStreamChunk(
+        {
+          ...decoded.frame,
+          sessionId: currentSessionID,
+          clientSequence: 0,
+        } as typeof decoded.frame,
+        decoded.bytes,
+      ),
+    );
+    return;
+  }
+  const sequence = sendClient({ ...frame });
+  if (sequence === undefined) throw new Error("UUI connection unavailable");
 });
+function closeChannels(reason: string): void {
+  channels.disconnect(reason);
+  channelConnection = "";
+  for (const entry of endpointEntries.values()) entry.lifetime.abort();
+  endpointEntries.clear();
+}
+function connectChannelRouters(connection: string): void {
+  if (connection === channelConnection) return;
+  closeChannels("UUI connection changed");
+  channelConnection = connection;
+  channels.connect(connection);
+  for (const layer of layers.values()) {
+    syncNativeDownloads(layer);
+    syncMessages(layer);
+    layer.customElements.refreshChannels();
+  }
+}
+function syncEndpoints(): void {
+  for (const [key, entry] of endpointEntries) {
+    if (
+      layers.get(entry.layer.surfaceId) !== entry.layer ||
+      entry.layer.screen.channelGeneration !==
+        entry.endpoint.reference.generation
+    ) {
+      entry.lifetime.abort();
+      endpointEntries.delete(key);
+    }
+  }
+  channels.invalidate();
+  for (const layer of layers.values()) {
+    syncNativeDownloads(layer);
+    syncMessages(layer);
+  }
+}
+function syncMessages(layer: PresentationLayer): void {
+  if (!channelConnection || !layer.screen.messageNamespace) return;
+  const key =
+    `${layer.screen.channelGeneration}:${layer.screen.messageNamespace}`;
+  if (!endpointEntries.has(key)) {
+    const endpoint = endpointFor(layer, layer.screen.messageNamespace)!;
+    endpoint.subscribe("*", (id, data) => {
+      if (id === "append") messageCenter.show(parseMessage(data));
+      if (id === "history") {
+        messageCenter.synchronize(parseMessageHistory(data));
+      }
+    });
+  }
+}
+function syncNativeDownloads(layer: PresentationLayer): void {
+  if (!channelConnection || !layer.screen.downloadNamespace) return;
+  const key =
+    `${layer.screen.channelGeneration}:${layer.screen.downloadNamespace}`;
+  if (!endpointEntries.has(key)) {
+    const endpoint = endpointFor(layer, layer.screen.downloadNamespace);
+    if (endpoint) attachNativeDownloads(endpoint);
+  }
+}
+function endpointFor(
+  layer: PresentationLayer,
+  name: string,
+): AttachedChannel | undefined {
+  const generation = layer.screen.channelGeneration;
+  if (!generation) return;
+  const key = `${generation}:${name}`;
+  let entry = endpointEntries.get(key);
+  if (!entry) {
+    const lifetime = new AbortController();
+    const endpoint = channels.register(
+      name,
+      generation,
+      () => {
+        if (
+          socket?.readyState !== WebSocket.OPEN || suspended || ended
+        ) throw new Error("UUI connection unavailable");
+        if (
+          activeSurfaceID !== layer.surfaceId ||
+          layer.screen.channelGeneration !== generation
+        ) throw new Error("Channel presentation is stale or covered");
+      },
+      lifetime.signal,
+      name === layer.screen.downloadNamespace ? DOWNLOAD_POLICY : undefined,
+    );
+    entry = { endpoint, lifetime, layer };
+    endpointEntries.set(key, entry);
+  }
+  return entry.endpoint;
+}
+
+/** List-owned request/reply correlation; ordinary channels have no RPC layer. */
+function listRequest(
+  layer: PresentationLayer,
+  operation: "read" | "update",
+  request: unknown,
+  listId: string,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  if (!layerIsActive(layer)) {
+    return Promise.reject(new Error("The screen is busy or unavailable"));
+  }
+  const namespace = layer.screen.lists.find((list) => list.id === listId)
+    ?.channelNamespace;
+  const channel = namespace ? endpointFor(layer, namespace) : undefined;
+  if (!channel) return Promise.reject(new Error("List channel unavailable"));
+  const token = crypto.randomUUID();
+  const owner = AbortSignal.any([channel.signal, ...(signal ? [signal] : [])]);
+  if (owner.aborted) {
+    return Promise.reject(
+      new DOMException("List request cancelled", "AbortError"),
+    );
+  }
+  const sequence = clientSequence + 1;
+  return new Promise((resolve, reject) => {
+    const finish = (error?: unknown, value?: unknown) => {
+      subscription.unsubscribe();
+      owner.removeEventListener("abort", abort);
+      if (interactionSequence === sequence) setInteractionPending(undefined);
+      error === undefined ? resolve(value) : reject(error);
+    };
+    const abort = () => {
+      try {
+        channel.send("cancel", token);
+      } catch { /* detached */ }
+      finish(new DOMException("List request cancelled", "AbortError"));
+    };
+    const subscription = channel.subscribe("result", (_id, data) => {
+      if (
+        !data || typeof data !== "object" ||
+        !("token" in data) || data.token !== token
+      ) return;
+      if ("error" in data && typeof data.error === "string") {
+        finish(new Error(data.error));
+      } else if ("value" in data) finish(undefined, data.value);
+    });
+    owner.addEventListener("abort", abort, { once: true });
+    try {
+      channel.send(operation, { token, request });
+      setInteractionPending(sequence);
+    } catch (error) {
+      finish(error);
+    }
+  });
+}
 let activeSurfaceID: string | null = null;
 let connectionText = "Connecting…";
 let logoutFallback: ReturnType<typeof setTimeout> | undefined;
@@ -243,10 +419,10 @@ const messageCenter = new MessageCenter({
   closeButton: messageDialogClose,
   dismissAllButton: messageToastDismissAll,
 });
-const downloads = new BrowserDownloads((command) => {
-  sendClient(command);
+addEventListener("pagehide", () => {
+  closeNativeDownloads();
+  closeChannels("Page closed");
 });
-addEventListener("pagehide", () => downloads.close());
 
 renderIconText(screenBack, "[[icon=arrow_back]]", { decorativeIcons: true });
 renderIconText(programHeaderOverflowToggle, "[[icon=more_vert]]", {
@@ -364,6 +540,7 @@ async function connectAttempt(): Promise<void> {
       await establishRoute(false);
     }
     if (currentSessionID !== "") {
+      const takeover = initialClaim;
       const response = await fetch(new URL("control", location.href), {
         method: "POST",
         credentials: "same-origin",
@@ -372,7 +549,7 @@ async function connectAttempt(): Promise<void> {
           sessionId: currentSessionID,
           clientId,
           operation: "claim",
-          takeover: initialClaim,
+          takeover,
         }),
       });
       if (response.redirected) {
@@ -387,7 +564,8 @@ async function connectAttempt(): Promise<void> {
       }
       if (!response.ok) throw new Error("Could not connect to the session");
       const result = await response.json();
-      initialClaim = false;
+      // Consume only the intent carried by this request; a button click may arrive during a poll.
+      if (takeover) initialClaim = false;
       if (!result.active) {
         suspendConnection();
         return;
@@ -434,10 +612,8 @@ async function connectAttempt(): Promise<void> {
   socket.addEventListener("message", (event) => receive(event.data));
   socket.addEventListener("close", (event) => {
     socket = undefined;
-    listData.fail(
-      "The connection closed. Try the list action again after reconnecting.",
-    );
-    downloads.close();
+    closeChannels("UUI connection closed");
+    closeNativeDownloads();
     if (event.code === 4001) {
       suspendConnection();
       return;
@@ -550,7 +726,7 @@ function replaceRoute(token: string | undefined): void {
   sessionStorage.removeItem(sessionKey);
   pending.clear();
   clearPresentation();
-  messageCenter.beginRoundtrip();
+  messageCenter.reset();
   setInteractionPending(undefined);
 }
 
@@ -580,11 +756,11 @@ function scheduleReconnect(): void {
 function receive(raw: unknown): void {
   if (raw instanceof ArrayBuffer) {
     try {
-      downloads.bytes(new Uint8Array(raw));
+      channels.bytes(new Uint8Array(raw));
     } catch {
-      downloads.close();
-      socket?.close(1003, "invalid download frame");
-      showNotice("The server sent invalid download data.");
+      closeNativeDownloads();
+      socket?.close(1003, "invalid stream frame");
+      showNotice("The server sent invalid stream data.");
     }
     return;
   }
@@ -601,6 +777,7 @@ function receive(raw: unknown): void {
     message.sessionId !== currentSessionID
   ) {
     if (currentSessionID !== "") clearPresentation();
+    if (message.sessionId !== currentSessionID) messageCenter.reset();
     currentSessionID = message.sessionId;
     rememberSession();
     applyTheme(themePreferences.bindSession(currentSessionID));
@@ -615,20 +792,11 @@ function receive(raw: unknown): void {
   ) return;
   lastServerSequence = Math.max(lastServerSequence, message.serverSequence);
   switch (message.type) {
-    case "download.begin":
-    case "download.end":
-    case "download.error":
-      try {
-        downloads.receive(message);
-      } catch {
-        downloads.close();
-        socket?.close(1003, "invalid download message");
-        showNotice("The server sent an invalid download message.");
-      }
-      break;
     case "session.ready":
+      connectChannelRouters(message.connection);
       break;
     case "session.resumed":
+      connectChannelRouters(message.connection);
       clientSequence = synchronizeClientSequence(
         clientSequence,
         message.lastClientSequence,
@@ -636,9 +804,8 @@ function receive(raw: unknown): void {
       setConnectionState("Connected", "connected");
       break;
     case "session.resync_required":
-      listData.fail(
-        "The screen needs to reconnect. Try the list action again.",
-      );
+      closeChannels("UUI resynchronization required");
+      if (message.connection) connectChannelRouters(message.connection);
       setInteractionPending(undefined);
       showResync(
         message.message ?? "This session needs a fresh screen snapshot.",
@@ -649,20 +816,19 @@ function receive(raw: unknown): void {
       break;
     case "presentation.show":
       void refreshPreferences();
-      listData.fail("The list changed. Try the list action again.");
+
       notice.hidden = true;
       try {
         reconcilePresentation(message.presentation);
+        syncEndpoints();
+        messageCenter.synchronize(message.presentation.messages ?? []);
         if (!suspended && controlDialog.open) controlDialog.close();
       } catch {
         showNotice("The server sent an invalid presentation.");
       }
       break;
-    case "screen.list.data":
-      listData.receive(message);
-      break;
-    case "notification.show":
-      messageCenter.show(message);
+    case "channel.frame":
+      channels.receive(message);
       break;
     case "clipboard.write":
       void writeClipboard(message.text).catch(() =>
@@ -689,20 +855,16 @@ function receive(raw: unknown): void {
       }
       break;
     case "session.error": {
-      const listReadFailed = listData.fail(
-        message.message ?? "Could not read the list.",
-      );
       if (interactionSequence !== undefined) {
         pending.delete(interactionSequence);
       }
       setInteractionPending(undefined);
-      if (!listReadFailed) {
-        showNotice(message.message ?? message.code ?? "Session error");
-      }
+      showNotice(message.message ?? message.code ?? "Session error");
       break;
     }
     case "session.end":
-      downloads.close();
+      closeChannels("UUI session ended");
+      closeNativeDownloads();
       setInteractionPending(undefined);
       ended = true;
       messageCenter.dispose();
@@ -830,7 +992,10 @@ function reconcilePresentation(presentation: PresentationSnapshot): void {
       typeof surface.screen?.id !== "string" ||
       surface.screen.id.length === 0 ||
       !Number.isSafeInteger(surface.screen.revision) ||
-      surface.screen.revision < 1
+      surface.screen.revision < 1 ||
+      surface.screen.channelGeneration !== undefined &&
+        (typeof surface.screen.channelGeneration !== "string" ||
+          !/^[A-Za-z0-9_-]{1,128}$/.test(surface.screen.channelGeneration))
     ) ||
     presentation.activeSurfaceId !== null &&
       presentation.activeSurfaceId !== surfaces.at(-1)?.surfaceId
@@ -1100,28 +1265,19 @@ function renderLayer(layer: PresentationLayer): void {
       elements: (elements) => renderElements(elements, layer.model, callbacks),
       request: (updates) => requestLists(layer, updates),
       select: (selection) => selectListRow(layer, selection),
-      read: (read, signal) =>
-        listData.request(() => {
-          if (
-            !layerIsActive(layer) || socket?.readyState !== WebSocket.OPEN
-          ) return;
-          const sequence = sendClient({
-            type: "screen.list",
-            read,
-            updates: [],
-            changes: [],
-            surfaceId: layer.surfaceId,
-            screenId: layer.screen.id,
-            screenRevision: layer.screen.revision,
-            instanceId: layer.viewState.instanceId,
-            screenState: screenStateUpdate(layer),
-          });
-          if (sequence !== undefined) setInteractionPending(sequence);
-          return sequence;
-        }, signal),
+      read: (read, signal) => {
+        return listRequest(layer, "read", read, read.id, signal).then((value) =>
+          validListDataPage(value, read)
+        );
+      },
     },
   );
   layer.customElements.begin({
+    channel: (namespace) => endpointFor(layer, namespace),
+    programChannel: () =>
+      layer.screen.programNamespace
+        ? endpointFor(layer, layer.screen.programNamespace)
+        : undefined,
     send: (action, value) => callbacks.action(action, "action", value),
     state: callbacks.elementState,
     value: (control) => getPath(layer.model, control.bind),
@@ -1198,7 +1354,7 @@ function disposeLayer(surfaceId: string): void {
 }
 
 function clearPresentation(): void {
-  listData.fail("The screen closed.");
+  closeChannels("The screen closed.");
   localScreenStates.clear();
   presentationHistory.clear();
   for (const surfaceId of [...layers.keys()]) disposeLayer(surfaceId);
@@ -1230,10 +1386,30 @@ function requestLists(
 ): boolean {
   if (!layerIsActive(layer)) return false;
   if (updates.length === 0) return false;
-  sendInteraction(layer, {
-    type: "screen.list",
+  if (
+    !layer.screen.lists.some((list) =>
+      list.id === updates[0]!.id && list.channelNamespace
+    )
+  ) return false;
+  rememberLayerFocus(layer);
+  const dirty = layer.dirty.capture();
+  const request = {
     updates,
     changes: changesForBindings(layer.model, layer.dirty.bindings()),
+    surfaceId: layer.surfaceId,
+    screenId: layer.screen.id,
+    screenRevision: layer.screen.revision,
+    instanceId: layer.viewState.instanceId,
+    screenState: screenStateUpdate(layer),
+  };
+  messageCenter.beginRoundtrip();
+  void listRequest(layer, "update", request, updates[0]!.id).then(() =>
+    layer.dirty.acknowledge(dirty)
+  ).catch((error) => {
+    if (error instanceof DOMException && error.name === "AbortError") return;
+    showNotice(
+      error instanceof Error ? error.message : "Could not update the list",
+    );
   });
   return true;
 }

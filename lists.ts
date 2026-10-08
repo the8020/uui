@@ -1,5 +1,6 @@
+import type { Model } from "./model.ts";
 import { setPath } from "./bindings.ts";
-import { z } from "/p/the8020/db/fields.ts";
+import { fieldSchemas, z } from "/p/the8020/db/fields.ts";
 import type { ValueHelpPage, ValueHelpRequest } from "/p/the8020/db/fields.ts";
 import { fieldMetadata, schemaAtPath, unwrap } from "./fields.ts";
 import { humanize } from "./humanize.ts";
@@ -11,7 +12,12 @@ import {
   listValueText,
   matchesListFilter,
 } from "./list_values.ts";
-import type { ControlDescriptor, ScreenElement } from "./protocol.ts";
+import {
+  type ControlDescriptor,
+  type ListUpdateRequest,
+  parseListUpdate,
+  type ScreenElement,
+} from "./protocol.ts";
 import {
   initialListState,
   isRecord,
@@ -31,25 +37,75 @@ import {
   type ScreenState,
   validListQuery,
   validListRead,
+  validListRequests,
 } from "./screen_state.ts";
 
-/** Reads the current query without changing the program's displayed page. */
-export type ListReader = (request: {
+export interface ListTransactionContext {
+  clientSequence?: number;
+  afterReply?(complete: () => void): void;
+}
+
+export interface ListSourcePage {
+  rows: unknown[];
+  more: boolean;
+  totalItems?: number;
+  totalSourceItems?: number;
+  /** Value-help sources may return their fixed schema; a changed contract is rejected. */
+  schema?: z.ZodObject;
+}
+/** Programs choose the source; the list owns bounded paging and result state. */
+export type ListSource = (request: {
+  signal: AbortSignal;
   query: ListQuery;
   offset: number;
-  /** At most MAX_LIST_PAGE_SIZE, also suitable for value-help providers. */
   limit: number;
-}) =>
-  | { rows: unknown[]; more: boolean; totalItems?: number }
-  | Promise<{ rows: unknown[]; more: boolean; totalItems?: number }>;
+}) => ListSourcePage | Promise<ListSourcePage>;
+interface SourceEntry {
+  read: ListSource;
+  lifetime: AbortController;
+  searchOnly?: boolean;
+  result: ListSourcePage;
+}
+const listSources = new WeakMap<Model<object>, Map<string, SourceEntry>>();
+
+/** Replace/dispose a retained provider, cancelling its outstanding work. */
+export function setListSource(
+  model: Model<object>,
+  id: string,
+  source: ListSource,
+  options: { searchOnly?: boolean } = {},
+): () => void {
+  if (
+    typeof source !== "function" || !id.length ||
+    options.searchOnly !== undefined && typeof options.searchOnly !== "boolean"
+  ) throw new TypeError("Invalid list source");
+  let sources = listSources.get(model);
+  if (!sources) listSources.set(model, sources = new Map());
+  sources.get(id)?.lifetime.abort();
+  const entry: SourceEntry = {
+    read: source,
+    lifetime: new AbortController(),
+    result: { rows: [], more: false },
+    ...options,
+  };
+  sources.set(id, entry);
+  return () => {
+    entry.lifetime.abort();
+    if (sources.get(id) === entry) sources.delete(id);
+  };
+}
 
 interface ListDefinition extends ListOptions {
   id: string;
   bind: string;
   columns: ListColumn[];
+  rowSchema: z.ZodType;
+  readOnly: boolean;
 }
 
 interface ListView {
+  provider?: SourceEntry;
+  version: number;
   source: unknown[];
   originals: unknown[];
   sourceText: string;
@@ -73,11 +129,16 @@ export class ScreenLists {
     layout: LayoutDocument | undefined,
     screen: ScreenState,
     header: readonly ControlDescriptor[] = [],
-    readonly readers: Readonly<Record<string, ListReader>> = {},
+    readonly model?: Model<object>,
   ) {
     this.#screen = screen;
     const declared: Array<
-      ListOptions & { id: string; bind: string; label?: string }
+      ListOptions & {
+        id: string;
+        bind: string;
+        label?: string;
+        readOnly?: boolean;
+      }
     > = [];
     const used = new Set<string>();
     const visit = (node: LayoutNode): void => {
@@ -99,6 +160,7 @@ export class ScreenLists {
         id: control.id,
         bind: control.bind,
         label: control.label,
+        readOnly: control.readOnly,
       });
     }
     for (const declaration of declared) {
@@ -106,6 +168,9 @@ export class ScreenLists {
         throw new TypeError(`duplicate list ID ${declaration.id}`);
       }
       validateListOptions(declaration);
+      if (declaration.selection && this.source(declaration.id)) {
+        throw new TypeError("list selection requires the complete bound array");
+      }
       const array = schemaAtPath(schema, declaration.bind);
       const raw = array === undefined ? undefined : unwrap(array).schema;
       if (!(raw instanceof z.ZodArray)) {
@@ -114,7 +179,22 @@ export class ScreenLists {
         );
       }
       const columns = buildColumns(raw.element as z.ZodType, declaration);
-      this.#definitions.set(declaration.id, { ...declaration, columns });
+      this.#definitions.set(declaration.id, {
+        ...declaration,
+        columns,
+        rowSchema: raw.element as z.ZodType,
+        readOnly: declaration.readOnly === true ||
+          ([...controls, ...header].find((control) =>
+              control.id === declaration.id
+            ) ??
+              [...controls, ...header].find((control) =>
+                control.bind === declaration.bind
+              ))?.readOnly === true ||
+          fieldSchemas(array!).some((item) =>
+            item instanceof z.ZodReadonly ||
+            fieldMetadata(item)?.readOnly === true
+          ),
+      });
       const element = screenElement(this.#screen, declaration.id);
       element.list ??= initialListState();
       // Dynamic schemas can remove columns; retire their filters and sort.
@@ -132,40 +212,48 @@ export class ScreenLists {
   present(model: object): ScreenListSnapshot[] {
     const result: ScreenListSnapshot[] = [];
     for (const definition of this.#definitions.values()) {
-      const source = getPath(model, definition.bind);
+      const provider = this.source(definition.id);
+      const source = provider?.result?.rows ?? getPath(model, definition.bind);
       if (!Array.isArray(source)) {
         throw new TypeError(`list binding ${definition.bind} must be an array`);
       }
       const state = this.state(definition.id);
       const sourceText = JSON.stringify(source);
       const existing = this.#views.get(definition.id);
+      if (definition.selection && provider) {
+        throw new TypeError("list selection requires the complete bound array");
+      }
       if (
         existing !== undefined && currentSource(existing, source, sourceText) &&
+        existing.provider === provider &&
+        existing.version === this.#screen.version &&
         JSON.stringify(existing.snapshot.state) === JSON.stringify(state)
       ) {
         result.push(existing.snapshot);
         continue;
       }
+      const page: ListSourcePage = provider?.result ??
+        { rows: source, more: false };
       const search = state.query.search.trim().toLocaleLowerCase("en");
-      let indices = definition.pageSource === undefined
+      let indices = provider === undefined
         ? projectRows(source, definition.columns, state.query)
         : source.map((_, index) => index);
       const offset = (state.page - 1) * state.pageSize;
-      const totalItems = definition.pageSource === undefined
+      const totalItems = provider === undefined
         ? indices.length
-        : definition.pageSource.totalItems ?? offset + source.length;
+        : page.totalItems ?? offset + source.length;
       if (
-        definition.pageSource !== undefined && source.length > state.pageSize
+        provider !== undefined && source.length > state.pageSize
       ) {
         throw new TypeError("list page source exceeds the requested capacity");
       }
-      const totalPages = definition.pageSource === undefined ||
-          definition.pageSource.totalItems !== undefined
+      const totalPages = provider === undefined ||
+          page.totalItems !== undefined
         ? Math.max(1, Math.ceil(totalItems / state.pageSize))
-        : state.page + (definition.pageSource.more ? 1 : 0);
+        : state.page + (page.more ? 1 : 0);
       state.page = Math.min(Math.max(1, state.page), totalPages);
       const allIndices = indices;
-      if (definition.pageSource === undefined) {
+      if (provider === undefined) {
         indices = indices.slice(
           (state.page - 1) * state.pageSize,
           state.page * state.pageSize,
@@ -173,11 +261,11 @@ export class ScreenLists {
       }
       const filtered = search.length > 0 ||
         Object.values(state.query.filters).some((value) => value.trim() !== "");
-      if (definition.pageSource !== undefined) {
+      if (provider !== undefined) {
         const observed = offset + source.length +
-          (definition.pageSource.more ? 1 : 0);
-        state.sourceItems = definition.pageSource.totalSourceItems ??
-          (!filtered && definition.pageSource.totalItems !== undefined
+          (page.more ? 1 : 0);
+        state.sourceItems = page.totalSourceItems ??
+          (!filtered && page.totalItems !== undefined
             ? totalItems
             : Math.max(state.sourceItems ?? 0, observed));
       }
@@ -192,12 +280,16 @@ export class ScreenLists {
         rows: structuredClone(indices.map((index) => source[index])),
         state: structuredClone(state),
         totalItems,
-        totalSourceItems: definition.pageSource === undefined
+        totalSourceItems: provider === undefined
           ? source.length
           : state.sourceItems!,
-        ...(definition.pageSource === undefined
-          ? {}
-          : { pageSource: definition.pageSource }),
+        ...(provider === undefined ? {} : {
+          source: {
+            more: page.more,
+            totalItems: page.totalItems,
+            searchOnly: provider!.searchOnly,
+          },
+        }),
         totalPages,
         filtered,
         triggerFilterEvents: definition.triggerFilterEvents ?? false,
@@ -209,10 +301,11 @@ export class ScreenLists {
             ).length,
           },
         }),
-        readable: definition.pageSource === undefined ||
-          Object.hasOwn(this.readers, definition.id),
+        readable: true,
       };
       this.#views.set(definition.id, {
+        provider,
+        version: this.#screen.version,
         source,
         originals: [...source],
         sourceText,
@@ -225,7 +318,190 @@ export class ScreenLists {
     return result;
   }
 
-  async read(request: ListReadRequest, model: object): Promise<ListDataPage> {
+  async readMessage(
+    id: string,
+    value: unknown,
+    model: object,
+    refresh: () => void,
+    signal: AbortSignal,
+  ): Promise<ListDataPage> {
+    if (
+      !validListRead(value) || value.id !== id ||
+      Object.keys(value).some((key) =>
+        !["id", "revision", "offset", "limit"].includes(key)
+      )
+    ) throw new TypeError("Invalid list read");
+    try {
+      return await this.read(value, model, signal);
+    } catch (error) {
+      if (error instanceof StaleListView) refresh();
+      throw error;
+    }
+  }
+  updateMessage(
+    id: string,
+    value: unknown,
+    signal: AbortSignal,
+    context: ListTransactionContext,
+    transact: (
+      request: ListUpdateRequest,
+      signal: AbortSignal,
+      context: ListTransactionContext,
+    ) => Promise<unknown>,
+  ): Promise<unknown> {
+    const request = parseListUpdate(value);
+    if (request.updates[0]!.id !== id) {
+      throw new TypeError("List update namespace mismatch");
+    }
+    return transact(request, signal, context);
+  }
+
+  providerIDs(): string[] {
+    return this.ids().filter((id) => this.source(id) !== undefined);
+  }
+
+  /** Stage every list-owned result before changing page state or source totals. */
+  async prepareUpdates(
+    requests: readonly ListRequest[],
+    model: object,
+    signal: AbortSignal,
+  ) {
+    this.validateRequests(requests, model);
+    signal = AbortSignal.any([signal, this.model?.resetSignal ?? signal]);
+    const version = this.#screen.version;
+    const states = new Map<string, ListState>();
+    const results = new Map<
+      string,
+      { source: SourceEntry; page: ListSourcePage }
+    >();
+    const events = [] as NonNullable<ReturnType<ScreenLists["update"]>>[];
+    for (const request of requests) {
+      const state = states.get(request.id) ??
+        structuredClone(this.state(request.id));
+      states.set(request.id, state);
+      const event = this.update(request, state);
+      if (event) events.push(event);
+    }
+    for (const [id, state] of states) {
+      const source = this.source(id);
+      if (!source) continue;
+      let page = await this.readPage(id, source, {
+        signal: AbortSignal.any([signal, source.lifetime.signal]),
+        query: structuredClone(state.query),
+        offset: (state.page - 1) * state.pageSize,
+        limit: state.pageSize,
+      });
+      if (
+        page.totalItems !== undefined &&
+        state.page > Math.max(1, Math.ceil(page.totalItems / state.pageSize))
+      ) {
+        state.page = Math.max(1, Math.ceil(page.totalItems / state.pageSize));
+        page = await this.readPage(id, source, {
+          signal: AbortSignal.any([signal, source.lifetime.signal]),
+          query: structuredClone(state.query),
+          offset: (state.page - 1) * state.pageSize,
+          limit: state.pageSize,
+        });
+      }
+      results.set(id, { source, page });
+    }
+    const check = () => {
+      signal.throwIfAborted();
+      if (this.#screen.version !== version) {
+        throw new StaleListView("Screen was reset");
+      }
+      for (const request of requests) {
+        this.view(request.id, request.revision, model);
+      }
+      for (const [id, result] of results) {
+        result.source.lifetime.signal.throwIfAborted();
+        if (this.source(id) !== result.source) {
+          throw new StaleListView("List source was replaced");
+        }
+      }
+    };
+    check();
+    return {
+      events,
+      commit: () => {
+        check();
+        for (const [id, state] of states) Object.assign(this.state(id), state);
+        for (const [id, result] of results) {
+          result.source.result = result.page;
+          this.#views.delete(id);
+        }
+      },
+    };
+  }
+
+  private source(id: string): SourceEntry | undefined {
+    return listSources.get(this.model!)?.get(id);
+  }
+
+  private async readPage(
+    id: string,
+    source: SourceEntry,
+    request: Parameters<ListSource>[0],
+  ): Promise<ListSourcePage> {
+    request.signal.throwIfAborted();
+    const aborted = Promise.withResolvers<never>();
+    const abort = () => aborted.reject(request.signal.reason);
+    request.signal.addEventListener("abort", abort, { once: true });
+    let page: ListSourcePage;
+    try {
+      page = await Promise.race([source.read(request), aborted.promise]);
+    } finally {
+      request.signal.removeEventListener("abort", abort);
+    }
+    request.signal.throwIfAborted();
+    if (
+      !isRecord(page) || !Array.isArray(page.rows) ||
+      page.rows.length > request.limit ||
+      typeof page.more !== "boolean" || page.more && page.rows.length === 0 ||
+      [page.totalItems, page.totalSourceItems].some((n) =>
+        n !== undefined && (!Number.isSafeInteger(n) || Number(n) < 0)
+      ) ||
+      page.totalItems !== undefined &&
+        (page.rows.length > 0 &&
+            page.totalItems < request.offset + page.rows.length ||
+          page.more && page.totalItems <= request.offset + page.rows.length) ||
+      page.totalSourceItems !== undefined && page.totalItems !== undefined &&
+        page.totalSourceItems < page.totalItems ||
+      page.totalSourceItems !== undefined && page.rows.length > 0 &&
+        page.totalSourceItems < request.offset + page.rows.length ||
+      !page.more && page.totalItems !== undefined &&
+        (page.rows.length > 0 || request.offset === 0) &&
+        page.totalItems > request.offset + page.rows.length
+    ) {
+      throw new TypeError("invalid list provider result or total");
+    }
+    const schema = this.#definitions.get(id)!.rowSchema;
+    if (
+      page.schema !== undefined && (!(page.schema instanceof z.ZodObject) ||
+        JSON.stringify(buildColumns(page.schema, {})) !==
+          JSON.stringify(buildColumns(schema, {})))
+    ) {
+      throw new TypeError(
+        "List provider schema changed; rebuild the screen contract",
+      );
+    }
+    return {
+      ...page,
+      rows: schema.array().parse(page.rows),
+      ...(page.totalItems === undefined && !page.more &&
+          (page.rows.length > 0 || request.offset === 0)
+        ? { totalItems: request.offset + page.rows.length }
+        : {}),
+    };
+  }
+
+  async read(
+    request: ListReadRequest,
+    model: object,
+    signal = new AbortController().signal,
+  ): Promise<ListDataPage> {
+    signal = AbortSignal.any([signal, this.model?.resetSignal ?? signal]);
+    signal.throwIfAborted();
     if (!validListRead(request)) throw new TypeError("invalid list read range");
     const view = this.view(request.id, request.revision, model);
     const data: ListDataPage = {
@@ -235,7 +511,7 @@ export class ScreenLists {
       rows: [],
       more: false,
     };
-    if (view.snapshot.pageSource === undefined) {
+    if (view.snapshot.source === undefined) {
       data.rows = view.allIndices.slice(
         request.offset,
         request.offset + request.limit,
@@ -244,34 +520,26 @@ export class ScreenLists {
       data.totalItems = view.allIndices.length;
       data.more = request.offset + data.rows.length < data.totalItems;
     } else {
-      if (!Object.hasOwn(this.readers, request.id)) {
+      const source = listSources.get(this.model!)?.get(request.id);
+      if (!source) {
         throw new TypeError(
           "This list source does not provide independent reads.",
         );
       }
+      signal = AbortSignal.any([signal, source.lifetime.signal]);
       do {
         const limit = Math.min(
           MAX_LIST_PAGE_SIZE,
           request.limit - data.rows.length,
         );
-        const page = await this.readers[request.id]!({
+        signal.throwIfAborted();
+        const page = await this.readPage(request.id, source, {
+          signal,
           query: structuredClone(view.snapshot.state.query),
           offset: request.offset + data.rows.length,
           limit,
         });
-        if (
-          !Array.isArray(page.rows) || page.rows.length > limit ||
-          typeof page.more !== "boolean" ||
-          (page.more && page.rows.length === 0)
-        ) {
-          throw new TypeError("invalid list reader result");
-        }
-        if (page.totalItems !== undefined) {
-          if (!Number.isSafeInteger(page.totalItems) || page.totalItems < 0) {
-            throw new TypeError("invalid list reader total");
-          }
-          data.totalItems = page.totalItems;
-        }
+        if (page.totalItems !== undefined) data.totalItems = page.totalItems;
         data.rows.push(...page.rows);
         data.more = page.more;
       } while (data.more && data.rows.length < request.limit);
@@ -284,6 +552,8 @@ export class ScreenLists {
       }
       this.view(request.id, request.revision, model);
     }
+    signal.throwIfAborted();
+    this.view(request.id, request.revision, model);
     return structuredClone(data);
   }
 
@@ -295,10 +565,14 @@ export class ScreenLists {
   }
 
   validateRequests(requests: readonly ListRequest[], model: object): void {
+    if (!validListRequests(requests)) {
+      throw new TypeError("invalid list updates");
+    }
     const ids = new Set<string>();
     for (const request of requests) {
-      if (ids.has(request.id)) throw new TypeError("duplicate list update");
-      ids.add(request.id);
+      const key = `${request.id}:${request.operation}`;
+      if (ids.has(key)) throw new TypeError("duplicate list update");
+      ids.add(key);
       const view = this.view(request.id, request.revision, model);
       if (request.operation === "page") {
         if (
@@ -322,10 +596,10 @@ export class ScreenLists {
         ) {
           throw new TypeError("invalid list selection range or binding");
         }
-      } else {
+      } else if (request.operation === "query") {
         normalizeQuery(request.query, view.snapshot.columns);
         if (
-          view.snapshot.pageSource?.searchOnly &&
+          view.snapshot.source?.searchOnly &&
           (request.query.sort !== null ||
             Object.keys(request.query.filters).length > 0)
         ) {
@@ -337,15 +611,17 @@ export class ScreenLists {
 
   update(
     request: ListRequest,
+    state = this.state(request.id),
   ): {
     id: string;
     bind: string;
     query: ListQuery;
-    change: "search" | "filter" | "sort" | "page" | "capacity";
+    change: "search" | "filter" | "sort";
   } | undefined {
     const definition = this.#definitions.get(request.id)!;
-    const state = this.state(request.id);
-    if (request.operation === "selection") return undefined;
+    if (request.operation === "selection" || request.operation === "refresh") {
+      return undefined;
+    }
     if (request.operation === "page") state.page = request.page;
     else if (request.operation === "capacity") {
       const offset = (state.page - 1) * state.pageSize;
@@ -365,7 +641,7 @@ export class ScreenLists {
       state.query = query;
       state.page = 1;
       if (
-        definition.triggerFilterEvents || definition.pageSource !== undefined
+        definition.triggerFilterEvents
       ) {
         return {
           id: request.id,
@@ -374,14 +650,6 @@ export class ScreenLists {
           change,
         };
       }
-    }
-    if (definition.pageSource !== undefined && request.operation !== "query") {
-      return {
-        id: request.id,
-        bind: definition.bind,
-        query: structuredClone(state.query),
-        change: request.operation,
-      };
     }
     return undefined;
   }
@@ -441,6 +709,10 @@ export class ScreenLists {
     for (const change of changes) {
       const view = this.view(change.id, change.revision, source);
       const definition = this.#definitions.get(change.id)!;
+      if (view.provider && change.rows.length > 0) {
+        throw new TypeError("List providers do not support row edits");
+      }
+      if (definition.readOnly) throw new TypeError("This list is read-only");
       const rows = getPath(candidate, definition.bind);
       if (!Array.isArray(rows)) {
         throw new TypeError("invalid list edit binding");
@@ -455,6 +727,11 @@ export class ScreenLists {
           throw new TypeError("conflicting edits of the same source row");
         }
         edited.add(identity);
+        validateRowEdit(
+          definition.rowSchema,
+          view.source[original],
+          edit.value,
+        );
         rows[original] = structuredClone(edit.value);
       }
       bindings.add(definition.bind);
@@ -473,9 +750,12 @@ export class ScreenLists {
     if (definition === undefined || view === undefined) {
       throw new TypeError(`unknown list ${id}`);
     }
-    const source = getPath(model, definition.bind);
+    const source = this.source(id)?.result?.rows ??
+      getPath(model, definition.bind);
     if (
-      view.snapshot.revision !== revision || !Array.isArray(source) ||
+      view.snapshot.revision !== revision ||
+      view.version !== this.#screen.version ||
+      view.provider !== this.source(id) || !Array.isArray(source) ||
       !currentSource(view, source, JSON.stringify(source))
     ) {
       throw new StaleListView(
@@ -483,6 +763,37 @@ export class ScreenLists {
       );
     }
     return view;
+  }
+}
+
+function validateRowEdit(
+  schema: z.ZodType,
+  before: unknown,
+  after: unknown,
+): void {
+  if (JSON.stringify(before) === JSON.stringify(after)) return;
+  if (
+    fieldSchemas(schema).some((item) =>
+      item instanceof z.ZodReadonly || fieldMetadata(item)?.readOnly
+    )
+  ) {
+    throw new TypeError("This row field is read-only");
+  }
+  const raw = unwrap(schema).schema;
+  if (raw instanceof z.ZodObject) {
+    for (const [key, child] of Object.entries(raw.shape)) {
+      validateRowEdit(
+        child as z.ZodType,
+        isRecord(before) ? before[key] : undefined,
+        isRecord(after) ? after[key] : undefined,
+      );
+    }
+  } else if (
+    raw instanceof z.ZodArray && Array.isArray(before) && Array.isArray(after)
+  ) {
+    after.forEach((value, index) =>
+      validateRowEdit(raw.element as z.ZodType, before[index], value)
+    );
   }
 }
 
@@ -540,7 +851,9 @@ function buildColumns(
     if (
       selected === undefined ||
       !(unwrap(selected).schema instanceof z.ZodBoolean) ||
-      selected instanceof z.ZodReadonly || fieldMetadata(selected)?.readOnly
+      fieldSchemas(selected).some((item) =>
+        item instanceof z.ZodReadonly || fieldMetadata(item)?.readOnly
+      )
     ) {
       throw new TypeError(
         "list selection must bind an editable boolean row field",

@@ -6,7 +6,12 @@ export {
   type CodeLanguage,
   type CodeLineMarker,
 } from "./services/shell/frontend/components/code-editor/mod.ts";
-export { type ListReader, queryValueHelp } from "./lists.ts";
+export {
+  type ListSource,
+  type ListSourcePage,
+  queryValueHelp,
+  setListSource,
+} from "./lists.ts";
 export { z } from "/p/the8020/db/fields.ts";
 export { validateCustomElements } from "./custom_elements.ts";
 export { packageAssetURL } from "./browser_assets.ts";
@@ -19,6 +24,7 @@ export { field, type FieldMetadata } from "./fields.ts";
 export {
   callScreen,
   type CallScreenOptions,
+  captureMessages,
   type ChannelScreenExit,
   type ClientScreenEvent,
   copyText,
@@ -26,7 +32,6 @@ export {
   currentSessionId,
   download,
   endSession,
-  type ListPageScreenEvent,
   type ListQueryScreenEvent,
   openSession,
   presentModal,
@@ -36,6 +41,7 @@ export {
   sendMessage,
 } from "./session.ts";
 export type { DownloadHandle, DownloadOptions } from "./downloads.ts";
+export type { MessageOutput, UUIMessage } from "./messages.ts";
 export {
   defineSessionService,
   type UUISessionContext,
@@ -58,3 +64,13 @@ export type {
 } from "./layout.ts";
 export { applyLayoutOverride, validateLayout } from "./layout.ts";
 export * from "./protocol.ts";
+export { Channel } from "./session.ts";
+export { ChannelSubscription } from "./channel.ts";
+export type {
+  ByteSource,
+  ChannelConnection,
+  ChannelContext,
+  ChannelSubscriber,
+  StreamHandle,
+  StreamPolicy,
+} from "./channel.ts";

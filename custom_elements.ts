@@ -7,6 +7,31 @@ import { resolveElementIDs } from "./identifiers.ts";
 import { validBrowserAssetURL } from "./browser_assets.ts";
 import { validateComponentStyle } from "./protocol.ts";
 
+/** Internal marker for live bindings excluded from wire declarations. */
+export const channelBinding = Symbol("channelBinding");
+export function isChannelBinding(value: unknown): value is object {
+  return value !== null && typeof value === "object" && channelBinding in value;
+}
+/** Clone authored declarations while preserving live channel references at any placement. */
+export function cloneDeclaration<T>(value: T): T {
+  if (isChannelBinding(value)) return value;
+  const result = structuredClone(value);
+  const seen = new WeakSet<object>();
+  const retain = (source: unknown, target: unknown): void => {
+    if (source === null || typeof source !== "object" || seen.has(source)) {
+      return;
+    }
+    seen.add(source);
+    for (const [key, item] of Object.entries(source)) {
+      const output = target as Record<string, unknown>;
+      if (isChannelBinding(item)) output[key] = item;
+      else retain(item, output[key]);
+    }
+  };
+  retain(value, result);
+  return result;
+}
+
 const identifier = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 export function validateCustomElements(
@@ -42,6 +67,7 @@ export function validateCustomElements(
     const unknown = Object.keys(item).find((key) =>
       ![
         "id",
+        "channel",
         "module",
         "styles",
         "preserve",
@@ -57,6 +83,9 @@ export function validateCustomElements(
       throw new TypeError(
         `custom element ${item.id} contains unsupported property ${unknown}`,
       );
+    }
+    if (item.channel !== undefined && !isChannelBinding(item.channel)) {
+      throw new TypeError("custom channel requires a Channel binding");
     }
     if (ids.has(id)) {
       throw new TypeError(`duplicate custom element ID ${id}`);

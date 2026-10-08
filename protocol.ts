@@ -1,26 +1,18 @@
 import {
   type ListChange,
-  type ListDataPage,
   type ListOptions,
-  type ListReadRequest,
   type ListRequest,
   type ListSelection,
   MAX_LIST_PAGE_SIZE,
   type ScreenListSnapshot,
   type ScreenState,
   type ScreenStateUpdate,
-  validListQuery,
-  validListRead,
+  validListRequests,
   validScreenStateUpdate,
 } from "./screen_state.ts";
 export * from "./screen_state.ts";
+import { type ChannelFrame, validChannelFrame } from "./channel.ts";
 import uiConfig from "./ui-config.json" with { type: "json" };
-import {
-  DOWNLOAD_TRANSFER_FRAMES,
-  type DownloadClientCommand,
-  type DownloadServerCommand,
-  validDownloadID,
-} from "./download_protocol.ts";
 
 export const UUI_PROTOCOL_VERSION = uiConfig.protocolVersion;
 export const BACK_EVENT = "back" as const;
@@ -45,8 +37,6 @@ export type ScreenEventType =
   | "exit";
 
 export type UUIMessageType =
-  | DownloadClientCommand["type"]
-  | DownloadServerCommand["type"]
   | "session.connect"
   | "session.ready"
   | "session.resumed"
@@ -59,9 +49,7 @@ export type UUIMessageType =
   | "session.pong"
   | "presentation.show"
   | "screen.event"
-  | "screen.list"
-  | "screen.list.data"
-  | "notification.show"
+  | "channel.frame"
   | "clipboard.write"
   | "client.ack"
   | "server.ack";
@@ -135,18 +123,9 @@ export interface ScreenEventMessage extends ScreenInteractionBase {
   selection?: ListSelection;
 }
 
-export interface ScreenListMessage extends ScreenInteractionBase {
-  type: "screen.list";
+export interface ListUpdateRequest
+  extends Omit<ScreenInteractionBase, keyof ClientMessageBase> {
   updates: ListRequest[];
-  /** A read is exclusive of updates and edits and leaves the pending screen intact. */
-  read?: ListReadRequest;
-}
-
-export interface ScreenListDataMessage extends ServerMessageBase {
-  type: "screen.list.data";
-  surfaceId: string;
-  clientSequence: number;
-  data: ListDataPage;
 }
 
 export interface SessionPongMessage extends ClientMessageBase {
@@ -163,10 +142,9 @@ export interface ResyncConfirmMessage extends ClientMessageBase {
 }
 
 export type UUIClientMessage =
-  | (DownloadClientCommand & ClientMessageBase)
+  | (ChannelFrame & ClientMessageBase)
   | SessionConnectMessage
   | ScreenEventMessage
-  | ScreenListMessage
   | SessionPongMessage
   | SessionLogoutMessage
   | ResyncConfirmMessage;
@@ -174,7 +152,7 @@ export type UUIClientMessage =
 export interface ServerMessageBase {
   type: Exclude<
     UUIMessageType,
-    "session.connect" | "session.logout" | "screen.event" | "screen.list"
+    "session.connect" | "session.logout" | "screen.event"
   >;
   protocol: number;
   serverSequence: number;
@@ -186,18 +164,21 @@ export interface SessionReadyMessage extends ServerMessageBase {
   sessionId: string;
   resumeToken: string;
   resumed: false;
+  connection: string;
 }
 
 export interface SessionResumedMessage extends ServerMessageBase {
   type: "session.resumed";
   sessionId: string;
   resumed: true;
+  connection: string;
   lastClientSequence: number;
 }
 
 export interface SessionErrorMessage extends ServerMessageBase {
   type: "session.error" | "session.resync_required" | "session.end";
   code?: string;
+  connection?: string;
   message?: string;
   redirectUrl?: string;
 }
@@ -206,13 +187,6 @@ export interface PresentationShowMessage extends ServerMessageBase {
   type: "presentation.show";
   sessionId: string;
   presentation: PresentationSnapshot;
-}
-
-export interface NotificationMessage extends ServerMessageBase {
-  type: "notification.show";
-  sessionId: string;
-  level: UUIMessageKind;
-  message: string;
 }
 
 export interface ClipboardWriteMessage extends ServerMessageBase {
@@ -238,13 +212,11 @@ export interface PingMessage extends ServerMessageBase {
 }
 
 export type UUIServerMessage =
-  | (DownloadServerCommand & ServerMessageBase)
   | SessionReadyMessage
   | SessionResumedMessage
   | SessionErrorMessage
   | PresentationShowMessage
-  | ScreenListDataMessage
-  | NotificationMessage
+  | (ChannelFrame & ServerMessageBase)
   | ClipboardWriteMessage
   | SessionOpenMessage
   | AcknowledgementMessage
@@ -356,7 +328,7 @@ export interface FieldDescriptor extends ComponentStyle {
   semanticType?: string;
   list?: ListOptions;
   /** A model-bound instance of the ordinary custom-element host. */
-  custom?: CustomElementOptions;
+  custom?: CustomElementOptions & { channelNamespace?: string };
 }
 
 export interface ControlDescriptor extends Partial<FieldDescriptor> {
@@ -396,6 +368,8 @@ export interface ScreenHeader {
 }
 
 export interface CustomElementDescriptor extends ComponentStyle {
+  /** Internal routing assigned by the owning call; never authored wiring. */
+  channelNamespace?: string;
   id: string;
   /** Same-origin browser module, loaded only when this element is rendered. */
   module: string;
@@ -420,10 +394,13 @@ export interface CustomFallback {
   outputs?: CustomFallbackField[];
   actions?: Array<{ name: string; label: string; event: string }>;
 }
-export type CustomElementDeclaration = Omit<CustomElementDescriptor, "id"> & {
-  id?: string;
-};
-export type CustomElementOptions = Omit<CustomElementDescriptor, "id">;
+export type CustomElementDeclaration =
+  & Omit<CustomElementDescriptor, "id" | "channelNamespace">
+  & {
+    id?: string;
+    channel?: import("./session.ts").Channel;
+  };
+export type CustomElementOptions = Omit<CustomElementDeclaration, "id">;
 
 export interface ScreenSnapshot extends ComponentStyle {
   id: string;
@@ -440,6 +417,14 @@ export interface ScreenSnapshot extends ComponentStyle {
   actions: ScreenAction[];
   header: ScreenHeader;
   customElements: CustomElementDescriptor[];
+  /** Current callScreen/reset generation, never a channel grant or catalog. */
+  channelGeneration?: string;
+  /** Domain-native-save namespace on this same channel registry. */
+  downloadNamespace?: string;
+  /** Built-in message-center registration, scoped to this call generation. */
+  messageNamespace?: string;
+  /** Owning program attachment, assigned by UUI. */
+  programNamespace?: string;
 }
 
 export type PresentationSurfaceKind = "page" | "modal";
@@ -455,29 +440,23 @@ export interface PresentationSnapshot {
   pageDepth: number;
   surfaces: PresentationSurfaceSnapshot[];
   activeSurfaceId: string | null;
+  /** Accepted bounded domain history, never replayed channel operations. */
+  messages?: import("./messages.ts").UUIMessage[];
 }
 
 export type UUIWorkerOutbound =
-  | DownloadServerCommand
-  | {
-    type: "screen.list.data";
-    surfaceId: string;
-    clientSequence: number;
-    data: ListDataPage;
-  }
+  | ChannelFrame
   | { type: "presentation.show"; presentation: PresentationSnapshot }
-  | {
-    type: "notification.show";
-    level: UUIMessageKind;
-    message: string;
-  }
   | { type: "clipboard.write"; text: string }
   | { type: "session.open"; targetSessionId: string }
   | { type: "server.ack"; clientSequence: number }
   | { type: "session.error"; code: string; message: string }
   | { type: "session.end"; message?: string; redirectUrl?: string };
 
-export function parseClientMessage(value: unknown): UUIClientMessage {
+export function parseClientMessage(
+  value: unknown,
+  binary = false,
+): UUIClientMessage {
   if (!isRecord(value) || typeof value.type !== "string") {
     throw new TypeError("UUI message must be an object with a type");
   }
@@ -504,18 +483,11 @@ export function parseClientMessage(value: unknown): UUIClientMessage {
     !isSequence(value.clientSequence) || typeof value.sessionId !== "string" ||
     value.sessionId.length === 0
   ) throw new TypeError("invalid client message identity");
-  if (value.type.startsWith("download.")) {
-    if (
-      !validDownloadID(value.downloadId) ||
-      !(value.type === "download.done" || value.type === "download.cancel" ||
-        value.type === "download.credit") ||
-      value.type === "download.credit" &&
-        (!isSequence(value.consumed) || !isSequence(value.frames) ||
-          value.frames > DOWNLOAD_TRANSFER_FRAMES) ||
-      value.type === "download.cancel" && value.error !== undefined &&
-        (typeof value.error !== "string" || value.error.length > 1000)
-    ) throw new TypeError("invalid download message");
-    return value as unknown as DownloadClientCommand & ClientMessageBase;
+  if (value.type === "channel.frame") {
+    if (!validChannelFrame(value) || value.kind === "stream.bytes" && !binary) {
+      throw new TypeError("invalid channel frame");
+    }
+    return value as unknown as ChannelFrame & ClientMessageBase;
   }
   if (value.type === "session.pong" || value.type === "session.logout") {
     return value as unknown as SessionPongMessage | SessionLogoutMessage;
@@ -526,51 +498,7 @@ export function parseClientMessage(value: unknown): UUIClientMessage {
     }
     return value as unknown as ResyncConfirmMessage;
   }
-  if (value.type === "screen.list" || value.type === "screen.event") {
-    if (
-      typeof value.surfaceId !== "string" || value.surfaceId.length === 0 ||
-      typeof value.screenId !== "string" || value.screenId.length === 0 ||
-      typeof value.instanceId !== "string" || value.instanceId.length === 0 ||
-      !isPositiveSequence(value.screenRevision) ||
-      !validScreenStateUpdate(value.screenState) ||
-      !validChanges(value.changes) || !validListChanges(value.listChanges)
-    ) {
-      throw new TypeError("invalid screen interaction metadata");
-    }
-  }
-  if (value.type === "screen.list") {
-    if (value.read !== undefined) {
-      if (
-        !validListRead(value.read) || !Array.isArray(value.updates) ||
-        value.updates.length !== 0 ||
-        (value.changes as unknown[]).length !== 0 ||
-        (value.listChanges !== undefined &&
-          (value.listChanges as unknown[]).length !== 0)
-      ) {
-        throw new TypeError("invalid list read message");
-      }
-      return value as unknown as ScreenListMessage;
-    }
-    if (
-      !Array.isArray(value.updates) || value.updates.length === 0 ||
-      value.updates.length > 200 ||
-      !value.updates.every((item) =>
-        isRecord(item) && typeof item.id === "string" && item.id.length > 0 &&
-        isPositiveSequence(item.revision) &&
-        (item.operation === "page" && isPositiveSequence(item.page) ||
-          item.operation === "capacity" && isPositiveSequence(item.pageSize) &&
-            Number(item.pageSize) <= MAX_LIST_PAGE_SIZE ||
-          item.operation === "query" && validListQuery(item.query) ||
-          item.operation === "selection" &&
-            typeof item.selected === "boolean" &&
-            (item.range === undefined || isRecord(item.range) &&
-                isSequence(item.range.from) && isSequence(item.range.to)))
-      )
-    ) {
-      throw new TypeError("invalid screen.list message");
-    }
-    return value as unknown as ScreenListMessage;
-  }
+  if (value.type === "screen.event") validateScreenInteraction(value);
   const eventTypes = new Set<ScreenEventType>([
     "action",
     "change",
@@ -601,6 +529,40 @@ export function parseClientMessage(value: unknown): UUIClientMessage {
       (value.action !== BACK_EVENT || value.eventType !== BACK_EVENT)
   ) throw new TypeError("invalid screen.event message");
   return value as unknown as ScreenEventMessage;
+}
+
+function validateScreenInteraction(value: Record<string, unknown>): void {
+  if (
+    typeof value.surfaceId !== "string" || !value.surfaceId.length ||
+    typeof value.screenId !== "string" || !value.screenId.length ||
+    typeof value.instanceId !== "string" || !value.instanceId.length ||
+    !isPositiveSequence(value.screenRevision) ||
+    !validScreenStateUpdate(value.screenState) ||
+    !validChanges(value.changes) || !validListChanges(value.listChanges)
+  ) {
+    throw new TypeError("invalid screen interaction metadata");
+  }
+}
+export function parseListUpdate(value: unknown): ListUpdateRequest {
+  if (!isRecord(value)) throw new TypeError("invalid list update");
+  validateScreenInteraction(value);
+  if (
+    !validListRequests(value.updates) || Object.keys(value).some((key) =>
+      ![
+        "surfaceId",
+        "screenId",
+        "screenRevision",
+        "instanceId",
+        "screenState",
+        "changes",
+        "listChanges",
+        "updates",
+      ].includes(key)
+    )
+  ) {
+    throw new TypeError("invalid list update");
+  }
+  return value as unknown as ListUpdateRequest;
 }
 
 function isSequence(value: unknown): value is number {

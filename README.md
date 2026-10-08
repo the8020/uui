@@ -90,6 +90,202 @@ restores the last synchronized position. Brief reconnects preserve live browser
 state. This lasts within the live session/Worker; there is no database
 view-state storage or recovery of program continuations after Worker loss.
 
+## Channels
+
+Programs and browser components use `send(id, data)` and
+`subscribe(pattern, (id, data, context) => ...)`. The returned
+`ChannelSubscription` exposes readonly `id`, the identical original `handler`,
+and idempotent `unsubscribe()`; framework owners store and dispatch that same
+object in the backend and browser. Data is ordinary JSON or a readable byte
+stream/lazy async iterable. IDs name application messages; no method
+registration, payload/result schema, peer catalog or separate stream-handler map
+is needed. Subscribers own business validation and any actual request/reply
+correlation. `context.signal` cancels work when its subscription, screen or
+connection loses ownership.
+
+A backend program uses its ScreenChannel directly and attaches component Channel
+objects in their declarations. UUI assigns internal identities; authors never
+register channel names or repeat component IDs for wiring:
+
+```ts
+import {
+  callScreen,
+  Channel,
+  Model,
+  packageAssetURL,
+  ScreenChannel,
+  z,
+} from "/p/the8020/uui/mod.ts";
+
+const program = new ScreenChannel();
+const widget = new Channel();
+widget.subscribe("*", async (id, data) => {
+  if (data instanceof ReadableStream) {
+    const bytes = new Uint8Array(await new Response(data).arrayBuffer());
+    widget.send("uploaded", { bytes: bytes.length });
+    return;
+  }
+  if (id === "ready") widget.send("update", { label: "Ready" });
+  if (id === "selection") widget.send("selected", { value: data });
+});
+program.subscribe("status", (_id, data) => {
+  program.send("status-result", { running: true });
+});
+const pending = callScreen({
+  id: "channel-example",
+  schema: z.object({}),
+  model: new Model({}),
+  channel: program,
+  customElements: [{
+    id: "widget",
+    module: packageAssetURL("example/widget", "widget.js"),
+    config: {},
+    channel: widget,
+  }],
+  layout: {
+    schema: 1,
+    id: "channel-layout",
+    root: { type: "custom", customElement: "widget" },
+  },
+});
+await pending;
+```
+
+The schema above belongs to the screen model. Channels have no required schemas.
+Custom fields can likewise supply `channel` in their `custom` options. A browser
+module uses the automatically attached component or owning program:
+
+```js
+export default function mount(context) {
+  const subscription = context.channel.subscribe("*", async (id, data) => {
+    if (data instanceof ReadableStream) {
+      const bytes = new Uint8Array(await new Response(data).arrayBuffer());
+      context.host.textContent = String(bytes.length);
+      return;
+    }
+    if (id === "update") context.host.textContent = data.label;
+  });
+  context.channel.send("ready", null);
+  context.channel.send("selection", { key: 42 });
+  context.programChannel.send("status", null);
+  return { dispose: subscription.unsubscribe };
+}
+```
+
+Patterns match the entire ID. Only `*` is special: it matches zero or more
+characters, including dots. Literal patterns match exactly; regex punctuation
+and other glob characters remain literal. Internal and multiple stars use the
+same rule (`dashboard.*.rows*`).
+
+```ts
+const handler = (id: string, data: unknown) => console.log(id, data);
+const subscription = widget.subscribe("dashboard.updates.*", handler);
+subscription.id; // "dashboard.updates.*"
+subscription.handler === handler; // true
+subscription.unsubscribe(); // safe to call repeatedly
+```
+
+Every screen owns a real program channel even when `callScreen` omits `channel`.
+Custom hosts and custom fields always receive both `context.channel` and
+`context.programChannel`; component Channels are also created automatically when
+their declarations omit one. Explicit backend channels only add application
+listeners and screen commands. Sending to an unconsumed route drops ordinary
+data and cancels streams before source demand, without a backlog. Detached,
+disconnected, stale or covered owners still reject operations.
+
+Ordinary data fans out to the matching current subscribers. Synchronous throws
+and rejected handler promises are isolated; another subscriber and later
+messages remain usable. Messages with no listeners are dropped. There is no
+replay, backlog, automatic stream tee, central quota/fairness scheduler or
+generic RPC layer. Owner-selected stream bounds and the list's 30-second read
+deadline stay at their owners; transport JSON, framing and size validation
+remain required.
+
+Each full `callScreen` and Model reset creates a new generation. Subscription
+bindings reattach for a reused backend Channel or preserved browser host; their
+in-flight work is aborted. Settlement, removal, failure, exit and disconnect or
+takeover cancel unfinished streams. Covered surfaces retain state but admit no
+new channel traffic. An unsubscribe removes that subscription and cancels
+streams it is consuming. Ordinary sends have no remote completion promise.
+
+Browser `context.channel` and `context.programChannel` getters acquire a view of
+the current owning call/connection. At the start of a handler or UI action,
+acquire a view before awaiting and retain it for that work. Saved output views
+never retarget a replacement. Backend subscribers preserve their initiating
+trusted async context, and their Channel/ScreenChannel sends reject old work.
+Backend work started outside a handler can use `channel.capture()` before an
+await. A producer ignoring abort can continue internally; late framework output
+is discarded. Arbitrary business side effects remain owner responsibilities.
+
+One ChannelRouter handles all traffic on the existing authenticated UUI
+WebSocket. The session service retains controller/socket/session checks;
+internal envelopes bind messages and stream controls to their initiating side,
+sequence and screen/connection generations. Protocol version 11 replaces the
+previous channel wire forms without a compatibility layer. No endpoint catalog,
+permission system, extra backend service or socket is exposed. Do not import the
+server `mod.ts` barrel into browser modules.
+
+Lists use ordinary `read`, `update`, `result` and `cancel` IDs and only the
+list-owned token needed to match a read/update. Headless commands use the same
+validated list-domain owner. Independent reads preserve dirty fields and leave
+callScreen pending; updates keep existing atomic validation. Only matching list
+results/errors or valid presentations release the shell's interaction gate;
+ordinary messages, stream controls and acknowledgements never release it.
+
+## Messages
+
+`sendMessage(body, kind?)` records an ordinary program outcome in the current
+session's bounded message history. Kinds are `info` (default), `success`,
+`warning`, and `error`; Markdown bodies must contain 1–20,000 characters.
+Between screen calls, including after a modal returns or before the first
+socket, this accepts semantic state only. The next explicit presentation
+contains that history; no detached operation waits for or rebinds to its
+channel. All existing success/error helpers use this domain contract.
+
+For output from work started while a screen is pending, capture its owner before
+an await or callback:
+
+```ts
+import { callScreen, captureMessages, Model, z } from "/p/the8020/uui/mod.ts";
+const pending = callScreen({
+  id: "work",
+  schema: z.object({}),
+  model: new Model({}),
+});
+const output = captureMessages();
+await doWork();
+output.send("Work completed", "success");
+await pending;
+```
+
+Initial/headless captures may accept domain state without a physical socket; the
+first connection change expires that capture too. The domain helper validates
+its registered owner before accepting history; generic channel sends require a
+live transport.
+
+The built-in message center attaches even without a supplied ScreenChannel. Its
+`append`, `history`, and `refresh` IDs use generic subscriptions on the same
+ChannelRouter as lists, custom hosts and programs. Captured output preserves
+trusted async context and rejects before accepting history when its call,
+namespace, Model reset, connection or initiating operation becomes stale.
+Coverage blocks output; cancelled handlers remain cancelled after restoration.
+Disconnect/takeover cancels old output; acquire a fresh capture for new work.
+Never retain the ambient `sendMessage` helper as a substitute for that capture.
+Download and provider errors use their initiating capture. A source ignoring
+abort may continue internally; its framework output cannot enter a new owner.
+
+Accepted history retains at most 100 messages; authenticated headless responses
+read the ten most recent from that same owner. An accepted interaction clears
+prior outcomes while preserving messages accepted during its asynchronous work.
+Browser roundtrips clear their interaction collection. New live records or
+between-screen outcomes show at most ten toasts; history retains 100. Snapshot
+initialization/reload reconstructs history without old toasts. Replacement and
+reconnect merge by monotonic domain identity; dismissed or already seen records
+are not reintroduced. A registered history refresh transfers state without
+replaying operations or releasing an unrelated request gate. Pushes neither
+commit dirty data nor reissue a pending screen. Toast/dialog Markdown, badge,
+dismissal, focus, keyboard and accessibility behavior stay with the shell.
+
 ## Shared fields and field help
 
 Define a semantic field with ordinary Zod and the runtime-independent DB helper.
@@ -312,13 +508,43 @@ leaving the UUI page and unsaved fields unchanged. Export/copy results are held
 in browser memory. Tabulator (MIT) and SheetJS CE (Apache-2.0) are vendored
 inside `services/shell/frontend/components/list/` and load only when needed.
 
-Server-paged lists may supply `callScreen({ listReaders })`, a record keyed by
-list ID. A reader receives `{ query, offset, limit }` (at most 500 rows) and
-returns `{ rows, more }`, synchronously or asynchronously. The framework fills
-larger independent reads without replacing the program's visible page. Field
-help supplies this reader automatically. When the final count is unknown, the
-viewer shows `/ …` and export leaves Last row blank to mean all remaining rows.
-Sources without a reader retain Copy page; other data tools are disabled.
+Register an async source once with `setListSource(model, listId, source)`:
+
+```ts
+setListSource(model, "orders", async ({ query, offset, limit, signal }) => {
+  return fetchAuthorizedOrders({ query, offset, limit, signal });
+});
+```
+
+The program chooses the authorized source. Bound arrays use local projection;
+registered sources receive the ordinary typed query, offset, a 1–500-row limit
+and AbortSignal. Return `{ rows, more, totalItems?, totalSourceItems? }`. UUI
+loads and refreshes the visible page, validates its fixed row schema and totals,
+and updates rows, geometry and view revisions while `callScreen` stays pending.
+Paging, queries, capacity changes and `ScreenChannel.redraw()` do not require
+program reload loops. Providers retain remote order and own filtering, sorting
+and consistency; `searchOnly: true` registration options hide and reject
+unsupported column queries. Whole-table checkbox selection requires a complete
+bound array, so registered paged sources cannot opt into selection.
+
+Provider pages belong to their list ID and never replace the bound business
+array; separate lists may query the same binding independently. Row navigation
+uses that list's accepted page. Providers expose reads only: dirty row edits on
+a provider list reject the entire interaction before any data, query, capacity
+or page state commits. Editable rows and checkbox updates require a complete
+bound array. Other editable fields can still commit with provider browsing.
+
+The disposer or replacement cancels the source's work and invalidates old row
+mappings. Reset, screen settlement/replacement, coverage and connection loss
+cancel active work; late results are discarded even if the source ignores abort.
+Covered redraws retain presentation state and refresh when restored. Remote
+snapshot consistency and interrupting unabortable queries remain source-owned.
+Schema and columns stay fixed within a screen call; rebuild the screen contract
+explicitly to change them. Optional source-returned value-help schemas must
+match that contract. Unknown totals remain unknown until an accepted end page.
+The same provider fills bounded independent `read` operations without changing
+the visible page or committing drafts. Field help registers its provider
+automatically and retains its first-column key, isolated draft and Done commit.
 
 The first presentation supplies one row for measurement. The browser reports
 capacity from the actual page/modal viewport and list geometry; the Worker
@@ -351,17 +577,9 @@ if (event.eventType === "list-query") {
 
 Repeat queries, rerenders, pagination, and capacity changes do not emit query
 events. Standard local array processing still applies after a program responds.
-For server paging, declare `pageSource: { more, searchOnly? }` on the list and
-bind only the current page's rows. UUI preserves their server order and
-matching, without filtering or slicing that page again. Query changes return
-`list-query`; page and capacity changes return `list-page`. `event.reloadLists`
-identifies every page source needing a reload in that interaction. Use each
-list's retained `model.screen.elements[id].list` to calculate
-`(page - 1) * pageSize`, fetch up to `pageSize` rows, then call the screen again
-with those rows and the new `more`. The pagination shows the current range and
-available pages without claiming a known total. `searchOnly` hides and rejects
-unsupported column sorts and filters. Ordinary array lists keep their existing
-local query and count behavior. A `table()` search helper remains deferred.
+Registered providers use the same pending-screen operations as bound arrays. The
+deliberate query-event option remains separate from ordinary browsing; programs
+should use it only when a changed query requires program work.
 
 ## Element identity and protocol
 
@@ -488,42 +706,113 @@ mount and use the returned `editor` (native `EditorView`) for commands and
 extensions; the vendored library exports the shared CodeMirror state/view
 primitives.
 
-Protocol version 9 supports model-bound custom fields, general component
-metadata, independent list reads, exact decimal list semantics, and the
-`field-help` event. Each screen snapshot carries `state` and element-specific
-`lists`. List bindings in the wire business `model` are empty arrays; displayed
-rows live exclusively in `lists[].rows`. Every interaction includes instance and
-screen/reset revisions plus presentation-only metadata. `screen.list` carries
-page/capacity/query requests, or an exclusive
-`{ read: { id, revision, offset, limit }, updates: [],
-changes: [] }` request
-returning a correlated `screen.list.data` response. Selections and list edits
-name the list's presented view revision and displayed index; the Worker owns the
-source-index mapping. Stale source replacements, reorders, or content changes
-reject the interaction and publish a fresh view before accepting another mapped
-edit. Valid edits are schema-checked atomically before changing business data or
-presentation state.
+Protocol version 11 carries generic ID/data channel frames. Each screen snapshot
+carries `state`, element-specific `lists`, and `channelGeneration`. List
+bindings in the wire business model are empty arrays; displayed rows live in
+`lists[].rows`. The list's `update` operation on the common namespace carries
+page/capacity/query/refresh/selection with validated dirty edits and
+presentation metadata; multi-list capacity updates commit as one transaction.
+Independent reads use that namespace's `read` operation. View revision and
+source identity/content/order checks remain list-owned. There are no read wire
+aliases.
+
+## Binary streams
+
+A byte stream is sent as the data through the same interface in either
+direction:
+
+```ts
+const handle = widget.send(
+  "bytes",
+  ReadableStream.from([
+    new Uint8Array([0, 255, 42]),
+  ]),
+);
+await handle.done;
+// handle.cancel() cancels this transfer.
+```
+
+Handle streams in the same browser subscriber used for ordinary messages (extend
+that callback rather than installing a second one). Return the consumption
+promise so the sender can observe completion or failure:
+
+```js
+context.channel.subscribe("bytes", async (_id, data) => {
+  if (data instanceof ReadableStream) {
+    const bytes = new Uint8Array(await new Response(data).arrayBuffer());
+    context.host.textContent = String(bytes.length);
+  }
+});
+// Reverse direction:
+await context.channel.send(
+  "upload",
+  ReadableStream.from([
+    new Uint8Array([128, 0, 7]),
+  ]),
+).done;
+```
+
+Streams require exactly one matching active subscriber, which owns consumption;
+zero or multiple matching subscribers reject the transfer before source demand.
+Unrelated subscriptions do not affect stream admission. The same wildcard
+matcher filters ordinary data and stream-open delivery. Consume EOF and resolve
+only after consumption or the domain's native handoff is accepted. Early
+completion, a thrown/rejected subscriber, producer failure or stream
+cancellation rejects the sender's `done`. Ordinary data may still fan out. The
+core never buffers missing-listener traffic or duplicates a byte stream.
+
+`channel_streams.ts` retains the sole binary codec, lazy pump and
+consumption-credit implementation. Generic callers need no configuration. The
+transport splits source chunks into at most 64 KiB frames, bounds individual
+source chunks at 64 MiB, and uses four frames per stream. The stream-open frame
+advertises its window so a smaller sender window is respected. Credit follows
+pending reads and includes queued/in-flight reservations. There is no shared
+application active-stream quota or scheduler.
+
+Owners can pass `{ signal, policy }` as an optional third send argument when
+their domain needs tighter stream bounds. Native saves retain their existing
+shared policy object and startup deadline. These policies do not add required
+message contracts or a separate receiving API. Streams retain screen/connection
+ownership; they are transient and never replayed.
 
 ## Streaming downloads
 
-`download()` starts a background download on the current UUI session. Supply a
-filename and a `ReadableStream<Uint8Array>` or an `AsyncIterable<Uint8Array>`:
+`download(options, attachment)` starts native save through that same stream
+core. Capture `channel.downloads` from an explicit pending `callScreen`, then
+supply a filename and a readable byte stream or lazy async iterable:
 
 ```ts
-import { download } from "/p/the8020/uui/mod.ts";
+import {
+  callScreen,
+  download,
+  Model,
+  ScreenChannel,
+  z,
+} from "/p/the8020/uui/mod.ts";
 
+const channel = new ScreenChannel();
+const pending = callScreen({
+  id: "export",
+  schema: z.object({}),
+  model: new Model({}),
+  channel,
+});
 const handle = download({
   filename: "backup.csv",
   contentType: "text/csv; charset=utf-8",
   body: csv(),
-});
+}, channel.downloads);
+await pending;
 ```
 
-Return to your screen loop immediately to keep the UI interactive. You can
-ignore the handle; UUI owns the transfer and reports background failures through
-its message center. Use `handle.cancel()` to stop it, or `await handle.done`
-when your program explicitly needs to wait. Awaiting completion before the next
-`callScreen()` keeps that interaction pending.
+Keep that call pending while producing the file so the UI remains interactive.
+Settlement or full replacement cancels unfinished saves. Calls between screens
+may prepare options, then explicitly create the next pending call and start with
+its captured attachment, as the demo text/CSV producers do. Detached or saved
+old attachments fail before source demand; there is no next-screen rebinding or
+backlog. Ignore the handle if desired; failures are attributed to the filename
+through the existing message center. Use `handle.cancel()` or await
+`handle.done` while the owning screen remains pending.
 
 For a virtual CSV file, produce one database batch at a time. In this example,
 `readNextRows(afterId, limit)` is your application's query, returning rows
@@ -558,20 +847,21 @@ finish cleanup.
 
 Downloads share the existing authenticated WebSocket and can run concurrently.
 UUI splits source chunks into at most 64 KiB frames, with a shared 16-frame
-window and at most four outstanding frames per transfer. Credits advance as the
-browser consumes the stream. Memory depends on your producer's batch/chunk size
-plus bounded transport buffers, rather than total file size. Up to 32 transfers
-can be active in a session. Transfers survive ordinary screen/program navigation
-and are cancelled on WebSocket loss or session end; reconnect does not restart
-them.
+per-direction window, a 32-frame aggregate bound and at most four outstanding
+frames per transfer. Credits advance as the browser consumes the stream. Memory
+depends on your producer's batch/chunk size plus bounded transport buffers,
+rather than total file size. Up to 32 transfers can be active under the
+native-save policy. Transfers cancel on owning screen settlement/replacement,
+WebSocket loss or session end; reconnect does not restart them. Source chunks
+are at most 64 MiB and startup is bounded to 30 seconds.
 
 The browser shell uses a local service worker to hand the stream to the native
 download manager. File bytes never use a second backend request. This requires
 HTTPS (or localhost), service workers, and transferable streams; the browser
 test covers Chromium. The filename is a suggested name without a directory; the
-browser chooses the destination. `done` means the stream was fully handed to the
-browser, not that UUI knows the final disk path or can attest to durable
-storage.
+browser chooses the destination. `done` means the native response consumed the
+stream and the local service worker acknowledged handoff, not that UUI knows the
+final disk path or can attest to durable storage.
 
 Run `deno task check`, `deno task test`, rebuild with
 `DENO_IMPORT_MAP="$PWD/deno.local.json" bash services/shell/build.sh`, then run

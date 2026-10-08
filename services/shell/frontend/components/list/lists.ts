@@ -547,7 +547,7 @@ class ListController {
       available,
       overhead + (snapshot.selection ? paginationHeight : 0),
       rowHeight,
-      snapshot.pageSource?.more ? Infinity : snapshot.totalSourceItems,
+      snapshot.source?.more ? Infinity : snapshot.totalSourceItems,
       snapshot.selection ? 0 : paginationHeight,
     );
     // Use the full source count even when the first view after reload is short
@@ -569,13 +569,13 @@ class ListController {
   private reserveRows(pageSize: number): void {
     this.host.toggleAttribute(
       "data-pagination",
-      !!this.#snapshot.selection || !!this.#snapshot.pageSource?.more ||
+      !!this.#snapshot.selection || !!this.#snapshot.source?.more ||
         this.#snapshot.totalSourceItems > pageSize,
     );
     this.host.style.setProperty(
       "--list-reserved-rows",
       String(
-        this.#snapshot.pageSource?.more
+        this.#snapshot.source?.more
           ? pageSize
           : Math.max(1, Math.min(this.#snapshot.totalSourceItems, pageSize)),
       ),
@@ -597,8 +597,8 @@ class ListController {
       snapshot.totalItems,
       snapshot.state.page * snapshot.state.pageSize,
     );
-    summary.textContent = snapshot.pageSource !== undefined &&
-        snapshot.pageSource.totalItems === undefined
+    summary.textContent = snapshot.source !== undefined &&
+        snapshot.source.totalItems === undefined
       ? `${start}–${end}`
       : `${start}–${end} of ${snapshot.totalItems}${
         snapshot.filtered
@@ -781,7 +781,7 @@ class ListController {
         className: "data-list-column-description",
       }));
     }
-    if (this.#snapshot.pageSource?.searchOnly) {
+    if (this.#snapshot.source?.searchOnly) {
       this.showPopover();
       return;
     }

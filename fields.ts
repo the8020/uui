@@ -1,6 +1,6 @@
 import { resolveElementIDs } from "./identifiers.ts";
 import { validateListOptions } from "./list_options.ts";
-import { validateCustomElements } from "./custom_elements.ts";
+import { cloneDeclaration, validateCustomElements } from "./custom_elements.ts";
 import { z } from "/p/the8020/db/fields.ts";
 import {
   field as defineField,
@@ -55,9 +55,14 @@ export interface FieldMetadata<Value = unknown>
   semanticType?: "long-string" | "date" | "datetime" | "email" | string;
 }
 
-const metadata = z.registry<
-  Omit<FieldMetadata, "valueHelp" | "open" | "storage">
+const metadata = new WeakMap<
+  z.ZodType,
+  Omit<FieldMetadata, "valueHelp" | "open" | "storage" | "custom"> & {
+    custom?: Omit<CustomElementOptions, "channel">;
+  }
 >();
+
+const customChannels = new WeakMap<z.ZodType, import("./session.ts").Channel>();
 
 export function field<T extends z.ZodType>(
   schema: T,
@@ -70,7 +75,13 @@ export function field<T extends z.ZodType>(
     ...fieldMetadata(schema),
     ...options,
   };
-  const configured = structuredClone(presentation);
+  const { channel: customChannel, ...custom } = presentation.custom ?? {};
+  const configured = cloneDeclaration({
+    ...presentation,
+    custom: presentation.custom
+      ? custom as Omit<CustomElementOptions, "channel">
+      : undefined,
+  });
   if (configured.list !== undefined) validateListOptions(configured.list);
   normalizeRangeMetadata(
     configured,
@@ -83,7 +94,8 @@ export function field<T extends z.ZodType>(
     valueHelp,
     open,
   });
-  metadata.add(result, configured);
+  metadata.set(result, configured);
+  if (customChannel) customChannels.set(result, customChannel);
   return result;
 }
 
@@ -93,7 +105,13 @@ export function fieldMetadata<T extends z.ZodType>(
   let result: FieldMetadata<z.output<T>> | undefined;
   for (const current of fieldSchemas(schema).reverse()) {
     const own = metadata.get(current);
-    if (own !== undefined) result = { ...result, ...structuredClone(own) };
+    if (own !== undefined) {
+      result = { ...result, ...cloneDeclaration(own) };
+      const channel = customChannels.get(current);
+      if (channel && result.custom) {
+        result.custom = { ...result.custom, channel };
+      }
+    }
   }
   const shared = sharedFieldMetadata(schema);
   return result === undefined && shared === undefined
@@ -128,7 +146,7 @@ export function buildControls(
       }
       return {
         ...base,
-        ...structuredClone(item),
+        ...cloneDeclaration(item),
         control: item.control ?? (item.custom ? "custom" : base.control),
         id: item.id,
         bind: item.bind,
@@ -243,7 +261,11 @@ function visitShape(
       semanticType: configured.semanticType ??
         (configured.storage?.type === "decimal" ? "decimal" : undefined),
       list: configured.list,
-      ...(configured.custom === undefined ? {} : { custom: configured.custom }),
+      ...(configured.custom === undefined ? {} : {
+        custom: (({ channel: _channel, ...descriptor }) => descriptor)(
+          configured.custom,
+        ),
+      }),
     });
   }
 }

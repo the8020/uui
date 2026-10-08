@@ -8,10 +8,13 @@ import type {
 } from "/p/the8020/services/http.ts";
 import {
   callScreen,
+  Channel,
   currentBrowser,
   defineSessionService,
   download,
   type DownloadHandle,
+  ScreenChannel,
+  type StreamPolicy,
   z,
 } from "./mod.ts";
 import { controlSession, workerFunctions } from "./session_service.ts";
@@ -36,6 +39,26 @@ const sources = new Map<string, {
   cleaned: boolean;
 }>();
 const sockets = new Set<BrowserSocket>();
+const uploadPolicy: StreamPolicy = {
+  chunkBytes: 4,
+  sourceChunkBytes: 16,
+  activeStreams: 2,
+  streamFrames: 2,
+  directionFrames: 4,
+  aggregateFrames: 8,
+};
+let uploaded: number[] | undefined;
+let uploadDone = false;
+const uploadModule = `export default function mount(context) {
+  const button = document.createElement('button'); button.textContent = 'Upload bytes';
+  button.onclick = async () => {
+    await context.channel.send('bytes',
+      (async function* () { yield new Uint8Array([0, 255, 1, 2, 3, 4, 5, 128, 0]); })(),
+      { policy: ${JSON.stringify(uploadPolicy)} }).done;
+    button.dataset.done = 'true';
+  };
+  context.host.append(button); return {};
+}`;
 const session = defineSessionService(async ({ signal }) => {
   const model = new Model({});
   try {
@@ -43,12 +66,32 @@ const session = defineSessionService(async ({ signal }) => {
       currentBrowser()?.origin,
       `http://127.0.0.1:${server.addr.port}`,
     );
+    let action = "";
     while (!signal.aborted) {
-      const event = await callScreen({
+      const channel = new ScreenChannel();
+      const upload = new Channel();
+      upload.subscribe("*", async (id, data) => {
+        if (id !== "bytes" || !(data instanceof ReadableStream)) return;
+        uploaded = [...new Uint8Array(await new Response(data).arrayBuffer())];
+        uploadDone = true;
+      });
+      const pending = callScreen({
+        channel,
         id: "download-browser-test",
         title: `Downloads ${refreshing}`,
         schema: z.object({}),
         model,
+        customElements: [{
+          id: "upload",
+          channel: upload,
+          module: "/the8020/uui/shell/upload.js",
+          config: {},
+        }],
+        layout: {
+          schema: 1,
+          id: "upload-layout",
+          root: { type: "custom", customElement: "upload" },
+        },
         header: {
           actions: [
             { id: "export", label: "Export" },
@@ -58,37 +101,44 @@ const session = defineSessionService(async ({ signal }) => {
           ],
         },
       });
+      if (action === "export" || action === "failure") {
+        for (let count = sourceSequence === 0 ? 2 : 1; count > 0; count--) {
+          const index = ++sourceSequence;
+          const name = `export-${index}.bin`;
+          const gate = Promise.withResolvers<void>();
+          const state = {
+            produced: 0,
+            cleaned: false,
+            release: () => gate.resolve(),
+            handle: undefined as unknown as DownloadHandle,
+          };
+          const bytes = async function* () {
+            try {
+              for (let chunk = 0; chunk < 64; chunk++) {
+                if (chunk === 16) {
+                  await gate.promise;
+                  if (action === "failure") {
+                    throw new Error("Export source failed");
+                  }
+                }
+                state.produced++;
+                yield new Uint8Array(65_536).fill((chunk + index) % 251);
+              }
+            } finally {
+              state.cleaned = true;
+            }
+          };
+          state.handle = download(
+            { filename: name, body: bytes() },
+            channel.downloads,
+          );
+          sources.set(name, state);
+        }
+      }
+      const event = await pending;
+      action = event.action;
       if (event.action === "refresh") refreshing++;
       if (event.action === "demo-form") await demoForm();
-      if (event.action === "export" || event.action === "failure") {
-        const index = ++sourceSequence;
-        const name = `export-${index}.bin`;
-        const gate = Promise.withResolvers<void>();
-        const state = {
-          produced: 0,
-          cleaned: false,
-          release: () => gate.resolve(),
-          handle: undefined as unknown as DownloadHandle,
-        };
-        const bytes = async function* () {
-          try {
-            for (let chunk = 0; chunk < 64; chunk++) {
-              if (chunk === 16) {
-                await gate.promise;
-                if (event.action === "failure") {
-                  throw new Error("Export source failed");
-                }
-              }
-              state.produced++;
-              yield new Uint8Array(65_536).fill((chunk + index) % 251);
-            }
-          } finally {
-            state.cleaned = true;
-          }
-        };
-        state.handle = download({ filename: name, body: bytes() });
-        sources.set(name, state);
-      }
     }
   } catch (error) {
     if (!signal.aborted) programError = error;
@@ -146,6 +196,11 @@ const server = Deno.serve({
   };
   url.pathname = url.pathname.slice(prefix.length) || "/";
   const relative = new Request(url, request);
+  if (!isSession && url.pathname === "/upload.js") {
+    return new Response(uploadModule, {
+      headers: { "Content-Type": "text/javascript" },
+    });
+  }
   const context = { meta: metadata, signal: request.signal };
   if (!isSession && url.pathname === "/control") {
     const control = controlSession(await request.json(), metadata.user.userId);
@@ -422,6 +477,26 @@ try {
       }
     }, name + " partial bytes on disk");
 
+  await waitFor(
+    () =>
+      debug.evaluate(
+        "[...document.querySelectorAll('button')].some(button => button.textContent === 'Upload bytes')",
+        sid,
+      ),
+    "upload component mounted",
+  );
+  await click("Upload bytes");
+  await waitFor(
+    () =>
+      debug.evaluate(
+        "document.querySelector('[data-done=true]') !== null",
+        sid,
+      ),
+    "browser stream accepted by backend sink",
+  );
+  assertEquals(uploaded, [0, 255, 1, 2, 3, 4, 5, 128, 0]);
+  assertEquals(uploadDone, true);
+
   await click("Export");
   const first = await native("export-1.bin");
   await waitFor(
@@ -429,20 +504,8 @@ try {
     "first batch gate",
   );
   const firstPartial = await partial("export-1.bin");
-  await click("Export");
   const second = await native("export-2.bin");
   await partial("export-2.bin");
-  await click("Refresh");
-  await waitFor(
-    () =>
-      debug.evaluate(
-        "document.querySelector('.screen-title')?.textContent === 'Downloads 1'",
-        sid,
-      ),
-    "interactive screen during two transfers",
-  );
-  assertEquals(sources.get("export-1.bin")!.produced, 16);
-  assertEquals(sources.get("export-2.bin")!.produced, 16);
   for (const name of ["export-1.bin", "export-2.bin"]) {
     sources.get(name)!.release();
   }
@@ -461,10 +524,49 @@ try {
     await sources.get(`export-${index}.bin`)!.handle.done;
   }
 
-  await click("Fail export");
-  const failed = await native("export-3.bin");
+  // Inspect the actual native-save owner's one-use response headers in Chromium.
+  assertEquals(
+    await debug.evaluate(
+      `(async () => {
+    const registration = await navigator.serviceWorker.getRegistration();
+    const token = crypto.randomUUID(), ports = new MessageChannel();
+    const url = new Promise((resolve, reject) => ports.port1.onmessage = event => {
+      if (event.data.url) resolve(event.data.url);
+      else if (event.data.error) reject(new Error(event.data.error));
+    });
+    const stream = new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array([120])); controller.close(); } });
+    registration.active.postMessage({ type: 'download.register', token, stream, filename: 'metadata.csv', contentType: 'text/csv; charset=utf-8' }, [stream, ports.port2]);
+    const destination = await url, response = await fetch(destination);
+    const result = { type: response.headers.get('content-type'), disposition: response.headers.get('content-disposition'), bytes: [...new Uint8Array(await response.arrayBuffer())], secondStatus: (await fetch(destination)).status };
+    ports.port1.close(); return result;
+  })()`,
+      sid,
+    ),
+    {
+      type: "text/csv; charset=utf-8",
+      disposition: "attachment; filename*=UTF-8''metadata.csv",
+      bytes: [120],
+      secondStatus: 410,
+    },
+  );
+
+  await click("Export");
+  const replaced = await native("export-3.bin");
   await partial("export-3.bin");
+  await click("Refresh");
+  await sources.get("export-3.bin")!.handle.done.then(() => {
+    throw new Error("replacement resolved unfinished stream");
+  }, (error) => assertEquals(error.name, "AbortError"));
   sources.get("export-3.bin")!.release();
+  await waitFor(
+    () => replaced.state === "canceled" && sources.get("export-3.bin")!.cleaned,
+    "full replacement cancels unfinished native save",
+  );
+
+  await click("Fail export");
+  const failed = await native("export-4.bin");
+  await partial("export-4.bin");
+  sources.get("export-4.bin")!.release();
   await waitFor(
     () => failed.state === "canceled",
     "producer error fails native download",
@@ -479,26 +581,26 @@ try {
   );
 
   await click("Export");
-  const cancelled = await native("export-4.bin");
-  await partial("export-4.bin");
+  const cancelled = await native("export-5.bin");
+  await partial("export-5.bin");
   await debug.call("Browser.cancelDownload", { guid: cancelled.guid });
-  await sources.get("export-4.bin")!.handle.done.then(() => {
+  await sources.get("export-5.bin")!.handle.done.then(() => {
     throw new Error("cancelled transfer resolved");
   }, (error) => assertEquals(error.name, "AbortError"));
-  sources.get("export-4.bin")!.release();
+  sources.get("export-5.bin")!.release();
   await waitFor(
-    () => sources.get("export-4.bin")!.cleaned,
+    () => sources.get("export-5.bin")!.cleaned,
     "cancelled generator cleanup",
   );
 
   await click("Export");
-  const disconnected = await native("export-5.bin");
-  await partial("export-5.bin");
+  const disconnected = await native("export-6.bin");
+  await partial("export-6.bin");
   for (const socket of sockets) socket.close(1001, "test disconnect");
-  await sources.get("export-5.bin")!.handle.done.then(() => {
+  await sources.get("export-6.bin")!.handle.done.then(() => {
     throw new Error("disconnected transfer resolved");
   }, (error) => assertEquals(error.name, "AbortError"));
-  sources.get("export-5.bin")!.release();
+  sources.get("export-6.bin")!.release();
   await waitFor(
     () => disconnected.state === "canceled",
     "disconnect fails native download",
@@ -522,7 +624,7 @@ try {
   );
   assertEquals(
     debug.downloads.size,
-    5,
+    6,
     "downloads must not replay on reconnect",
   );
 
@@ -580,6 +682,7 @@ try {
 
   await click("Download calculations CSV");
   const csv = await native("calculations-100000.csv");
+  await waitFor(() => csv.state === "completed", "100,000-row CSV completion");
   await click("Single message");
   await waitFor(
     () =>
@@ -620,6 +723,106 @@ try {
       .trimEnd().split("\r\n");
   assertEquals(smallRows.length, 1_001);
   assertEquals(smallRows.at(-1), "1000,499500,500500");
+  await click("Message types");
+  await waitFor(
+    () =>
+      debug.evaluate(
+        "document.querySelector('#messages-count')?.textContent === '4' && document.querySelectorAll('.message-toast').length === 4",
+        sid,
+      ),
+    "four message kinds",
+  );
+  assertEquals(
+    await debug.evaluate(
+      "Array.from(document.querySelectorAll('.message-toast')).map(item => item.dataset.messageKind)",
+      sid,
+    ),
+    ["info", "success", "warning", "error"],
+  );
+  await click("Long Markdown");
+  await waitFor(
+    () =>
+      debug.evaluate(
+        "document.querySelector('.message-toast-body table') !== null && document.querySelector('#messages-count')?.textContent === '4'",
+        sid,
+      ),
+    "message Markdown table",
+  );
+  await click("Message limits");
+  await waitFor(
+    () =>
+      debug.evaluate(
+        "document.querySelector('#messages-count')?.textContent === '100' && document.querySelectorAll('.message-toast').length === 10",
+        sid,
+      ),
+    "bounded message burst",
+  );
+  await click("Async messages");
+  await waitFor(
+    () =>
+      debug.evaluate(
+        "!document.documentElement.hasAttribute('data-interaction-pending')",
+        sid,
+      ),
+    "async message screen ready",
+  );
+  await debug.evaluate(
+    `(() => {
+    window.__messageDraft = document.querySelector('input[data-bind=email]');
+    window.__messageDraft.value = 'uncommitted-message-draft@example.test';
+    window.__messageDraft.dispatchEvent(new Event('input', { bubbles: true }));
+    window.__messageScreen = document.querySelector('.screen');
+  })()`,
+    sid,
+  );
+  await waitFor(
+    () =>
+      debug.evaluate(
+        "document.querySelector('#messages-count')?.textContent === '3'",
+        sid,
+      ),
+    "live async messages",
+  );
+  assertEquals(
+    await debug.evaluate(
+      `window.__messageScreen === document.querySelector('.screen') &&
+    window.__messageDraft === document.querySelector('input[data-bind=email]') &&
+    window.__messageDraft.value === 'uncommitted-message-draft@example.test' &&
+    !document.documentElement.hasAttribute('data-interaction-pending')`,
+      sid,
+    ),
+    true,
+  );
+  await debug.call("Page.reload", {}, sid);
+  await waitFor(
+    () =>
+      debug.evaluate(
+        "document.querySelector('#connection-state')?.textContent === 'Connected' && document.querySelector('#messages-count')?.textContent === '3'",
+        sid,
+      ),
+    "message history reconstruction",
+  );
+  assertEquals(
+    await debug.evaluate(
+      "document.querySelectorAll('.message-toast').length",
+      sid,
+    ),
+    0,
+  );
+  await debug.evaluate("document.querySelector('#messages-open').click()", sid);
+  await waitFor(
+    () =>
+      debug.evaluate(
+        "document.querySelector('#message-dialog')?.open && document.querySelector('#message-history-list')?.textContent.includes('The background task reached its checkpoint.')",
+        sid,
+      ),
+    "reconstructed message history",
+  );
+  await debug.evaluate(
+    "document.querySelector('#message-dialog').close()",
+    sid,
+  );
+
   // The field and its actions stay in the same card at a narrow viewport.
   await debug.call("Emulation.setDeviceMetricsOverride", {
     width: 390,
@@ -646,15 +849,19 @@ try {
   if (programError) throw programError;
   console.log(JSON.stringify({
     concurrentDownloads: 2,
+    browserUpload: true,
+    nativeResponseMetadataAndOneUse: true,
     verifiedBytes: 8 * 1024 * 1024,
     firstPartialBytes: firstPartial,
     screenResponsive: true,
     producerFailure: true,
     nativeCancellation: true,
+    fullReplacementCancellation: true,
     reconnectWithoutReplay: true,
     demoCsvRows: [100_000, 1_000],
     demoTextFile: true,
     groupedDownloadControls: true,
+    messageKindsMarkdownBurstAsyncAndReload: true,
     backendDownloadRequests,
   }));
 } finally {

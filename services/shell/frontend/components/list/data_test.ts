@@ -1,11 +1,11 @@
-import { assertEquals, assertRejects } from "@std/assert";
+import { assertEquals, assertThrows } from "@std/assert";
 import type { ListColumn } from "../../../../../screen_state.ts";
 import {
   clipboardHTML,
   delimited,
-  ListDataChannel,
   listMatrix,
   textExport,
+  validListDataPage,
 } from "./data.ts";
 
 Deno.test("list exports retain displayed columns, exact text and table quoting", () => {
@@ -53,36 +53,22 @@ Deno.test("list exports retain displayed columns, exact text and table quoting",
   );
 });
 
-Deno.test("list data channel correlates responses and rejects on disconnect", async () => {
-  const completed: number[] = [];
-  const channel = new ListDataChannel((sequence) => completed.push(sequence));
-  const pending = channel.request(() => 7);
-  const data = { id: "list", revision: 1, offset: 0, rows: [1], more: false };
-  channel.receive({
-    type: "screen.list.data",
-    protocol: 8,
-    serverSequence: 2,
-    surfaceId: "surface",
-    clientSequence: 6,
-    data,
-  });
-  assertEquals(completed, []);
-  channel.receive({
-    type: "screen.list.data",
-    protocol: 8,
-    serverSequence: 3,
-    surfaceId: "surface",
-    clientSequence: 7,
-    data,
-  });
-  assertEquals(await pending, data);
-  const failed = channel.request(() => 8);
-  channel.fail("Disconnected");
-  await assertRejects(() => failed, Error, "Disconnected");
-  assertEquals(completed, [7, 8]);
-  const controller = new AbortController();
-  const cancelled = channel.request(() => 9, controller.signal);
-  controller.abort();
-  await assertRejects(() => cancelled, DOMException, "List action closed");
-  assertEquals(completed, [7, 8, 9]);
+Deno.test("list read results match the requested view and range", () => {
+  const request = { id: "rows", revision: 2, offset: 10, limit: 1 };
+  const page = {
+    id: "rows",
+    revision: 2,
+    offset: 10,
+    rows: ["row"],
+    more: false,
+  };
+  assertEquals(validListDataPage(page, request), page);
+  for (
+    const invalid of [{ ...page, revision: 1 }, { ...page, offset: 0 }, {
+      ...page,
+      rows: [1, 2],
+    }, { ...page, rows: [], more: true }]
+  ) {
+    assertThrows(() => validListDataPage(invalid, request), TypeError);
+  }
 });

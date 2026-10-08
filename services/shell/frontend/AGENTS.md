@@ -44,8 +44,49 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
   without replacing framework classes or unrelated inline styles. On retained
   hosts, restore overridden styles and remove only added classes before applying
   new descriptors; clearing styling preserves the host and its lifecycle.
+- `main.ts` uses ChannelRouter for ordinary ID/data and binary traffic. Channels
+  expose send(id, data)/subscribe(pattern, handler), returning the same shared
+  canonical ChannelSubscription (id, original handler, unsubscribe). Only * is
+  special in full-ID filtering for ordinary messages and stream-open.
+  ChannelBindings owns retention/reattachment and disposal for both backend
+  Channels and browser component/program subscriptions, without handler records.
+  Every screen has a real program attachment, even when omitted by its author;
+  unconsumed ordinary data drops and streams cancel before source demand. No
+  payload/result schemas or method registry exist. Opaque routing references
+  come from each owning descriptor/program; there is no endpoint catalog or
+  authority layer. Browser custom contexts acquire a component view or owning
+  program view without named wiring. Preserved hosts reattach subscriptions
+  through the current owner; saved views retain their original call/connection
+  and cannot register/send into replacements. Acquire a view before awaiting.
+  Outgoing streams inherit their host lifetime, including program sends;
+  disposal/remount cancels them even while the screen call remains attached.
+  Handler failures leave other subscriptions usable; stream data requires one
+  matching consuming subscriber, never automatic tee/buffering. Only matching
+  list-domain results/errors or valid presentations release the list request
+  gate. Ordinary messages and stream controls do not. No server mod.ts imports
+  enter the bundle.
+- Each call registers its built-in message-center append/history consumer
+  through the same core. Validated snapshots reconstruct accepted domain
+  history; message-kind refresh never releases the interaction gate. Monotonic
+  message identity prevents duplicate/dismissed toasts across
+  replacement/reconnect; initialization/reload restores history only. Retain 100
+  history entries and ten toasts, existing Markdown/dialog/badge/focus/dismissal
+  behavior, and roundtrip collection clearing. Live output retains the captured
+  screen/connection; stale frames cannot mutate the message collection.
+- Ordinary list updates and independent reads use the list namespace's update
+  and read messages on this same core. Updates carry captured dirty bindings and
+  screen state; only matching results acknowledge those drafts. Capacity batches
+  remain one transaction. Browser list tools use provider totals and revisions;
+  no program reload loop is required for visible browsing.
 - Keep one shell-owned in-flight interaction gate, bounded message/history
-  rendering, and consumption-based download flow control.
+  rendering, and shared consumption-based stream flow control.
+- Native saves subscribe to `save` metadata and its domain transfer-ID stream
+  data on the screen's attached channel through that same core. Filename/content
+  type and windows remain at download_metadata; local worker/MessagePort
+  controls remain at downloads/download-worker. Await native
+  response-consumption acknowledgement before resolving handoff; preserve the
+  bounded completed iframe tail. Screen/connection replacement cancels
+  unfinished saves without replay or backend file-byte requests.
 - My account in the session menu sends the reserved `ACCOUNT_EVENT` with the
   active screen's dirty bindings through that same gate. Disable it while no
   screen is active, an interaction is pending, or My account is already active.
@@ -178,7 +219,9 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
 - Run UUI `deno task check` and `deno task test`, and rebuild with
   `services/shell/build.sh` for browser-source changes.
 - `deno task test:component-style-browser` checks root styling and redraws on
-  ordinary components and retained custom hosts through the session engine.
+  ordinary components and retained custom hosts through the session engine,
+  including custom-field channel traffic after a shared-binding edit and real
+  default component/program subscribe/send with no backend listener.
 - `test:programs-browser --runtime --screenshots` checks accent borders and
   shadow-free primary buttons in both themes across Service detail, Configure,
   Customization, read-only/editable field help, and mobile dialogs. Screenshots
@@ -187,6 +230,14 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
   `test:lists-browser`, `test:programs-browser`, or `test:download-browser` for
   the affected end-to-end path. `test:native-back-browser` uses Xvfb and xdotool
   to test actual browser Back with CDP userGesture disabled for assertions.
+- `deno task test:custom-elements-browser` checks delayed handler cancellation,
+  stale output views and fresh operations through retained hosts across full
+  screen replacement and reconnect, alongside component/program routing,
+  inspectable wildcard subscriptions, Model resets, host remount cancellation of
+  outgoing program streams within one call, and repeated redraws without
+  duplicate deliveries. Framework maps and owners are inspected for
+  deterministic release; these checks do not measure garbage-collector memory
+  usage.
 - `test:presentation-browser --field-help` checks native Tab/Shift+Tab, F1–F4
   and Shift+F2/Shift+F3, relative and wrapping navigation,
   read-only/hidden/disabled/inert exclusions, modal focus, native disclosures,

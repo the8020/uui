@@ -1,79 +1,10 @@
 import type {
-  ListColumn,
   ListDataPage,
-  ScreenListDataMessage,
-} from "../../../../../protocol.ts";
+  ListReadRequest,
+} from "../../../../../screen_state.ts";
+import type { ListColumn } from "../../../../../protocol.ts";
 import { listValueText } from "../../../../../list_values.ts";
 import { getPath } from "../../model.ts";
-
-/** One bounded read at a time over the shell's existing interaction channel. */
-export class ListDataChannel {
-  #pending?: {
-    sequence: number;
-    resolve(page: ListDataPage): void;
-    reject(error: Error): void;
-    timer: ReturnType<typeof setTimeout>;
-    cleanup(): void;
-  };
-
-  constructor(readonly finish: (sequence: number) => void) {}
-
-  request(
-    send: () => number | undefined,
-    signal?: AbortSignal,
-  ): Promise<ListDataPage> {
-    signal?.throwIfAborted();
-    if (this.#pending) {
-      return Promise.reject(new Error("A list read is already running."));
-    }
-    const sequence = send();
-    if (sequence === undefined) {
-      return Promise.reject(
-        new Error("The list is unavailable. Try again when connected."),
-      );
-    }
-    return new Promise((resolve, reject) => {
-      const abort = () =>
-        this.fail(new DOMException("List action closed", "AbortError"));
-      this.#pending = {
-        sequence,
-        resolve,
-        reject,
-        timer: setTimeout(
-          () => this.fail("The list read timed out. Try again."),
-          30_000,
-        ),
-        cleanup: () => signal?.removeEventListener("abort", abort),
-      };
-      signal?.addEventListener("abort", abort, { once: true });
-    });
-  }
-
-  receive(message: ScreenListDataMessage): void {
-    if (message.clientSequence !== this.#pending?.sequence) return;
-    const pending = this.#take()!;
-    pending.resolve(message.data);
-  }
-
-  fail(message: string | Error): boolean {
-    const pending = this.#take();
-    pending?.reject(
-      typeof message === "string" ? new Error(message) : message,
-    );
-    return pending !== undefined;
-  }
-
-  #take() {
-    const pending = this.#pending;
-    this.#pending = undefined;
-    if (pending) {
-      clearTimeout(pending.timer);
-      pending.cleanup();
-      this.finish(pending.sequence);
-    }
-    return pending;
-  }
-}
 
 export type Cell = string | number | boolean | null;
 
@@ -177,4 +108,22 @@ export function textExport(
         }>${escapeXML(String(row[i] ?? ""))}</cell>`
       ).join("") + "</row>"
     ).join("\n") + "\n</rows>\n";
+}
+
+/** The list domain checks the shared core's result against its observed view/range. */
+export function validListDataPage(
+  value: unknown,
+  request: ListReadRequest,
+): ListDataPage {
+  const page = value as ListDataPage | null;
+  if (
+    !page || page.id !== request.id || page.revision !== request.revision ||
+    page.offset !== request.offset ||
+    !Array.isArray(page.rows) || page.rows.length > request.limit ||
+    typeof page.more !== "boolean" ||
+    page.more && page.rows.length === 0 ||
+    page.totalItems !== undefined &&
+      (!Number.isSafeInteger(page.totalItems) || page.totalItems < 0)
+  ) throw new TypeError("Invalid list result");
+  return page;
 }

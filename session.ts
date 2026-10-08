@@ -1,13 +1,42 @@
 import { getPath, setPath } from "./bindings.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { z } from "/p/the8020/db/fields.ts";
-import { buildControls, buildFieldCatalog, schemaAtPath } from "./fields.ts";
-import { validateCustomElements } from "./custom_elements.ts";
+import {
+  buildControls,
+  buildFieldCatalog,
+  fieldMetadata,
+  schemaAtPath,
+} from "./fields.ts";
+import {
+  channelBinding,
+  cloneDeclaration,
+  isChannelBinding,
+  validateCustomElements,
+} from "./custom_elements.ts";
 import { validateElementDeclarations } from "./list_options.ts";
 import { resolveLayoutReferences, validateLayout } from "./layout.ts";
-import { type ListReader, ScreenLists, StaleListView } from "./lists.ts";
+import {
+  type ListTransactionContext,
+  ScreenLists,
+  StaleListView,
+} from "./lists.ts";
+import {
+  type AttachedChannel,
+  ChannelBindings,
+  type ChannelConnection,
+  ChannelRouter,
+  type ChannelSubscriber,
+  type ChannelSubscription,
+} from "./channel.ts";
+import type {
+  ByteSource,
+  StreamHandle,
+  StreamPolicy,
+} from "./channel_streams.ts";
 import { Model } from "./model.ts";
+import { MessageHistory, type MessageOutput } from "./messages.ts";
 import { readValueHelp, runFieldHelp, valueHelpFor } from "./field_help.ts";
+import { DOWNLOAD_POLICY } from "./download_metadata.ts";
 import type { AgentOperation } from "./agent.ts";
 import { displayPath, locationFromStack } from "./src/short_dump.ts";
 import { explicitElementIDs, resolveElementIDs } from "./identifiers.ts";
@@ -21,8 +50,8 @@ import {
 } from "./screen_state.ts";
 import {
   type DownloadHandle,
-  DownloadManager,
   type DownloadOptions,
+  startDownload,
 } from "./downloads.ts";
 import type {
   BrowserContext,
@@ -30,6 +59,7 @@ import type {
   ControlDeclaration,
   ControlDescriptor,
   CustomElementDeclaration,
+  ListUpdateRequest,
   PresentationSnapshot,
   PresentationSurfaceKind,
   ScreenActionDeclaration,
@@ -38,7 +68,6 @@ import type {
   ScreenElementDeclaration,
   ScreenEventMessage,
   ScreenHeader,
-  ScreenListMessage,
   ScreenSnapshot,
   Separator,
   UUIClientMessage,
@@ -48,9 +77,7 @@ import {
   ACCOUNT_EVENT,
   BACK_EVENT,
   CUSTOMIZATION_EVENT,
-  MAX_UUI_MESSAGE_BODY_LENGTH,
   shortcutKey,
-  UUI_MESSAGE_KINDS,
   UUI_PROTOCOL_VERSION,
   type UUIMessageKind,
   validateComponentStyle,
@@ -82,27 +109,12 @@ export interface ListQueryScreenEvent {
   bind: string;
   change: "search" | "filter" | "sort";
   query: ListQuery;
-  /** Page sources whose queries or capacities changed in this interaction. */
-  reloadLists?: string[];
-}
-
-export interface ListPageScreenEvent {
-  action: "list-page";
-  eventType: "list-page";
-  clientSequence: number;
-  listId: string;
-  bind: string;
-  change: "page" | "capacity";
-  query: ListQuery;
-  /** Page sources whose queries or capacities changed in this interaction. */
-  reloadLists?: string[];
 }
 
 export type ScreenEvent =
   | ClientScreenEvent
   | ChannelScreenExit
-  | ListQueryScreenEvent
-  | ListPageScreenEvent;
+  | ListQueryScreenEvent;
 
 type ScreenOutcome = { event: ScreenEvent } | { error: unknown };
 
@@ -123,15 +135,14 @@ export interface CallScreenOptions<T extends z.ZodRawShape>
   description?: string;
   customElements?: CustomElementDeclaration[];
   channel?: ScreenChannel;
-  /** Optional independent readers keyed by list ID for server-paged sources. */
-  listReaders?: Record<string, ListReader>;
 }
 
 export interface SessionChannel {
   readonly sessionId: string;
   readonly browser?: BrowserContext;
+  readonly messageHistory?: MessageHistory;
   send(message: UUIWorkerOutbound | Uint8Array): void;
-  receive(): Promise<UUIClientMessage>;
+  receive(): Promise<UUIClientMessage | Uint8Array>;
 }
 
 interface PresentationSurface {
@@ -151,7 +162,8 @@ interface ActiveScreenCall {
   readonly screenId: string;
   readonly revision: number;
   readonly snapshot: () => ScreenSnapshot;
-  readonly receive: (message: ScreenEventMessage | ScreenListMessage) => void;
+  readonly messageEndpoint: () => AttachedChannel | undefined;
+  readonly receive: (message: ScreenEventMessage) => void;
   readonly open: (
     target:
       | ControlDescriptor
@@ -165,6 +177,9 @@ interface ActiveScreenCall {
   readonly resolve: (event: ScreenEvent) => void;
   readonly reject: (error: unknown) => void;
   detachChannel?: () => void;
+  detachEndpoints?: () => void;
+  refresh?: () => Promise<void>;
+  refreshOnRestore?: () => void;
   redrawQueued: boolean;
   settled: boolean;
   presenting: boolean;
@@ -173,7 +188,8 @@ interface ActiveScreenCall {
 
 interface BoundSession {
   readonly channel: SessionChannel;
-  readonly downloads: DownloadManager;
+  readonly structured: ChannelRouter;
+  readonly messages: MessageHistory;
   readonly root: PresentationSurface;
   readonly models: Set<Model<object>>;
   readonly surfaces: PresentationSurface[];
@@ -187,24 +203,120 @@ interface ScreenChannelAttachment {
   redraw(): void;
   exit(action?: string): void;
   fail(error: unknown): void;
+  endpoints: Map<string | object, AttachedChannel>;
+  program: AttachedChannel;
+  readonly generation: string;
 }
 
 const attachScreenChannel = Symbol("attachScreenChannel");
+const attachChannel = Symbol("attachChannel");
 
-/** Controls redraw or completion of the one pending callScreen it is attached to. */
-export class ScreenChannel {
+/** Reusable program/component binding. Its current call owns delivery; nothing is replayed. */
+export class Channel implements ChannelConnection {
+  readonly [channelBinding] = true;
+  #endpoint?: AttachedChannel;
+  readonly #bindings = new ChannelBindings();
+  send(
+    id: string,
+    data: ByteSource,
+    options?: { signal?: AbortSignal; policy?: StreamPolicy },
+  ): StreamHandle;
+  send(id: string, data: unknown): void;
+  send(
+    id: string,
+    data: unknown,
+    options?: { signal?: AbortSignal; policy?: StreamPolicy },
+  ): StreamHandle | void {
+    const endpoint = this.#current();
+    const signal = operationContext.getStore()?.signal;
+    return endpoint.send(
+      id,
+      data as ByteSource,
+      signal
+        ? {
+          ...options,
+          signal: AbortSignal.any([
+            signal,
+            ...(options?.signal ? [options.signal] : []),
+          ]),
+        }
+        : options,
+    );
+  }
+  subscribe(id: string, handler: ChannelSubscriber): ChannelSubscription {
+    if (operationContext.getStore()) this.#current();
+    return this.#bindings.subscribe(id, handler);
+  }
+  /** Capture an initiating call/connection across an await. */
+  capture(connected = true): AttachedChannel {
+    return this.#current().capture(connected);
+  }
+  #current(): AttachedChannel {
+    const endpoint = this.#endpoint;
+    const operation = operationContext.getStore();
+    operation?.signal.throwIfAborted();
+    if (
+      !endpoint ||
+      operation && operation.generation !== endpoint.reference.generation
+    ) {
+      throw new DOMException(
+        "Channel requires a live screen attachment",
+        "AbortError",
+      );
+    }
+    return endpoint;
+  }
+  [attachChannel](endpoint: AttachedChannel): () => void {
+    if (this.#endpoint) {
+      throw new TypeError("Channel may attach to only one component/program");
+    }
+    this.#endpoint = endpoint;
+    this.#bindings.attach(endpoint);
+    return () => {
+      if (this.#endpoint !== endpoint) return;
+      this.#endpoint = undefined;
+      this.#bindings.attach();
+    };
+  }
+}
+
+/** Controls and communicates with the one pending callScreen it is attached to. */
+export class ScreenChannel extends Channel {
   #attachment: ScreenChannelAttachment | undefined;
+  readonly downloadNamespace = `native-save-${crypto.randomUUID()}`;
+  get downloads(): AttachedChannel {
+    const endpoint = this.#currentAttachment()?.endpoints.get(
+      this.downloadNamespace,
+    );
+    if (!endpoint) {
+      throw new DOMException(
+        "Download requires a live ScreenChannel attachment",
+        "AbortError",
+      );
+    }
+    return endpoint.capture();
+  }
+
+  #currentAttachment(): ScreenChannelAttachment | undefined {
+    const operation = operationContext.getStore();
+    if (
+      operation &&
+      (operation.signal.aborted ||
+        operation.generation !== this.#attachment?.generation)
+    ) return;
+    return this.#attachment;
+  }
 
   redraw(): void {
-    this.#attachment?.redraw();
+    this.#currentAttachment()?.redraw();
   }
 
   exit(action = "exit"): void {
-    this.#attachment?.exit(action);
+    this.#currentAttachment()?.exit(action);
   }
 
   fail(error: unknown): void {
-    this.#attachment?.fail(error);
+    this.#currentAttachment()?.fail(error);
   }
 
   [attachScreenChannel](attachment: ScreenChannelAttachment): () => void {
@@ -222,6 +334,16 @@ export class ScreenChannel {
 
 const surfaceContext = new AsyncLocalStorage<PresentationSurface>();
 let boundSession: BoundSession | undefined;
+const operationContext = new AsyncLocalStorage<
+  { generation: string; signal: AbortSignal }
+>();
+/** Existing authenticated socket hooks; no channel authentication or catalog. */
+export function connectChannels(connection: string): void {
+  requireBoundSession().structured.connect(connection);
+}
+export function disconnectChannels(reason?: string): void {
+  boundSession?.structured.disconnect(reason);
+}
 
 export function bindSession(value: SessionChannel): () => void {
   if (boundSession !== undefined) {
@@ -233,11 +355,8 @@ export function bindSession(value: SessionChannel): () => void {
     state,
     {
       channel: value,
-      downloads: new DownloadManager(
-        (message) => value.send(message),
-        (message) =>
-          value.send({ type: "notification.show", level: "error", message }),
-      ),
+      structured: new ChannelRouter("server", (frame) => value.send(frame)),
+      messages: value.messageHistory ?? new MessageHistory(),
       root,
       models: new Set<Model<object>>(),
       surfaces: [root],
@@ -252,9 +371,9 @@ export function bindSession(value: SessionChannel): () => void {
   return () => {
     if (boundSession !== state) return;
     state.active = false;
+    state.structured.disconnect("UUI session ended");
     boundSession = undefined;
     const reason = new DOMException("UUI session ended", "AbortError");
-    state.downloads.abortAll(reason.message);
     for (const surface of state.surfaces) {
       surface.active = false;
       if (surface.pending !== undefined) {
@@ -264,17 +383,18 @@ export function bindSession(value: SessionChannel): () => void {
   };
 }
 
-/**
- * Start a background download on the current UUI session. Returns immediately;
- * await the handle's `done` only when the program needs to wait for completion.
- */
-export function download(options: DownloadOptions): DownloadHandle {
-  return requireBoundSession().downloads.start(options);
-}
-
-/** Infrastructure hook: connection loss cancels streams without replaying bytes. */
-export function cancelDownloads(reason?: string): void {
-  boundSession?.downloads.abortAll(reason);
+/** Start native save under an explicitly captured pending screen/connection attachment. */
+export function download(
+  options: DownloadOptions,
+  attachment: AttachedChannel,
+): DownloadHandle {
+  requireBoundSession();
+  const output = captureMessages();
+  return startDownload(
+    attachment,
+    options,
+    (message) => output.send(message, "error"),
+  );
 }
 
 /** Runs an ordinary program/function in a new modal presentation surface. */
@@ -333,9 +453,9 @@ export async function callScreen<T extends z.ZodRawShape>(
   const initial = options.schema.safeParse(options.model.data);
   if (!initial.success) throw initial.error;
   const fields = buildFieldCatalog(options.schema);
-  const headerDeclarations = structuredClone(options.header?.controls ?? []);
-  const headerElements = structuredClone(options.header?.elements);
-  const layoutDeclaration = structuredClone(options.layout);
+  const headerDeclarations = cloneDeclaration(options.header?.controls ?? []);
+  const headerElements = cloneDeclaration(options.header?.elements);
+  const layoutDeclaration = cloneDeclaration(options.layout);
   const inline: ScreenElementDeclaration[] = [];
   const collect = (elements: unknown, depth = 0): void => {
     if (elements === undefined) return;
@@ -346,7 +466,7 @@ export async function callScreen<T extends z.ZodRawShape>(
     for (const item of elements as ScreenElementDeclaration[]) {
       inline.push(item);
       if ("bind" in item) {
-        item.list ??= structuredClone(
+        item.list ??= cloneDeclaration(
           fields.find((field) => field.bind === item.bind)?.list,
         );
         collect(item.list?.toolbar, depth + 1);
@@ -378,12 +498,12 @@ export async function callScreen<T extends z.ZodRawShape>(
     ].map((item) => item.bind),
   );
   let bodyDeclarations: ControlDeclaration[] = options.controls?.length
-    ? structuredClone(options.controls)
+    ? cloneDeclaration(options.controls)
     : fields.filter((field) => !headerBindings.has(field.bind)).map((
       field,
     ) => ({ ...field, id: undefined }));
   for (const control of [...bodyDeclarations, ...headerDeclarations]) {
-    control.list ??= structuredClone(
+    control.list ??= cloneDeclaration(
       fields.find((field) => field.bind === control.bind)?.list,
     );
     collect(control.list?.toolbar);
@@ -441,7 +561,7 @@ export async function callScreen<T extends z.ZodRawShape>(
     }
   }
   const resolvedActions = resolveElementIDs(
-    structuredClone(actionDeclarations),
+    cloneDeclaration(actionDeclarations),
     (action) => ({ label: action.label, kind: action.kind }),
     "action",
     reserved,
@@ -526,7 +646,13 @@ export async function callScreen<T extends z.ZodRawShape>(
     new Set(customElements.map((item) => item.id)),
     reserved,
   );
-  if (layout !== undefined) resolveLayoutReferences(layout, controls);
+  if (layout !== undefined) {
+    resolveLayoutReferences(layout, controls, [
+      ...resolvedControls,
+      ...resolvedActions,
+      ...resolvedSeparators,
+    ]);
+  }
   const screenRevision = ++state.revision;
   const lists = new ScreenLists(
     options.schema,
@@ -539,7 +665,7 @@ export async function callScreen<T extends z.ZodRawShape>(
         bodyDeclarations.length + headerDeclarations.length,
       ),
     ],
-    options.listReaders,
+    options.model,
   );
   const elementIDs = new Set(
     [
@@ -555,7 +681,23 @@ export async function callScreen<T extends z.ZodRawShape>(
   };
   if (layout !== undefined) visit(layout.root);
   for (const id of elementIDs) screenElement(options.model.screen, id);
+  const wireFields = JSON.parse(
+    JSON.stringify(
+      fields,
+      (_key, value) => isChannelBinding(value) ? undefined : value,
+    ),
+  );
+  const endpoints = new Map<string | object, AttachedChannel>();
+  const messageNamespace = `message-center-${crypto.randomUUID()}`;
+  const programNamespace = `program-${crypto.randomUUID()}`;
+  const screenChannel = options.channel ?? new ScreenChannel();
+  const releaseChannels: Array<() => void> = [];
+  const endpointLifetime = new AbortController();
+  const runInCall = AsyncLocalStorage.snapshot();
+  let endpointVersion = -1;
+  let channelGeneration = "";
   const snapshot = (): ScreenSnapshot => {
+    attachEndpoints();
     for (const id of elementIDs) screenElement(options.model.screen, id);
     const presented = lists.present(options.model.data);
     return {
@@ -566,7 +708,7 @@ export async function callScreen<T extends z.ZodRawShape>(
       revision: screenRevision,
       title: options.title,
       description: options.description,
-      fields,
+      fields: wireFields,
       controls,
       model: lists.presentModel(options.model.data),
       state: {
@@ -576,11 +718,19 @@ export async function callScreen<T extends z.ZodRawShape>(
           structuredClone(options.model.screen.elements[id]!),
         ])),
       },
-      lists: presented,
+      lists: presented.map((list) => ({
+        ...list,
+        channelNamespace: endpoints.get(list.id)!.reference.namespace,
+      })),
       layout,
       actions,
       header,
       customElements,
+      channelGeneration,
+      downloadNamespace:
+        endpoints.get(screenChannel.downloadNamespace)!.reference.namespace,
+      messageNamespace: endpoints.get(messageNamespace)!.reference.namespace,
+      programNamespace: endpoints.get(programNamespace)!.reference.namespace,
     };
   };
   let resolveResult!: (event: ScreenEvent) => void;
@@ -594,6 +744,10 @@ export async function callScreen<T extends z.ZodRawShape>(
     screenId: options.id,
     revision: screenRevision,
     snapshot,
+    messageEndpoint: () => {
+      attachEndpoints();
+      return endpoints.get(messageNamespace);
+    },
     receive: (message) =>
       receiveScreenMessage(
         state,
@@ -693,7 +847,22 @@ export async function callScreen<T extends z.ZodRawShape>(
           });
         }
         if (updates.length) {
-          routeScreenMessage(state, { ...base, type: "screen.list", updates });
+          const {
+            protocol: _protocol,
+            sessionId: _sessionId,
+            clientSequence: _sequence,
+            ...interaction
+          } = base;
+          await lists.updateMessage(
+            list.id,
+            { ...interaction, updates },
+            AbortSignal.any([
+              endpointLifetime.signal,
+              state.structured.connectionSignal,
+            ]),
+            { clientSequence: sequence, afterReply: (callback) => callback() },
+            transactLists,
+          );
         }
         return;
       }
@@ -877,35 +1046,263 @@ export async function callScreen<T extends z.ZodRawShape>(
       }
     }
   }
+  function attachEndpoints(): void {
+    if (endpointVersion === options.model.screen.version) return;
+    for (const endpoint of endpoints.values()) endpoint.dispose();
+    endpoints.clear();
+    endpointVersion = options.model.screen.version;
+    channelGeneration = crypto.randomUUID();
+    const version = endpointVersion;
+    const generation = channelGeneration;
+    const signal = AbortSignal.any([
+      endpointLifetime.signal,
+      options.model.resetSignal,
+    ]);
+    for (const release of releaseChannels.splice(0)) release();
+    const attach = (name: string | object, policy?: StreamPolicy) => {
+      const endpoint = state.structured.register(
+        `channel-${crypto.randomUUID()}`,
+        channelGeneration,
+        () => {
+          signal.throwIfAborted();
+          if (
+            !state.active || boundSession !== state || call.settled ||
+            surface.pending !== call || !surface.active || surface.closing ||
+            state.surfaces.at(-1) !== surface ||
+            options.model.screen.version !== version
+          ) throw new Error("Channel presentation is stale or covered");
+        },
+        signal,
+        policy,
+        (handler, id, data, context) =>
+          runInCall(() =>
+            operationContext.run(
+              { generation, signal: context.signal },
+              () => handler(id, data, context),
+            )
+          ),
+      );
+      endpoints.set(name, endpoint);
+      return endpoint;
+    };
+    for (const id of lists.ids()) {
+      const endpoint = attach(id);
+      const running = new Map<string, AbortController>();
+      endpoint.subscribe("*", async (message, data, context) => {
+        if (message === "cancel") {
+          if (typeof data === "string") running.get(data)?.abort();
+          return;
+        }
+        if (message !== "read" && message !== "update") return;
+        if (
+          !data || typeof data !== "object" || !("token" in data) ||
+          typeof data.token !== "string" || data.token.length > 128 ||
+          !("request" in data)
+        ) throw new TypeError("Invalid list message");
+        const { token, request } = data;
+        if (running.has(token)) throw new TypeError("Duplicate list token");
+        const controller = new AbortController();
+        running.set(token, controller);
+        const signal = AbortSignal.any([context.signal, controller.signal]);
+        let complete: (() => void) | undefined;
+        try {
+          const value = message === "read"
+            ? await lists.readMessage(
+              id,
+              request,
+              options.model.data,
+              () => scheduleRedraw(state, call, options.schema, options.model),
+              signal,
+            )
+            : await lists.updateMessage(id, request, signal, {
+              clientSequence: context.clientSequence,
+              afterReply: (callback) => complete = callback,
+            }, transactLists);
+          signal.throwIfAborted();
+          endpoint.send("result", { token, value });
+          complete?.();
+        } catch (error) {
+          if (!signal.aborted) {
+            endpoint.send("result", {
+              token,
+              error: error instanceof Error
+                ? error.message.slice(0, 1000)
+                : "List operation failed",
+            });
+          }
+        } finally {
+          running.delete(token);
+        }
+      });
+    }
+    const messages = attach(messageNamespace);
+    messages.subscribe("refresh", (_id, data) => {
+      if (data === null) {
+        messages.send("history", state.messages.snapshot());
+      }
+    });
+    const program = attach(programNamespace);
+    releaseChannels.push(screenChannel[attachChannel](program));
+    attach(screenChannel.downloadNamespace, DOWNLOAD_POLICY);
+    for (const [index, descriptor] of customElements.entries()) {
+      const endpoint = attach(descriptor);
+      descriptor.channelNamespace = endpoint.reference.namespace;
+      const channel = options.customElements?.[index]?.channel;
+      if (channel) releaseChannels.push(channel[attachChannel](endpoint));
+    }
+    for (const [index, control] of resolvedControls.entries()) {
+      if (!control.custom) continue;
+      const endpoint = attach(control);
+      control.custom.channelNamespace = endpoint.reference.namespace;
+      const channel = (allDeclarations[index]?.custom ??
+        fieldMetadata(schemaAtPath(options.schema, control.bind)!)?.custom)
+        ?.channel;
+      if (channel) releaseChannels.push(channel[attachChannel](endpoint));
+    }
+  }
+  async function transactLists(
+    request: ListUpdateRequest,
+    signal: AbortSignal,
+    context?: ListTransactionContext,
+  ): Promise<null> {
+    const previousMessages = state.messages.sequence;
+    if (
+      request.surfaceId !== surface.id || request.screenId !== call.screenId ||
+      request.screenRevision !== call.revision ||
+      request.instanceId !== options.model.screen.instanceId
+    ) {
+      throw new TypeError("screen identity or revision mismatch");
+    }
+    validateScreenUpdate(request.screenState, options.model, elementIDs);
+    if (
+      request.updates.filter((item) => item.operation === "query").length > 1
+    ) throw new TypeError("only one query may change per interaction");
+    try {
+      lists.validateRequests(request.updates, options.model.data);
+      const edits = prepareChanges(
+        options.schema,
+        options.model.data,
+        request.changes,
+        lists,
+        request.listChanges ?? [],
+        resolvedControls,
+        request.updates,
+      );
+      const staged = await lists.prepareUpdates(
+        request.updates,
+        options.model.data,
+        signal,
+      );
+      const parsed = options.schema.parse(edits.candidate);
+      signal.throwIfAborted();
+      validateScreenUpdate(request.screenState, options.model, elementIDs);
+      staged.commit();
+      for (const bind of edits.changed) {
+        setPath(options.model.data, bind, getPath(parsed, bind));
+      }
+      mergeScreenUpdate(request.screenState, options.model);
+      const sequence = context?.clientSequence ?? state.lastClientSequence;
+      state.lastClientSequence = Math.max(state.lastClientSequence, sequence);
+      if (context?.clientSequence !== undefined) {
+        state.messages.clear(previousMessages);
+        state.channel.send({ type: "server.ack", clientSequence: sequence });
+      }
+      surface.snapshot = snapshot();
+      const changed = staged.events[0];
+      context?.afterReply?.(() => {
+        publishPresentation(state);
+        if (changed) {
+          settleCall(state, call, {
+            event: {
+              action: "list-query",
+              eventType: "list-query",
+              clientSequence: sequence,
+              listId: changed.id,
+              bind: changed.bind,
+              change: changed.change,
+              query: changed.query,
+            },
+          });
+        }
+      });
+      return null;
+    } catch (error) {
+      if (error instanceof StaleListView) {
+        surface.snapshot = snapshot();
+        publishPresentation(state);
+      }
+      throw error;
+    }
+  }
+  call.refresh = async () => {
+    const ids = lists.providerIDs();
+    if (!ids.length) return;
+    const current = snapshot();
+    await lists.updateMessage(
+      ids[0]!,
+      {
+        surfaceId: surface.id,
+        screenId: call.screenId,
+        screenRevision: call.revision,
+        instanceId: current.state.instanceId,
+        screenState: {
+          version: current.state.version,
+          scroll: current.state.scroll,
+          elements: {},
+        },
+        changes: [],
+        updates: current.lists.filter((list) => ids.includes(list.id)).map((
+          list,
+        ) => ({ id: list.id, revision: list.revision, operation: "refresh" })),
+      },
+      AbortSignal.any([
+        endpointLifetime.signal,
+        state.structured.connectionSignal,
+      ]),
+      { afterReply: (callback) => callback() },
+      transactLists,
+    );
+  };
+  call.detachEndpoints = () => {
+    for (const release of releaseChannels.splice(0)) release();
+    endpointLifetime.abort();
+    endpoints.clear();
+  };
   state.models.add(options.model);
   surface.pending = call;
   try {
-    if (options.channel !== undefined) {
-      call.detachChannel = options.channel[attachScreenChannel]({
-        redraw: () =>
-          scheduleRedraw(state, call, options.schema, options.model),
-        exit: (action) => {
-          if (typeof action !== "string" || action.length === 0) {
-            settleCall(
-              state,
-              call,
-              { error: new TypeError("screen exit action is required") },
-            );
-            return;
-          }
-          settleCall(state, call, {
-            event: { action, eventType: "exit", origin: "channel" },
-          });
-        },
-        fail: (error) => settleCall(state, call, { error }),
-      });
-    }
+    call.detachChannel = screenChannel[attachScreenChannel]({
+      endpoints,
+      get program() {
+        return endpoints.get(programNamespace)!;
+      },
+      get generation() {
+        return channelGeneration;
+      },
+      redraw: () => scheduleRedraw(state, call, options.schema, options.model),
+      exit: (action) => {
+        if (typeof action !== "string" || action.length === 0) {
+          settleCall(
+            state,
+            call,
+            { error: new TypeError("screen exit action is required") },
+          );
+          return;
+        }
+        settleCall(state, call, {
+          event: { action, eventType: "exit", origin: "channel" },
+        });
+      },
+      fail: (error) => settleCall(state, call, { error }),
+    });
     surface.snapshot = snapshot();
+    if (lists.providerIDs().length) await call.refresh();
     publishPresentation(state);
     return await result;
   } finally {
     state.models.delete(options.model);
     if (surface.pending === call) surface.pending = undefined;
+    call.detachEndpoints?.();
     call.detachChannel?.();
     call.detachChannel = undefined;
   }
@@ -976,7 +1373,13 @@ async function closeSurface(
     top.remove();
     changed = true;
   }
-  if (changed) publishPresentation(state);
+  if (changed) {
+    const restored = state.surfaces.at(-1)?.pending;
+    const refresh = restored?.refreshOnRestore;
+    if (restored) restored.refreshOnRestore = undefined;
+    refresh?.();
+    publishPresentation(state);
+  }
   await surface.removed;
 }
 
@@ -1014,31 +1417,21 @@ async function dispatchClientMessages(state: BoundSession): Promise<void> {
     while (state.active && boundSession === state) {
       const message = await state.channel.receive();
       if (!state.active || boundSession !== state) return;
-      if (message.type === "screen.event" || message.type === "screen.list") {
-        routeScreenMessage(state, message);
+      if (message instanceof Uint8Array) {
+        state.structured.bytes(message);
+      } else if (message.type === "channel.frame") {
+        if (message.sessionId === state.channel.sessionId) {
+          state.structured.receive(message);
+        }
       } else if (
-        message.type === "download.credit" ||
-        message.type === "download.done" ||
-        message.type === "download.cancel"
+        message.type === "screen.event"
       ) {
-        if (message.sessionId !== state.channel.sessionId) {
-          throw new TypeError("download session mismatch");
-        }
-        try {
-          state.downloads.receive(message);
-        } catch (error) {
-          state.downloads.abortAll("Invalid download control message");
-          state.channel.send({
-            type: "session.error",
-            code: "invalid_download_control",
-            message: error instanceof Error ? error.message : String(error),
-          });
-        }
+        routeScreenMessage(state, message);
       }
     }
   } catch (error) {
     if (!state.active || boundSession !== state) return;
-    state.downloads.abortAll("UUI input closed");
+    state.structured.disconnect("UUI input closed");
     for (const surface of state.surfaces) {
       if (surface.pending !== undefined) {
         settleCall(state, surface.pending, { error }, false);
@@ -1049,7 +1442,7 @@ async function dispatchClientMessages(state: BoundSession): Promise<void> {
 
 function routeScreenMessage(
   state: BoundSession,
-  message: ScreenEventMessage | ScreenListMessage,
+  message: ScreenEventMessage,
 ): void {
   if (message.sessionId !== state.channel.sessionId) {
     state.channel.send({
@@ -1091,73 +1484,30 @@ function receiveScreenMessage<T extends z.ZodRawShape>(
   lists: ScreenLists,
   controls: readonly ControlDescriptor[],
   elementIDs: ReadonlySet<string>,
-  message: ScreenEventMessage | ScreenListMessage,
+  message: ScreenEventMessage,
 ): void {
   if (call.settled || call.surface.pending !== call) return;
   let selection:
     | { value: unknown; bind: string; controlId: string }
     | undefined;
-  let queryEvent: ListQueryScreenEvent | ListPageScreenEvent | undefined;
   let helpControl: ControlDescriptor | undefined;
   try {
     if (message.instanceId !== model.screen.instanceId) {
       throw new TypeError("screen instance mismatch");
     }
     validateScreenUpdate(message.screenState, model, elementIDs);
-    if (message.type === "screen.list" && message.read !== undefined) {
-      if (
-        message.updates.length || message.changes.length ||
-        message.listChanges?.length
-      ) {
-        throw new TypeError("list reads cannot include edits or updates");
-      }
-      state.lastClientSequence = message.clientSequence;
-      state.channel.send({
-        type: "server.ack",
-        clientSequence: message.clientSequence,
-      });
-      void lists.read(message.read, model.data).then((data) => {
-        if (!state.active || call.settled || call.surface.pending !== call) {
-          return;
-        }
-        state.channel.send({
-          type: "screen.list.data",
-          surfaceId: call.surface.id,
-          clientSequence: message.clientSequence,
-          data,
-        });
-      }).catch((error) => {
-        if (!state.active || call.settled) return;
-        state.channel.send({
-          type: "session.error",
-          code: "list_read_failed",
-          message: error instanceof Error
-            ? error.message
-            : "Could not read the list.",
-        });
-        if (error instanceof StaleListView) {
-          call.surface.snapshot = call.snapshot();
-          publishPresentation(state);
-        }
-      });
-      return;
-    }
-    if (message.type === "screen.event" && message.eventType === "field-help") {
+    if (message.eventType === "field-help") {
       helpControl = controls.find((control) =>
         control.id === message.controlId
       );
       if (
         message.action !== "field-help" || helpControl === undefined ||
-        helpControl.bind !== message.bind || helpControl.hidden ||
-        helpControl.fieldHelp === false || helpControl.control === "list"
+        helpControl.bind !== message.bind ||
+        helpControl.hidden || helpControl.fieldHelp === false ||
+        helpControl.control === "list"
       ) throw new TypeError("unknown or unavailable field help");
     }
-    if (message.type === "screen.list") {
-      if (
-        message.updates.filter((item) => item.operation === "query").length > 1
-      ) throw new TypeError("only one query may change per interaction");
-      lists.validateRequests(message.updates, model.data);
-    } else if (message.selection !== undefined) {
+    if (message.selection !== undefined) {
       selection = lists.select(message.selection, model.data);
     }
     applyChanges(
@@ -1167,56 +1517,9 @@ function receiveScreenMessage<T extends z.ZodRawShape>(
       lists,
       message.listChanges ?? [],
       controls,
-      message.type === "screen.list" ? message.updates : [],
     );
-    model.screen.scroll = structuredClone(message.screenState.scroll);
-    for (const [id, update] of Object.entries(message.screenState.elements)) {
-      const element = screenElement(model.screen, id);
-      element.scroll = structuredClone(update.scroll);
-      element.toolbarOpen = update.toolbarOpen;
-      element.data = structuredClone(update.data);
-      if (update.selectedTab !== undefined) {
-        element.selectedTab = update.selectedTab;
-      }
-    }
-    if (message.type === "screen.list") {
-      const reloadLists: string[] = [];
-      for (const request of message.updates) {
-        const changed = lists.update(request);
-        if (changed !== undefined) {
-          if (
-            call.surface.snapshot!.lists.find((list) => list.id === changed.id)
-              ?.pageSource !== undefined
-          ) reloadLists.push(changed.id);
-          // Preserve a query event when the browser also measures other lists.
-          if (
-            queryEvent?.eventType === "list-query" &&
-            (changed.change === "page" || changed.change === "capacity")
-          ) continue;
-          queryEvent = {
-            ...(changed.change === "page" || changed.change === "capacity"
-              ? {
-                action: "list-page",
-                eventType: "list-page",
-                change: changed.change,
-              } as const
-              : {
-                action: "list-query",
-                eventType: "list-query",
-                change: changed.change,
-              } as const),
-            clientSequence: message.clientSequence,
-            listId: changed.id,
-            bind: changed.bind,
-            query: changed.query,
-          };
-        }
-      }
-      if (queryEvent !== undefined && reloadLists.length > 0) {
-        queryEvent.reloadLists = reloadLists;
-      }
-    }
-    if (queryEvent === undefined) call.surface.snapshot = call.snapshot();
+    mergeScreenUpdate(message.screenState, model);
+    call.surface.snapshot = call.snapshot();
   } catch (error) {
     state.channel.send({
       type: "session.error",
@@ -1234,29 +1537,16 @@ function receiveScreenMessage<T extends z.ZodRawShape>(
     return;
   }
   state.lastClientSequence = message.clientSequence;
-  if (message.type === "screen.list" && queryEvent === undefined) {
-    publishPresentation(state);
-    state.channel.send({
-      type: "server.ack",
-      clientSequence: message.clientSequence,
-    });
-    return;
-  }
+  state.messages.clear();
   state.channel.send({
     type: "server.ack",
     clientSequence: message.clientSequence,
   });
   if (
-    message.type === "screen.event" &&
-    (message.action === ACCOUNT_EVENT || message.action === CUSTOMIZATION_EVENT)
-  ) {
-    call.open(message.action);
-  } else if (helpControl !== undefined) {
-    call.open(helpControl);
-  } else if (queryEvent !== undefined) {
-    settleCall(state, call, { event: queryEvent });
-  } else if (message.type === "screen.event") {
-    if (message.eventType === "field-help") return;
+    message.action === ACCOUNT_EVENT || message.action === CUSTOMIZATION_EVENT
+  ) call.open(message.action);
+  else if (helpControl !== undefined) call.open(helpControl);
+  else if (message.eventType !== "field-help") {
     settleCall(state, call, {
       event: {
         action: message.action,
@@ -1290,12 +1580,36 @@ function scheduleRedraw<T extends z.ZodRawShape>(
 ): void {
   if (call.settled || call.redrawQueued) return;
   call.redrawQueued = true;
-  queueMicrotask(() => {
+  queueMicrotask(async () => {
     call.redrawQueued = false;
     if (
       call.settled || !state.active || call.surface.pending !== call ||
       !call.surface.active || call.surface.closing
     ) return;
+    const output = captureCallMessages(state, call);
+    try {
+      if (state.surfaces.at(-1) === call.surface) await call.refresh?.();
+      else if (call.refresh) {
+        call.refreshOnRestore = () =>
+          scheduleRedraw(state, call, schema, model);
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        if (state.surfaces.at(-1) !== call.surface) {
+          call.refreshOnRestore = () =>
+            scheduleRedraw(state, call, schema, model);
+        }
+        return;
+      }
+      try {
+        output.send(
+          error instanceof Error ? error.message : "Could not refresh the list",
+          "error",
+        );
+      } catch { /* stale captured output cannot change history */ }
+      return;
+    }
+    if (call.settled) return;
     const parsed = schema.safeParse(model.data);
     if (!parsed.success) {
       settleCall(state, call, { error: parsed.error });
@@ -1320,6 +1634,8 @@ function settleCall(
     return;
   }
   call.settled = true;
+  call.detachEndpoints?.();
+  call.detachEndpoints = undefined;
   if (call.surface.pending === call) call.surface.pending = undefined;
   call.detachChannel?.();
   call.detachChannel = undefined;
@@ -1362,6 +1678,7 @@ function presentationSnapshot(state: BoundSession): PresentationSnapshot {
     activeSurfaceId: top?.pending !== undefined && top.snapshot !== undefined
       ? top.id
       : null,
+    messages: state.messages.snapshot(),
   };
 }
 
@@ -1369,6 +1686,7 @@ function publishPresentation(state: BoundSession): void {
   if (!state.active) return;
   const presentation = presentationSnapshot(state);
   if (presentation.surfaces.length === 0) return;
+  state.structured.invalidate();
   state.channel.send({ type: "presentation.show", presentation });
 }
 
@@ -1376,25 +1694,47 @@ export function sendMessage(
   body: string,
   kind: UUIMessageKind = "info",
 ): void {
-  if (boundSession === undefined) {
-    throw new Error("sendMessage() requires a bound UUI session Worker");
-  }
+  const state = requireBoundSession();
+  const surface = currentSurface(state);
+  const call = surface.pending;
+  const operation = operationContext.getStore();
+  operation?.signal.throwIfAborted();
   if (
-    typeof body !== "string" || body.trim().length === 0 ||
-    body.length > MAX_UUI_MESSAGE_BODY_LENGTH
-  ) {
-    throw new TypeError(
-      `message body must contain 1 to ${MAX_UUI_MESSAGE_BODY_LENGTH} characters`,
-    );
+    state.surfaces.at(-1) !== surface ||
+    operation && operation.generation !== call?.snapshot().channelGeneration
+  ) throw new DOMException("Message owner is stale or covered", "AbortError");
+  const item = state.messages.add(body, kind);
+  if (state.structured.connected) call?.messageEndpoint()?.send("append", item);
+}
+
+/** Capture before starting asynchronous output; stale sends fail before history changes. */
+export function captureMessages(): MessageOutput {
+  const state = requireBoundSession();
+  const call = currentSurface(state).pending;
+  if (!call) {
+    throw new DOMException("Messages require a pending screen", "AbortError");
   }
-  if (!(UUI_MESSAGE_KINDS as readonly unknown[]).includes(kind)) {
-    throw new TypeError(`unsupported UUI message kind ${String(kind)}`);
-  }
-  boundSession.channel.send({
-    type: "notification.show",
-    level: kind,
-    message: body,
-  });
+  return captureCallMessages(state, call);
+}
+
+function captureCallMessages(
+  state: BoundSession,
+  call: ActiveScreenCall,
+): MessageOutput {
+  const endpoint = call.messageEndpoint()?.capture(false);
+  const run = AsyncLocalStorage.snapshot();
+  return {
+    send: (body, kind = "info") =>
+      run(() => {
+        operationContext.getStore()?.signal.throwIfAborted();
+        if (!endpoint) {
+          throw new DOMException("Message channel detached", "AbortError");
+        }
+        endpoint.capture();
+        const item = state.messages.add(body, kind);
+        if (state.structured.connected) endpoint.send("append", item);
+      }),
+  };
 }
 
 export function copyText(text: string): void {
@@ -1449,10 +1789,31 @@ function applyChanges<T extends z.ZodRawShape>(
   controls: readonly ControlDescriptor[],
   requests: readonly ListRequest[] = [],
 ): void {
+  const edits = prepareChanges(
+    schema,
+    model,
+    changes,
+    lists,
+    listChanges,
+    controls,
+    requests,
+  );
+  const parsed = schema.parse(edits.candidate);
+  for (const bind of edits.changed) setPath(model, bind, getPath(parsed, bind));
+}
+function prepareChanges<T extends z.ZodRawShape>(
+  schema: z.ZodObject<T>,
+  model: z.infer<z.ZodObject<T>>,
+  changes: readonly ScreenChange[],
+  lists: ScreenLists,
+  listChanges: readonly ListChange[],
+  controls: readonly ControlDescriptor[],
+  requests: readonly ListRequest[] = [],
+) {
   if (
     changes.length === 0 && listChanges.length === 0 &&
     !requests.some((request) => request.operation === "selection")
-  ) return;
+  ) return { candidate: structuredClone(model), changed: new Set<string>() };
   const candidate = structuredClone(model) as Record<string, unknown>;
   const bindings = lists.bindings();
   const changed = lists.applyEdits(listChanges, model, candidate);
@@ -1481,8 +1842,19 @@ function applyChanges<T extends z.ZodRawShape>(
     setPath(candidate, change.bind, parsed.data);
     changed.add(change.bind);
   }
-  const parsed = schema.parse(candidate) as Record<string, unknown>;
-  for (const bind of changed) {
-    setPath(model as Record<string, unknown>, bind, getPath(parsed, bind));
+  schema.parse(candidate);
+  return { candidate, changed };
+}
+function mergeScreenUpdate(
+  update: ScreenStateUpdate,
+  model: Model<object>,
+): void {
+  model.screen.scroll = structuredClone(update.scroll);
+  for (const [id, data] of Object.entries(update.elements)) {
+    const element = screenElement(model.screen, id);
+    element.scroll = structuredClone(data.scroll);
+    element.toolbarOpen = data.toolbarOpen;
+    element.data = structuredClone(data.data);
+    if (data.selectedTab !== undefined) element.selectedTab = data.selectedTab;
   }
 }

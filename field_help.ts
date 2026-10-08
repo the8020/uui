@@ -1,11 +1,11 @@
 import { z } from "/p/the8020/db/fields.ts";
 import { field, fieldMetadata } from "./fields.ts";
-import { queryValueHelp } from "./lists.ts";
+import { queryValueHelp, setListSource } from "./lists.ts";
 import { Model } from "./model.ts";
 import { BACK_EVENT, type ControlDescriptor } from "./protocol.ts";
 import { callScreen, presentPage, sendMessage } from "./session.ts";
 import type { ValueHelpPage, ValueHelpRequest } from "/p/the8020/db/fields.ts";
-import { initialListState, screenElement } from "./screen_state.ts";
+import { emptyListQuery } from "./screen_state.ts";
 
 /** Shared provider selection for field help and direct agent value-help queries. */
 export function valueHelpFor(schema: z.ZodType, control: ControlDescriptor) {
@@ -59,36 +59,30 @@ export async function runFieldHelp(
 ): Promise<void> {
   const metadata = fieldMetadata(schema);
   const valueHelp = valueHelpFor(schema, control);
-  let rowSchema: z.ZodObject = z.object({});
+  // Discover the fixed columns once; subsequent pages belong to ScreenLists.
+  const page = valueHelp === undefined
+    ? undefined
+    : await readValueHelp(valueHelp, {
+      query: emptyListQuery(),
+      offset: 0,
+      limit: 1,
+    });
+  const rowSchema: z.ZodObject = page?.schema ?? z.object({});
   const model = new Model({
     value: structuredClone(binding.get()),
     choices: [] as Record<string, unknown>[],
   });
-  const element = screenElement(model.screen, "choices");
-  const listState = element.list = initialListState();
-  let page: ValueHelpPage | undefined;
-  const load = async (): Promise<void> => {
-    if (valueHelp === undefined) return;
-    page = undefined;
-    model.data.choices = [];
-    try {
-      page = await read({
-        query: listState.query,
-        offset: (listState.page - 1) * listState.pageSize,
-        limit: listState.pageSize,
-      });
-      rowSchema = page.schema;
-      model.data.choices = page.rows;
-    } catch (error) {
-      sendMessage(
-        error instanceof Error ? error.message : "Could not load the choices.",
-        "error",
-      );
-    }
-  };
-  const read = (request: ValueHelpRequest) =>
-    readValueHelp(valueHelp!, request);
-  await load();
+  let initial = page;
+  if (valueHelp) {
+    setListSource(model, "choices", (request) => {
+      if (initial) {
+        const result = initial;
+        initial = undefined;
+        return result;
+      }
+      return readValueHelp(valueHelp, request);
+    });
+  }
   while (true) {
     const event = await callScreen({
       id: "uui-field-help",
@@ -100,9 +94,6 @@ export async function runFieldHelp(
         choices: z.array(rowSchema),
       }),
       model,
-      listReaders: valueHelp === undefined ? undefined : {
-        choices: read,
-      },
       controls: [{
         ...control,
         id: "value",
@@ -126,11 +117,6 @@ export async function runFieldHelp(
               title: "Value help",
               bind: "choices",
               key: Object.keys(rowSchema.shape)[0],
-              pageSource: {
-                more: page?.more ?? false,
-                totalItems: page?.totalItems,
-                totalSourceItems: page?.totalSourceItems,
-              },
             }]),
           ],
         },
@@ -148,9 +134,6 @@ export async function runFieldHelp(
       },
     });
     if (event.action === BACK_EVENT) return;
-    if (event.eventType === "list-query" || event.eventType === "list-page") {
-      await load();
-    }
     if (
       event.action === "select" && event.eventType === "select" &&
       !control.readOnly

@@ -329,28 +329,43 @@ below.
   that retained output in server-sequence order before `session.ready`, so the
   shell always receives the first presentation instead of remaining on its
   opening placeholder.
-- Programs import `sendMessage(body, kind?)` from the public
-  `/p/the8020/uui/mod.ts` surface and may call it while a screen roundtrip is
-  active or from a background asynchronous task for the same bound session.
-  Message kinds are `info`, `success`, `warning`, and `error`; bodies are
-  non-empty Markdown bounded to 20,000 characters. Notification frames use the
-  ordinary sequenced/replayable session transport and never require a client
-  event to be emitted. There is no compatibility alias.
-- Programs import `download({ filename, contentType?, body })` from the public
-  UUI surface. A byte stream or lazy async iterable starts a session-owned
-  background transfer and returns optional `done`/`cancel` controls. Background
-  producers retain the initiating async context, outlive individual screens, and
-  report failures through the message center. Connection loss/session end
-  cancels them. Download control messages and binary frames share the existing
-  authenticated WebSocket, never enter replay, and use consumption-based credit
-  bounded across concurrent transfers. The shell's local service worker exposes
-  each transferred stream as a one-use native download; it intercepts only its
-  reserved path and does not cache application assets or fetch backend file
-  bytes. The native frame stays alive until the service worker reports response
-  consumption; transferable-stream prefetch alone cannot end its lifetime. A
-  bounded tail of completed frames remains until connection/page cleanup because
-  native attachment registration has no DOM completion event. See `README.md`
-  for the API, limits, and browser requirements.
+- `messages.ts` owns validated bounded semantic MessageHistory, shared by the
+  session engine and authenticated service/headless adapter. `sendMessage`
+  accepts synchronous program outcomes before/between calls as domain state; the
+  next explicit presentation carries it, with no detached operation
+  backlog/rebinding. Live append/history/refresh use the ordinary registered
+  message-center namespace of each call, including built-in calls without
+  ScreenChannel. `captureMessages()` captures trusted async context and the
+  current screen and connection before asynchronous work;
+  stale/cancelled/covered output rejects before history mutation.
+  Download/provider error callbacks use captures. Four semantic kinds and
+  nonempty Markdown up to 20,000 characters remain. Keep 100 accepted records
+  and ten recent headless messages at this one owner. Accepted interactions
+  clear preceding outcomes, preserving records accepted during asynchronous
+  work. Browser initialization/reload restores history without old toasts;
+  replacement/reconnect deduplicates by monotonic record identity. Namespace
+  history refresh is state transfer, never operation replay, draft commit or
+  request-gate release. Arbitrary background work must retain a captured output
+  rather than rediscover an ambient future call.
+- Programs call `download(options, channel.downloads)` only under an explicit
+  pending ScreenChannel attachment. The captured endpoint owns its screen and
+  connection; detached/old starts fail before source demand. Prepare options
+  between screens, create the next pending call explicitly, then start there.
+  Settlement/replacement, reset/removal/disposal, coverage, exit/failure and
+  disconnect/takeover cancel unfinished streams, without replay or buffering.
+  Background producers retain their initiating trusted context; abort-ignoring
+  awaits may continue internally while late framework output is dropped.
+- `downloads.ts` is a native-save domain helper calling the shared stream core;
+  `download_metadata.ts` owns filename/content-type validation and native bounds
+  (64 KiB frames, 64 MiB source chunks, 32 active transfers, four per-stream, 16
+  per-direction and 32 aggregate frames, 30-second startup). Filename errors and
+  source/sink failures remain attributable through the message center. Browser
+  `downloads.ts` and `download-worker.js` own local MessagePort
+  registration/forget, one-use native response, consumption acknowledgement and
+  a bounded completed iframe tail. No backend file-byte request is made. Source
+  EOF, accepted native handoff and browser/disk completion are distinct; `done`
+  attests only to response consumption/handoff. Completed output is not
+  truncated by later screen replacement. See README for browser support limits.
 - Fresh browser navigation without an explicit session link performs normal
   `POST /connect`, reads `the8020-session` and `the8020-route`, and remembers
   the ID in per-tab `sessionStorage` for reload without adding a URL parameter.
@@ -399,6 +414,70 @@ below.
   through `fail(error)`. Covered redraws update the cached snapshot and publish
   only when uncovered. Every settlement and session end detaches the channel;
   detached commands are discarded rather than buffered.
+- `channel.ts` owns the sole browser-safe ChannelRouter on the existing
+  authenticated socket. Applications use send(ID, data) and subscribe(pattern,
+  handler), returning a canonical ChannelSubscription with readonly id/original
+  handler and idempotent unsubscribe(). ChannelBindings shares logical retention
+  and physical reattachment across backend Channels and browser hosts; router
+  storage and dispatch use that same object. Only * is special in full-ID
+  matching (zero or more characters including dots); other text is literal.
+  Ordinary messages and stream-open use the same matcher. No required method
+  schemas, operation maps, peer declarations or generic RPC layer remain. Data
+  is JSON or a byte stream through that same subscription; application
+  validation and business policy belong to the consumer. Ordinary messages fan
+  out; handler failures are isolated; no listeners means drop, never
+  buffering/replay.
+- Every callScreen creates/attaches a real default ScreenChannel when authors
+  omit one; browser component/program channels are always available while live.
+  Unconsumed ordinary messages drop and streams cancel before source demand.
+  ScreenChannel implements program send/subscribe directly. Custom declarations
+  and custom-field options attach a Channel reference, removed from wire data.
+  UUI generates separate opaque component/list/program routing identities and
+  publishes only owning descriptor references, with no catalog, grants or
+  component-kind router. Authors never repeat element IDs as channel namespaces.
+  Shared declaration cloning preserves live references through body/header,
+  layout and list-toolbar placements; wire descriptors omit them. Field
+  presentation metadata uses weak schema keys and retains channel references
+  separately from serializable cloned presentation options.
+- Every callScreen/reset generation owns its registrations, in-flight subscriber
+  work and streams. Settlement/removal/exit/failure disposes them. Reused
+  backend Channels and retained browser hosts reattach subscription bindings
+  without replay. Coverage aborts in-flight work and rejects admission. Backend
+  handlers retain initiating trusted async context; old handlers cannot send or
+  subscribe through a reused Channel. Browser views retain their acquired
+  generation and connection; acquire at the start of new work, retain across
+  awaits. Preserved subscriptions reacquire their owner for each new invocation,
+  never retarget saved output views. Unsubscribe aborts its work and cancels
+  streams it consumes. Browser stream sends inherit the host lifetime, including
+  sends through its program channel, so same-call remount/disposal cancels the
+  removed host's transfers.
+- Transient frame admission retains current session/controller/socket checks,
+  transport JSON/size validation, per-side sequence and screen/connection
+  generations. Disconnect/takeover aborts work; a pending call may reconnect.
+  Replay exhaustion tracks retained output eviction, never transient sequence
+  gaps. Lists alone own the token/result/cancel messages their actual exchanges
+  require; no transport RPC catalog or common request correlation is added.
+  Headless list transactions share the domain validation and connection abort
+  signal. Matching list results/errors or valid presentations release the shell
+  gate; ordinary messages, streams and acknowledgements do not.
+- Message-center append/history/refresh are generic ID/data subscribers. Native
+  saves send validated filename/content-type metadata, then stream data under
+  their domain transfer ID; completion/admission failure forgets staged
+  metadata. Lists/providers/field help keep their own schemas, atomic edits,
+  revisions and read limits. Independent PTY/service authority remains in its
+  owning package.
+- `channel_streams.ts` retains the sole binary codec, lazy producer pump and
+  consumption-credit accounting. Generic streams need exactly one matching
+  subscriber, which consumes EOF and resolves only after consumption/handoff.
+  Missing or ambiguous consumers reject before source demand; failure/cancel
+  affects only the transfer. Ordinary data may fan out. No tee, replay or
+  listener backlog. Transport defaults are four frames per stream, 64 KiB frames
+  and 64 MiB source chunks; there is no central application quota/fairness
+  scheduler. Stream-open advertises the sender window; receiver credit respects
+  both peers. Optional owner policies preserve source/active/direction/aggregate
+  bounds and startup deadlines for domains such as downloads. Known errors
+  cancel only their transfer; unsafe framing/session/size remains rejected at
+  session_service.
 - Runtime-loaded package modules address shared package APIs through the generic
   `/p/` mount alias. The package does not depend on a UUI-specific runtime
   import-map entry that the generic image would have to know.
@@ -431,13 +510,15 @@ below.
   selects/clears every source row, including other pages and filtered-out rows.
   Shift and pointer-drag ranges use the current filtered/sorted order across
   pages. Selection uses validated source mappings and commits atomically with
-  dirty controls without resolving the pending call. Source arrays stay ordered.
-  The footer shows selected/source totals even for a single or empty page.
-  Headless `list` commands accept
+  dirty controls without resolving the pending call. An explicitly declared
+  editable selection boolean remains available on a read-only collection; other
+  row edits still respect collection and field read-only rules. Source arrays
+  stay ordered. The footer shows selected/source totals even for a single or
+  empty page. Headless `list` commands accept
   `selection: { selected, range?: { from, to } }` through the same validation
   path; transcripts show selected row flags and totals. Selection requires the
-  complete bound array and an editable boolean row field; `pageSource` cannot
-  supply whole-table row-model updates and rejects this option.
+  complete bound array and an editable boolean row field; registered paged
+  sources cannot supply whole-table row-model updates and reject this option.
 - Layout regions may place their ordered `actions` alongside their controls,
   including buttons inside field groups. Those buttons are omitted from the
   fallback screen action bar; an explicit `actions` region still owns screen
@@ -465,15 +546,15 @@ below.
 - The shell window title is `80|20 <top visible heading>`, using normalized
   heading text from the active page or modal; before a presentation exists or
   after it closes, the title is the generic `80|20`.
-- Sending any `screen.event` or `screen.list` enters one shell-owned in-flight
-  interaction state for the top surface. It immediately makes presentation and
-  applicable header controls inert, disables Back, rejects additional event
-  sends in JavaScript, and activates a transparent page- or modal-local pointer
-  shield. If still pending after `500ms`, the same state reveals a blurred
-  overlay and loading indicator. An early `server.ack` does not unlock stale
-  content; an atomic presentation with an active surface, a session
-  error/resync, session end, or a matching list data response releases it.
-  Independent reads leave dirty values pending and reject on disconnect.
+- Sending any `screen.event` or structured request enters one shell-owned
+  in-flight interaction state for the top surface. It immediately makes
+  presentation and applicable header controls inert, disables Back, rejects
+  additional event sends in JavaScript, and activates a transparent page- or
+  modal-local pointer shield. If still pending after `500ms`, the same state
+  reveals a blurred overlay and loading indicator. An early `server.ack` does
+  not unlock stale content; an atomic presentation with an active surface, a
+  session error/resync, session end, or a matching structured response releases
+  it. Independent reads leave dirty values pending and reject on disconnect.
 - `Model(data)` retains the business-data reference and owns typed screen state.
   `callScreen()` validates and edits `model.data`; reusing the wrapper preserves
   a logical screen identity, query/page state, scroll, and toolbar expansion.
@@ -543,42 +624,52 @@ below.
   references resolve to control IDs centrally, and each descriptor has one
   placement. Column IDs are list-local; framework DOM IDs also include surface
   and Model identity. Component internals remain owned by the providing package.
-- Protocol version 9 adds model-bound custom fields and general component
-  metadata to independent list reads alongside custom-element modules and
-  retains exact decimal list semantics and the validated `field-help` screen
-  event, and puts Model state and independent list snapshots in each screen.
-  Wire business list bindings contain empty arrays; displayed values live
-  exclusively in `screen.lists`. `ScreenLists` owns search/filter, stable typed
-  sort, pagination, and displayed-to-source mappings for explicit and inferred
-  lists. Views never reorder or truncate the source array. Mapping validation
-  checks the exact source identity, row order/content, and view revision before
+- Protocol version 11 carries generic ID/data channel frames and internally
+  assigned component routing within each screen generation; it retains
+  model-bound custom fields, component metadata, exact decimal semantics and
+  field help. Model state and list snapshots remain screen-owned. Wire business
+  list bindings contain empty arrays; displayed values live exclusively in
+  `screen.lists`. `ScreenLists` owns search/filter, stable typed sort,
+  pagination, and displayed-to-source mappings for explicit and inferred lists.
+  Views never reorder or truncate the source array. Mapping validation checks
+  the exact source identity, row order/content, and view revision before
   applying a selection or edit. Stale views reject and publish a fresh snapshot;
   invalid dirty edits change neither business nor screen state.
-- `screen.list` carries bounded page, query, or browser-measured capacity
-  requests on the existing WebSocket. Queries reset only their list to page 1.
-  Default queries remain inside the pending call; `triggerFilterEvents: true`
-  resolves a typed `list-query` event after valid edits/metadata and the query
-  are merged. Repeated queries, pages, capacity, and redraws emit no query
-  event. Ordinary arrays retain local processing and exact counts.
-  `pageSource: { more, searchOnly?, totalItems?, totalSourceItems? }` declares
-  one server-supplied page with optional matching and unfiltered totals.
-  Preserve its order and matching without re-slicing; query changes return
-  `list-query` and page/capacity changes return `list-page`. `reloadLists`
-  identifies every changed page source, including batched capacities. Programs
-  reload from the retained page/query state before presenting again. Reject
-  oversized pages and unavailable page numbers. Search-only sources hide and
-  reject column queries. Field help uses the full query contract. Retain the
-  unfiltered count or observed source-size lower bound in Model list state so
-  filtered pages and reloads reserve the same body and footer space.
-- Independent `screen.list` reads are exclusive of updates/edits and return
-  `screen.list.data` on the same authenticated channel, bounded to 1,000 rows.
-  `ScreenLists` reuses its filtered/sorted projection and validates source/view
-  identity. Reads acknowledge their client sequence for reconnect/reload while
-  preserving the pending call, UUI page, and dirty form values. Page sources can
-  supply `callScreen({ listReaders })`, keyed by list ID; callbacks receive the
-  retained query and bounded 500-row requests. Readers can return an exact
-  matching total; otherwise the total stays unknown until the reader reaches the
-  end. Field help exposes its provider's typed displayed columns.
+- The list-owned `update` namespace operation carries validated page, query,
+  capacity, refresh and checkbox changes. Browser and authenticated headless
+  commands invoke the same registered owner with current surface/Model/view
+  admission. Multi-list capacity updates stage and validate all edits/provider
+  results before committing one transaction. Invalid, stale, read-only or
+  malformed input changes neither business nor presentation state. Dirty row
+  edits retain exact source mappings and read-only schema fields.
+- Bound arrays use local typed/decimal projection.
+  `setListSource(model, id,
+  source, { searchOnly? })` retains a
+  program-selected async source and returns a disposer. Providers receive query,
+  offset, 1–500-row limit and AbortSignal; return rows, more and optional
+  matching/unfiltered totals. ScreenLists owns initial loading, visible refresh,
+  result state and revisions while callScreen stays pending. Redraw refreshes
+  providers, and covered redraws refresh on restoration. Provider ordering is
+  preserved; source-size lower bounds retain geometry when totals are unknown.
+  Known source shrinkage clamps the page and loads its current rows. Source
+  replacement/disposal invalidates cached views.
+- Provider page rows belong to each list ID, never to the shared business array
+  binding. Separate provider and array views may share a binding without
+  replacing each other's data. Provider row edits reject the whole transaction
+  before data or list-state commit because the source contract has no writeback;
+  ordinary array row edits and other dirty controls retain atomic validation.
+- Row schema/columns are fixed for a call. Providers returning a changed schema
+  are rejected; a genuine contract change requires a new explicit callScreen.
+  `triggerFilterEvents: true` remains a deliberate changed-query program event
+  after valid edits/state merge; repeat query/page/capacity/refresh emits none.
+- Independent `read` uses the same namespace, fixed row-schema validation and
+  current source/view checks without changing visible page or drafts. Results
+  are bounded to 1,000 rows and 900,000 JSON bytes, in at most 500-row batches.
+  Provider replacement/disposal, reset, settlement/removal, coverage and
+  connection loss cancel owning work and drop late output. Unabortable queries
+  may continue internally; remote consistency remains source-owned. Field help
+  retains typed columns, first-column selection, isolated drafts and Done-only
+  commits without ordinary browsing screen reissue.
 - Capture scroll and toolbar metadata with existing interactions, including
   Back, paging, queries, and capacity. Never send standalone or periodic scroll
   updates. Browser-local positions survive redraw and surface/instance returns;
@@ -669,7 +760,7 @@ below.
   kernel execution, or command-bus dispatch.
 - The session disclosure menu owns a Messages action whose badge counts all
   messages received since the current screen interaction began. A new
-  `screen.event`, `screen.list`, or route begins a fresh collection. At most the
+  `screen.event`, list update, or route begins a fresh collection. At most the
   last 100 messages are retained in the browser and at most the last 10 are
   drawn as toasts. Toasts are anchored below the session disclosure at equal
   width, overlap downward by `0.5rem`, and keep the oldest card on top. Lower
@@ -883,6 +974,11 @@ below.
   `The value is sent directly to kernel secret storage and is not shown again.`
   in the UI.
 
+- Authored declaration cloning preserves live Channel references, including
+  inline layout elements and list toolbars. Layout normalization reuses
+  canonical resolved elements so every placement receives the same
+  lifecycle-owned routing identity.
+
 # Verification
 
 - `preferences_test.ts` covers the actual nullable table descriptor through
@@ -1073,8 +1169,14 @@ below.
   downloads, partial disk writes before production completes, byte-exact
   results, interactive screens, producer errors, native cancellation, generator
   cleanup, reconnect without download replay, and zero backend file requests.
-  `downloads_test.ts` covers shared flow-control bounds, large source chunks,
-  async context, completion, cancellation, and protocol validation.
+  `channel_streams_test.ts` covers both-direction policy bounds,
+  queued/in-flight reservations, credit/demand, error isolation, duplicate
+  controls, empty/partial EOF and late producers. `downloads_test.ts` covers
+  explicit attachment startup, metadata and both-direction screen lifecycle
+  cleanup. The custom browser fixture exercises binary streams on two actual
+  custom hosts and the owning program; download browser checks also send real
+  browser bytes to an authenticated backend sink. Session-service tests reject
+  unsafe binary ingress.
 - The download browser harness also opens the real demo form and verifies its
   text file, default 100,000-row calculation CSV, slider-selected export size,
   and field-group action placement without duplicate footer buttons at desktop
@@ -1083,6 +1185,17 @@ below.
   overflow triggers and verifies that full-message popovers stay beside their
   field while remaining inside the viewport.
 
+- `channel_test.ts` checks both-direction ordinary JSON and stream
+  subscriptions, fan-out, unsubscribe, sync/async failures, malformed framing,
+  duplicate and stale traffic, independent owners and a healthy sibling.
+  Canonical object identity, literal/global/prefix/internal-star matching,
+  matching stream admission and repeated shared-binding cleanup are covered;
+  default-screen routes reject unconsumed streams without source credit.
+  `uui_test.ts` checks call/reset/connection lifetimes, trusted context, opaque
+  identity isolation and custom-field binding serialization. The custom browser
+  fixture uses two live component instances and the program with distinct byte
+  content both ways, cancellation, preserved hosts and aborted saved views after
+  replacement/reconnect.
 - `lists_test.ts`, `list_values_test.ts`, and `uui_test.ts` cover projections,
   source mappings, identities, typed semantics, atomic edits/query events, and
   page-five retention across selection and data refresh.

@@ -36,13 +36,6 @@ export interface ListOptions {
   headings?: Record<string, string>;
   columnOptions?: Record<string, ListColumnOptions>;
   triggerFilterEvents?: boolean;
-  /** The bound array is one server-supplied page; interactions return to the program. */
-  pageSource?: {
-    more: boolean;
-    searchOnly?: boolean;
-    totalItems?: number;
-    totalSourceItems?: number;
-  };
 }
 
 export interface ListColumn extends ListColumnOptions {
@@ -90,6 +83,8 @@ export interface ScreenStateUpdate {
 }
 
 export interface ScreenListSnapshot {
+  /** Internal component routing, assigned by callScreen. */
+  channelNamespace?: string;
   toolbar?: ScreenElement[];
   id: string;
   bind: string;
@@ -102,10 +97,10 @@ export interface ScreenListSnapshot {
   totalPages: number;
   filtered: boolean;
   triggerFilterEvents: boolean;
-  /** Page sources require a server-side list reader for independent reads. */
+  /** Retained providers support independent reads as well as visible browsing. */
   readable?: boolean;
   selection?: { bind: string; selectedItems: number };
-  pageSource?: ListOptions["pageSource"];
+  source?: { more: boolean; searchOnly?: boolean; totalItems?: number };
 }
 
 export interface ListReadRequest {
@@ -140,6 +135,7 @@ export type ListRequest =
   | { id: string; revision: number; operation: "page"; page: number }
   | { id: string; revision: number; operation: "capacity"; pageSize: number }
   | { id: string; revision: number; operation: "query"; query: ListQuery }
+  | { id: string; revision: number; operation: "refresh" }
   | {
     id: string;
     revision: number;
@@ -148,6 +144,43 @@ export type ListRequest =
     /** Inclusive positions in the complete filtered/sorted view; omit for all source rows. */
     range?: { from: number; to: number };
   };
+
+export function validListRequests(value: unknown): value is ListRequest[] {
+  return Array.isArray(value) && value.length > 0 && value.length <= 200 &&
+    value.every((item) => {
+      if (
+        !isRecord(item) || typeof item.id !== "string" || !item.id.length ||
+        !Number.isSafeInteger(item.revision) || Number(item.revision) < 1
+      ) return false;
+      const positive = (n: unknown) => Number.isSafeInteger(n) && Number(n) > 0;
+      const keys = ["id", "revision", "operation"];
+      let valid = false;
+      if (item.operation === "page") {
+        keys.push("page");
+        valid = positive(item.page);
+      } else if (item.operation === "capacity") {
+        keys.push("pageSize");
+        valid = positive(item.pageSize) &&
+          Number(item.pageSize) <= MAX_LIST_PAGE_SIZE;
+      } else if (item.operation === "query") {
+        keys.push("query");
+        valid = validListQuery(item.query);
+      } else if (item.operation === "refresh") valid = true;
+      else if (item.operation === "selection") {
+        keys.push("selected", "range");
+        valid = typeof item.selected === "boolean" &&
+          (item.range === undefined ||
+            isRecord(item.range) &&
+              [item.range.from, item.range.to].every((n) =>
+                Number.isSafeInteger(n) && Number(n) >= 0
+              ) &&
+              Object.keys(item.range).every((key) =>
+                ["from", "to"].includes(key)
+              ));
+      }
+      return valid && Object.keys(item).every((key) => keys.includes(key));
+    });
+}
 
 export interface ListSelection {
   id: string;

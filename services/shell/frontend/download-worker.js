@@ -76,8 +76,8 @@ self.addEventListener("fetch", (event) => {
   }
   transfers.delete(token);
   const reader = transfer.stream.getReader();
-  const complete = () => {
-    transfer.port.postMessage({ complete: true });
+  const complete = (result = {}) => {
+    transfer.port.postMessage({ complete: true, ...result });
     transfer.port.close();
   };
   // A transferred stream may prefetch its last chunk before navigation starts.
@@ -92,14 +92,14 @@ self.addEventListener("fetch", (event) => {
         } else controller.enqueue(result.value);
       } catch (error) {
         controller.error(error);
-        complete();
+        complete({ error: String(error) });
       }
     },
     async cancel(reason) {
       try {
         await reader.cancel(reason);
       } finally {
-        complete();
+        complete({ cancelled: true });
       }
     },
   }, { highWaterMark: 0 });

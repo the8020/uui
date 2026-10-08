@@ -1,11 +1,19 @@
+import { MessageHistory } from "./messages.ts";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { type ChannelFrame } from "./channel.ts";
 import { agentOperation, transcribe } from "./agent.ts";
-import { queryValueHelp } from "./lists.ts";
+import { queryValueHelp, setListSource } from "./lists.ts";
 import { type ListQuery, type ValueHelpRequest } from "/p/the8020/db/fields.ts";
+import { Channel } from "./session.ts";
 import { Model } from "./model.ts";
 import { assertEquals, assertRejects, assertThrows } from "@std/assert";
 import { z } from "/p/the8020/db/fields.ts";
 import { validateCustomElements } from "./custom_elements.ts";
-import { validScreenStateUpdate } from "./screen_state.ts";
+import {
+  initialListState,
+  screenElement,
+  validScreenStateUpdate,
+} from "./screen_state.ts";
 import { codeEditor } from "./services/shell/frontend/components/code-editor/mod.ts";
 import {
   buildControls,
@@ -16,6 +24,7 @@ import {
 import { field as sharedField, money } from "/p/the8020/db/fields.ts";
 import {
   applyLayoutOverride,
+  type LayoutDocument,
   resolveLayoutReferences,
   validateLayout,
 } from "./layout.ts";
@@ -23,6 +32,7 @@ import {
   ACCOUNT_EVENT,
   BACK_EVENT,
   type ComponentStyle,
+  type ControlDescriptor,
   CUSTOMIZATION_EVENT,
   MAX_UUI_MESSAGE_BODY_LENGTH,
   parseClientMessage,
@@ -33,8 +43,11 @@ import {
 import {
   bindSession,
   callScreen,
+  captureMessages,
   commandScreen,
+  connectChannels,
   copyText,
+  disconnectChannels,
   presentModal,
   presentPage,
   ScreenChannel,
@@ -117,6 +130,7 @@ Deno.test("decimal presentation retains its exact string schema and storage cont
 
 class TestChannel {
   readonly sessionId = "session-test";
+  readonly messageHistory = new MessageHistory();
   sent: unknown[] = [];
   #inputs: UUIClientMessage[] = [];
   #waiters: Array<(message: UUIClientMessage) => void> = [];
@@ -131,9 +145,27 @@ class TestChannel {
     return new Promise((resolve) => this.#waiters.push(resolve));
   }
 
+  #listSequence = 0;
   push(message: UUIClientMessage): void {
+    if (message.type === "channel.frame" && message.id === "update") {
+      if (!this.#listSequence) connectChannels("fixture-connection");
+      message.requestId = `client-${++this.#listSequence}`;
+      if (message.generation === "fixture-generation") {
+        message.generation = topScreen(lastPresentation(this))
+          .channelGeneration!;
+      }
+      const request = (message.value as {
+        request: { instanceId: string; updates: { id: string }[] };
+      }).request;
+      message.namespace = topScreen(lastPresentation(this)).lists.find((list) =>
+        list.id === request.updates[0]!.id
+      )!.channelNamespace!;
+      if (request.instanceId === "fixture") {
+        request.instanceId = topScreen(lastPresentation(this)).state.instanceId;
+      }
+    }
     if (
-      (message.type === "screen.event" || message.type === "screen.list") &&
+      (message.type === "screen.event") &&
       message.instanceId === "fixture"
     ) {
       message.instanceId = topScreen(lastPresentation(this)).state.instanceId;
@@ -793,22 +825,22 @@ Deno.test({
       let list = topScreen(shown).lists[0]!;
       assertEquals(list.state.measured, false);
       assertEquals((topScreen(shown).model as typeof data).records, []);
-      test.push({
+      test.push(listInput({
         ...eventFor(shown, "", 1),
-        type: "screen.list",
+
         updates: [{
           id: list.id,
           revision: list.revision,
           operation: "capacity",
           pageSize: 10,
         }],
-      });
+      }));
       await flushMicrotasks();
       shown = lastPresentation(test);
       list = topScreen(shown).lists[0]!;
-      test.push({
+      test.push(listInput({
         ...eventFor(shown, "", 2),
-        type: "screen.list",
+
         updates: [{
           id: list.id,
           revision: list.revision,
@@ -826,7 +858,7 @@ Deno.test({
           scroll: { x: 0, y: 413 },
           elements: { records: { scroll: { x: 62, y: 0 }, toolbarOpen: true } },
         },
-      });
+      }));
       await flushMicrotasks();
       shown = lastPresentation(test);
       list = topScreen(shown).lists[0]!;
@@ -1520,7 +1552,7 @@ Deno.test({
     assertThrows(
       () => sendMessage("not bound"),
       Error,
-      "requires a bound UUI session Worker",
+      "UUI session channel is not bound",
     );
     const test = new TestChannel();
     const unbind = bindSession(test);
@@ -1529,20 +1561,19 @@ Deno.test({
       sendMessage("Completed", "success");
       sendMessage("Attention", "warning");
       sendMessage("Failed", "error");
-      assertEquals(test.sent, [
-        { type: "notification.show", level: "info", message: "Information" },
-        {
-          type: "notification.show",
-          level: "success",
-          message: "Completed",
-        },
-        {
-          type: "notification.show",
-          level: "warning",
-          message: "Attention",
-        },
-        { type: "notification.show", level: "error", message: "Failed" },
-      ]);
+      assertEquals(test.sent, []);
+      assertEquals(
+        test.messageHistory.snapshot().map(({ level, message }) => ({
+          level,
+          message,
+        })),
+        [
+          { level: "info", message: "Information" },
+          { level: "success", message: "Completed" },
+          { level: "warning", message: "Attention" },
+          { level: "error", message: "Failed" },
+        ],
+      );
       assertThrows(() => sendMessage("   "), TypeError, "1 to 20000");
       assertThrows(
         () => sendMessage("x".repeat(MAX_UUI_MESSAGE_BODY_LENGTH + 1)),
@@ -1555,18 +1586,27 @@ Deno.test({
         "unsupported UUI message kind",
       );
 
+      connectChannels("message-test");
       const pending = callScreen({
         id: "message-wait",
         schema: z.object({}),
         model: new Model({}),
       });
       await Promise.resolve();
+      const output = captureMessages();
       await (async () => {
         await Promise.resolve();
-        sendMessage("Arrived while the screen was waiting", "success");
+        output.send("Arrived while the screen was waiting", "success");
       })();
-      assertEquals(test.sent.at(-1), {
-        type: "notification.show",
+      const frame = test.sent.at(-1) as ChannelFrame;
+      assertEquals(frame.type, "channel.frame");
+      assertEquals(
+        frame.namespace,
+        topScreen(lastPresentation(test)).messageNamespace,
+      );
+      assertEquals(frame.id, "append");
+      assertEquals(frame.value, {
+        sequence: 5,
         level: "success",
         message: "Arrived while the screen was waiting",
       });
@@ -1578,6 +1618,8 @@ Deno.test({
         clientSequence: 1,
       }));
       assertEquals((await pending).action, "save");
+      assertThrows(() => output.send("late"), DOMException);
+      assertEquals(test.messageHistory.snapshot(), []);
     } finally {
       unbind();
     }
@@ -1603,23 +1645,58 @@ function event(
   };
 }
 
-function page(
-  overrides: Partial<Extract<UUIClientMessage, { type: "screen.list" }>> = {},
-): Extract<UUIClientMessage, { type: "screen.list" }> {
+function listInput(
+  raw: Record<string, unknown>,
+): Extract<UUIClientMessage, { type: "channel.frame" }> {
+  const {
+    type: _type,
+    protocol,
+    sessionId,
+    clientSequence,
+    action: _action,
+    eventType: _eventType,
+    value,
+    requestId: _requestId,
+    generation: _generation,
+    connection: _connection,
+    namespace: _namespace,
+    id: _id,
+    kind: _kind,
+    ...data
+  } = raw;
   return {
-    type: "screen.list",
-    protocol: UUI_PROTOCOL_VERSION,
-    sessionId: "session-test",
-    surfaceId: "surface-1",
-    screenId: "detail",
-    screenRevision: 1,
-    instanceId: "fixture",
-    screenState: { version: 0, scroll: { x: 0, y: 0 }, elements: {} },
-    clientSequence: 1,
-    updates: [{ id: "items", revision: 1, operation: "page", page: 2 }],
-    changes: [],
-    ...overrides,
+    type: "channel.frame",
+    protocol: Number(protocol),
+    sessionId: String(sessionId),
+    clientSequence: Number(clientSequence),
+    connection: "fixture-connection",
+    generation: "fixture-generation",
+    namespace: String(
+      (data.updates as { id: string }[] | undefined)?.[0]?.id ??
+        (raw.namespace),
+    ),
+    id: "update",
+    kind: "message",
+    requestId: "client-1",
+    value: {
+      token: crypto.randomUUID(),
+      request: {
+        ...(value && typeof value === "object" && "request" in value
+          ? value.request as object
+          : value as object | undefined),
+        ...data,
+      },
+    },
   };
+}
+function page(
+  overrides: Record<string, unknown> = {},
+): Extract<UUIClientMessage, { type: "channel.frame" }> {
+  return listInput({
+    ...event(),
+    updates: [{ id: "items", revision: 1, operation: "page", page: 2 }],
+    ...overrides,
+  });
 }
 
 function presentation(value: unknown): PresentationShow {
@@ -1692,7 +1769,7 @@ function eventFor(
 }
 
 async function flushMicrotasks(): Promise<void> {
-  for (let index = 0; index < 12; index++) await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 Deno.test("field help drafts, cancels, commits, and pages searchable choices through standard lists", async () => {
@@ -1703,7 +1780,11 @@ Deno.test("field help drafts, cancels, commits, and pages searchable choices thr
   const user = field(z.string(), {
     label: "User",
     valueHelp: (request) => {
-      requests.push(request);
+      requests.push({
+        query: request.query,
+        offset: request.offset,
+        limit: request.limit,
+      });
       return queryValueHelp(
         z.object({
           username: field(z.string(), {
@@ -1756,15 +1837,16 @@ Deno.test("field help drafts, cancels, commits, and pages searchable choices thr
     },
   ) => {
     const shown = lastPresentation(test), list = topScreen(shown).lists[0]!;
-    test.push({
+    test.push(listInput({
       ...eventFor(shown, "", ++sequence),
-      type: "screen.list",
+
       updates: [{ id: list.id, revision: list.revision, ...update }],
-    });
+    }));
     await flushMicrotasks();
   };
   try {
     const pending = callScreen({ id: "help-owner", schema, model });
+    void pending.catch(() => {});
     await open("user");
     assertEquals(
       topScreen(lastPresentation(test)).header?.actions.map((item) =>
@@ -1861,6 +1943,13 @@ Deno.test("field help drafts, cancels, commits, and pages searchable choices thr
     await action("done", [{ bind: "value", value: "blocked" }]);
     assertEquals(model.data.user, "user0");
     assertEquals(topScreen(lastPresentation(test)).id, "uui-field-help");
+    assertEquals(test.messageHistory.snapshot().at(-1)?.level, "error");
+    assertEquals(
+      test.messageHistory.snapshot().at(-1)?.message.includes(
+        "This user is unavailable",
+      ),
+      true,
+    );
     await action("done", [{ bind: "value", value: "user1999" }]);
     assertEquals(model.data.user, "user1999");
     await open("reference");
@@ -1915,16 +2004,16 @@ Deno.test("enum field help exposes searchable options and commits only on Done",
     await flushMicrotasks();
     const help = lastPresentation(test), list = topScreen(help).lists[0]!;
     assertEquals(list.rows, [{ value: "red", label: "Red" }]);
-    test.push({
+    test.push(listInput({
       ...eventFor(help, "", 2),
-      type: "screen.list",
+
       updates: [{
         id: list.id,
         revision: list.revision,
         operation: "query",
         query: { search: "BLUE", filters: {}, sort: null },
       }],
-    });
+    }));
     await flushMicrotasks();
     assertEquals(topScreen(lastPresentation(test)).lists[0]!.rows, [{
       value: "blue",
@@ -2074,13 +2163,14 @@ Deno.test({
         settled = true;
         return e;
       });
+      void pending.catch(() => {});
       await flushMicrotasks();
       let shown = lastPresentation(channel);
       let list = topScreen(shown).lists[0]!;
       const query = { search: "changed", filters: {}, sort: null };
-      const request = {
+      const request = listInput({
         ...eventFor(shown, "", 1),
-        type: "screen.list" as const,
+
         updates: [{
           id: list.id,
           revision: list.revision,
@@ -2098,7 +2188,7 @@ Deno.test({
           revision: list.revision,
           rows: [{ index: 0, value: { id: 1, label: "changed" } }],
         }],
-      };
+      });
       channel.push(request);
       await flushMicrotasks();
       assertEquals(settled, false);
@@ -2107,23 +2197,29 @@ Deno.test({
       assertEquals(model.screen.scroll.y, 0);
       assertEquals(model.screen.elements.rows!.list!.query.search, "");
       model.data.rows.reverse();
-      channel.push({ ...request, changes: [{ bind: "note", value: "saved" }] });
+      channel.push(
+        listInput({ ...request, changes: [{ bind: "note", value: "saved" }] }),
+      );
       await flushMicrotasks();
       assertEquals(
-        (channel.sent.findLast((message) =>
-          (message as { type: string }).type === "session.error"
-        ) as { code: string }).code,
-        "list_view_mismatch",
+        ((channel.sent.findLast((message) =>
+          (message as ChannelFrame).id === "result"
+        ) as ChannelFrame).value as { error: string }).error?.includes(
+          "list changed",
+        ),
+        true,
       );
       assertEquals(model.data.note, "original");
       assertEquals(model.data.rows[0]!.label, "Two");
       shown = lastPresentation(channel);
       list = topScreen(shown).lists[0]!;
-      channel.push({
+      channel.push(listInput({
         ...request,
         ...eventFor(shown, "", 1),
-        type: "screen.list",
-        screenState: request.screenState,
+
+        screenState:
+          (request.value as { request: { screenState: unknown } }).request
+            .screenState,
         updates: [{
           id: list.id,
           revision: list.revision,
@@ -2136,7 +2232,7 @@ Deno.test({
           revision: list.revision,
           rows: [{ index: 0, value: { id: 2, label: "changed" } }],
         }],
-      });
+      }));
       const event = await pending;
       assertEquals(event, {
         action: "list-query",
@@ -2159,16 +2255,16 @@ Deno.test({
       shown = lastPresentation(channel);
       list = topScreen(shown).lists[0]!;
       assertEquals(list.totalItems, 1);
-      channel.push({
+      channel.push(listInput({
         ...eventFor(shown, "", 2),
-        type: "screen.list",
+
         updates: [{
           id: list.id,
           revision: list.revision,
           operation: "query",
           query,
         }],
-      });
+      }));
       await flushMicrotasks();
       assertEquals(
         lastPresentation(channel).presentation.activeSurfaceId,
@@ -2248,12 +2344,32 @@ Deno.test({
   },
 });
 
-Deno.test("page-source interactions report every measured list for one atomic reload", async () => {
+Deno.test("provider capacity batches remain in one pending screen", async () => {
   const test = new TestChannel();
   const unbind = bindSession(test);
-  const schema = z.object({ a: z.string().array(), b: z.string().array() });
-  const model = new Model({ a: ["A"], b: ["B"] });
+  const schema = z.object({
+    note: z.string(),
+    a: z.string().array(),
+    b: z.string().array(),
+  });
+  const model = new Model({
+    note: "original",
+    a: [] as string[],
+    b: [] as string[],
+  });
+  let malformed = false;
+  for (const id of ["a", "b"]) {
+    setListSource(model, id, ({ offset, limit }) => ({
+      rows: malformed && id === "b" ? [42] : Array.from(
+        { length: Math.min(limit, 20 - offset) },
+        (_, n) => `${id}${offset + n}`,
+      ),
+      more: offset + limit < 20,
+      totalItems: 20,
+    }));
+  }
   try {
+    let settled = false;
     const pending = callScreen({
       id: "sources",
       schema,
@@ -2263,32 +2379,59 @@ Deno.test("page-source interactions report every measured list for one atomic re
         id: "sources",
         root: {
           type: "stack",
-          children: ["a", "b"].map((id) => ({
-            id,
-            type: "list",
-            bind: id,
-            pageSource: { more: true },
-          })),
+          children: ["a", "b"].map((id) => ({ id, type: "list", bind: id })),
         },
       },
+    }).then((event) => {
+      settled = true;
+      return event;
     });
+    await flushMicrotasks();
     const shown = lastPresentation(test);
-    test.push({
-      ...eventFor(shown, "", 1),
-      type: "screen.list",
-      updates: topScreen(shown).lists.map((list) => ({
-        id: list.id,
-        revision: list.revision,
-        operation: "capacity",
-        pageSize: 4,
-      })),
-    });
-    const result = await pending;
-    assertEquals(result.eventType, "list-page");
-    if (result.eventType !== "list-page") throw new Error("expected list-page");
-    assertEquals(result.reloadLists, ["a", "b"]);
+    const state = structuredClone(model.screen);
+    const data = structuredClone(model.data);
+    malformed = true;
+    test.push(
+      listInput({
+        ...eventFor(shown, "", 1),
+        changes: [{ bind: "note", value: "must not commit" }],
+        updates: topScreen(shown).lists.map((list) => ({
+          id: list.id,
+          revision: list.revision,
+          operation: "capacity",
+          pageSize: 4,
+        })),
+      }),
+    );
+    await flushMicrotasks();
+    assertEquals(model.screen, state);
+    assertEquals(model.data, data);
+    malformed = false;
+    test.push(
+      listInput({
+        ...eventFor(shown, "", 1),
+        updates: topScreen(shown).lists.map((list) => ({
+          id: list.id,
+          revision: list.revision,
+          operation: "capacity",
+          pageSize: 4,
+        })),
+      }),
+    );
+    await flushMicrotasks();
+    assertEquals(settled, false);
+    assertEquals(
+      topScreen(lastPresentation(test)).lists.map((list) => list.rows),
+      [
+        ["a0", "a1", "a2", "a3"],
+        ["b0", "b1", "b2", "b3"],
+      ],
+    );
+    assertEquals(model.data, data);
     assertEquals(model.screen.elements.a!.list!.pageSize, 4);
     assertEquals(model.screen.elements.b!.list!.pageSize, 4);
+    test.push(eventFor(lastPresentation(test), BACK_EVENT, 2));
+    await pending;
   } finally {
     unbind();
   }
@@ -2310,19 +2453,40 @@ Deno.test("list reads use the pending screen channel without committing edits or
         rows: z.object({ id: z.number() }).array(),
       }),
       model,
+      controls: [{ id: "rows: été", bind: "rows" }],
     });
     void pending.then(() => {
       settled = true;
     });
     const shown = lastPresentation(channel);
     const list = topScreen(shown).lists[0]!;
+    connectChannels("test-connection");
+    const generation = topScreen(shown).channelGeneration!;
     const message = {
-      ...eventFor(shown, "", 1),
-      type: "screen.list" as const,
-      updates: [],
-      changes: [],
-      read: { id: list.id, revision: list.revision, offset: 1000, limit: 1000 },
+      type: "channel.frame" as const,
+      protocol: UUI_PROTOCOL_VERSION,
+      sessionId: channel.sessionId,
+      clientSequence: 1,
+      connection: "test-connection",
+      namespace: list.channelNamespace!,
+      generation,
+      kind: "message" as const,
+      requestId: "client-1",
+      id: "read",
+      value: {
+        token: "read-1",
+        request: {
+          id: list.id,
+          revision: list.revision,
+          offset: 1000,
+          limit: 1000,
+        },
+      },
     };
+    assertThrows(
+      () => parseClientMessage({ ...message, owner: "session" }),
+      TypeError,
+    );
     assertThrows(
       () =>
         parseClientMessage({
@@ -2331,27 +2495,47 @@ Deno.test("list reads use the pending screen channel without committing edits or
         }),
       TypeError,
     );
-    assertThrows(
-      () =>
-        parseClientMessage({
-          ...message,
-          read: { ...message.read, limit: 1001 },
-        }),
-      TypeError,
+    channel.push(
+      parseClientMessage({
+        ...message,
+        value: {
+          ...message.value,
+          request: { ...message.value.request, limit: 1001 },
+        },
+      }),
     );
-    channel.push(parseClientMessage(message));
+    await flushMicrotasks();
+    const error = (channel.sent as UUIWorkerOutbound[]).find((message) =>
+      message.type === "channel.frame" &&
+      (message.value as { token?: string }).token === "read-1"
+    );
+    assertEquals(
+      error?.type === "channel.frame" &&
+        typeof (error.value as { error?: string }).error === "string",
+      true,
+    );
+    channel.push(
+      parseClientMessage({
+        ...message,
+        requestId: "client-2",
+        value: { ...message.value, token: "read-2" },
+        clientSequence: 2,
+      }),
+    );
     await flushMicrotasks();
     const response = (channel.sent as UUIWorkerOutbound[]).find((message) =>
-      message.type === "screen.list.data"
+      message.type === "channel.frame" &&
+      (message.value as { token?: string }).token === "read-2"
     );
-    if (response?.type !== "screen.list.data") {
+    if (response?.type !== "channel.frame") {
       throw new Error("missing list data response");
     }
-    assertEquals(response.clientSequence, 1);
-    assertEquals(response.data.rows.length, 1000);
-    assertEquals(response.data.rows[0], { id: 1000 });
-    assertEquals(response.data.more, true);
-    assertEquals(response.data.totalItems, 2205);
+    const data = (response.value as { value: unknown })
+      .value as import("./screen_state.ts").ListDataPage;
+    assertEquals(data.rows.length, 1000);
+    assertEquals(data.rows[0], { id: 1000 });
+    assertEquals(data.more, true);
+    assertEquals(data.totalItems, 2205);
     assertEquals(model.data.note, "original");
     assertEquals(model.screen.elements[list.id]!.list!.pageSize, 1);
     assertEquals(settled, false);
@@ -2423,12 +2607,12 @@ Deno.test("list toolbars share controls, identities and atomic whole-table selec
     ) => {
       shown = lastPresentation(channel);
       list = topScreen(shown).lists[0]!;
-      channel.push(parseClientMessage({
+      channel.push(parseClientMessage(listInput({
         ...eventFor(shown, "", ++sequence),
-        type: "screen.list",
+
         updates: [{ id: list.id, revision: list.revision, ...update }],
         changes,
-      }));
+      })));
       await flushMicrotasks();
     };
     await request({ operation: "capacity", pageSize: 3 });
@@ -2592,6 +2776,1000 @@ Deno.test("component styling validates every declaration path and preserves iden
       }
     }
   } finally {
+    unbind();
+  }
+});
+
+Deno.test("omitted program and component channels attach real routes with deterministic no-listener delivery", async () => {
+  const transport = new TestChannel();
+  const unbind = bindSession(transport);
+  const model = new Model({ value: "unchanged" });
+  try {
+    connectChannels("default-connection");
+    const pending = callScreen({
+      id: "default-channels",
+      model,
+      schema: z.object({ value: z.string() }),
+      controls: [{
+        bind: "value",
+        custom: { module: "/widget.js", config: {} },
+      }],
+      customElements: [{ module: "/widget.js", config: {} }],
+    });
+    const screen = topScreen(lastPresentation(transport));
+    const namespaces = [
+      screen.programNamespace,
+      screen.customElements[0]!.channelNamespace,
+      screen.controls[0]!.custom!.channelNamespace,
+    ];
+    assertEquals(
+      namespaces.every((namespace) =>
+        typeof namespace === "string" && namespace.length > 0
+      ),
+      true,
+    );
+    assertEquals(new Set(namespaces).size, 3);
+    let sequence = 0;
+    for (const namespace of namespaces) {
+      for (const kind of ["message", "stream.open"] as const) {
+        transport.push({
+          type: "channel.frame",
+          kind,
+          id: "dashboard.updates.bytes",
+          value: kind === "message" ? { drop: true } : undefined,
+          ...(kind === "stream.open" ? { chunkBytes: 65536, frames: 4 } : {}),
+          requestId: `client-${++sequence}`,
+          connection: "default-connection",
+          generation: screen.channelGeneration!,
+          namespace: namespace!,
+          sessionId: transport.sessionId,
+          protocol: UUI_PROTOCOL_VERSION,
+          clientSequence: sequence,
+        });
+      }
+    }
+    await flushMicrotasks();
+    const frames = (transport.sent as UUIWorkerOutbound[]).filter((
+      message,
+    ): message is ChannelFrame => message.type === "channel.frame");
+    assertEquals(
+      frames.filter((frame) => frame.kind === "stream.cancel").length,
+      3,
+    );
+    assertEquals(
+      frames.some((frame) =>
+        frame.kind === "stream.credit" && Number(frame.frames) > 0
+      ),
+      false,
+    );
+    assertEquals(model.data.value, "unchanged");
+    transport.push(eventFor(lastPresentation(transport), "finish", ++sequence));
+    await pending;
+  } finally {
+    unbind();
+  }
+});
+
+Deno.test("component and program subscriptions share screen generations, initiating context and cancellation", async () => {
+  const transport = new TestChannel(),
+    screenChannel = new ScreenChannel(),
+    component = new Channel();
+  const unbind = bindSession(transport),
+    context = new AsyncLocalStorage<string>();
+  const model = new Model({ note: "original" });
+  const waits: Array<
+    { signal: AbortSignal; done: Promise<void>; resolve(): void }
+  > = [];
+  const handle = (channel: Channel) =>
+    channel.subscribe("*", async (id, _data, { signal }) => {
+      if (id === "echo") channel.send("output", { owner: context.getStore() });
+      if (id === "wait") {
+        const { done } = channel.send(
+          "owned-by-handler",
+          ReadableStream.from([]),
+        );
+        void done.catch(() => {});
+        await new Promise<void>((resolve) =>
+          waits.push({ signal, done, resolve })
+        );
+        assertThrows(() => channel.send("late", null), DOMException);
+        assertThrows(() => channel.subscribe("*", () => {}), DOMException);
+      }
+    });
+  const stopComponent = handle(component);
+  handle(screenChannel);
+  const options = {
+    id: "channel-owners",
+    model,
+    schema: z.object({ note: z.string() }),
+    channel: screenChannel,
+    customElements: [{
+      module: "/widget.js",
+      config: {},
+      preserve: true,
+      channel: component,
+    }],
+  };
+  let sequence = 0, connection = "owner-connection";
+  const send = async (namespace: string, generation: string, id: string) => {
+    transport.push({
+      type: "channel.frame",
+      kind: "message",
+      id,
+      requestId: `client-${++sequence}`,
+      connection,
+      namespace,
+      generation,
+      value: null,
+      protocol: UUI_PROTOCOL_VERSION,
+      sessionId: transport.sessionId,
+      clientSequence: sequence,
+    });
+    await flushMicrotasks();
+  };
+  const outputs = () =>
+    (transport.sent as UUIWorkerOutbound[]).filter((
+      message,
+    ): message is ChannelFrame =>
+      message.type === "channel.frame" && message.id === "output"
+    );
+  try {
+    connectChannels(connection);
+    let pending = context.run("screen owner", () => callScreen(options));
+    let screen = topScreen(lastPresentation(transport)),
+      generation = screen.channelGeneration!;
+    let namespace = screen.customElements[0]!.channelNamespace!;
+    await send(namespace, generation, "echo");
+    await send(screen.programNamespace!, generation, "echo");
+    assertEquals(outputs().map((frame) => frame.value), [{
+      owner: "screen owner",
+    }, { owner: "screen owner" }]);
+    await send(namespace, generation, "wait");
+    const modal = presentModal(() =>
+      callScreen({ id: "covered", schema: z.object({}), model: new Model({}) })
+    );
+    assertEquals(waits[0]!.signal.aborted, true);
+    await send(namespace, generation, "echo");
+    assertEquals(outputs().length, 2);
+    waits[0]!.resolve();
+    transport.push(
+      eventFor(lastPresentation(transport), BACK_EVENT, ++sequence, BACK_EVENT),
+    );
+    await modal;
+    await send(namespace, generation, "wait");
+    model.resetScreen();
+    screenChannel.redraw();
+    await flushMicrotasks();
+    assertEquals(waits[1]!.signal.aborted, true);
+    waits[1]!.resolve();
+    const old = generation;
+    screen = topScreen(lastPresentation(transport));
+    generation = screen.channelGeneration!;
+    namespace = screen.customElements[0]!.channelNamespace!;
+    assertEquals(generation === old, false);
+    await send(namespace, old, "echo");
+    assertEquals(outputs().length, 2);
+    await send(namespace, generation, "echo");
+    assertEquals(outputs().at(-1)!.value, { owner: "screen owner" });
+    await send(namespace, generation, "wait");
+    screenChannel.exit();
+    await pending;
+    assertEquals(waits[2]!.signal.aborted, true);
+    pending = context.run("reused owner", () => callScreen(options));
+    waits[2]!.resolve();
+    screen = topScreen(lastPresentation(transport));
+    generation = screen.channelGeneration!;
+    namespace = screen.customElements[0]!.channelNamespace!;
+    await send(namespace, generation, "wait");
+    disconnectChannels();
+    assertEquals(waits[3]!.signal.aborted, true);
+    connection = "replacement-connection";
+    connectChannels(connection);
+    waits[3]!.resolve();
+    await send(namespace, generation, "echo");
+    assertEquals(outputs().at(-1)!.value, { owner: "reused owner" });
+    await send(namespace, generation, "wait");
+    stopComponent.unsubscribe();
+    assertEquals(waits[4]!.signal.aborted, true);
+    await assertRejects(() => waits[4]!.done, DOMException);
+    waits[4]!.resolve();
+    await send(screen.programNamespace!, generation, "wait");
+    const failure = assertRejects(() => pending, Error, "screen failed");
+    screenChannel.fail(new Error("screen failed"));
+    await failure;
+    assertEquals(waits[5]!.signal.aborted, true);
+    waits[5]!.resolve();
+    await flushMicrotasks();
+    assertEquals(
+      (transport.sent as UUIWorkerOutbound[]).some((message) =>
+        message.type === "channel.frame" && message.id === "late"
+      ),
+      false,
+    );
+    assertEquals(model.data.note, "original");
+  } finally {
+    unbind();
+    for (const wait of waits) wait.resolve();
+  }
+});
+
+Deno.test("retained async browsing refreshes rows totals and revisions under one pending call", async () => {
+  const test = new TestChannel();
+  const unbind = bindSession(test);
+  const model = new Model({ note: "original", rows: [] as { id: number }[] });
+  const channel = new ScreenChannel();
+  let length = 12, known = true, providerCalls = 0, calls = 0, settlements = 0;
+  setListSource(model, "rows", async ({ query, offset, limit, signal }) => {
+    await Promise.resolve();
+    signal.throwIfAborted();
+    providerCalls++;
+    const all = Array.from({ length }, (_, id) => ({ id })).filter((row) =>
+      !query.search || String(row.id).includes(query.search)
+    );
+    return {
+      rows: all.slice(offset, offset + limit),
+      more: offset + limit < all.length,
+      ...(known ? { totalItems: all.length, totalSourceItems: length } : {}),
+    };
+  });
+  try {
+    calls++;
+    const pending = callScreen({
+      id: "async-browsing",
+      schema: z.object({
+        note: z.string(),
+        rows: z.object({ id: z.number() }).array(),
+      }),
+      model,
+      channel,
+      controls: [{ id: "rows", bind: "rows" }, { id: "note", bind: "note" }],
+    }).then((event) => {
+      settlements++;
+      return event;
+    });
+    await flushMicrotasks();
+    await commandScreen({ op: "list", id: "rows", pageSize: 4 }, 1);
+    await commandScreen({ op: "list", id: "rows", page: 2 }, 2);
+    const before = topScreen(lastPresentation(test)).lists[0]!;
+    assertEquals(before.rows, [{ id: 4 }, { id: 5 }, { id: 6 }, { id: 7 }]);
+    assertEquals(model.data.rows, []);
+    known = false;
+    length = 15;
+    channel.redraw();
+    await flushMicrotasks();
+    let view = topScreen(lastPresentation(test)).lists[0]!;
+    assertEquals(
+      [view.state.page, view.source?.totalItems, view.source?.more],
+      [2, undefined, true],
+    );
+    assertEquals(view.revision > before.revision, true);
+    await commandScreen({ op: "list", id: "rows", search: "1" }, 3);
+    view = topScreen(lastPresentation(test)).lists[0]!;
+    assertEquals(view.rows, [{ id: 1 }, { id: 10 }, { id: 11 }, { id: 12 }]);
+    assertEquals(view.state.page, 1);
+    await commandScreen({ op: "list", id: "rows", page: 2 }, 4);
+    known = true;
+    length = 2;
+    channel.redraw();
+    await flushMicrotasks();
+    view = topScreen(lastPresentation(test)).lists[0]!;
+    assertEquals([view.totalItems, view.totalSourceItems, view.source?.more], [
+      1,
+      2,
+      false,
+    ]);
+    assertEquals([view.state.page, view.rows], [1, [{ id: 1 }]]);
+    assertEquals([calls, settlements, providerCalls], [1, 0, 8]);
+    channel.exit("done");
+    await pending;
+    assertEquals([calls, settlements], [1, 1]);
+  } finally {
+    unbind();
+  }
+});
+
+Deno.test("provider row edits reject whole list and screen transactions without acknowledgement", async () => {
+  const test = new TestChannel();
+  const unbind = bindSession(test);
+  const channel = new ScreenChannel();
+  const model = new Model({
+    note: "original",
+    rows: [{ id: 0, label: "Local" }],
+  });
+  let reads = 0, settlements = 0;
+  setListSource(model, "remote", () => {
+    reads++;
+    return { rows: [{ id: 1, label: "Remote" }], more: false };
+  });
+  const pending = callScreen({
+    id: "provider-edits",
+    schema: z.object({
+      note: z.string(),
+      rows: z.object({ id: z.number(), label: z.string() }).array(),
+    }),
+    model,
+    channel,
+    controls: [
+      { id: "note", bind: "note" },
+      { id: "local", bind: "rows" },
+      { id: "remote", bind: "rows" },
+    ],
+  }).then((event) => {
+    settlements++;
+    return event;
+  });
+  try {
+    await flushMicrotasks();
+    const shown = lastPresentation(test);
+    const [local, remote] = topScreen(shown).lists;
+    const state = structuredClone(model.screen);
+    const data = structuredClone(model.data);
+    const listChanges = [
+      {
+        id: "local",
+        revision: local!.revision,
+        rows: [{ index: 0, value: { id: 0, label: "Discard" } }],
+      },
+      {
+        id: "remote",
+        revision: remote!.revision,
+        rows: [{ index: 0, value: { id: 1, label: "Edited" } }],
+      },
+    ];
+    test.push(listInput({
+      ...eventFor(shown, "", 1),
+      changes: [{ bind: "note", value: "Discard" }],
+      listChanges,
+      updates: topScreen(shown).lists.map((list) => ({
+        id: list.id,
+        revision: list.revision,
+        operation: "capacity",
+        pageSize: 2,
+      })),
+    }));
+    await flushMicrotasks();
+    assertEquals(model.data, data);
+    assertEquals(model.screen, state);
+    assertEquals(reads, 1);
+    assertEquals(
+      test.sent.some((message) =>
+        (message as { type: string }).type === "server.ack"
+      ),
+      false,
+    );
+    assertEquals(
+      ((test.sent.at(-1) as ChannelFrame).value as { error: string }).error,
+      "List providers do not support row edits",
+    );
+    // Save/Back uses the same owning edit admission as list updates.
+    test.push({ ...eventFor(shown, "save", 2), listChanges });
+    await flushMicrotasks();
+    assertEquals(model.data, data);
+    assertEquals(model.screen, state);
+    assertEquals(settlements, 0);
+    // Array edits can commit alongside provider refresh without replacing either view.
+    test.push(listInput({
+      ...eventFor(lastPresentation(test), "", 3),
+      changes: [{ bind: "note", value: "accepted" }],
+      listChanges: [{
+        ...listChanges[0]!,
+        rows: [{ index: 0, value: { id: 0, label: "Edited local" } }],
+      }],
+      updates: [{
+        id: "remote",
+        revision: remote!.revision,
+        operation: "capacity",
+        pageSize: 2,
+      }],
+    }));
+    await flushMicrotasks();
+    assertEquals(model.data, {
+      note: "accepted",
+      rows: [{ id: 0, label: "Edited local" }],
+    });
+    assertEquals(
+      topScreen(lastPresentation(test)).lists.map((list) => list.rows),
+      [
+        [{ id: 0, label: "Edited local" }],
+        [{ id: 1, label: "Remote" }],
+      ],
+    );
+    assertEquals(model.screen.elements.remote!.list!.pageSize, 2);
+    assertEquals(reads, 2);
+    assertEquals(settlements, 0);
+  } finally {
+    channel.exit("done");
+    await pending;
+    unbind();
+  }
+});
+
+Deno.test("retained provider views sharing a binding own independent rows mappings and revisions", async () => {
+  const test = new TestChannel();
+  const unbind = bindSession(test);
+  const channel = new ScreenChannel();
+  const local = Array.from({ length: 3 }, (_, id) => ({ id, label: "Local" }));
+  const model = new Model({ rows: local });
+  const rows = [{ id: 1, label: "Original" }, { id: 2, label: "Second" }];
+  for (const [id, search] of [["a", "Original"], ["b", "Second"]] as const) {
+    screenElement(model.screen, id).list = {
+      ...initialListState(),
+      query: { search, filters: {}, sort: null },
+    };
+    setListSource(model, id, ({ query, offset, limit }) => {
+      const matching = rows.filter((row) => row.label.includes(query.search));
+      return {
+        rows: matching.slice(offset, offset + limit),
+        more: offset + limit < matching.length,
+        totalItems: matching.length,
+        totalSourceItems: rows.length,
+      };
+    });
+  }
+  const pending = callScreen({
+    id: "shared-provider-binding",
+    schema: z.object({
+      rows: z.object({ id: z.number(), label: z.string() }).array(),
+    }),
+    model,
+    channel,
+    controls: ["a", "b", "local"].map((id) => ({ id, bind: "rows" })),
+  });
+  try {
+    await flushMicrotasks();
+    let shown = lastPresentation(test);
+    const [a, b] = topScreen(shown).lists;
+    assertEquals(topScreen(shown).lists.map((list) => list.rows), [[rows[0]], [
+      rows[1],
+    ], [local[0]]]);
+    await commandScreen(
+      { op: "list", id: "a", search: "Second", pageSize: 2 },
+      1,
+    );
+    shown = lastPresentation(test);
+    const [nextA, nextB] = topScreen(shown).lists;
+    assertEquals([nextA!.rows, nextB!.rows], [[rows[1]], [rows[1]]]);
+    assertEquals([nextA!.state.pageSize, nextB!.state.pageSize], [2, 1]);
+    assertEquals(nextA!.revision > a!.revision, true);
+    assertEquals(nextB!.revision, b!.revision);
+    assertEquals(model.data.rows, local);
+    // Navigation must use the provider's accepted displayed row, not the business binding.
+    test.push({
+      ...eventFor(shown, "select", 2),
+      eventType: "select",
+      selection: { id: "b", revision: nextB!.revision, index: 0 },
+    });
+    const event = await pending;
+    assertEquals(event.eventType === "select" && event.value, rows[1]);
+  } finally {
+    channel.exit("done");
+    await pending;
+    unbind();
+  }
+});
+
+Deno.test("delayed visible providers cannot commit after coverage connection reset or screen replacement", async () => {
+  for (
+    const action of [
+      "cover",
+      "disconnect",
+      "reset",
+      "replacement",
+      "dispose",
+      "source-replacement",
+    ]
+  ) {
+    const test = new TestChannel();
+    const unbind = bindSession(test);
+    const model = new Model({ rows: [] as { id: number }[] });
+    const channel = new ScreenChannel();
+    const gate = Promise.withResolvers<import("./lists.ts").ListSourcePage>();
+    let delayed = false, signal: AbortSignal | undefined;
+    const dispose = setListSource(model, "rows", (request) => {
+      if (delayed) {
+        signal = request.signal;
+        return gate.promise;
+      }
+      return {
+        rows: [{ id: 1 }],
+        more: false,
+        totalItems: 1,
+        totalSourceItems: 1,
+      };
+    });
+    const options = {
+      id: "provider-lifetime",
+      schema: z.object({ rows: z.object({ id: z.number() }).array() }),
+      model,
+      channel,
+      controls: [{ id: "rows", bind: "rows" }],
+    };
+    let pending = callScreen(options);
+    void pending.catch(() => {});
+    try {
+      await flushMicrotasks();
+      delayed = true;
+      const view = topScreen(lastPresentation(test)).lists[0]!;
+      test.push(
+        listInput({
+          ...eventFor(lastPresentation(test), "", 1),
+          updates: [{
+            id: "rows",
+            revision: view.revision,
+            operation: "query",
+            query: { search: "late", filters: {}, sort: null },
+          }],
+        }),
+      );
+      await flushMicrotasks();
+      let child: Promise<unknown> | undefined;
+      const childChannel = new ScreenChannel();
+      if (action === "cover") {
+        child = presentPage(() =>
+          callScreen({
+            id: "cover",
+            schema: z.object({ value: z.string() }),
+            model: new Model({ value: "child" }),
+            channel: childChannel,
+          })
+        );
+        await flushMicrotasks();
+      } else if (action === "disconnect") disconnectChannels();
+      else if (action === "reset") model.resetScreen();
+      else if (action === "dispose") dispose();
+      else if (action === "source-replacement") {
+        setListSource(
+          model,
+          "rows",
+          () => ({ rows: [{ id: 1 }], more: false, totalItems: 1 }),
+        );
+      } else {
+        channel.exit("replace");
+        await pending;
+      }
+      assertEquals(signal?.aborted, true, action);
+      delayed = false;
+      if (action === "replacement") {
+        pending = callScreen(options);
+        await flushMicrotasks();
+      } else if (["reset", "dispose", "source-replacement"].includes(action)) {
+        channel.redraw();
+        await flushMicrotasks();
+      } else if (action === "disconnect") {
+        connectChannels("fresh-connection");
+        await commandScreen({ op: "list", id: "rows", pageSize: 3 }, 2);
+      } else {
+        channel.redraw();
+        await flushMicrotasks();
+        childChannel.exit("back");
+        await child;
+        await flushMicrotasks();
+      }
+      const count = test.sent.length;
+      gate.resolve({
+        rows: [{ id: 999 }],
+        more: false,
+        totalItems: 1000,
+        totalSourceItems: 1000,
+      });
+      await flushMicrotasks();
+      assertEquals(model.data.rows, [], action);
+      assertEquals(
+        topScreen(lastPresentation(test)).lists[0]!.rows,
+        action === "dispose" ? [] : [{ id: 1 }],
+        action,
+      );
+      assertEquals(model.screen.elements.rows!.list!.query.search, "", action);
+      assertEquals(test.sent.length, count, action);
+      await commandScreen({ op: "list", id: "rows", pageSize: 2 }, 3);
+      channel.exit("done");
+      await pending;
+    } finally {
+      unbind();
+    }
+  }
+});
+
+Deno.test("provider refresh reports current failures and discards delayed old error output", async () => {
+  const test = new TestChannel(), channel = new ScreenChannel();
+  const unbind = bindSession(test);
+  connectChannels("provider-errors");
+  const model = new Model({ rows: [] as { id: number }[] });
+  let failure: Promise<never> | undefined;
+  setListSource(model, "rows", async () => {
+    if (failure) return await failure;
+    return { rows: [{ id: 1 }], more: false, totalItems: 1 };
+  });
+  const options = {
+    id: "provider-errors",
+    schema: z.object({ rows: z.object({ id: z.number() }).array() }),
+    model,
+    channel,
+    controls: [{ id: "rows", bind: "rows" }],
+  };
+  let pending = callScreen(options);
+  try {
+    await flushMicrotasks();
+    failure = Promise.reject(new Error("Current provider failed"));
+    channel.redraw();
+    await flushMicrotasks();
+    assertEquals(
+      test.messageHistory.snapshot().at(-1)?.message,
+      "Current provider failed",
+    );
+    const frame = test.sent.at(-1) as ChannelFrame;
+    assertEquals(frame.id, "append");
+    assertEquals(
+      frame.namespace,
+      topScreen(lastPresentation(test)).messageNamespace,
+    );
+
+    const delayed = Promise.withResolvers<never>();
+    failure = delayed.promise;
+    channel.redraw();
+    await flushMicrotasks();
+    channel.exit();
+    await pending;
+    failure = undefined;
+    pending = callScreen(options);
+    await flushMicrotasks();
+    const history = test.messageHistory.snapshot(), sent = test.sent.length;
+    delayed.reject(new Error("Old provider failed"));
+    await flushMicrotasks();
+    assertEquals(test.messageHistory.snapshot(), history);
+    assertEquals(test.sent.length, sent);
+    captureMessages().send("Fresh owner remains healthy", "success");
+    channel.exit();
+    await pending;
+  } finally {
+    unbind();
+    await pending.catch(() => {});
+  }
+});
+
+Deno.test("captured message output rejects late owners and preserves initiating context", async () => {
+  for (
+    const boundary of [
+      "settlement",
+      "reset",
+      "dispose",
+      "exit",
+      "failure",
+      "cover",
+      "disconnect",
+      "takeover",
+      "unbind",
+    ]
+  ) {
+    const test = new TestChannel(),
+      channel = new ScreenChannel(),
+      model = new Model({});
+    const unbind = bindSession(test);
+    connectChannels("messages-original");
+    const context = new AsyncLocalStorage<string>();
+    const gate = Promise.withResolvers<void>();
+    let signal: AbortSignal | undefined, late = "", trusted: string | undefined;
+    channel.subscribe("*", async (id, _data, { signal: incoming }) => {
+      if (id !== "wait") return;
+      signal = incoming;
+      const output = captureMessages();
+      await gate.promise;
+      trusted = context.getStore();
+      try {
+        output.send("late captured");
+        late = "sent";
+      } catch {
+        late = "rejected";
+      }
+      assertThrows(() => sendMessage("late ambient"), Error);
+    });
+    const options = {
+      id: "messages",
+      schema: z.object({}),
+      model,
+      channel,
+      actions: [{ id: "next", label: "Next" }],
+    };
+    let pending = context.run("trusted-program", () => callScreen(options));
+    void pending.catch(() => {});
+    let child: Promise<unknown> | undefined;
+    const childChannel = new ScreenChannel();
+    try {
+      const shown = lastPresentation(test), screen = topScreen(shown);
+      const output = captureMessages();
+      output.send("current");
+      test.push({
+        type: "channel.frame",
+        protocol: UUI_PROTOCOL_VERSION,
+        sessionId: test.sessionId,
+        connection: "messages-original",
+        namespace: screen.programNamespace!,
+        generation: screen.channelGeneration!,
+        kind: "message",
+        id: "wait",
+        requestId: "client-1",
+        value: null,
+        clientSequence: 0,
+      });
+      await flushMicrotasks();
+      assertEquals(signal?.aborted, false);
+      if (boundary === "settlement") {
+        await commandScreen({ op: "click", id: "next" }, 1);
+        await pending;
+        pending = callScreen(options);
+      } else if (boundary === "reset") {
+        model.resetScreen();
+        channel.redraw();
+      } else if (boundary === "dispose") {
+        channel.exit();
+        await pending;
+      } else if (boundary === "exit" || boundary === "failure") {
+        if (boundary === "exit") channel.exit();
+        else channel.fail(new Error("failure"));
+        await pending.catch(() => {});
+        pending = callScreen(options);
+      } else if (boundary === "cover") {
+        child = presentPage(() =>
+          callScreen({
+            id: "child",
+            schema: z.object({}),
+            model: new Model({}),
+            channel: childChannel,
+          })
+        );
+      } else if (boundary === "disconnect") disconnectChannels();
+      else if (boundary === "takeover") connectChannels("messages-replacement");
+      else unbind();
+      await flushMicrotasks();
+      const history = test.messageHistory.snapshot();
+      assertThrows(() => output.send("stale output"), Error);
+      gate.resolve();
+      await flushMicrotasks();
+      assertEquals(signal?.aborted, true, boundary);
+      assertEquals(late, "rejected", boundary);
+      assertEquals(trusted, "trusted-program", boundary);
+      assertEquals(test.messageHistory.snapshot(), history, boundary);
+      if (child) {
+        childChannel.exit();
+        await child;
+      }
+      if (boundary !== "unbind" && boundary !== "dispose") {
+        connectChannels("messages-fresh");
+        captureMessages().send("fresh", "success");
+        assertEquals(test.messageHistory.snapshot().at(-1)?.message, "fresh");
+      }
+    } finally {
+      gate.resolve();
+      childChannel.exit();
+      unbind();
+      await pending.catch(() => {});
+      await child?.catch(() => {});
+    }
+  }
+});
+
+Deno.test("captured headless message state is accepted without a transport and expires on connection change", async () => {
+  const test = new TestChannel(), channel = new ScreenChannel();
+  const unbind = bindSession(test);
+  const pending = callScreen({
+    id: "headless-messages",
+    schema: z.object({}),
+    model: new Model({}),
+    channel,
+  });
+  try {
+    const output = captureMessages();
+    await Promise.resolve();
+    output.send("Headless outcome", "success");
+    assertEquals(
+      test.messageHistory.snapshot().at(-1)?.message,
+      "Headless outcome",
+    );
+    assertEquals(
+      test.sent.filter((item) =>
+        (item as ChannelFrame).type === "channel.frame"
+      ),
+      [],
+    );
+    connectChannels("first-socket");
+    assertThrows(() => output.send("rebound"), DOMException);
+    assertEquals(test.messageHistory.snapshot().length, 1);
+    captureMessages().send("Fresh attached output");
+    assertEquals((test.sent.at(-1) as ChannelFrame).id, "append");
+    disconnectChannels();
+    assertThrows(() => output.send("old initial attachment"), DOMException);
+    channel.exit();
+    await pending;
+  } finally {
+    unbind();
+    await pending.catch(() => {});
+  }
+});
+
+Deno.test("automatic routing separates list IDs, custom hosts and schema-owned custom fields without serializing bindings", async () => {
+  const transport = new TestChannel(),
+    customField = new Channel(),
+    host = new Channel();
+  const unbind = bindSession(transport);
+  connectChannels("automatic-routing");
+  const received: unknown[] = [];
+  customField.subscribe("*", (id, data) => {
+    received.push(["field", id, data]);
+  });
+  host.subscribe("*", (id, data) => {
+    received.push(["host", id, data]);
+  });
+  const schema = z.object({
+    value: field(z.string(), {
+      custom: { module: "/widget.js", config: {}, channel: customField },
+    }),
+    rows: z.object({ value: z.string() }).array(),
+  });
+  const controller = new ScreenChannel();
+  const pending = callScreen({
+    id: "automatic-routing",
+    schema,
+    model: new Model({ value: "initial", rows: [{ value: "one" }] }),
+    channel: controller,
+    controls: [{ bind: "value" }, { id: "component:widget", bind: "rows" }],
+    customElements: [{
+      id: "widget",
+      module: "/widget.js",
+      config: {},
+      channel: host,
+    }],
+  });
+  try {
+    const screen = topScreen(lastPresentation(transport));
+    const routes = [
+      screen.lists[0]!.channelNamespace,
+      screen.controls[0]!.custom!.channelNamespace,
+      screen.customElements[0]!.channelNamespace,
+      screen.programNamespace,
+    ];
+    assertEquals(new Set(routes).size, 4);
+    assertEquals(routes.every((route) => typeof route === "string"), true);
+    assertEquals("channel" in screen.controls[0]!.custom!, false);
+    assertEquals("channel" in screen.customElements[0]!, false);
+    assertEquals(JSON.stringify(screen).includes('"channel":'), false);
+    for (const [index, channel] of [customField, host].entries()) {
+      transport.push({
+        type: "channel.frame",
+        protocol: UUI_PROTOCOL_VERSION,
+        sessionId: transport.sessionId,
+        clientSequence: 0,
+        connection: "automatic-routing",
+        ...channel.capture().reference,
+        kind: "message",
+        id: "event",
+        requestId: `client-${index + 1}`,
+        value: { index },
+      });
+    }
+    await flushMicrotasks();
+    assertEquals(received, [["field", "event", { index: 0 }], [
+      "host",
+      "event",
+      { index: 1 },
+    ]]);
+  } finally {
+    controller.exit();
+    await pending;
+    unbind();
+  }
+});
+
+Deno.test("headless list work retains its initiating connection and cannot commit after takeover", async () => {
+  const transport = new TestChannel(),
+    controller = new ScreenChannel(),
+    model = new Model({ rows: [] as { value: string }[] });
+  const unbind = bindSession(transport);
+  connectChannels("headless-origin");
+  const gate = Promise.withResolvers<void>();
+  let querySignal: AbortSignal | undefined;
+  setListSource(model, "rows", async ({ query, signal }) => {
+    if (query.search === "hold") {
+      querySignal = signal;
+      await gate.promise;
+    }
+    return {
+      rows: [{ value: query.search || "initial" }],
+      more: false,
+      totalItems: 1,
+    };
+  });
+  const pending = callScreen({
+    id: "headless-connection",
+    schema: z.object({ rows: z.object({ value: z.string() }).array() }),
+    model,
+    channel: controller,
+    controls: [{ id: "rows", bind: "rows" }],
+  });
+  try {
+    await flushMicrotasks();
+    const request = commandScreen(
+      { op: "list", id: "rows", search: "hold" },
+      1,
+    );
+    const rejected = assertRejects(() => request, DOMException);
+    await flushMicrotasks();
+    assertEquals(querySignal?.aborted, false);
+    connectChannels("headless-replacement");
+    assertEquals(querySignal?.aborted, true);
+    gate.resolve();
+    await rejected;
+    assertEquals(model.screen.elements.rows!.list!.query.search, "");
+    await commandScreen({ op: "list", id: "rows", search: "fresh" }, 2);
+    assertEquals(model.screen.elements.rows!.list!.query.search, "fresh");
+  } finally {
+    gate.resolve();
+    controller.exit();
+    await pending;
+    unbind();
+  }
+});
+
+Deno.test("inline layout and list-toolbar custom bindings retain their owning channels", async () => {
+  const transport = new TestChannel(), controller = new ScreenChannel();
+  const fieldChannel = new Channel(), toolbarChannel = new Channel();
+  const unbind = bindSession(transport);
+  connectChannels("inline-channels");
+  const schema = z.object({
+    value: z.string(),
+    toolbarValue: z.string(),
+    rows: z.string().array(),
+  });
+  const custom = (channel: Channel) => ({
+    module: "/widget.js",
+    config: {},
+    channel,
+  });
+  const pending = callScreen({
+    id: "inline-channels",
+    schema,
+    model: new Model({ value: "", toolbarValue: "", rows: ["one"] }),
+    channel: controller,
+    controls: [{ bind: "rows" }],
+    layout: {
+      schema: 1,
+      id: "inline-layout",
+      root: {
+        type: "stack",
+        elements: [{ bind: "value", custom: custom(fieldChannel) }],
+        children: [{
+          type: "list",
+          id: "rows",
+          bind: "rows",
+          toolbar: [{ bind: "toolbarValue", custom: custom(toolbarChannel) }],
+        }],
+      },
+    },
+  });
+  try {
+    const screen = topScreen(lastPresentation(transport));
+    const field = (screen.layout as LayoutDocument).root
+      .elements![0] as ControlDescriptor;
+    const toolbar = screen.lists[0]!.toolbar![0] as ControlDescriptor;
+    assertEquals(
+      field.custom!.channelNamespace,
+      fieldChannel.capture().reference.namespace,
+    );
+    assertEquals(
+      toolbar.custom!.channelNamespace,
+      toolbarChannel.capture().reference.namespace,
+    );
+    assertEquals(JSON.stringify(screen).includes('"channel":'), false);
+    const first = field.custom!.channelNamespace;
+    controller.redraw();
+    await flushMicrotasks();
+    assertEquals(
+      ((topScreen(lastPresentation(transport)).layout as LayoutDocument).root
+        .elements![0] as ControlDescriptor).custom!.channelNamespace,
+      first,
+    );
+  } finally {
+    controller.exit();
+    await pending;
     unbind();
   }
 });

@@ -5,6 +5,11 @@ import { type ScreenState } from "./screen_state.ts";
 export class Model<T extends object> {
   data: T;
   readonly screen: ScreenState;
+  #reset = new AbortController();
+  /** Framework attachment lifetime; reset invalidates outstanding component work. */
+  get resetSignal(): AbortSignal {
+    return this.#reset.signal;
+  }
 
   constructor(data: T) {
     if (data === null || typeof data !== "object" || Array.isArray(data)) {
@@ -21,6 +26,8 @@ export class Model<T extends object> {
 
   /** Reset presentation state without replacing data or this screen instance. */
   resetScreen(): void {
+    this.#reset.abort();
+    this.#reset = new AbortController();
     this.screen.version++;
     this.screen.scroll = { x: 0, y: 0 };
     this.screen.elements = {};

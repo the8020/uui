@@ -37,7 +37,12 @@ import {
   type UUIWorkerOutbound,
   z,
 } from "./mod.ts";
-import { bindSession, type SessionChannel } from "./internal.ts";
+import {
+  bindSession,
+  connectChannels,
+  disconnectChannels,
+  type SessionChannel,
+} from "./internal.ts";
 import {
   field as sharedField,
   money,
@@ -174,20 +179,22 @@ interface PackageBrowserFixture {
 class LocalSessionChannel implements SessionChannel {
   readonly sessionId = "presentation-browser-e2e";
   browser?: BrowserContext;
-  readonly #messages: UUIClientMessage[] = [];
+  readonly #messages: Array<UUIClientMessage | Uint8Array> = [];
   readonly #receivers: Array<{
-    resolve(message: UUIClientMessage): void;
+    resolve(message: UUIClientMessage | Uint8Array): void;
     reject(error: Error): void;
   }> = [];
   #closed = false;
 
-  constructor(readonly outbound: (message: UUIWorkerOutbound) => void) {}
+  constructor(
+    readonly outbound: (message: UUIWorkerOutbound | Uint8Array) => void,
+  ) {}
 
-  send(message: UUIWorkerOutbound): void {
+  send(message: UUIWorkerOutbound | Uint8Array): void {
     this.outbound(message);
   }
 
-  receive(): Promise<UUIClientMessage> {
+  receive(): Promise<UUIClientMessage | Uint8Array> {
     const available = this.#messages.shift();
     if (available !== undefined) return Promise.resolve(available);
     if (this.#closed) return Promise.reject(new Error("local channel closed"));
@@ -196,8 +203,10 @@ class LocalSessionChannel implements SessionChannel {
     });
   }
 
-  push(message: UUIClientMessage): void {
-    if (Deno.args.includes("--lists")) listBrowserProbe.messages.push(message);
+  push(message: UUIClientMessage | Uint8Array): void {
+    if (!(message instanceof Uint8Array) && Deno.args.includes("--lists")) {
+      listBrowserProbe.messages.push(message);
+    }
     if (this.#closed) return;
     const receiver = this.#receivers.shift();
     if (receiver !== undefined) receiver.resolve(message);
@@ -287,6 +296,7 @@ const connectionRequests: Array<{
 const establishmentResponses: ResponseInit[] = [];
 let connectionRejection: ResponseInit | undefined;
 let connectionTakenOver = false;
+let delayInactiveControl = false;
 let redirectTarget: string | undefined;
 let redirectPageStatus = 200;
 const sessionId = "presentation-browser-e2e";
@@ -337,6 +347,10 @@ function sendServer(payload: Record<string, unknown>): void {
 }
 
 const channel = new LocalSessionChannel((message) => {
+  if (message instanceof Uint8Array) {
+    currentSocket?.send(message.slice());
+    return;
+  }
   if (message.type === "presentation.show") {
     retainedPresentation = structuredClone(message.presentation);
   }
@@ -353,7 +367,7 @@ const channel = new LocalSessionChannel((message) => {
     initialOutbounds.push(structuredClone(message));
     return;
   }
-  sendServer(message);
+  sendServer({ ...message });
 });
 const unbind = bindSession(channel);
 let stopping = false;
@@ -416,7 +430,20 @@ try {
       () => openPage(debugPort, `http://127.0.0.1:${httpPort}/`),
     );
   } else if (Deno.args.includes("--custom-elements")) {
-    await verifyCustomElements(page);
+    await verifyCustomElements(page, async () => {
+      const previous = connectionSequence;
+      currentSocket!.close(1012, "custom channel reconnect test");
+      await waitFor(
+        () => connectionSequence > previous,
+        "custom reconnect",
+        5_000,
+      );
+      await waitForPage(
+        page!,
+        "document.querySelector('#connection-state')?.textContent === 'Connected' && !document.documentElement.hasAttribute('data-interaction-pending')",
+        "custom channel reattachment",
+      );
+    });
   } else if (Deno.args.includes("--programs")) {
     await verifyProgramsBrowser(page);
   } else if (Deno.args.includes("--lists")) {
@@ -770,6 +797,10 @@ async function serve(request: Request): Promise<Response> {
     });
     const rejection = connectionRejection ?? establishmentResponses.shift();
     if (rejection !== undefined) return new Response(null, rejection);
+    if (!input.takeover && connectionTakenOver && delayInactiveControl) {
+      delayInactiveControl = false;
+      await delay(250);
+    }
     if (input.takeover) connectionTakenOver = false;
     return Response.json({
       active: !connectionTakenOver,
@@ -784,11 +815,15 @@ async function serve(request: Request): Promise<Response> {
     const { socket, response } = Deno.upgradeWebSocket(request, {
       protocol: "the8020.uui.v1",
     });
+    socket.binaryType = "arraybuffer";
     socket.onopen = () => {
       currentSocket = socket;
     };
     socket.onmessage = (event) => {
-      if (typeof event.data !== "string") return;
+      if (typeof event.data !== "string") {
+        channel.push(new Uint8Array(event.data));
+        return;
+      }
       let message: UUIClientMessage;
       try {
         message = parseClientMessage(JSON.parse(event.data));
@@ -800,18 +835,22 @@ async function serve(request: Request): Promise<Response> {
         assertEquals(message.browser?.origin, url.origin);
         channel.browser = message.browser;
         connectionSequence++;
+        const connection = crypto.randomUUID();
+        connectChannels(connection);
         if (connectionSequence === 1) {
           for (const outbound of initialOutbounds.splice(0)) {
-            sendServer(outbound);
+            sendServer({ ...outbound });
           }
           sendServer({
             type: "session.ready",
+            connection,
             resumeToken: routeToken,
             resumed: false,
           });
         } else {
           sendServer({
             type: "session.resumed",
+            connection,
             resumed: true,
             lastClientSequence: processedClientSequence,
           });
@@ -824,13 +863,20 @@ async function serve(request: Request): Promise<Response> {
         }
         return;
       }
-      if (message.type === "screen.event" || message.type === "screen.list") {
+      if (
+        message.type === "screen.event" ||
+        message.type === "channel.frame" && message.kind === "message" &&
+          message.id === "update"
+      ) {
         lastInteraction = message;
       }
       channel.push(message);
     };
     socket.onclose = () => {
-      if (currentSocket === socket) currentSocket = undefined;
+      if (currentSocket === socket) {
+        currentSocket = undefined;
+        disconnectChannels();
+      }
     };
     return response;
   }
@@ -966,6 +1012,7 @@ async function verifyConnectionFlow(page: BrowserPage): Promise<void> {
   assertEquals(await storedRoute(), routeToken);
 
   connectionTakenOver = true;
+  delayInactiveControl = true;
   previous = connectionSequence;
   connectionRequests.length = 0;
   currentSocket!.close(4001, "connection replaced");
@@ -1596,6 +1643,7 @@ async function verifyFieldHelp(page: BrowserPage): Promise<void> {
     1,
     "initial measurement fetches one choice",
   );
+  const helpContract = retainedPresentation!.surfaces.at(-1)!.screen;
   await waitForPage(
     page,
     `document.querySelectorAll('${modal} tr[data-row-index]').length > 1`,
@@ -1739,6 +1787,17 @@ async function verifyFieldHelp(page: BrowserPage): Promise<void> {
     "empty lookup search",
   );
   await stableFrame("empty filtering retains modal and list geometry");
+  const browsedContract = retainedPresentation!.surfaces.at(-1)!.screen;
+  assertEquals(
+    browsedContract.revision,
+    helpContract.revision,
+    "ordinary help browsing keeps callScreen pending",
+  );
+  assertEquals(
+    browsedContract.channelGeneration,
+    helpContract.channelGeneration,
+    "provider rows do not rebuild the screen contract",
+  );
   await page.command("Page.reload");
   await waitForPage(
     page,

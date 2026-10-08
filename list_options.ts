@@ -44,11 +44,6 @@ export function validateListOptions(value: ListOptions): void {
         "list selection must be a nonempty boolean field path",
       );
     }
-    if (value.pageSource !== undefined) {
-      throw new TypeError(
-        "list selection requires the complete bound array, not a page source",
-      );
-    }
   }
   if (
     value.triggerFilterEvents !== undefined &&
@@ -78,22 +73,6 @@ export function validateListOptions(value: ListOptions): void {
   ) {
     throw new TypeError("list headings must be nonempty strings");
   }
-  if (
-    value.pageSource !== undefined && (
-      !isRecord(value.pageSource) ||
-      typeof value.pageSource.more !== "boolean" ||
-      (value.pageSource.searchOnly !== undefined &&
-        typeof value.pageSource.searchOnly !== "boolean") ||
-      [value.pageSource.totalItems, value.pageSource.totalSourceItems].some(
-        (count) =>
-          count !== undefined &&
-          (!Number.isSafeInteger(count) || count < 0),
-      ) ||
-      Object.keys(value.pageSource).some((key) =>
-        !["more", "searchOnly", "totalItems", "totalSourceItems"].includes(key)
-      )
-    )
-  ) throw new TypeError("invalid list page source");
   if (value.columnOptions === undefined) return;
   if (!isRecord(value.columnOptions)) {
     throw new TypeError("invalid list column options");

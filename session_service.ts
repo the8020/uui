@@ -6,6 +6,8 @@ import {
   type WebSocketSession,
   z,
 } from "/p/the8020/services/http.ts";
+import { decodeStreamChunk } from "./channel_streams.ts";
+import { MessageHistory } from "./messages.ts";
 import { context } from "@the8020/context";
 import { kernel, newId } from "@the8020/kernel";
 import uiConfig from "./ui-config.json" with { type: "json" };
@@ -24,7 +26,12 @@ import {
   type UUIServerMessage,
   type UUIWorkerOutbound,
 } from "./protocol.ts";
-import { bindSession, cancelDownloads, commandScreen } from "./session.ts";
+import {
+  bindSession,
+  commandScreen,
+  connectChannels,
+  disconnectChannels,
+} from "./session.ts";
 import {
   agentRequest,
   type AgentResponse,
@@ -76,7 +83,7 @@ interface SessionRecord {
   sessionId: string;
   auth: RequestMetadata["auth"];
   config: SessionConfiguration;
-  input: AsyncQueue<UUIClientMessage>;
+  input: AsyncQueue<UUIClientMessage | Uint8Array>;
   controller: AbortController;
   unbind: () => void;
   socket?: WebSocketSession;
@@ -84,13 +91,14 @@ interface SessionRecord {
   control: number;
   commanding: boolean;
   commandError?: string;
-  notifications: Array<{ level: string; message: string }>;
+  messages: MessageHistory;
   hasConnected: boolean;
   serverSequence: number;
   presentationRevision: number;
   lastClientSequence: number;
   replay: ReplayItem[];
   replayBytes: number;
+  replayFloor: number;
   currentPresentation?: PresentationShowMessage;
   lastPongAt: number;
   heartbeatTimer?: ReturnType<typeof setInterval>;
@@ -204,7 +212,6 @@ export function defineSessionService(
       }
       record.commanding = true;
       record.commandError = undefined;
-      if (command.command.op !== "screen") record.notifications = [];
       if (record.disconnectTimer !== undefined) {
         clearTimeout(
           record.disconnectTimer,
@@ -294,11 +301,13 @@ async function establish(
 
   const sessionId = newId("uis");
   const metadataStore = options.metadataStore ?? await defaultMetadataStore();
-  const input = new AsyncQueue<UUIClientMessage>();
+  const input = new AsyncQueue<UUIClientMessage | Uint8Array>();
   const controller = new AbortController();
   const record = {} as SessionRecord;
+  const messages = new MessageHistory();
   const unbind = bindSession({
     sessionId,
+    messageHistory: messages,
     get browser() {
       return record.browser;
     },
@@ -324,12 +333,13 @@ async function establish(
       clients: [],
       control: 0,
       commanding: false,
-      notifications: [],
+      messages,
       serverSequence: 0,
       presentationRevision: 0,
       lastClientSequence: 0,
       replay: [],
       replayBytes: 0,
+      replayFloor: 0,
       lastPongAt: now,
       createdAt: now,
       lastConnectionAt: now,
@@ -427,7 +437,7 @@ async function connect(
     return;
   }
   if (record.socket !== undefined) {
-    cancelDownloads("UUI connection replaced");
+    disconnectChannels("UUI connection replaced");
     record.socket.close(1000, "replaced by reconnected client");
   }
   if (record.disconnectTimer !== undefined) {
@@ -443,10 +453,13 @@ async function connect(
   record.lastPongAt = record.lastConnectionAt;
   log(record, "lifecycle", resumed ? "resumed" : "connected");
   updateMetadata(record);
+  const connection = crypto.randomUUID();
+  connectChannels(connection);
   if (resumed) {
     replay(
       record,
       message.control === undefined ? message.lastServerSequence : 0,
+      connection,
     );
   } else {
     for (const item of record.replay) socket.send(item.encoded);
@@ -457,6 +470,7 @@ async function connect(
       sessionId: record.sessionId,
       resumeToken: "",
       resumed: false,
+      connection,
     }, false);
   }
 
@@ -464,6 +478,23 @@ async function connect(
     while (!socket.signal.aborted) {
       const event = await socket.receive();
       if (event.type === "close") break;
+      if (event.data instanceof Uint8Array) {
+        if (event.data.byteLength > record.config.maxMessageSize) {
+          throw new OversizedMessageError();
+        }
+        const decoded = decodeStreamChunk(event.data);
+        const identity = parseClientMessage({
+          ...decoded.frame,
+          protocol: UUI_PROTOCOL_VERSION,
+        }, true);
+        if (
+          identity.type !== "channel.frame" ||
+          identity.kind !== "stream.bytes" ||
+          identity.sessionId !== record.sessionId
+        ) throw new TypeError("Invalid binary channel identity");
+        if (record.socket === socket) record.input.push(event.data);
+        continue;
+      }
       const encoded = textMessage(event.data, record.config.maxMessageSize);
       const client = parseClientMessage(JSON.parse(encoded));
       clientMessage(
@@ -506,9 +537,9 @@ function clientMessage(
     record.lastPongAt = Date.now();
     return;
   }
-  if (message.type.startsWith("download.")) {
+  if (message.type === "channel.frame") {
     if (message.sessionId !== record.sessionId) {
-      throw new TypeError("download session mismatch");
+      throw new TypeError("channel session mismatch");
     }
     record.input.push(message);
     return;
@@ -548,10 +579,13 @@ function workerMessage(
   record: SessionRecord,
   value: UUIWorkerOutbound | Uint8Array,
 ): void {
-  if (value instanceof Uint8Array || value.type.startsWith("download.")) {
+  if (
+    value instanceof Uint8Array ||
+    value.type === "channel.frame"
+  ) {
     const socket = record.socket;
     if (record.ended || socket === undefined || socket.signal.aborted) {
-      throw new Error("Downloads require a connected UUI session");
+      throw new Error("Transient data requires a connected UUI session");
     }
     if (value instanceof Uint8Array) socket.send(value);
     else emit(record, value, false);
@@ -568,10 +602,6 @@ function workerMessage(
     record.commandError = value.message ?? value.code;
   }
   if (value.type === "presentation.show") record.presentationRevision++;
-  if (value.type === "notification.show") {
-    record.notifications.push({ level: value.level, message: value.message });
-    record.notifications = record.notifications.slice(-10);
-  }
   if (
     value.type === "server.ack" &&
     value.clientSequence > record.lastClientSequence
@@ -587,8 +617,18 @@ function emit(
   record: SessionRecord,
   value:
     | UUIWorkerOutbound
-    | { type: "session.resumed"; resumed: true; lastClientSequence: number }
-    | { type: "session.resync_required"; code: string; message: string }
+    | {
+      type: "session.resumed";
+      resumed: true;
+      lastClientSequence: number;
+      connection: string;
+    }
+    | {
+      type: "session.resync_required";
+      code: string;
+      message: string;
+      connection: string;
+    }
     | { type: "session.ping" },
   retain = true,
 ): void {
@@ -599,6 +639,7 @@ function emit(
     sessionId: record.sessionId,
   } as UUIServerMessage;
   if (message.type === "presentation.show") {
+    message.presentation.messages = record.messages.snapshot();
     record.currentPresentation = structuredClone(message);
     updateMetadata(record);
   }
@@ -618,7 +659,11 @@ function send(
     while (
       record.replay.length > record.config.replayMessages ||
       record.replayBytes > record.config.replayBytes
-    ) record.replayBytes -= record.replay.shift()!.bytes;
+    ) {
+      const removed = record.replay.shift()!;
+      record.replayBytes -= removed.bytes;
+      record.replayFloor = removed.sequence;
+    }
   }
   log(record, "server", message.type, message.serverSequence, bytes);
   if (record.socket !== undefined && !record.socket.signal.aborted) {
@@ -626,11 +671,16 @@ function send(
   }
 }
 
-function replay(record: SessionRecord, lastSequence: number): void {
+function replay(
+  record: SessionRecord,
+  lastSequence: number,
+  connection: string,
+): void {
   if (lastSequence === 0) {
     emit(record, {
       type: "session.resumed",
       resumed: true,
+      connection,
       lastClientSequence: record.lastClientSequence,
     }, false);
     if (record.currentPresentation !== undefined) {
@@ -645,12 +695,12 @@ function replay(record: SessionRecord, lastSequence: number): void {
   }
   const missed = record.replay.filter((item) => item.sequence > lastSequence);
   if (
-    lastSequence < record.serverSequence &&
-    (missed.length === 0 || missed[0]!.sequence > lastSequence + 1)
+    lastSequence < record.replayFloor
   ) {
     emit(record, {
       type: "session.resync_required",
       code: "replay_exhausted",
+      connection,
       message: "missed messages are no longer available",
     }, false);
     return;
@@ -659,6 +709,7 @@ function replay(record: SessionRecord, lastSequence: number): void {
   emit(record, {
     type: "session.resumed",
     resumed: true,
+    connection,
     lastClientSequence: record.lastClientSequence,
   }, false);
 }
@@ -668,7 +719,7 @@ function disconnected(record: SessionRecord): void {
   record.socket = undefined;
   const client = record.clients.at(-1);
   if (client !== undefined) releaseClient(record, client.id);
-  cancelDownloads("UUI connection closed");
+  disconnectChannels("UUI connection closed");
   log(record, "lifecycle", "disconnected");
   updateMetadata(record);
   startDisconnectTimer(record);
@@ -895,7 +946,7 @@ export function controlSession(input: unknown, userId: string) {
 function detachSocket(record: SessionRecord): void {
   const socket = record.socket;
   record.socket = undefined;
-  cancelDownloads("UUI connection replaced");
+  disconnectChannels("UUI connection replaced");
   socket?.close(4001, "This session is connected in another window");
   if (record.disconnectTimer === undefined) startDisconnectTimer(record);
   updateMetadata(record);
@@ -926,8 +977,12 @@ function agentResponse(record: SessionRecord, error?: string): AgentResponse {
       : presentation?.presentation.activeSurfaceId == null
       ? { busy: true }
       : {}),
-    ...(record.notifications.length
-      ? { messages: structuredClone(record.notifications) }
+    ...(record.messages.snapshot().length
+      ? {
+        messages: record.messages.snapshot().slice(-10).map((
+          { level, message },
+        ) => ({ level, message })),
+      }
       : {}),
   };
 }

@@ -1,14 +1,15 @@
+import { type UUIMessageKind } from "/p/the8020/uui/protocol.ts";
 import {
-  MAX_UUI_MESSAGE_BODY_LENGTH,
-  type NotificationMessage,
-  UUI_MESSAGE_KINDS,
-  type UUIMessageKind,
-} from "/p/the8020/uui/protocol.ts";
+  MAX_RETAINED_MESSAGES,
+  parseMessage,
+  parseMessageHistory,
+  type UUIMessage,
+} from "../../../messages.ts";
+export { MAX_RETAINED_MESSAGES } from "../../../messages.ts";
 import { renderMarkdown } from "../../../frontend/mod.ts";
 import { createMaterialIcon } from "./icon_text.ts";
 
 export const MAX_RENDERED_MESSAGES = 10;
-export const MAX_RETAINED_MESSAGES = 100;
 export const MIN_MESSAGE_TOAST_TIMEOUT_MILLISECONDS = 1_000;
 export const MAX_MESSAGE_TOAST_TIMEOUT_MILLISECONDS = 5_000;
 const MIN_MESSAGE_TOAST_LENGTH = 20;
@@ -49,7 +50,7 @@ export class MessageCollection {
   #history: PresentedMessage[] = [];
   #visible: PresentedMessage[] = [];
 
-  add(message: PresentedMessage): AddedMessage | undefined {
+  add(message: PresentedMessage, visible = true): AddedMessage | undefined {
     if (this.#history.some((item) => item.id === message.id)) return undefined;
     this.#history.push(message);
     if (this.#history.length > MAX_RETAINED_MESSAGES) {
@@ -58,7 +59,7 @@ export class MessageCollection {
         this.#history.length - MAX_RETAINED_MESSAGES,
       );
     }
-    this.#visible.push(message);
+    if (visible) this.#visible.push(message);
     const removedVisible = this.#visible.length > MAX_RENDERED_MESSAGES
       ? this.#visible.splice(
         0,
@@ -132,6 +133,8 @@ export class MessageCenter {
   #stackHovered = false;
   #stackFocused = false;
   #disposed = false;
+  #sequence = 0;
+  #initialized = false;
 
   constructor(elements: MessageCenterElements) {
     this.#elements = elements;
@@ -171,27 +174,35 @@ export class MessageCenter {
     this.#updateMenuCount();
   }
 
-  show(message: NotificationMessage): void {
+  show(message: UUIMessage, visible = true): void {
     if (this.#disposed) return;
-    if (typeof message.message !== "string") return;
-    const body = message.message.slice(0, MAX_UUI_MESSAGE_BODY_LENGTH);
-    if (body.trim().length === 0) return;
-    const kind = (UUI_MESSAGE_KINDS as readonly string[]).includes(
-        message.level,
-      )
-      ? message.level
-      : "info";
+    const item = parseMessage(message);
+    if (item.sequence <= this.#sequence) return;
+    this.#sequence = item.sequence;
     const added = this.#collection.add({
-      id: `${message.sessionId}:${message.serverSequence}`,
-      sequence: message.serverSequence,
-      kind,
-      body,
+      id: `message:${item.sequence}`,
+      sequence: item.sequence,
+      kind: item.level,
+      body: item.message,
       receivedAt: Date.now(),
-    });
+    }, visible);
     if (added === undefined) return;
     this.#focusedID = added.message.id;
     this.#updateMenuCount();
     this.#scheduleRender();
+  }
+
+  synchronize(messages: readonly UUIMessage[]): void {
+    // Validate the complete snapshot before changing the collection.
+    const items = parseMessageHistory(messages);
+    for (const item of items) this.show(item, this.#initialized);
+    this.#initialized = true;
+  }
+
+  reset(): void {
+    this.beginRoundtrip();
+    this.#sequence = 0;
+    this.#initialized = false;
   }
 
   beginRoundtrip(): void {

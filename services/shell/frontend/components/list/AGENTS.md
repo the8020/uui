@@ -9,8 +9,10 @@ Parent DOX: [shell frontend](../../AGENTS.md).
 - `lists.ts` owns UUI rendering, query drafts, popovers, paging, and state.
 - `list_geometry.ts` owns measured UUI capacity and column widths.
 - `tools.ts` owns the expanded toolbar, native dialogs, spreadsheet lifecycle,
-  export options, and clipboard writes. `data.ts` owns read correlation and
-  shared displayed-column serializers. `list.css` owns component styles.
+  export options, and clipboard writes. `data.ts` owns list result validation
+  and displayed-column serializers; token/result/cancel correlation belongs to
+  the list owner; delivery and stream identity belong to the shared channel
+  core. `list.css` owns component styles.
 - `vendor/` contains unmodified Tabulator 6.3.1 (MIT) and SheetJS CE 0.20.3
   (Apache-2.0) assets and licenses. Load their modules only when the
   corresponding viewer or workbook export is requested; serve them through
@@ -32,10 +34,14 @@ Parent DOX: [shell frontend](../../AGENTS.md).
   selected/source counts, and reserve their chrome during capacity measurement.
   Lists without selection keep the existing hidden-footer behavior.
 - Keep list functionality encapsulated here and reuse the ordinary WebSocket.
-  `screen.list` with an exclusive `read` returns `screen.list.data`, at most
-  1,000 rows per request. Reads never commit dirty values, change the UUI page,
-  or resolve the pending screen. Correlate one request at a time; disconnect,
-  timeout, screen replacement, and disposal reject unfinished reads.
+  The list-owned `read` message uses the common namespace/core, at most 1,000
+  rows and 900,000 JSON bytes. Reads never commit dirty values, change the UUI
+  page, or resolve the pending screen. The shell gate admits one initiated
+  request; the list matches its token/result while the core checks
+  attachment/connection. Tools retain the list-owned 30-second deadline per read
+  through AbortSignal; the common core has no default timeout. Disconnect, owner
+  cancellation, screen-generation replacement and disposal cancel unfinished
+  work.
 - Table processor opens a large native dialog with a read-only virtualized
   Tabulator grid, rectangular/column selection, and spreadsheet clipboard copy.
   Start at page 1 with a free positive integer rows-per-page input, default
@@ -55,12 +61,14 @@ Parent DOX: [shell frontend](../../AGENTS.md).
 - JSON/XML/YAML use displayed column keys; CSV/workbooks/clipboard use headings.
   Never export omitted navigation columns. Browser memory holds the requested
   export/copy result; each server read stays bounded.
-- Page sources use optional server-side `callScreen({ listReaders })` callbacks,
-  keyed by list ID. Readers receive the retained query, offset, and a maximum
-  500-row limit and return rows, `more`, and an optional matching total; the
-  shared owner fills larger reads. Without a reader, only Copy page is
-  available. Field help supplies ordinary provider-defined typed columns and a
-  full-query reader; the first column is its selection key.
+- Retained sources register with `setListSource(model, id, source)`. ScreenLists
+  owns visible paging/refresh and bounded independent reads with fixed typed
+  columns. Every ordinary query/page/capacity/checkbox update uses the common
+  namespace `update` message, including atomic multi-list capacity batches.
+  Accepted presentations retain query drafts, geometry and focus; matching
+  replies acknowledge only the dirty bindings captured by that request. Late
+  old-generation results cannot release a fresh browser interaction gate. Field
+  help uses the full query and first-column key under one pending screen.
 - Show copy feedback beside the tools without changing list/page geometry. Tool
   results must not cause capacity updates that flush unrelated dirty fields.
 - Close/Escape/browser Back dismiss local dialogs and restore focus. Dispose the
@@ -127,15 +135,16 @@ Parent DOX: [shell frontend](../../AGENTS.md).
 - `deno task test:list-selection-browser` covers native/Shift/drag/keyboard
   selection, all pages and filters, reload, selected totals, toolbar controls,
   and actual demo bulk actions.
-- `data_test.ts` checks column projection, formats/quoting, and read
-  correlation; `list_geometry_test.ts` checks layout. Root list/session tests
-  cover bounded, stale, filtered/sorted reads and preservation of source and
-  screen state, and actual session-service reload after reads.
+- `data_test.ts` checks column projection, formats/quoting and list result
+  validation; channel_test.ts owns generic delivery/lifetimes;
+  `list_geometry_test.ts` checks layout. Root list/session tests cover bounded,
+  stale, filtered/sorted reads and preservation of source and screen state, and
+  actual session-service reload after reads.
 - `deno task test:lists-browser` checks toolbar actions, real clipboard block
   and column selection, UUI versus spreadsheet pagination, dirty edits, all six
   downloaded formats/ranges, desktop/mobile geometry, and the existing list
-  interactions. `test:presentation-browser --field-help` covers page-source
-  readers through real field help.
+  interactions. `test:presentation-browser --field-help` covers
+  retained-provider browsing through real field help.
 - Field-help browser checks verify viewport-filling choice lists with collapsed
   and expanded tools, stable scrolling across pages, and desktop, tall-window,
   and mobile modal bounds.

@@ -10,6 +10,7 @@ import {
 } from "/p/the8020/services/http.ts";
 import {
   callScreen,
+  captureMessages,
   currentBrowser,
   presentModal,
   presentPage,
@@ -19,6 +20,7 @@ import {
   type BrowserContext,
   parseClientMessage,
   type PresentationShowMessage,
+  type SessionErrorMessage,
   UUI_PROTOCOL_VERSION,
   type UUIClientMessage,
   type UUIServerMessage,
@@ -36,6 +38,7 @@ import { field } from "./fields.ts";
 import { ScreenChannel } from "./session.ts";
 import { codeEditor } from "./services/shell/frontend/components/code-editor/mod.ts";
 import type { AgentResponse } from "./agent.ts";
+import { encodeStreamChunk } from "./channel_streams.ts";
 
 Deno.test("agent commands share the live screen, reject stale edits, and return control without restarting its program", async () => {
   const metadataStore = new MemorySessionMetadataStore();
@@ -46,6 +49,7 @@ Deno.test("agent commands share the live screen, reject stale edits, and return 
     source: "original",
     tool: { input: "in", output: "out" },
     saved: 0,
+    rows: Array.from({ length: 80 }, (_, id) => ({ id, selected: false })),
   });
   let invocations = 0;
   let events = 0;
@@ -73,6 +77,7 @@ Deno.test("agent commands share the live screen, reject stale edits, and return 
             },
           }),
           saved: field(z.number(), { readOnly: true }),
+          rows: z.object({ id: z.number(), selected: z.boolean() }).array(),
         }),
         header: {
           controls: [{ id: "name", bind: "name" }],
@@ -83,6 +88,7 @@ Deno.test("agent commands share the live screen, reject stale edits, and return 
           { id: "source", bind: "source" },
           { id: "tool", bind: "tool" },
           { id: "saved", bind: "saved" },
+          { id: "rows", bind: "rows", list: { selection: "selected" } },
         ],
       });
       events++;
@@ -184,6 +190,51 @@ Deno.test("agent commands share the live screen, reject stale edits, and return 
     });
     assertEquals((choices.result as { rows: unknown[] }).rows.length, 1);
     assertEquals(events, 0, "value-help must not open or settle a screen");
+    assertEquals(
+      (await command({ op: "list", id: "rows", pageSize: 10 })).error,
+      undefined,
+    );
+    assertEquals(
+      (await command({ op: "list", id: "rows", search: "1" })).error,
+      undefined,
+    );
+    assertEquals(
+      (await command({ op: "list", id: "rows", page: 2 })).error,
+      undefined,
+    );
+    assertEquals(
+      (await command({
+        op: "list",
+        id: "rows",
+        selection: { selected: true, range: { from: 0, to: 0 } },
+      })).error,
+      undefined,
+    );
+    assertEquals(model.screen.elements.rows!.list!.page, 2);
+    assertEquals(model.data.rows[1]!.selected, true);
+    assertEquals(model.data.rows.filter((row) => row.selected).length, 1);
+    expected = firstScreen.expected;
+    assert(
+      (await command({ op: "list", id: "rows", page: 1 })).error?.includes(
+        "--force",
+      ),
+    );
+    expected = firstScreen.expected;
+    assert(
+      (await command({
+        op: "list",
+        id: "rows",
+        selection: { selected: true, range: { from: 0, to: 1000 } },
+      }, true)).error,
+    );
+    assertEquals(model.data.rows.filter((row) => row.selected).length, 1);
+    expected = firstScreen.expected;
+    assertEquals(
+      (await command({ op: "list", id: "rows", page: 1 }, true)).error,
+      undefined,
+    );
+    assert((await command({ op: "list", id: "missing", page: 1 }, true)).error);
+    assertEquals(events, 0, "list browsing must retain the original call");
     assert((await command({ op: "set", id: "saved", value: 12 })).error);
     assert((await command({ op: "set", id: "name", value: "" })).error);
     assertEquals(model.data.name, "Alice");
@@ -247,7 +298,7 @@ Deno.test("agent commands share the live screen, reject stale edits, and return 
     assertEquals(
       serverMessages(returned, "presentation.show").at(-1)!.presentation
         .surfaces.at(-1)!.screen.model,
-      model.data,
+      { ...model.data, rows: [] },
     );
   } finally {
     await metadataStore.clear();
@@ -442,7 +493,7 @@ Deno.test("ordinary persistent UUI service owns metadata and exact Worker admini
     );
     await until(() => second.sent.length > 0);
     assertEquals(
-      JSON.parse(String(second.sent.at(-1))).type,
+      serverMessages(second, "session.resumed")[0]!.type,
       "session.resumed",
     );
     await until(() => {
@@ -637,7 +688,9 @@ Deno.test("a session streams messages while its screen roundtrip is pending", as
       title: "Async message",
     });
     await messageReady;
-    sendMessage("Background work reached its checkpoint.", "success");
+    const output = captureMessages();
+    await Promise.resolve();
+    output.send("Background work reached its checkpoint.", "success");
     await screen;
   }, { metadataStore, completePersistent: () => Promise.resolve() });
   try {
@@ -663,19 +716,23 @@ Deno.test("a session streams messages while its screen roundtrip is pending", as
     releaseMessage();
     await until(() =>
       socket.sent.some((item) =>
-        JSON.parse(String(item)).type === "notification.show"
+        JSON.parse(String(item)).type === "channel.frame" &&
+        JSON.parse(String(item)).id === "append"
       )
     );
     const notification = socket.sent.map((item) => JSON.parse(String(item)))
-      .find((item) => item.type === "notification.show");
-    assertEquals(notification, {
-      type: "notification.show",
+      .find((item) => item.type === "channel.frame" && item.id === "append");
+    assertEquals(
+      notification.namespace,
+      screen.presentation.surfaces.at(-1).screen.messageNamespace,
+    );
+    assertEquals(notification.value, {
+      sequence: 1,
       level: "success",
       message: "Background work reached its checkpoint.",
-      protocol: UUI_PROTOCOL_VERSION,
-      serverSequence: ready.serverSequence + 1,
-      sessionId: ready.sessionId,
     });
+    assertEquals(notification.sessionId, ready.sessionId);
+    assertEquals(notification.connection, ready.connection);
     const surface = screen.presentation.surfaces.at(-1);
     socket.message({
       type: "screen.event",
@@ -1091,13 +1148,11 @@ Deno.test("only an active client cancels disconnect grace; waiting-client polls 
   }
 });
 
-Deno.test("public download starts in the background, uses the session socket, and never replays on reconnect", async () => {
+Deno.test("public downloads use explicit pending screen ownership, cancel on replacement and never replay", async () => {
   const metadataStore = new MemorySessionMetadataStore();
-  const originalNow = Date.now;
-  const now = Date.now();
   let handle: DownloadHandle | undefined;
-  let reads = 0;
   let cleaned = false;
+  let reads = 0;
   async function* bytes() {
     try {
       while (true) {
@@ -1109,25 +1164,31 @@ Deno.test("public download starts in the background, uses the session socket, an
     }
   }
   const service = defineSessionService(async ({ signal }) => {
+    let exportNext = false;
     try {
       while (!signal.aborted) {
-        const event = await callScreen({
+        const channel = new ScreenChannel();
+        const pending = callScreen({
+          channel,
           id: "download-test",
           schema: z.object({}),
           model: new Model({}),
           header: { actions: [{ id: "export", label: "Export" }] },
         });
-        if (event.action === "export") {
-          handle = download({ filename: "table.csv", body: bytes() });
+        if (exportNext) {
+          handle = download(
+            { filename: "table.csv", body: bytes() },
+            channel.downloads,
+          );
         }
+        const event = await pending;
+        exportNext = event.action === "export";
       }
     } catch (error) {
       if (!signal.aborted) throw error;
     }
   }, { metadataStore, completePersistent: () => Promise.resolve() });
   try {
-    // Establishing and connecting within one clock tick must still resume once.
-    Date.now = () => now;
     await service.fetch(
       new Request("https://example.test/connect", { method: "POST" }),
       context(metadata),
@@ -1140,40 +1201,47 @@ Deno.test("public download starts in the background, uses the session socket, an
       socket,
     );
     await until(() => serverMessages(socket, "presentation.show").length === 1);
-    const first = serverMessages(socket, "presentation.show")[0]!;
-    socket.message(screenEvent(first, "export", 10));
-    await until(() =>
-      handle !== undefined &&
-      serverMessages(socket, "presentation.show").length > 1 &&
-      serverMessages(socket, "presentation.show").at(-1)?.presentation
-          .activeSurfaceId !== null
+    socket.message(
+      screenEvent(
+        serverMessages(socket, "presentation.show")[0]!,
+        "export",
+        10,
+      ),
     );
-    assertEquals(
-      reads,
-      0,
-      "source must wait for browser demand while the next screen is available",
-    );
-    const begin = serverMessages(socket, "download.begin")[0]!;
-    socket.message({
-      type: "download.credit",
+    await until(() => handle !== undefined);
+    assertEquals(reads, 0, "no consumer demand means no source demand");
+    const begin = serverMessages(socket, "channel.frame").find((frame) =>
+      frame.kind === "stream.open"
+    )!;
+    const credit = {
+      ...begin,
+      type: "channel.frame",
+      kind: "stream.credit",
+      value: undefined,
       protocol: UUI_PROTOCOL_VERSION,
-      clientSequence: 1,
-      sessionId: first.sessionId,
-      downloadId: begin.downloadId,
-      frames: 4,
+      clientSequence: 0,
+      frames: 2,
       consumed: 0,
-    });
+      ordinal: 1,
+    };
+    socket.message(credit);
     await until(() =>
-      socket.sent.filter((item) => item instanceof Uint8Array).length === 4
+      socket.sent.filter((item) => item instanceof Uint8Array).length === 2
     );
-    assertEquals(
-      reads,
-      4,
-      "download controls are independent of screen event sequence deduplication",
-    );
+    const oldHandle = handle!;
+    const latest = serverMessages(socket, "presentation.show").at(-1)!;
+    socket.message(screenEvent(latest, "export", 11));
+    await assertRejects(() => oldHandle.done, DOMException);
+    await until(() => handle !== oldHandle && cleaned);
+    const newBegin = serverMessages(socket, "channel.frame").filter((f) =>
+      f.kind === "stream.open"
+    ).at(-1)!;
+    assert(newBegin.generation !== begin.generation);
+    socket.message(credit);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assertEquals(reads, 2, "old IDs never credit a replacement owner");
     socket.remoteClose();
-    await assertRejects(() => handle!.done, DOMException, "connection closed");
-    await until(() => cleaned);
+    await assertRejects(() => handle!.done, DOMException);
     const next = new TestSocket();
     next.message(connectMessage(0));
     await service.connectWebSocket(
@@ -1183,13 +1251,75 @@ Deno.test("public download starts in the background, uses the session socket, an
     );
     await until(() => serverMessages(next, "session.resumed").length > 0);
     assertEquals(next.sent.some((item) => item instanceof Uint8Array), false);
-    assertEquals(serverMessages(next, "download.begin").length, 0);
-    assertEquals(serverMessages(next, "download.end").length, 0);
-    assertEquals(serverMessages(next, "download.error").length, 0);
+    assertEquals(serverMessages(next, "channel.frame").length, 0);
     assert(serverMessages(next, "presentation.show").length > 0);
   } finally {
-    Date.now = originalNow;
     await metadataStore.clear();
+  }
+});
+
+Deno.test("authenticated binary ingress rejects unsafe framing session identity and transport size", async () => {
+  for (const kind of ["framing", "session", "size"]) {
+    const store = new MemorySessionMetadataStore();
+    const service = defineSessionService(
+      () =>
+        callScreen({ id: "binary", model: new Model({}), schema: z.object({}) })
+          .then(() => {}),
+      {
+        metadataStore: store,
+        completePersistent: () => Promise.resolve(),
+      },
+    );
+    try {
+      await service.fetch(
+        new Request("https://example.test/connect", { method: "POST" }),
+        context(metadata),
+      );
+      const socket = new TestSocket();
+      socket.message(connectMessage(0));
+      await service.connectWebSocket(
+        new Request("https://example.test/connect"),
+        context(metadata),
+        socket,
+      );
+      await until(() => serverMessages(socket, "session.ready").length > 0);
+      const ready = serverMessages(socket, "session.ready")[0]!;
+      const data = kind === "framing"
+        ? new Uint8Array(4)
+        : kind === "size"
+        ? new Uint8Array(2 * 1024 * 1024)
+        : encodeStreamChunk(
+          {
+            type: "channel.frame",
+            kind: "stream.bytes",
+            connection: ready.connection!,
+            namespace: "program",
+            generation: "round",
+            id: "bytes",
+            requestId: "client-1",
+            ordinal: 1,
+            sessionId: "another-session",
+            clientSequence: 0,
+          } as import("./channel.ts").ChannelFrame,
+          new Uint8Array([1]),
+        );
+      socket.binary(data);
+      await until(() => socket.signal.aborted);
+      assertEquals(
+        (serverMessages(socket, "session.error").at(-1) as
+          | SessionErrorMessage
+          | undefined)?.code,
+        "malformed_message",
+        kind,
+      );
+      assertEquals(
+        serverMessages(socket, "channel.frame").length,
+        0,
+        "invalid ingress grants no source credit",
+      );
+    } finally {
+      await store.clear();
+    }
   }
 });
 
@@ -1265,6 +1395,10 @@ class TestSocket implements WebSocketSession {
 
   message(value: unknown): void {
     this.#push({ type: "message", data: JSON.stringify(value) });
+  }
+
+  binary(data: Uint8Array): void {
+    this.#push({ type: "message", data });
   }
 
   remoteClose(code = 1000, reason = "test close"): void {
@@ -1349,7 +1483,7 @@ async function until(
   throw new Error("condition was not reached");
 }
 
-Deno.test("list reads acknowledge the session sequence so reload can submit the next screen event", async () => {
+Deno.test("structured list replies stay transient and reload submits the next screen event", async () => {
   const metadataStore = new MemorySessionMetadataStore();
   let action = "";
   const service = defineSessionService(async () => {
@@ -1375,18 +1509,94 @@ Deno.test("list reads acknowledge the session sequence so reload can submit the 
     await until(() => serverMessages(first, "presentation.show").length === 1);
     const presentation = serverMessages(first, "presentation.show")[0]!;
     const list = presentation.presentation.surfaces.at(-1)!.screen.lists[0]!;
+    const generation = presentation.presentation.surfaces.at(-1)!.screen
+      .channelGeneration!;
     first.message({
-      ...screenEvent(presentation, "", 7),
-      type: "screen.list",
-      updates: [],
-      read: { id: list.id, revision: list.revision, offset: 1000, limit: 1000 },
+      protocol: UUI_PROTOCOL_VERSION,
+      sessionId: presentation.sessionId,
+      clientSequence: 7,
+      type: "channel.frame",
+      kind: "message",
+      requestId: "client-1",
+      id: "read",
+      connection: serverMessages(first, "session.ready")[0]!.connection,
+      namespace: list.channelNamespace!,
+      generation,
+      value: {
+        token: "read",
+        request: {
+          id: list.id,
+          revision: list.revision,
+          offset: 1000,
+          limit: 1000,
+        },
+      },
     });
-    await until(() => serverMessages(first, "screen.list.data").length === 1);
+    await until(() => serverMessages(first, "channel.frame").length === 1);
     assertEquals(
-      serverMessages(first, "screen.list.data")[0]!.data.rows.length,
+      (serverMessages(first, "channel.frame")[0]!.value as {
+        value: { rows: unknown[] };
+      })
+        .value.rows.length,
       1000,
     );
+    const surface = presentation.presentation.surfaces.at(-1)!;
+    first.message({
+      protocol: UUI_PROTOCOL_VERSION,
+      sessionId: presentation.sessionId,
+      clientSequence: 8,
+      type: "channel.frame",
+      kind: "message",
+      requestId: "client-2",
+      id: "update",
+      connection: serverMessages(first, "session.ready")[0]!.connection,
+      namespace: list.channelNamespace!,
+      generation,
+      value: {
+        token: "update",
+        request: {
+          surfaceId: surface.surfaceId,
+          screenId: surface.screen.id,
+          screenRevision: surface.screen.revision,
+          instanceId: surface.screen.state.instanceId,
+          screenState: {
+            version: surface.screen.state.version,
+            scroll: { x: 0, y: 0 },
+            elements: {},
+          },
+          changes: [],
+          updates: [{
+            id: list.id,
+            revision: list.revision,
+            operation: "capacity",
+            pageSize: 10,
+          }],
+        },
+      },
+    });
+    await until(() => serverMessages(first, "channel.frame").length === 2);
+    assert(first.sent.some((message) => {
+      if (typeof message !== "string") return false;
+      const value = JSON.parse(message);
+      return value.type === "server.ack" && value.clientSequence === 8;
+    }));
     first.remoteClose();
+    const gapResume = new TestSocket();
+    gapResume.message(connectMessage(presentation.serverSequence));
+    await service.connectWebSocket(
+      new Request("https://example.test/connect"),
+      context(metadata),
+      gapResume,
+    );
+    await until(() =>
+      serverMessages(gapResume, "session.resumed").length === 1
+    );
+    assertEquals(
+      serverMessages(gapResume, "session.resync_required").length,
+      0,
+    );
+    assertEquals(serverMessages(gapResume, "channel.frame").length, 0);
+    gapResume.remoteClose();
     const reloaded = new TestSocket();
     reloaded.message(connectMessage(0));
     await service.connectWebSocket(
@@ -1395,13 +1605,14 @@ Deno.test("list reads acknowledge the session sequence so reload can submit the 
       reloaded,
     );
     await until(() =>
-      serverMessages(reloaded, "presentation.show").length === 1
+      serverMessages(reloaded, "presentation.show").length >= 1
     );
     const resumed = serverMessages(reloaded, "session.resumed")[0]!;
-    assertEquals(resumed.lastClientSequence, 7);
+    assertEquals(resumed.lastClientSequence, 8);
+    assertEquals(serverMessages(reloaded, "channel.frame").length, 0);
     reloaded.message(
       screenEvent(
-        serverMessages(reloaded, "presentation.show")[0]!,
+        serverMessages(reloaded, "presentation.show").at(-1)!,
         "done",
         resumed.lastClientSequence + 1,
       ),

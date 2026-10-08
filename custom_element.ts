@@ -1,3 +1,4 @@
+import type { ChannelConnection } from "./channel.ts";
 import type { ControlDescriptor, ScreenElementState } from "./protocol.ts";
 
 /** Browser-only contract. Programs publish a module that default-exports mount. */
@@ -14,6 +15,10 @@ export interface CustomElementContext {
   setValue(value: unknown): void;
   /** Aborted on removal or replacement, including while mount is pending. */
   readonly signal: AbortSignal;
+  /** A view bound to this component's current screen and connection. */
+  readonly channel: ChannelConnection;
+  /** The owning program, attached by UUI without a named endpoint. */
+  readonly programChannel: ChannelConnection;
   /** Render plain text and the shell's [[icon=...]] markup into an owned element. */
   renderText(target: HTMLElement, text: string): void;
   /** Send an ordinary screen action through the owning surface's interaction gate. */

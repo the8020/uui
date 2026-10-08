@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert";
-import { callScreen, field, Model, z } from "./mod.ts";
+import { callScreen, Channel, field, Model, z } from "./mod.ts";
 
 interface Browser {
   evaluate<T>(expression: string): Promise<T>;
@@ -7,6 +7,10 @@ interface Browser {
 
 export default function fixture() {
   let phase = 0;
+  const channel = new Channel();
+  channel.subscribe("echo", (_id, data) => {
+    channel.send("echo", data);
+  });
   const model = new Model({
     note: "Before",
     choice: "A" as "A" | "B",
@@ -47,6 +51,7 @@ export default function fixture() {
                 module: "/style-widget.js",
                 config: {},
                 preserve: true,
+                channel,
               },
             },
           ],
@@ -169,16 +174,33 @@ export default function fixture() {
           );
         }
         if (current === 0) {
+          await wait("window.styleDefaultReady === true");
+          assertEquals(await page.evaluate("window.styleDefaultResult"), [
+            true,
+            true,
+            true,
+            true,
+            false,
+            false,
+          ]);
+          await page.evaluate(
+            "window.styleField.channel.send('echo', 'Before')",
+          );
+          await wait("window.styleReply === 'Before'");
           await page.evaluate(
             `window.retainedWidget = document.querySelector('[data-custom-element-id=widget]');
             const input = document.querySelector('[data-element-id=note] input');
             input.value = 'Edited'; input.dispatchEvent(new Event('input', {bubbles:true}));`,
           );
+          await page.evaluate(
+            "window.styleField.channel.send('echo', 'Edited')",
+          );
+          await wait("window.styleReply === 'Edited'");
         } else {
           assertEquals(model.data.note, "Edited");
           assertEquals(
             await page.evaluate(
-              `window.retainedWidget === document.querySelector('[data-custom-element-id=widget]') && window.styleMounts === 2`,
+              `window.retainedWidget === document.querySelector('[data-custom-element-id=widget]') && window.styleMounts === 2 && !window.styleDefault.signal.aborted`,
             ),
             true,
           );
@@ -194,7 +216,31 @@ export default function fixture() {
       return Promise.resolve(
         new URL(request.url).pathname === "/style-widget.js"
           ? new Response(
-            `export default function({host}) {
+            `export default function(context) {
+          const { host } = context;
+          if (context.control) {
+            window.styleField = context;
+            context.channel.subscribe('echo', (_id, data) => { window.styleReply = data; });
+          } else {
+            window.styleDefault = context;
+            const handler = () => { throw new Error('No backend listener should send data'); };
+            const component = context.channel.subscribe('dashboard.updates.*', handler);
+            const program = context.programChannel.subscribe('dashboard.updates.*', handler);
+            window.styleDefaultSubscriptions = [component, program];
+            window.styleDefaultResult = [component.id === 'dashboard.updates.*', component.handler === handler,
+              program.id === 'dashboard.updates.*', program.handler === handler];
+            Promise.all([context.channel, context.programChannel].map(async channel => {
+              channel.send('dashboard.updates.ignored', { ok: true });
+              let pulled = false;
+              try {
+                await channel.send('dashboard.updates.bytes', (async function* () { pulled = true; yield new Uint8Array([1]); })()).done;
+                throw new Error('Missing consumer accepted a stream');
+              } catch (error) {
+                if (!error.message.includes('exactly one matching')) throw error;
+              }
+              return pulled;
+            })).then(pulled => { window.styleDefaultResult.push(...pulled); window.styleDefaultReady = true; });
+          }
           window.styleMounts = (window.styleMounts || 0) + 1;
           host.classList.add('widget-ready'); host.style.color = 'rgb(1, 2, 3)';
           host.textContent = 'Widget'; return {};

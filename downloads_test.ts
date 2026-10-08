@@ -1,351 +1,337 @@
-import { AsyncLocalStorage } from "node:async_hooks";
-import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
-import { DownloadManager } from "./downloads.ts";
-import {
-  decodeDownloadChunk,
-  DOWNLOAD_CHUNK_BYTES,
-  DOWNLOAD_TRANSFER_FRAMES,
-  DOWNLOAD_WINDOW_FRAMES,
-  type DownloadClientCommand,
-  type DownloadServerCommand,
-  encodeDownloadChunk,
-} from "./download_protocol.ts";
-import { BrowserDownloads } from "./services/shell/frontend/downloads.ts";
-import { parseClientMessage, UUI_PROTOCOL_VERSION } from "./protocol.ts";
-
-function harness() {
-  const readers = new Map<number, ReadableStreamDefaultReader<Uint8Array>>();
-  const commands: DownloadServerCommand[] = [];
-  const frames: Uint8Array[] = [];
-  const reports: string[] = [];
-  const credits: DownloadClientCommand[] = [];
-  const server = new DownloadManager((message) => {
-    if (message instanceof Uint8Array) {
-      frames.push(message);
-      browser.bytes(message);
-    } else {
-      commands.push(message);
-      browser.receive(message);
-    }
-  }, (message) => reports.push(message));
-  const browser = new BrowserDownloads((command) => {
-    credits.push(command);
-    server.receive(command);
-  }, (metadata, stream) => {
-    readers.set(metadata.downloadId, stream.getReader());
-    return Promise.resolve(() => {});
-  });
-  return { server, browser, readers, commands, frames, reports, credits };
-}
-
-async function tick(): Promise<void> {
-  await new Promise<void>((resolve) => setTimeout(resolve, 0));
-}
-
-async function readAll(
-  reader: ReadableStreamDefaultReader<Uint8Array>,
-): Promise<number[]> {
-  const result: number[] = [];
-  while (true) {
-    const next = await reader.read();
-    if (next.done) return result;
-    for (const byte of next.value) result.push(byte);
-  }
-}
-
-Deno.test("downloads run concurrently with bounded shared buffering and split large producer chunks", async () => {
-  const h = harness();
-  let batches = 0;
-  async function* source(value: number) {
-    batches++;
-    yield new Uint8Array(DOWNLOAD_CHUNK_BYTES * 8 + 7).fill(value);
-  }
-  const handles = Array.from(
-    { length: 6 },
-    (_, index) =>
-      h.server.start({ filename: `${index}.bin`, body: source(index) }),
-  );
-  try {
-    await tick();
-    assertEquals(h.frames.length, DOWNLOAD_WINDOW_FRAMES);
-    assertEquals(
-      h.credits.filter((command) =>
-        command.type === "download.credit" && command.frames === 0 &&
-        command.consumed === 0
-      ).length,
-      handles.length,
-      "ready transfers must acknowledge startup even while the shared window is full",
-    );
-    assert(batches <= 6);
-    const perTransfer = new Map<number, number>();
-    for (const frame of h.frames) {
-      assert(frame.byteLength <= DOWNLOAD_CHUNK_BYTES + 4);
-      const { downloadId } = decodeDownloadChunk(frame);
-      perTransfer.set(downloadId, (perTransfer.get(downloadId) ?? 0) + 1);
-    }
-    assert(
-      [...perTransfer.values()].every((count) =>
-        count <= DOWNLOAD_TRANSFER_FRAMES
-      ),
-    );
-    await tick();
-    assertEquals(
-      h.frames.length,
-      DOWNLOAD_WINDOW_FRAMES,
-      "receiving bytes alone must not return credit",
-    );
-    const results = await Promise.all([...h.readers.values()].map(readAll));
-    await Promise.all(handles.map((handle) => handle.done));
-    for (const [index, bytes] of results.entries()) {
-      assertEquals(bytes.length, DOWNLOAD_CHUNK_BYTES * 8 + 7);
-      assert(bytes.every((byte) => byte === index));
-    }
-    assertEquals(h.reports, []);
-  } finally {
-    h.server.abortAll();
-    h.browser.close();
-  }
-});
-
-Deno.test("download producer retains the initiating program's async context across credits", async () => {
-  const context = new AsyncLocalStorage<string>();
-  const h = harness();
-  const observed: Array<string | undefined> = [];
-  async function* source() {
-    for (let index = 0; index < 10; index++) {
-      observed.push(context.getStore());
-      yield new Uint8Array([index]);
-    }
-  }
-  const handle = context.run(
-    "program-request",
-    () => h.server.start({ filename: "context.bin", body: source() }),
-  );
-  await tick();
-  await context.run("socket-request", () => readAll(h.readers.get(1)!));
-  await handle.done;
-  assertEquals(observed, Array(10).fill("program-request"));
-});
-
-Deno.test("cancelling a download cleans up its generator and allows other downloads to finish", async () => {
-  const h = harness();
-  let cleaned = false;
-  async function* source() {
-    try {
-      while (true) yield new Uint8Array([7]);
-    } finally {
-      cleaned = true;
-    }
-  }
-  const first = h.server.start({ filename: "cancel.bin", body: source() });
-  const second = h.server.start({
-    filename: "keep.bin",
-    body: ReadableStream.from([new Uint8Array([1, 2, 3])]),
-  });
-  await tick();
-  await h.readers.get(1)!.cancel();
-  await assertRejects(() => first.done, DOMException, "cancelled");
-  await tick();
-  assert(cleaned);
-  assertEquals(await readAll(h.readers.get(2)!), [1, 2, 3]);
-  await second.done;
-  assertEquals(h.reports, []);
-});
-
-Deno.test("a failed producer errors the browser stream and reports ignored-handle failures once", async () => {
-  const h = harness();
-  async function* source() {
-    yield new Uint8Array([1]);
-    throw new Error("database query failed");
-  }
-  const handle = h.server.start({ filename: "failed.csv", body: source() });
-  await tick();
-  await assertRejects(
-    () => readAll(h.readers.get(1)!),
-    Error,
-    "database query failed",
-  );
-  await assertRejects(() => handle.done, Error, "database query failed");
-  assertEquals(h.reports.length, 1);
-  assertEquals(
-    h.commands.some((command) => command.type === "download.end"),
-    false,
-  );
-});
-
-Deno.test("disconnect cancels pending stream reads and releases the source lock", async () => {
-  const h = harness();
-  let cancelled = false;
-  const body = new ReadableStream<Uint8Array>({
-    cancel() {
-      cancelled = true;
-    },
-  }, { highWaterMark: 0 });
-  const handle = h.server.start({ filename: "pending.bin", body });
-  await tick();
-  h.server.abortAll();
-  h.browser.close();
-  await assertRejects(() => handle.done, DOMException, "connection closed");
-  await tick();
-  assert(cancelled);
-  assertEquals(body.locked, false);
-});
-
-Deno.test("download completion waits until the browser consumes every byte and EOF", async () => {
-  const h = harness();
-  const handle = h.server.start({
-    filename: "empty.bin",
-    body: ReadableStream.from([]),
-  });
-  let done = false;
-  void handle.done.then(() => done = true);
-  await tick();
-  assertEquals(done, false);
-  assertEquals(await readAll(h.readers.get(1)!), []);
-  await handle.done;
-  assert(done);
-});
-
-Deno.test("downloads stay lazy until browser startup and surface unavailable browser support", async () => {
+import { assertEquals, assertThrows } from "@std/assert";
+import { download, ScreenChannel } from "./session.ts";
+import { startDownload } from "./downloads.ts";
+import { validateDownloadMetadata } from "./download_metadata.ts";
+Deno.test("download start requires a live explicit attachment before touching its source", () => {
+  const channel = new ScreenChannel();
+  assertThrows(() => channel.downloads, DOMException, "live");
   let pulled = false;
-  let cancelled = false;
-  const reports: string[] = [];
-  const manager = new DownloadManager(
-    () => {},
-    (message) => reports.push(message),
-  );
-  const body = new ReadableStream<Uint8Array>({
-    pull() {
+  const body = {
+    async *[Symbol.asyncIterator]() {
       pulled = true;
+      yield new Uint8Array();
     },
-    cancel() {
-      cancelled = true;
-    },
-  }, { highWaterMark: 0 });
-  const handle = manager.start({ filename: "lazy.bin", body });
-  await tick();
+  };
+  assertThrows(
+    () => download({ filename: "file", body }, channel.downloads),
+    DOMException,
+  );
   assertEquals(pulled, false);
-  manager.receive({
-    type: "download.cancel",
-    downloadId: 1,
-    error: "Downloads require HTTPS",
-  });
-  await assertRejects(() => handle.done, Error, "HTTPS");
-  await tick();
-  assert(cancelled);
-  assertEquals(reports.length, 1);
+});
+Deno.test("native download metadata rejects paths and header injection", () => {
+  for (const filename of ["../backup.csv", "backup\r\n.csv", ".", ""]) {
+    assertThrows(
+      () => validateDownloadMetadata({ filename, contentType: "text/csv" }),
+      TypeError,
+    );
+  }
+  assertThrows(
+    () =>
+      validateDownloadMetadata({
+        filename: "file.csv",
+        contentType: "text/csv\r\nx: y",
+      }),
+    TypeError,
+  );
 });
 
-Deno.test("download credit rejects premature acknowledgement and excess outstanding frames", async () => {
-  const manager = new DownloadManager(() => {}, () => {});
-  const handle = manager.start({
-    filename: "credit.bin",
-    body: ReadableStream.from([new Uint8Array([1])]),
-  });
-  try {
-    assertThrows(
-      () =>
-        manager.receive({
-          type: "download.credit",
-          downloadId: 1,
-          frames: 1,
-          consumed: 1,
-        }),
-      TypeError,
-    );
-    manager.receive({
-      type: "download.credit",
-      downloadId: 1,
-      frames: 4,
-      consumed: 0,
+import {
+  bindSession,
+  callScreen,
+  commandScreen,
+  connectChannels,
+  disconnectChannels,
+  presentPage,
+} from "./session.ts";
+import { Model } from "./model.ts";
+import { z } from "/p/the8020/db/fields.ts";
+import { ChannelRouter, type StreamPolicy } from "./channel.ts";
+import {
+  UUI_PROTOCOL_VERSION,
+  type UUIClientMessage,
+  type UUIWorkerOutbound,
+} from "./protocol.ts";
+import { assertRejects } from "@std/assert";
+import { AsyncLocalStorage } from "node:async_hooks";
+const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+Deno.test("screen owners cancel both stream directions and late handlers across every existing cleanup boundary", async () => {
+  for (
+    const action of [
+      "settlement",
+      "reset",
+      "dispose",
+      "exit",
+      "failure",
+      "cover",
+      "disconnect",
+      "takeover",
+      "unbind",
+    ]
+  ) {
+    const queue: Array<UUIClientMessage | Uint8Array> = [];
+    let waiter: ((message: UUIClientMessage | Uint8Array) => void) | undefined;
+    const sent: Array<UUIWorkerOutbound | Uint8Array> = [];
+    const client = new ChannelRouter("client", (frame) => {
+      const value = frame instanceof Uint8Array ? frame : {
+        ...frame,
+        sessionId: "stream-screen",
+        protocol: UUI_PROTOCOL_VERSION,
+        clientSequence: 0,
+      } as UUIClientMessage;
+      if (waiter) {
+        const resolve = waiter;
+        waiter = undefined;
+        resolve(value);
+      } else queue.push(value);
     });
-    assertThrows(
-      () =>
-        manager.receive({
-          type: "download.credit",
-          downloadId: 1,
-          frames: 1,
-          consumed: 0,
-        }),
-      TypeError,
+    const unbind = bindSession({
+      sessionId: "stream-screen",
+      send(frame) {
+        sent.push(frame);
+        queueMicrotask(() => {
+          if (frame instanceof Uint8Array) client.bytes(frame);
+          else if (frame.type === "channel.frame") client.receive(frame);
+        });
+      },
+      receive() {
+        return queue.length
+          ? Promise.resolve(queue.shift()!)
+          : new Promise((resolve) => waiter = resolve);
+      },
+    });
+    connectChannels("connection");
+    client.connect("connection");
+    const channel = new ScreenChannel(), model = new Model({});
+    const policy: StreamPolicy = {
+      chunkBytes: 4,
+      sourceChunkBytes: 8,
+      activeStreams: 4,
+      streamFrames: 2,
+      directionFrames: 4,
+      aggregateFrames: 8,
+    };
+    const gate = Promise.withResolvers<void>();
+    const context = new AsyncLocalStorage<string>();
+    const contexts: Array<string | undefined> = [];
+    let incomingSignal: AbortSignal | undefined,
+      sinkSignal: AbortSignal | undefined,
+      cleaned = false,
+      lateStart = "";
+    channel.subscribe("*", async (id, data, { signal }) => {
+      if (id !== "bytes" || !(data instanceof ReadableStream)) return;
+      contexts.push(context.getStore());
+      incomingSignal = signal;
+      await data.getReader().read();
+      await gate.promise;
+      contexts.push(context.getStore());
+      try {
+        download(
+          { filename: "late", body: ReadableStream.from([]) },
+          channel.downloads,
+        );
+        lateStart = "started";
+      } catch (error) {
+        lateStart = (error as Error).name;
+      }
+    });
+    const options = {
+      channel,
+      model,
+      id: "streams",
+      schema: z.object({}),
+      header: { actions: [{ id: "next", label: "Next" }] },
+    };
+    let pending = context.run("initiating-call", () => callScreen(options));
+    void pending.catch(() => {});
+    const lifetime = new AbortController();
+    const serverEndpoint = channel.capture();
+    const generation = serverEndpoint.reference.generation;
+    const screen = (sent.find((item) =>
+      !(item instanceof Uint8Array) && item.type === "presentation.show"
+    ) as Extract<UUIWorkerOutbound, { type: "presentation.show" }>).presentation
+      .surfaces.at(-1)!.screen;
+    const incoming = client.register(
+      screen.programNamespace!,
+      generation,
+      () => {},
+      lifetime.signal,
+      policy,
     );
-    assertThrows(
-      () => manager.receive({ type: "download.done", downloadId: 1 }),
-      TypeError,
+    const saving = client.register(
+      screen.downloadNamespace!,
+      generation,
+      () => {},
+      lifetime.signal,
     );
-  } finally {
-    handle.cancel();
-    await assertRejects(() => handle.done, DOMException);
+    saving.subscribe("*", async (_id, data, { signal }) => {
+      if (!(data instanceof ReadableStream)) {
+        return;
+      }
+      sinkSignal = signal;
+      await data.getReader().read();
+      await gate.promise;
+    });
+    const source = async function* () {
+      try {
+        yield new Uint8Array([1]);
+        await gate.promise;
+        yield new Uint8Array([2]);
+      } finally {
+        cleaned = true;
+      }
+    };
+    const saved = channel.downloads;
+    const outgoing = download({ filename: "owned.bin", body: source() }, saved);
+    const upload = incoming.send("bytes", source(), { policy });
+    const childChannel = new ScreenChannel();
+    let child: Promise<unknown> | undefined;
+    try {
+      await tick();
+      await tick();
+      assertEquals(incomingSignal?.aborted, false);
+      assertEquals(sinkSignal?.aborted, false);
+      if (action === "settlement") {
+        await commandScreen({ op: "click", id: "next" }, 1);
+        await pending;
+        pending = callScreen(options);
+      } else if (action === "reset") {
+        model.resetScreen();
+        channel.redraw();
+      } else if (action === "dispose") {
+        serverEndpoint.dispose();
+        saved.dispose();
+      } else if (action === "exit") {
+        channel.exit();
+        await pending;
+        pending = callScreen(options);
+      } else if (action === "failure") {
+        channel.fail(new Error("Failed"));
+        await assertRejects(
+          () =>
+            pending,
+          Error,
+          "Failed",
+        );
+        pending = callScreen(options);
+      } else if (action === "cover") {
+        child = presentPage(() =>
+          callScreen({
+            id: "child",
+            model: new Model({}),
+            schema: z.object({}),
+            channel: childChannel,
+          })
+        );
+      } else if (action === "disconnect") {
+        disconnectChannels();
+      } else if (action === "takeover") {
+        connectChannels("replacement");
+        client.connect("replacement");
+      } else unbind();
+      await assertRejects(() =>
+        outgoing.done, DOMException);
+      await assertRejects(() => upload.done, Error);
+      await tick();
+      assertEquals(incomingSignal?.aborted, true, action);
+      assertEquals(sinkSignal?.aborted, true, action);
+      assertThrows(
+        () => saved.send("save", ReadableStream.from([]), { policy }),
+        Error,
+      );
+      const count = sent.length;
+      gate.resolve();
+      await tick();
+      await tick();
+      assertEquals(cleaned, true, action);
+      assertEquals(lateStart, "AbortError", action);
+      assertEquals(contexts, ["initiating-call", "initiating-call"], action);
+      assertEquals(
+        sent.length,
+        count,
+        `${action}: old work emits no bytes or control into new ownership`,
+      );
+      assertEquals(
+        lifetime.signal.aborted,
+        false,
+        "peer lifetime is independent",
+      );
+    } finally {
+      gate.resolve();
+      childChannel.exit();
+      await child;
+      channel.exit();
+      await pending.catch(() => {});
+      client.disconnect();
+      unbind();
+    }
   }
 });
 
-Deno.test("download framing preserves arbitrary binary bytes and rejects malformed protocol messages", () => {
-  const bytes = new Uint8Array([0, 255, 128, 10]);
-  const decoded = decodeDownloadChunk(encodeDownloadChunk(0xffff_ffff, bytes));
-  assertEquals(decoded, { downloadId: 0xffff_ffff, bytes });
-  assertThrows(() => decodeDownloadChunk(new Uint8Array(4)), TypeError);
-  assertThrows(
-    () => encodeDownloadChunk(1, new Uint8Array(DOWNLOAD_CHUNK_BYTES + 1)),
-    TypeError,
+Deno.test("native save releases staged metadata after synchronous admission or locked-source failure", async () => {
+  const server = new ChannelRouter(
+    "server",
+    (frame) =>
+      queueMicrotask(() =>
+        frame instanceof Uint8Array
+          ? client.bytes(frame)
+          : client.receive(frame)
+      ),
   );
-  const base = {
-    protocol: UUI_PROTOCOL_VERSION,
-    clientSequence: 1,
-    sessionId: "session",
-    downloadId: 1,
-  };
-  assertEquals(
-    parseClientMessage({
-      ...base,
-      type: "download.credit",
-      frames: 4,
-      consumed: 0,
-    }).type,
-    "download.credit",
+  const client = new ChannelRouter(
+    "client",
+    (frame) =>
+      queueMicrotask(() =>
+        frame instanceof Uint8Array
+          ? server.bytes(frame)
+          : server.receive(frame)
+      ),
   );
-  assertThrows(
-    () =>
-      parseClientMessage({
-        ...base,
-        type: "download.credit",
-        frames: 5,
-        consumed: 0,
-      }),
-    TypeError,
+  server.connect("download-metadata");
+  client.connect("download-metadata");
+  const owner = new AbortController();
+  const outgoing = server.register(
+    "downloads",
+    "round",
+    () => {},
+    owner.signal,
   );
-  assertThrows(
-    () =>
-      parseClientMessage({
-        ...base,
-        type: "download.cancel",
-        error: "x".repeat(1001),
-      }),
-    TypeError,
+  const incoming = client.register(
+    "downloads",
+    "round",
+    () => {},
+    owner.signal,
   );
-  assertThrows(
-    () => parseClientMessage({ ...base, type: "download.done", downloadId: 0 }),
-    TypeError,
-  );
-});
-
-Deno.test("download metadata rejects filesystem paths and header injection", () => {
-  const manager = new DownloadManager(() => {}, () => {});
-  const body = ReadableStream.from([]);
-  assertThrows(
-    () => manager.start({ filename: "../backup.csv", body }),
-    TypeError,
-  );
-  assertThrows(
-    () => manager.start({ filename: "backup\r\n.csv", body }),
-    TypeError,
-  );
-  assertThrows(
-    () =>
-      manager.start({
-        filename: "backup.csv",
-        contentType: "text/csv\r\nx: y",
-        body,
-      }),
-    TypeError,
-  );
+  const metadata = new Set<string>();
+  incoming.subscribe("*", (id, data) => {
+    if (id === "save") metadata.add((data as { token: string }).token);
+    if (id === "forget") metadata.delete(String(data));
+  });
+  const locked = ReadableStream.from([new Uint8Array([1])]);
+  const reader = locked.getReader();
+  try {
+    const handle = startDownload(
+      outgoing,
+      { filename: "locked", body: locked },
+      () => {},
+    );
+    await assertRejects(() => handle.done, TypeError);
+    await tick();
+    assertEquals(metadata.size, 0);
+    assertThrows(
+      () =>
+        startDownload(outgoing, {
+          filename: "invalid",
+          body: undefined as unknown as ReadableStream<Uint8Array>,
+        }, () => {}),
+      TypeError,
+    );
+    await tick();
+    assertEquals(metadata.size, 0);
+  } finally {
+    reader.releaseLock();
+    owner.abort();
+    server.disconnect();
+    client.disconnect();
+  }
 });

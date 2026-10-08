@@ -1,3 +1,4 @@
+import { type AttachedChannel, ChannelBindings } from "../../../channel.ts";
 import type {
   ControlDescriptor,
   CustomElementDescriptor,
@@ -12,6 +13,8 @@ import { renderIconText } from "./icon_text.ts";
 import { applyComponentStyle } from "./component_style.ts";
 
 interface HostCallbacks {
+  channel(name: string): AttachedChannel | undefined;
+  programChannel(): AttachedChannel | undefined;
   send(action: string, value?: unknown): void;
   state(id: string): ScreenElementState;
   value(control: ControlDescriptor): unknown;
@@ -69,6 +72,9 @@ class Entry {
   #instance?: CustomElementInstance;
   #active: boolean;
   #control?: ControlDescriptor;
+  #namespace?: string;
+  readonly #component = new ChannelBindings();
+  readonly #program = new ChannelBindings();
   used = true;
   failed = false;
 
@@ -82,6 +88,7 @@ class Entry {
     this.#config = descriptor.config;
     this.#active = active;
     this.#control = control;
+    this.#namespace = descriptor.channelNamespace;
     this.host.className = "custom-element-host";
     this.host.dataset.customElementId = descriptor.id;
     this.host.setAttribute("aria-busy", "true");
@@ -140,6 +147,21 @@ class Entry {
         }
       },
       signal: this.#lifetime.signal,
+      get channel() {
+        return entry.channel(
+          entry.#component,
+          () =>
+            entry.#namespace
+              ? entry.callbacks.channel(entry.#namespace)
+              : undefined,
+        );
+      },
+      get programChannel() {
+        return entry.channel(
+          entry.#program,
+          () => entry.callbacks.programChannel(),
+        );
+      },
       renderText: (target, text) =>
         renderIconText(target, text, { decorativeIcons: true }),
       send: (action, value) => {
@@ -164,7 +186,13 @@ class Entry {
     this.host.removeAttribute("aria-busy");
   }
 
-  update(config: Record<string, unknown>, control?: ControlDescriptor): void {
+  update(
+    config: Record<string, unknown>,
+    control?: ControlDescriptor,
+    namespace?: string,
+  ): void {
+    this.#namespace = namespace;
+    this.refreshChannels();
     this.#config = config;
     this.#control = control;
     try {
@@ -173,6 +201,57 @@ class Entry {
       this.#fail(error);
     }
     this.used = true;
+  }
+
+  channel(
+    bindings: ChannelBindings,
+    acquire: () => AttachedChannel | undefined,
+  ): AttachedChannel {
+    this.#lifetime.signal.throwIfAborted();
+    const endpoint = acquire();
+    if (!endpoint) throw new DOMException("Channel unavailable", "AbortError");
+    const view = endpoint.capture();
+    bindings.attach(endpoint);
+    return {
+      ...view,
+      send: ((
+        id: string,
+        data: unknown,
+        options?: {
+          signal?: AbortSignal;
+          policy?: import("../../../channel.ts").StreamPolicy;
+        },
+      ) => {
+        this.#lifetime.signal.throwIfAborted();
+        if (!this.#active) throw new Error("Component is covered");
+        return view.send(
+          id,
+          data as import("../../../channel.ts").ByteSource,
+          {
+            ...options,
+            signal: AbortSignal.any([
+              this.#lifetime.signal,
+              ...(options?.signal ? [options.signal] : []),
+            ]),
+          },
+        );
+      }) as AttachedChannel["send"],
+      subscribe: (id, handler) => {
+        this.#lifetime.signal.throwIfAborted();
+        view.capture();
+        if (endpoint.reference !== acquire()?.reference) {
+          throw new DOMException("Channel detached", "AbortError");
+        }
+        return bindings.subscribe(id, handler);
+      },
+    };
+  }
+
+  refreshChannels(): void {
+    this.#component.attach(
+      this.#namespace ? this.callbacks.channel(this.#namespace) : undefined,
+    );
+    this.#program.attach(this.callbacks.programChannel());
   }
 
   setActive(active: boolean): void {
@@ -195,20 +274,22 @@ class Entry {
 
   updateBinding(bind: string, source: string): void {
     if (this.#control?.bind === bind && this.#control.id !== source) {
-      this.update(this.#config, this.#control);
+      this.update(this.#config, this.#control, this.#namespace);
     }
   }
 
   dispose(): void {
     if (this.#lifetime.signal.aborted) return;
     this.#lifetime.abort();
+    this.#component.dispose();
+    this.#program.dispose();
     try {
       this.#instance?.dispose?.();
     } catch (error) {
       console.error(error);
     }
     this.#instance = undefined;
-    for (const style of this.#styles) style.release();
+    for (const style of this.#styles.splice(0)) style.release();
     this.host.replaceChildren();
   }
 
@@ -267,6 +348,8 @@ export class CustomElementRenderer {
         descriptor,
         this.#active,
         {
+          channel: (name) => this.#callbacks.channel(name),
+          programChannel: () => this.#callbacks.programChannel(),
           send: (action, value) => this.#callbacks.send(action, value),
           state: (id) => this.#callbacks.state(id),
           value: (field) => this.#callbacks.value(field),
@@ -275,7 +358,9 @@ export class CustomElementRenderer {
         control,
       );
       this.#entries.set(descriptor.id, entry);
-    } else entry.update(descriptor.config, control);
+    } else {
+      entry.update(descriptor.config, control, descriptor.channelNamespace);
+    }
     applyComponentStyle(entry.host, descriptor);
     return entry.host;
   }
@@ -286,6 +371,10 @@ export class CustomElementRenderer {
       entry.dispose();
       this.#entries.delete(id);
     }
+  }
+
+  refreshChannels(): void {
+    for (const entry of this.#entries.values()) entry.refreshChannels();
   }
 
   captureState(): void {

@@ -1,5 +1,6 @@
 export {
   bindSession,
-  cancelDownloads,
+  connectChannels,
+  disconnectChannels,
   type SessionChannel,
 } from "./session.ts";
