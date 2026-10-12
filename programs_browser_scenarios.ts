@@ -24,6 +24,11 @@ interface BrowserDriver {
 
 const serviceId = "example/testing/api";
 const runtimeWorker = {
+  resources: {
+    heap_used_bytes: 2 * 1024 * 1024,
+    cpu_usage_micros: 750_000,
+    sampled_at: "2026-10-12T10:00:00Z",
+  },
   worker_id: "wrk-runtime001",
   owner_id: serviceId,
   workload_id: "api-version-1",
@@ -33,6 +38,7 @@ const runtimeWorker = {
   release_id: "abc123",
 };
 const runtimeService = {
+  resources: runtimeWorker.resources,
   service_id: serviceId,
   package_id: "example/testing",
   description: "Example API",
@@ -642,7 +648,7 @@ worker_keep_alive = "30s"
       "service.list": { services: [runtimeService] },
       "service.inspect": { service: runtimeService },
       "service.refresh": { service: runtimeService },
-      "sandbox.inspect": {
+      "sandbox.refresh": {
         sandbox: {
           spec: {
             sandbox_id: "sbx-runtime001",
@@ -656,7 +662,10 @@ worker_keep_alive = "30s"
             desired_state: "READY",
             observed_state: "READY",
             worker_count: 1,
-            resources: { memory_current: 33554432 },
+            resources: {
+              memory_current: 33554432,
+              cpu_usage_micros: 2_000_000,
+            },
           },
           runtime: {
             revision: 7,
@@ -675,6 +684,7 @@ worker_keep_alive = "30s"
           worker: runtimeWorker,
         },
       },
+      "worker.list": { workers: [] },
     };
     if (Object.hasOwn(packageResults, name)) {
       return Promise.resolve({
@@ -1292,9 +1302,21 @@ async function verifyRuntime(page: BrowserDriver): Promise<void> {
     await fieldValue(page, "memory") === "32.0 MiB",
     "sandbox resources are not readable",
   );
+  assert(
+    await fieldValue(page, "cpu") === "2.00 s",
+    "sandbox CPU time is missing",
+  );
   await screenshot(page, "sandbox-detail");
   await row(page, "wrk-runtime001");
   await title(page, "Worker wrk-runtime001");
+  assert(
+    await fieldValue(page, "heap") === "2.0 MiB",
+    "Worker heap is missing",
+  );
+  assert(
+    await fieldValue(page, "cpu") === "0.75 s",
+    "Worker CPU time is missing",
+  );
   await button(page, "Open service");
   await title(page, "Service api");
   await button(page, "Back");

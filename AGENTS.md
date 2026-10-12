@@ -1018,6 +1018,9 @@ below.
 - `deno task test:presentation-browser` covers page/modal restoration and exact
   field heights and underlines across desktop, tablet, and mobile widths,
   including default one-row textareas and explicit multiple-row controls.
+- `deno task test:programs-browser --runtime` verifies readable sandbox RAM/CPU
+  and Worker heap/CPU through the actual administration screens and linked
+  navigation, including the targeted sandbox refresh on detail entry.
 - `deno task test:programs-browser` drives the actual Programs catalog and
   shared execution form through Chromium against deterministic kernel/job
   fixtures. It checks all-program visibility, metadata, preselection, input
