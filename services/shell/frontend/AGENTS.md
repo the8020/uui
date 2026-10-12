@@ -17,6 +17,12 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
 
 # Local Contracts
 
+- Back, Exit, and New form one gapless segmented navigation group. Exit sends
+  `session.exit` and uses the upward arrow icon. It follows the server-selected
+  entry URL after termination clears per-tab state. New is a normal base-URL
+  anchor with `target="_blank"` and `rel="noopener"`, using fresh-navigation
+  startup.
+
 - One live socket controls a session. Code 4001 opens a native modal with a
   full-screen blurred backdrop, "This session has been taken over by another
   window.", and Take control, disabling the covered UI. The inactive tab

@@ -557,6 +557,11 @@ function clientMessage(
     void end(record, "Signing out…", uiConfig.logoutUrl);
     return;
   }
+  if (message.type === "session.exit") {
+    record.lastClientSequence = message.clientSequence;
+    void end(record, "Session exited", uiConfig.postLoginUrl);
+    return;
+  }
   if (message.type === "client.ack" && message.resync === true) {
     record.lastClientSequence = message.clientSequence;
     if (record.currentPresentation !== undefined) {

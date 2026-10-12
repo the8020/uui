@@ -972,6 +972,77 @@ Deno.test("session logout ends the persistent execution and redirects", async ()
   }
 });
 
+Deno.test("session exit ends the persistent execution and redirects", async () => {
+  const metadataStore = new MemorySessionMetadataStore();
+  let completions = 0;
+  let handlerAborted = false;
+  let sessionId = "";
+  const exitMetadata = {
+    ...metadata,
+    contextId: "request-exit-establish",
+    persistentExecutionId: "persistent-exit",
+  };
+  const service = defineSessionService(
+    async ({ signal }) => {
+      await new Promise<void>((resolve) => {
+        signal.addEventListener("abort", () => {
+          handlerAborted = true;
+          resolve();
+        }, { once: true });
+      });
+    },
+    {
+      metadataStore,
+      completePersistent: () => {
+        completions++;
+        return Promise.resolve();
+      },
+    },
+  );
+  try {
+    assertEquals(
+      (await service.fetch(
+        new Request("https://example.test/connect", { method: "POST" }),
+        context(exitMetadata),
+      )).status,
+      204,
+    );
+    const socket = new TestSocket();
+    socket.message(connectMessage(0));
+    await service.connectWebSocket(
+      new Request("https://example.test/connect"),
+      context({ ...exitMetadata, contextId: "request-exit-socket" }),
+      socket,
+    );
+    await until(() => socket.sent.length > 0);
+    const ready = socket.sent.map((item) => JSON.parse(String(item))).find(
+      (item) => item.type === "session.ready",
+    );
+    sessionId = ready.sessionId;
+    socket.message({
+      type: "session.exit",
+      protocol: UUI_PROTOCOL_VERSION,
+      sessionId,
+      clientSequence: 1,
+    });
+    await until(() => socket.signal.aborted && completions === 1);
+    const ended = socket.sent.map((item) => JSON.parse(String(item))).find(
+      (item) => item.type === "session.end",
+    );
+    assertEquals(ended.message, "Session exited");
+    assertEquals(ended.redirectUrl, "/the8020/uui/shell/");
+    assertEquals(handlerAborted, true);
+    assertEquals(metadataStore.size, 0);
+  } finally {
+    if (sessionId !== "") {
+      await workerFunctions["uui.session.terminate"]({ sessionId }).catch(
+        () => undefined,
+      );
+    }
+    await metadataStore.clear();
+  }
+});
+
 Deno.test("UUI service enforces its one-execution Worker contract", async () => {
   const metadataStore = new MemorySessionMetadataStore();
   let finish!: () => void;

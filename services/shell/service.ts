@@ -121,6 +121,7 @@ async function shellResponse(meta: RequestMetadata): Promise<Response> {
   const themeNonce = contentSecurityNonce();
   const boot = {
     username: meta.user.username,
+    entryUrl: uiConfig.postLoginUrl,
     preferencesUrl: `${meta.canonicalBasePath}/preferences`,
     logoutUrl: uiConfig.logoutUrl,
     websocketUrl:

@@ -90,6 +90,7 @@ interface PresentationLayer {
 }
 
 interface BootData {
+  entryUrl?: string;
   preferencesUrl?: string;
   username?: string;
   logoutUrl?: string;
@@ -143,6 +144,8 @@ const messageDialogClose = requiredElement<HTMLButtonElement>(
   "message-dialog-close",
 );
 const screenBack = requiredElement<HTMLButtonElement>("screen-back");
+const sessionExit = requiredElement<HTMLButtonElement>("session-exit");
+const sessionNew = requiredElement<HTMLAnchorElement>("session-new");
 const programHeaderOverflowToggle = requiredElement<HTMLElement>(
   "program-header-overflow-toggle",
 );
@@ -472,6 +475,13 @@ document.addEventListener("keydown", (event) => {
   sessionMenuToggle.focus();
 });
 screenBack.addEventListener("click", requestBack);
+sessionNew.href = new URL(boot.entryUrl ?? "./", location.href).href;
+renderIconText(sessionExit, "[[icon=arrow_upward]]", { decorativeIcons: true });
+renderIconText(sessionNew, "[[icon=add]]", { decorativeIcons: true });
+sessionExit.addEventListener("click", () => {
+  sessionExit.disabled = true;
+  sendClient({ type: "session.exit" });
+});
 installBrowserBack();
 installKeyboardShortcuts({
   roots: () => {
@@ -952,6 +962,7 @@ function setConnectionState(
   renderIconText(connectionState, text);
   connectionIndicator.dataset.state = state;
   connectionText = text;
+  sessionExit.disabled = state !== "connected" || ended || suspended;
   updateSessionMenuLabel();
 }
 

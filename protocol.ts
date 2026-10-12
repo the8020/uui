@@ -45,6 +45,7 @@ export type UUIMessageType =
   | "session.end"
   | "session.open"
   | "session.logout"
+  | "session.exit"
   | "session.ping"
   | "session.pong"
   | "presentation.show"
@@ -136,6 +137,10 @@ export interface SessionLogoutMessage extends ClientMessageBase {
   type: "session.logout";
 }
 
+export interface SessionExitMessage extends ClientMessageBase {
+  type: "session.exit";
+}
+
 export interface ResyncConfirmMessage extends ClientMessageBase {
   type: "client.ack";
   resync?: boolean;
@@ -147,12 +152,13 @@ export type UUIClientMessage =
   | ScreenEventMessage
   | SessionPongMessage
   | SessionLogoutMessage
+  | SessionExitMessage
   | ResyncConfirmMessage;
 
 export interface ServerMessageBase {
   type: Exclude<
     UUIMessageType,
-    "session.connect" | "session.logout" | "screen.event"
+    "session.connect" | "session.logout" | "session.exit" | "screen.event"
   >;
   protocol: number;
   serverSequence: number;
@@ -489,8 +495,14 @@ export function parseClientMessage(
     }
     return value as unknown as ChannelFrame & ClientMessageBase;
   }
-  if (value.type === "session.pong" || value.type === "session.logout") {
-    return value as unknown as SessionPongMessage | SessionLogoutMessage;
+  if (
+    value.type === "session.pong" || value.type === "session.logout" ||
+    value.type === "session.exit"
+  ) {
+    return value as unknown as
+      | SessionPongMessage
+      | SessionLogoutMessage
+      | SessionExitMessage;
   }
   if (value.type === "client.ack") {
     if (value.resync !== undefined && typeof value.resync !== "boolean") {

@@ -40,15 +40,23 @@
               aria-hidden="true"
             >|</span><span aria-hidden="true">20</span>
           </div>
-          <button
-            class="btn btn-ghost btn-sm screen-back"
-            id="screen-back"
-            type="button"
-            aria-label="Back"
-            title="Back"
-            disabled
-          >
+          <div class="session-navigation" role="group"
+            aria-label="Session navigation">
+            <button
+              class="btn btn-ghost btn-sm screen-back"
+              id="screen-back"
+              type="button"
+              aria-label="Back"
+              title="Back"
+              disabled
+            >
           </button>
+            <button class="btn btn-ghost btn-sm screen-back" id="session-exit"
+              type="button" aria-label="Exit" title="Exit" disabled></button>
+            <a class="btn btn-ghost btn-sm screen-back" id="session-new"
+              href="./" target="_blank" rel="noopener" aria-label="New"
+              title="New"></a>
+          </div>
         </div>
         <div class="program-header" id="program-header" hidden>
           <div

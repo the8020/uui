@@ -101,6 +101,10 @@ Default section order:
 
 ## User Preferences
 
+- Group Back, Exit, and New beside the brand as one gapless segmented control.
+  Exit terminates the current session and returns to the entry screen, retaining
+  authentication. New opens the base UUI URL with target blank.
+
 When the user requests a durable behavior change, record it here or in the
 relevant child AGENTS.md
 
@@ -190,6 +194,9 @@ below.
   placement, physical WebSockets, or kernel routing.
 
 # Local Contracts
+
+- `session.exit` uses ordinary session termination and redirects to the
+  configured post-login entry URL without signing out.
 
 - `preferences.ts` exposes `fetchUserPreferences(username?)`, resolving each
   nullable field from the named user, the empty-username default, and built-ins.

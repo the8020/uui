@@ -1727,6 +1727,31 @@ body:has(.uui-content-fullscreen) {
   padding: 0;
 }
 
+.session-navigation {
+  display: inline-flex;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.session-navigation > .btn {
+  border: 0;
+  border-radius: 0;
+  text-decoration: none;
+}
+
+.session-navigation > .btn + .btn {
+  border-left: 1px solid var(--border);
+}
+
+.session-navigation > .btn:first-child {
+  border-radius: 5px 0 0 5px;
+}
+
+.session-navigation > .btn:last-child {
+  border-radius: 0 5px 5px 0;
+}
+
 .program-header .button {
   min-height: 32px;
   padding: 0.4rem 0.65rem;
