@@ -134,7 +134,6 @@ export interface CallScreenOptions<T extends z.ZodRawShape>
   title?: string;
   description?: string;
   customElements?: CustomElementDeclaration[];
-  channel?: ScreenChannel;
 }
 
 export interface SessionChannel {
@@ -151,6 +150,8 @@ interface PresentationSurface {
   readonly state: BoundSession;
   snapshot?: ScreenSnapshot;
   pending?: ActiveScreenCall;
+  currentScreenChannel?: ScreenChannel;
+  nextScreenChannel?: ScreenChannel;
   closing: boolean;
   active: boolean;
   removed: Promise<void>;
@@ -159,6 +160,7 @@ interface PresentationSurface {
 
 interface ActiveScreenCall {
   readonly surface: PresentationSurface;
+  readonly channel: ScreenChannel;
   readonly screenId: string;
   readonly revision: number;
   readonly snapshot: () => ScreenSnapshot;
@@ -176,11 +178,11 @@ interface ActiveScreenCall {
   ) => Promise<unknown>;
   readonly resolve: (event: ScreenEvent) => void;
   readonly reject: (error: unknown) => void;
-  detachChannel?: () => void;
   detachEndpoints?: () => void;
   refresh?: () => Promise<void>;
   refreshOnRestore?: () => void;
   redrawQueued: boolean;
+  prepared: boolean;
   settled: boolean;
   presenting: boolean;
   afterPresentation?: ScreenOutcome;
@@ -204,18 +206,31 @@ interface ScreenChannelAttachment {
   exit(action?: string): void;
   fail(error: unknown): void;
   endpoints: Map<string | object, AttachedChannel>;
-  program: AttachedChannel;
   readonly generation: string;
 }
 
 const attachScreenChannel = Symbol("attachScreenChannel");
 const attachChannel = Symbol("attachChannel");
+const disposeChannel = Symbol("disposeChannel");
+const ownChannel = Symbol("ownChannel");
+const channelOwner = Symbol("channelOwner");
 
-/** Reusable program/component binding. Its current call owns delivery; nothing is replayed. */
-export class Channel implements ChannelConnection {
+/** Logical binding within one screen; physical reset/reconnect never changes its owner. */
+class ScreenBinding implements ChannelConnection {
   readonly [channelBinding] = true;
   #endpoint?: AttachedChannel;
   readonly #bindings = new ChannelBindings();
+  readonly #lifetime = new AbortController();
+  get signal(): AbortSignal {
+    return this.#lifetime.signal;
+  }
+  [disposeChannel](): void {
+    if (this.signal.aborted) return;
+    this.#lifetime.abort();
+    this.#endpoint?.dispose();
+    this.#endpoint = undefined;
+    this.#bindings.dispose();
+  }
   send(
     id: string,
     data: ByteSource,
@@ -244,6 +259,7 @@ export class Channel implements ChannelConnection {
     );
   }
   subscribe(id: string, handler: ChannelSubscriber): ChannelSubscription {
+    this.signal.throwIfAborted();
     if (operationContext.getStore()) this.#current();
     return this.#bindings.subscribe(id, handler);
   }
@@ -267,6 +283,7 @@ export class Channel implements ChannelConnection {
     return endpoint;
   }
   [attachChannel](endpoint: AttachedChannel): () => void {
+    this.signal.throwIfAborted();
     if (this.#endpoint) {
       throw new TypeError("Channel may attach to only one component/program");
     }
@@ -280,8 +297,37 @@ export class Channel implements ChannelConnection {
   }
 }
 
-/** Controls and communicates with the one pending callScreen it is attached to. */
-export class ScreenChannel extends Channel {
+/** Component binding acquired internally from the next screen on this surface. */
+export class Channel extends ScreenBinding {
+  readonly [channelOwner]: ScreenChannel;
+  constructor() {
+    super();
+    this[channelOwner] = nextScreenChannel();
+    this[channelOwner][ownChannel](this);
+  }
+  /** Abandon a component even when it never reaches a presentation. */
+  dispose(): void {
+    this[disposeChannel]();
+    this[channelOwner][ownChannel](this, false);
+  }
+}
+
+/** UUI-owned controller for exactly one logical screen, including its preparation. */
+class ScreenChannel extends ScreenBinding {
+  readonly #components = new Set<Channel>();
+  [ownChannel](channel: Channel, add = true): void {
+    if (add) {
+      this.signal.throwIfAborted();
+      this.#components.add(channel);
+    } else this.#components.delete(channel);
+  }
+  override [disposeChannel](): void {
+    if (this.signal.aborted) return;
+    for (const component of this.#components) component[disposeChannel]();
+    this.#components.clear();
+    super[disposeChannel]();
+    this.#attachment = undefined;
+  }
   #attachment: ScreenChannelAttachment | undefined;
   readonly downloadNamespace = `native-save-${crypto.randomUUID()}`;
   get downloads(): AttachedChannel {
@@ -319,17 +365,41 @@ export class ScreenChannel extends Channel {
     this.#currentAttachment()?.fail(error);
   }
 
-  [attachScreenChannel](attachment: ScreenChannelAttachment): () => void {
+  [attachScreenChannel](attachment: ScreenChannelAttachment): void {
     if (this.#attachment !== undefined) {
       throw new Error(
         "ScreenChannel may attach to only one pending callScreen()",
       );
     }
     this.#attachment = attachment;
-    return () => {
-      if (this.#attachment === attachment) this.#attachment = undefined;
-    };
   }
+}
+
+export type { ScreenChannel };
+
+/** Concrete read-only identities; capture next before starting setup or timers. */
+export function currentScreenChannel(): ScreenChannel | undefined {
+  return channelSurface().currentScreenChannel;
+}
+export function nextScreenChannel(): ScreenChannel {
+  return channelSurface().nextScreenChannel!;
+}
+function channelSurface(): PresentationSurface {
+  const surface = currentSurface(requireBoundSession());
+  const operation = operationContext.getStore();
+  operation?.signal.throwIfAborted();
+  if (
+    operation && operation.generation !== surface.snapshot?.channelGeneration
+  ) {
+    throw new DOMException("Screen channel owner is stale", "AbortError");
+  }
+  return surface;
+}
+function disposeSurfaceChannels(surface: PresentationSurface): void {
+  surface.currentScreenChannel?.[disposeChannel]();
+  surface.nextScreenChannel?.[disposeChannel]();
+  surface.currentScreenChannel = undefined;
+  surface.nextScreenChannel = undefined;
 }
 
 const surfaceContext = new AsyncLocalStorage<PresentationSurface>();
@@ -376,6 +446,8 @@ export function bindSession(value: SessionChannel): () => void {
     const reason = new DOMException("UUI session ended", "AbortError");
     for (const surface of state.surfaces) {
       surface.active = false;
+      surface.remove();
+      disposeSurfaceChannels(surface);
       if (surface.pending !== undefined) {
         settleCall(state, surface.pending, { error: reason }, false);
       }
@@ -433,6 +505,29 @@ export async function callScreen<T extends z.ZodRawShape>(
   if (!state.active) {
     throw new Error("callScreen() requires a bound UUI session Worker");
   }
+  const screenChannel = surface.nextScreenChannel!;
+  try {
+    return await showScreen(options, state, surface, screenChannel, screenCall);
+  } finally {
+    if (surface.currentScreenChannel !== screenChannel) {
+      screenChannel[disposeChannel]();
+      if (
+        surface.nextScreenChannel === screenChannel &&
+        surface.active && !surface.closing && state.active
+      ) {
+        surface.nextScreenChannel = new ScreenChannel();
+      }
+    }
+  }
+}
+
+async function showScreen<T extends z.ZodRawShape>(
+  options: CallScreenOptions<T>,
+  state: BoundSession,
+  surface: PresentationSurface,
+  screenChannel: ScreenChannel,
+  screenCall: string | undefined,
+): Promise<ScreenEvent> {
   if (options.id.length === 0) throw new TypeError("screen ID is required");
   validateComponentStyle(options);
   if (!(options.model instanceof Model)) {
@@ -511,9 +606,9 @@ export async function callScreen<T extends z.ZodRawShape>(
   const inlineControls = inline.filter((item): item is ControlDeclaration =>
     "bind" in item
   );
-  const inlineActions = inline.filter((item): item is ScreenActionDeclaration =>
-    !("bind" in item) && !("type" in item)
-  );
+  const inlineActions = inline.filter((
+    item,
+  ): item is ScreenActionDeclaration => !("bind" in item) && !("type" in item));
   const separators = inline.filter((
     item,
   ): item is Omit<Separator, "id"> & { id?: string } => "type" in item);
@@ -690,7 +785,6 @@ export async function callScreen<T extends z.ZodRawShape>(
   const endpoints = new Map<string | object, AttachedChannel>();
   const messageNamespace = `message-center-${crypto.randomUUID()}`;
   const programNamespace = `program-${crypto.randomUUID()}`;
-  const screenChannel = options.channel ?? new ScreenChannel();
   const releaseChannels: Array<() => void> = [];
   const endpointLifetime = new AbortController();
   const runInCall = AsyncLocalStorage.snapshot();
@@ -739,8 +833,11 @@ export async function callScreen<T extends z.ZodRawShape>(
     resolveResult = resolve;
     rejectResult = reject;
   });
+  // Settlement may reject before asynchronous preparation reaches the result await.
+  void result.catch(() => {});
   const call: ActiveScreenCall = {
     surface,
+    channel: screenChannel,
     screenId: options.id,
     revision: screenRevision,
     snapshot,
@@ -860,7 +957,10 @@ export async function callScreen<T extends z.ZodRawShape>(
               endpointLifetime.signal,
               state.structured.connectionSignal,
             ]),
-            { clientSequence: sequence, afterReply: (callback) => callback() },
+            {
+              clientSequence: sequence,
+              afterReply: (callback) => callback(),
+            },
             transactLists,
           );
         }
@@ -883,7 +983,10 @@ export async function callScreen<T extends z.ZodRawShape>(
             `${custom.id}/${action.name}` === command.id
           );
           if (capability) {
-            return dispatch({ action: capability.event, controlId: custom.id });
+            return dispatch({
+              action: capability.event,
+              controlId: custom.id,
+            });
           }
         }
         throw new TypeError(`Unknown button ${command.id}`);
@@ -969,6 +1072,7 @@ export async function callScreen<T extends z.ZodRawShape>(
     resolve: resolveResult,
     reject: rejectResult,
     redrawQueued: false,
+    prepared: false,
     settled: false,
     presenting: false,
   };
@@ -1057,9 +1161,23 @@ export async function callScreen<T extends z.ZodRawShape>(
     const signal = AbortSignal.any([
       endpointLifetime.signal,
       options.model.resetSignal,
+      screenChannel.signal,
     ]);
     for (const release of releaseChannels.splice(0)) release();
-    const attach = (name: string | object, policy?: StreamPolicy) => {
+    const attach = (
+      name: string | object,
+      policy?: StreamPolicy,
+      channel?: Channel,
+    ) => {
+      if (channel && channel[channelOwner] !== screenChannel) {
+        throw new TypeError(
+          "Component Channel belongs to a different screen",
+        );
+      }
+      channel?.signal.throwIfAborted();
+      const lifetime = channel
+        ? AbortSignal.any([signal, channel.signal])
+        : signal;
       const endpoint = state.structured.register(
         `channel-${crypto.randomUUID()}`,
         channelGeneration,
@@ -1072,7 +1190,7 @@ export async function callScreen<T extends z.ZodRawShape>(
             options.model.screen.version !== version
           ) throw new Error("Channel presentation is stale or covered");
         },
-        signal,
+        lifetime,
         policy,
         (handler, id, data, context) =>
           runInCall(() =>
@@ -1145,18 +1263,18 @@ export async function callScreen<T extends z.ZodRawShape>(
     releaseChannels.push(screenChannel[attachChannel](program));
     attach(screenChannel.downloadNamespace, DOWNLOAD_POLICY);
     for (const [index, descriptor] of customElements.entries()) {
-      const endpoint = attach(descriptor);
-      descriptor.channelNamespace = endpoint.reference.namespace;
       const channel = options.customElements?.[index]?.channel;
+      const endpoint = attach(descriptor, undefined, channel);
+      descriptor.channelNamespace = endpoint.reference.namespace;
       if (channel) releaseChannels.push(channel[attachChannel](endpoint));
     }
     for (const [index, control] of resolvedControls.entries()) {
       if (!control.custom) continue;
-      const endpoint = attach(control);
-      control.custom.channelNamespace = endpoint.reference.namespace;
       const channel = (allDeclarations[index]?.custom ??
         fieldMetadata(schemaAtPath(options.schema, control.bind)!)?.custom)
         ?.channel;
+      const endpoint = attach(control, undefined, channel);
+      control.custom.channelNamespace = endpoint.reference.namespace;
       if (channel) releaseChannels.push(channel[attachChannel](endpoint));
     }
   }
@@ -1167,7 +1285,8 @@ export async function callScreen<T extends z.ZodRawShape>(
   ): Promise<null> {
     const previousMessages = state.messages.sequence;
     if (
-      request.surfaceId !== surface.id || request.screenId !== call.screenId ||
+      request.surfaceId !== surface.id ||
+      request.screenId !== call.screenId ||
       request.screenRevision !== call.revision ||
       request.instanceId !== options.model.screen.instanceId
     ) {
@@ -1253,7 +1372,11 @@ export async function callScreen<T extends z.ZodRawShape>(
         changes: [],
         updates: current.lists.filter((list) => ids.includes(list.id)).map((
           list,
-        ) => ({ id: list.id, revision: list.revision, operation: "refresh" })),
+        ) => ({
+          id: list.id,
+          revision: list.revision,
+          operation: "refresh",
+        })),
       },
       AbortSignal.any([
         endpointLifetime.signal,
@@ -1267,15 +1390,20 @@ export async function callScreen<T extends z.ZodRawShape>(
     for (const release of releaseChannels.splice(0)) release();
     endpointLifetime.abort();
     endpoints.clear();
+    screenChannel[disposeChannel]();
+    if (
+      surface.nextScreenChannel === screenChannel && surface.active &&
+      !surface.closing && state.active
+    ) {
+      surface.nextScreenChannel = new ScreenChannel();
+    }
   };
+  const previousSnapshot = surface.snapshot;
   state.models.add(options.model);
   surface.pending = call;
   try {
-    call.detachChannel = screenChannel[attachScreenChannel]({
+    screenChannel[attachScreenChannel]({
       endpoints,
-      get program() {
-        return endpoints.get(programNamespace)!;
-      },
       get generation() {
         return channelGeneration;
       },
@@ -1297,14 +1425,22 @@ export async function callScreen<T extends z.ZodRawShape>(
     });
     surface.snapshot = snapshot();
     if (lists.providerIDs().length) await call.refresh();
-    publishPresentation(state);
+    if (!call.settled) {
+      call.prepared = true;
+      publishPresentation(state);
+    }
     return await result;
   } finally {
+    call.settled = true;
+    if (
+      surface.currentScreenChannel !== screenChannel &&
+      surface.snapshot?.revision === screenRevision
+    ) {
+      surface.snapshot = previousSnapshot;
+    }
     state.models.delete(options.model);
     if (surface.pending === call) surface.pending = undefined;
     call.detachEndpoints?.();
-    call.detachChannel?.();
-    call.detachChannel = undefined;
   }
 }
 
@@ -1325,8 +1461,8 @@ async function present<T>(
   }
   const surface = createSurface(state, kind, ++state.surfaceSequence);
   state.surfaces.push(surface);
-  publishPresentation(state);
   try {
+    publishPresentation(state);
     return await surfaceContext.run(surface, run);
   } finally {
     await closeSurface(state, surface);
@@ -1346,6 +1482,7 @@ function createSurface(
     id: `surface-${sequence}`,
     kind,
     state,
+    nextScreenChannel: new ScreenChannel(),
     closing: false,
     active: true,
     removed,
@@ -1359,6 +1496,7 @@ async function closeSurface(
 ): Promise<void> {
   if (!surface.active) return;
   surface.closing = true;
+  disposeSurfaceChannels(surface);
   if (surface.pending !== undefined) {
     settleCall(state, surface.pending, {
       error: new DOMException("presentation surface closed", "AbortError"),
@@ -1432,7 +1570,11 @@ async function dispatchClientMessages(state: BoundSession): Promise<void> {
   } catch (error) {
     if (!state.active || boundSession !== state) return;
     state.structured.disconnect("UUI input closed");
+    state.active = false;
     for (const surface of state.surfaces) {
+      surface.active = false;
+      surface.remove();
+      disposeSurfaceChannels(surface);
       if (surface.pending !== undefined) {
         settleCall(state, surface.pending, { error }, false);
       }
@@ -1637,8 +1779,6 @@ function settleCall(
   call.detachEndpoints?.();
   call.detachEndpoints = undefined;
   if (call.surface.pending === call) call.surface.pending = undefined;
-  call.detachChannel?.();
-  call.detachChannel = undefined;
   if (publish && state.active) publishPresentation(state);
   if ("event" in outcome) call.resolve(outcome.event);
   else call.reject(outcome.error);
@@ -1688,6 +1828,18 @@ function publishPresentation(state: BoundSession): void {
   if (presentation.surfaces.length === 0) return;
   state.structured.invalidate();
   state.channel.send({ type: "presentation.show", presentation });
+  for (const surface of state.surfaces) {
+    const call = surface.pending;
+    if (
+      call?.prepared && surface.nextScreenChannel === call.channel &&
+      presentation.surfaces.some(({ surfaceId, screen }) =>
+        surfaceId === surface.id && screen.revision === call.revision
+      )
+    ) {
+      surface.currentScreenChannel = call.channel;
+      surface.nextScreenChannel = new ScreenChannel();
+    }
+  }
 }
 
 export function sendMessage(

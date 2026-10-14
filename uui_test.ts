@@ -47,10 +47,12 @@ import {
   commandScreen,
   connectChannels,
   copyText,
+  currentScreenChannel,
   disconnectChannels,
+  nextScreenChannel,
   presentModal,
   presentPage,
-  ScreenChannel,
+  type ScreenChannel,
   sendMessage,
 } from "./session.ts";
 
@@ -1317,7 +1319,8 @@ Deno.test({
 });
 
 Deno.test({
-  name: "ScreenChannel redraws, coalesces, exits, detaches, and is reusable",
+  name:
+    "automatic screen channels rotate once, coalesce redraws and never reuse settled owners",
   sanitizeOps: false,
   sanitizeResources: false,
   fn: async () => {
@@ -1325,13 +1328,12 @@ Deno.test({
     const unbind = bindSession(test);
     const schema = z.object({ count: z.number() });
     const model = { count: 1 };
-    const channel = new ScreenChannel();
+    let channel = nextScreenChannel();
     try {
       const first = callScreen({
         id: "monitor",
         schema,
         model: new Model(model),
-        channel,
       });
       await flushMicrotasks();
       const before = presentations(test).length;
@@ -1356,24 +1358,29 @@ Deno.test({
       channel.exit("stale");
       channel.fail(new Error("stale"));
 
+      assertEquals(channel.signal.aborted, true);
+      assertEquals(currentScreenChannel(), channel);
+      const firstChannel = channel;
+      channel = nextScreenChannel();
       const secondModel = { count: 3 };
       const second = callScreen({
         id: "monitor-again",
         schema,
         model: new Model(secondModel),
-        channel,
       });
       await flushMicrotasks();
       assertEquals(topScreen(lastPresentation(test)).id, "monitor-again");
+      firstChannel.exit("stale");
+      assertEquals(currentScreenChannel(), channel);
       const failure = new Error("monitor failed");
       channel.fail(failure);
       await assertRejects(() => second, Error, "monitor failed");
 
+      channel = nextScreenChannel();
       const third = callScreen({
         id: "after-failure",
         schema,
         model: new Model(secondModel),
-        channel,
       });
       await flushMicrotasks();
       channel.exit();
@@ -1397,13 +1404,12 @@ Deno.test({
     const unbind = bindSession(test);
     const schema = z.object({ value: z.string() });
     const model = { value: "before" };
-    const channel = new ScreenChannel();
+    const channel = nextScreenChannel();
     try {
       const root = callScreen({
         id: "root",
         schema,
         model: new Model(model),
-        channel,
       });
       await flushMicrotasks();
       const modal = presentModal(() =>
@@ -1442,14 +1448,13 @@ Deno.test({
     const test = new TestChannel();
     const unbind = bindSession(test);
     const schema = z.object({ value: z.string() });
-    const channel = new ScreenChannel();
+    const channel = nextScreenChannel();
     const rootModel = new Model({ value: "root" });
     try {
       const root = callScreen({
         id: "root",
         schema,
         model: rootModel,
-        channel,
       });
       await flushMicrotasks();
       const collision = new Model({ value: "collision" });
@@ -1470,16 +1475,13 @@ Deno.test({
       assertEquals(topScreen(lastPresentation(test)).model, rootModel.data);
       await assertRejects(
         () =>
-          presentModal(() =>
-            callScreen({
-              id: "illegal-channel-reuse",
-              schema,
-              model: new Model({ value: "modal" }),
-              channel,
-            })
-          ),
+          callScreen({
+            id: "concurrent",
+            schema,
+            model: new Model({ value: "other" }),
+          }),
         Error,
-        "only one pending",
+        "only one callScreen()",
       );
       await flushMicrotasks();
       assertEquals(surfaceSummary(lastPresentation(test)), [
@@ -2033,7 +2035,7 @@ Deno.test("field help retains background redraws and defers channel completion u
   for (const fail of [false, true]) {
     const test = new TestChannel();
     const unbind = bindSession(test);
-    const channel = new ScreenChannel();
+    const channel = nextScreenChannel();
     const schema = z.object({ value: z.string(), status: z.string() });
     const model = new Model({ value: "before", status: "waiting" });
     let settled = false;
@@ -2042,7 +2044,6 @@ Deno.test("field help retains background redraws and defers channel completion u
         id: "background-help",
         schema,
         model,
-        channel,
       })
         .then((event) => {
           settled = true;
@@ -2851,16 +2852,15 @@ Deno.test("omitted program and component channels attach real routes with determ
 });
 
 Deno.test("component and program subscriptions share screen generations, initiating context and cancellation", async () => {
-  const transport = new TestChannel(),
-    screenChannel = new ScreenChannel(),
-    component = new Channel();
+  const transport = new TestChannel();
   const unbind = bindSession(transport),
     context = new AsyncLocalStorage<string>();
+  let screenChannel = nextScreenChannel(), component = new Channel();
   const model = new Model({ note: "original" });
   const waits: Array<
     { signal: AbortSignal; done: Promise<void>; resolve(): void }
   > = [];
-  const handle = (channel: Channel) =>
+  const handle = (channel: Channel | ScreenChannel) =>
     channel.subscribe("*", async (id, _data, { signal }) => {
       if (id === "echo") channel.send("output", { owner: context.getStore() });
       if (id === "wait") {
@@ -2876,13 +2876,12 @@ Deno.test("component and program subscriptions share screen generations, initiat
         assertThrows(() => channel.subscribe("*", () => {}), DOMException);
       }
     });
-  const stopComponent = handle(component);
+  let stopComponent = handle(component);
   handle(screenChannel);
   const options = {
     id: "channel-owners",
     model,
     schema: z.object({ note: z.string() }),
-    channel: screenChannel,
     customElements: [{
       module: "/widget.js",
       config: {},
@@ -2955,6 +2954,11 @@ Deno.test("component and program subscriptions share screen generations, initiat
     screenChannel.exit();
     await pending;
     assertEquals(waits[2]!.signal.aborted, true);
+    screenChannel = nextScreenChannel();
+    component = new Channel();
+    options.customElements[0]!.channel = component;
+    stopComponent = handle(component);
+    handle(screenChannel);
     pending = context.run("reused owner", () => callScreen(options));
     waits[2]!.resolve();
     screen = topScreen(lastPresentation(transport));
@@ -2997,7 +3001,7 @@ Deno.test("retained async browsing refreshes rows totals and revisions under one
   const test = new TestChannel();
   const unbind = bindSession(test);
   const model = new Model({ note: "original", rows: [] as { id: number }[] });
-  const channel = new ScreenChannel();
+  const channel = nextScreenChannel();
   let length = 12, known = true, providerCalls = 0, calls = 0, settlements = 0;
   setListSource(model, "rows", async ({ query, offset, limit, signal }) => {
     await Promise.resolve();
@@ -3021,7 +3025,6 @@ Deno.test("retained async browsing refreshes rows totals and revisions under one
         rows: z.object({ id: z.number() }).array(),
       }),
       model,
-      channel,
       controls: [{ id: "rows", bind: "rows" }, { id: "note", bind: "note" }],
     }).then((event) => {
       settlements++;
@@ -3071,7 +3074,7 @@ Deno.test("retained async browsing refreshes rows totals and revisions under one
 Deno.test("provider row edits reject whole list and screen transactions without acknowledgement", async () => {
   const test = new TestChannel();
   const unbind = bindSession(test);
-  const channel = new ScreenChannel();
+  const channel = nextScreenChannel();
   const model = new Model({
     note: "original",
     rows: [{ id: 0, label: "Local" }],
@@ -3088,7 +3091,6 @@ Deno.test("provider row edits reject whole list and screen transactions without 
       rows: z.object({ id: z.number(), label: z.string() }).array(),
     }),
     model,
-    channel,
     controls: [
       { id: "note", bind: "note" },
       { id: "local", bind: "rows" },
@@ -3187,7 +3189,7 @@ Deno.test("provider row edits reject whole list and screen transactions without 
 Deno.test("retained provider views sharing a binding own independent rows mappings and revisions", async () => {
   const test = new TestChannel();
   const unbind = bindSession(test);
-  const channel = new ScreenChannel();
+  const channel = nextScreenChannel();
   const local = Array.from({ length: 3 }, (_, id) => ({ id, label: "Local" }));
   const model = new Model({ rows: local });
   const rows = [{ id: 1, label: "Original" }, { id: 2, label: "Second" }];
@@ -3212,7 +3214,6 @@ Deno.test("retained provider views sharing a binding own independent rows mappin
       rows: z.object({ id: z.number(), label: z.string() }).array(),
     }),
     model,
-    channel,
     controls: ["a", "b", "local"].map((id) => ({ id, bind: "rows" })),
   });
   try {
@@ -3262,7 +3263,7 @@ Deno.test("delayed visible providers cannot commit after coverage connection res
     const test = new TestChannel();
     const unbind = bindSession(test);
     const model = new Model({ rows: [] as { id: number }[] });
-    const channel = new ScreenChannel();
+    let channel = nextScreenChannel();
     const gate = Promise.withResolvers<import("./lists.ts").ListSourcePage>();
     let delayed = false, signal: AbortSignal | undefined;
     const dispose = setListSource(model, "rows", (request) => {
@@ -3281,7 +3282,6 @@ Deno.test("delayed visible providers cannot commit after coverage connection res
       id: "provider-lifetime",
       schema: z.object({ rows: z.object({ id: z.number() }).array() }),
       model,
-      channel,
       controls: [{ id: "rows", bind: "rows" }],
     };
     let pending = callScreen(options);
@@ -3303,16 +3303,16 @@ Deno.test("delayed visible providers cannot commit after coverage connection res
       );
       await flushMicrotasks();
       let child: Promise<unknown> | undefined;
-      const childChannel = new ScreenChannel();
+      let childChannel: ScreenChannel | undefined;
       if (action === "cover") {
-        child = presentPage(() =>
-          callScreen({
+        child = presentPage(() => {
+          childChannel = nextScreenChannel();
+          return callScreen({
             id: "cover",
             schema: z.object({ value: z.string() }),
             model: new Model({ value: "child" }),
-            channel: childChannel,
-          })
-        );
+          });
+        });
         await flushMicrotasks();
       } else if (action === "disconnect") disconnectChannels();
       else if (action === "reset") model.resetScreen();
@@ -3330,6 +3330,7 @@ Deno.test("delayed visible providers cannot commit after coverage connection res
       assertEquals(signal?.aborted, true, action);
       delayed = false;
       if (action === "replacement") {
+        channel = nextScreenChannel();
         pending = callScreen(options);
         await flushMicrotasks();
       } else if (["reset", "dispose", "source-replacement"].includes(action)) {
@@ -3341,7 +3342,7 @@ Deno.test("delayed visible providers cannot commit after coverage connection res
       } else {
         channel.redraw();
         await flushMicrotasks();
-        childChannel.exit("back");
+        childChannel?.exit("back");
         await child;
         await flushMicrotasks();
       }
@@ -3371,8 +3372,9 @@ Deno.test("delayed visible providers cannot commit after coverage connection res
 });
 
 Deno.test("provider refresh reports current failures and discards delayed old error output", async () => {
-  const test = new TestChannel(), channel = new ScreenChannel();
+  const test = new TestChannel();
   const unbind = bindSession(test);
+  let channel = nextScreenChannel();
   connectChannels("provider-errors");
   const model = new Model({ rows: [] as { id: number }[] });
   let failure: Promise<never> | undefined;
@@ -3384,7 +3386,6 @@ Deno.test("provider refresh reports current failures and discards delayed old er
     id: "provider-errors",
     schema: z.object({ rows: z.object({ id: z.number() }).array() }),
     model,
-    channel,
     controls: [{ id: "rows", bind: "rows" }],
   };
   let pending = callScreen(options);
@@ -3411,6 +3412,7 @@ Deno.test("provider refresh reports current failures and discards delayed old er
     channel.exit();
     await pending;
     failure = undefined;
+    channel = nextScreenChannel();
     pending = callScreen(options);
     await flushMicrotasks();
     const history = test.messageHistory.snapshot(), sent = test.sent.length;
@@ -3441,10 +3443,9 @@ Deno.test("captured message output rejects late owners and preserves initiating 
       "unbind",
     ]
   ) {
-    const test = new TestChannel(),
-      channel = new ScreenChannel(),
-      model = new Model({});
+    const test = new TestChannel(), model = new Model({});
     const unbind = bindSession(test);
+    let channel = nextScreenChannel();
     connectChannels("messages-original");
     const context = new AsyncLocalStorage<string>();
     const gate = Promise.withResolvers<void>();
@@ -3467,13 +3468,12 @@ Deno.test("captured message output rejects late owners and preserves initiating 
       id: "messages",
       schema: z.object({}),
       model,
-      channel,
       actions: [{ id: "next", label: "Next" }],
     };
     let pending = context.run("trusted-program", () => callScreen(options));
     void pending.catch(() => {});
     let child: Promise<unknown> | undefined;
-    const childChannel = new ScreenChannel();
+    let childChannel: ScreenChannel | undefined;
     try {
       const shown = lastPresentation(test), screen = topScreen(shown);
       const output = captureMessages();
@@ -3496,6 +3496,7 @@ Deno.test("captured message output rejects late owners and preserves initiating 
       if (boundary === "settlement") {
         await commandScreen({ op: "click", id: "next" }, 1);
         await pending;
+        channel = nextScreenChannel();
         pending = callScreen(options);
       } else if (boundary === "reset") {
         model.resetScreen();
@@ -3507,16 +3508,17 @@ Deno.test("captured message output rejects late owners and preserves initiating 
         if (boundary === "exit") channel.exit();
         else channel.fail(new Error("failure"));
         await pending.catch(() => {});
+        channel = nextScreenChannel();
         pending = callScreen(options);
       } else if (boundary === "cover") {
-        child = presentPage(() =>
-          callScreen({
+        child = presentPage(() => {
+          childChannel = nextScreenChannel();
+          return callScreen({
             id: "child",
             schema: z.object({}),
             model: new Model({}),
-            channel: childChannel,
-          })
-        );
+          });
+        });
       } else if (boundary === "disconnect") disconnectChannels();
       else if (boundary === "takeover") connectChannels("messages-replacement");
       else unbind();
@@ -3530,7 +3532,7 @@ Deno.test("captured message output rejects late owners and preserves initiating 
       assertEquals(trusted, "trusted-program", boundary);
       assertEquals(test.messageHistory.snapshot(), history, boundary);
       if (child) {
-        childChannel.exit();
+        childChannel?.exit();
         await child;
       }
       if (boundary !== "unbind" && boundary !== "dispose") {
@@ -3540,7 +3542,7 @@ Deno.test("captured message output rejects late owners and preserves initiating 
       }
     } finally {
       gate.resolve();
-      childChannel.exit();
+      childChannel?.exit();
       unbind();
       await pending.catch(() => {});
       await child?.catch(() => {});
@@ -3549,13 +3551,13 @@ Deno.test("captured message output rejects late owners and preserves initiating 
 });
 
 Deno.test("captured headless message state is accepted without a transport and expires on connection change", async () => {
-  const test = new TestChannel(), channel = new ScreenChannel();
+  const test = new TestChannel();
   const unbind = bindSession(test);
+  const channel = nextScreenChannel();
   const pending = callScreen({
     id: "headless-messages",
     schema: z.object({}),
     model: new Model({}),
-    channel,
   });
   try {
     const output = captureMessages();
@@ -3587,10 +3589,9 @@ Deno.test("captured headless message state is accepted without a transport and e
 });
 
 Deno.test("automatic routing separates list IDs, custom hosts and schema-owned custom fields without serializing bindings", async () => {
-  const transport = new TestChannel(),
-    customField = new Channel(),
-    host = new Channel();
+  const transport = new TestChannel();
   const unbind = bindSession(transport);
+  const customField = new Channel(), host = new Channel();
   connectChannels("automatic-routing");
   const received: unknown[] = [];
   customField.subscribe("*", (id, data) => {
@@ -3605,12 +3606,11 @@ Deno.test("automatic routing separates list IDs, custom hosts and schema-owned c
     }),
     rows: z.object({ value: z.string() }).array(),
   });
-  const controller = new ScreenChannel();
+  const controller = nextScreenChannel();
   const pending = callScreen({
     id: "automatic-routing",
     schema,
     model: new Model({ value: "initial", rows: [{ value: "one" }] }),
-    channel: controller,
     controls: [{ bind: "value" }, { id: "component:widget", bind: "rows" }],
     customElements: [{
       id: "widget",
@@ -3660,10 +3660,10 @@ Deno.test("automatic routing separates list IDs, custom hosts and schema-owned c
 });
 
 Deno.test("headless list work retains its initiating connection and cannot commit after takeover", async () => {
-  const transport = new TestChannel(),
-    controller = new ScreenChannel(),
-    model = new Model({ rows: [] as { value: string }[] });
+  const transport = new TestChannel();
   const unbind = bindSession(transport);
+  const controller = nextScreenChannel(),
+    model = new Model({ rows: [] as { value: string }[] });
   connectChannels("headless-origin");
   const gate = Promise.withResolvers<void>();
   let querySignal: AbortSignal | undefined;
@@ -3682,7 +3682,6 @@ Deno.test("headless list work retains its initiating connection and cannot commi
     id: "headless-connection",
     schema: z.object({ rows: z.object({ value: z.string() }).array() }),
     model,
-    channel: controller,
     controls: [{ id: "rows", bind: "rows" }],
   });
   try {
@@ -3710,9 +3709,10 @@ Deno.test("headless list work retains its initiating connection and cannot commi
 });
 
 Deno.test("inline layout and list-toolbar custom bindings retain their owning channels", async () => {
-  const transport = new TestChannel(), controller = new ScreenChannel();
-  const fieldChannel = new Channel(), toolbarChannel = new Channel();
+  const transport = new TestChannel();
   const unbind = bindSession(transport);
+  const controller = nextScreenChannel();
+  const fieldChannel = new Channel(), toolbarChannel = new Channel();
   connectChannels("inline-channels");
   const schema = z.object({
     value: z.string(),
@@ -3728,7 +3728,6 @@ Deno.test("inline layout and list-toolbar custom bindings retain their owning ch
     id: "inline-channels",
     schema,
     model: new Model({ value: "", toolbarValue: "", rows: ["one"] }),
-    channel: controller,
     controls: [{ bind: "rows" }],
     layout: {
       schema: 1,
@@ -3770,6 +3769,550 @@ Deno.test("inline layout and list-toolbar custom bindings retain their owning ch
   } finally {
     controller.exit();
     await pending;
+    unbind();
+  }
+});
+
+Deno.test("managed getters keep concrete per-surface identities through reset, nested restoration and closure", async () => {
+  const transport = new TestChannel();
+  const unbind = bindSession(transport);
+  const root = nextScreenChannel(), nextBefore = nextScreenChannel();
+  assertEquals(root, nextBefore);
+  assertEquals(currentScreenChannel(), undefined);
+  assertThrows(() => bindSession(new TestChannel()), Error, "already bound");
+  const model = new Model({});
+  const pending = callScreen({ id: "root-owner", schema: z.object({}), model });
+  const next = nextScreenChannel();
+  assertEquals(currentScreenChannel(), root);
+  assertEquals(next === root, false);
+  try {
+    const generation = topScreen(lastPresentation(transport)).channelGeneration;
+    model.resetScreen();
+    root.redraw();
+    await flushMicrotasks();
+    assertEquals(currentScreenChannel(), root);
+    assertEquals(nextScreenChannel(), next);
+    assertEquals(
+      topScreen(lastPresentation(transport)).channelGeneration === generation,
+      false,
+    );
+    let modalOwner!: ScreenChannel, modalNext!: ScreenChannel;
+    const modal = presentModal(async () => {
+      assertEquals(currentScreenChannel(), undefined);
+      modalOwner = nextScreenChannel();
+      const call = callScreen({
+        id: "modal-owner",
+        schema: z.object({}),
+        model: new Model({}),
+      });
+      modalNext = nextScreenChannel();
+      assertEquals(currentScreenChannel(), modalOwner);
+      await presentPage(async () => {
+        const pageOwner = nextScreenChannel();
+        const pageCall = callScreen({
+          id: "page-owner",
+          schema: z.object({}),
+          model: new Model({}),
+        });
+        assertEquals(currentScreenChannel(), pageOwner);
+        pageOwner.exit();
+        await pageCall;
+      });
+      assertEquals(currentScreenChannel(), modalOwner);
+      assertEquals(nextScreenChannel(), modalNext);
+      await call;
+    });
+    await flushMicrotasks();
+    assertEquals(currentScreenChannel(), root);
+    assertEquals(nextScreenChannel(), next);
+    modalOwner.exit();
+    await modal;
+    assertEquals(modalOwner.signal.aborted, true);
+    assertEquals(modalNext.signal.aborted, true);
+    root.exit();
+    await pending;
+    assertEquals(root.signal.aborted, true);
+    assertEquals(currentScreenChannel(), root);
+  } finally {
+    unbind();
+  }
+  assertEquals(next.signal.aborted, true);
+  assertThrows(() => next.subscribe("late", () => {}), DOMException);
+  assertThrows(() => nextScreenChannel(), Error, "not bound");
+});
+
+Deno.test("failed validation, preparation and presentation discard candidates and keep the previous current owner", async () => {
+  const transport = new TestChannel();
+  const unbind = bindSession(transport);
+  try {
+    const current = nextScreenChannel();
+    const call = callScreen({
+      id: "before-failure",
+      schema: z.object({}),
+      model: new Model({}),
+    });
+    current.exit();
+    await call;
+    for (const boundary of ["validation", "preparation", "presentation"]) {
+      const candidate = nextScreenChannel(), component = new Channel();
+      const subscription = component.subscribe("*", () => {});
+      const send = transport.send;
+      if (boundary === "presentation") {
+        transport.send = () => {
+          throw new Error("Presentation failed");
+        };
+      }
+      const model = new Model({});
+      if (boundary === "preparation") {
+        setListSource(model, "rows", () => {
+          throw new Error("Provider failed");
+        });
+      }
+      try {
+        await assertRejects(() =>
+          callScreen({
+            id: boundary,
+            schema: boundary === "validation"
+              ? z.object({ required: z.string() })
+              : boundary === "preparation"
+              ? z.object({ rows: z.string().array() })
+              : z.object({}),
+            model: boundary === "preparation"
+              ? Object.assign(model, { data: { rows: [] } })
+              : model,
+            controls: boundary === "preparation"
+              ? [{ id: "rows", bind: "rows" }]
+              : undefined,
+            customElements: [{
+              module: "/widget.js",
+              config: {},
+              channel: component,
+            }],
+          }), Error);
+      } finally {
+        transport.send = send;
+      }
+      assertEquals(currentScreenChannel(), current, boundary);
+      assertEquals(nextScreenChannel() === candidate, false, boundary);
+      assertEquals(candidate.signal.aborted, true, boundary);
+      assertEquals(component.signal.aborted, true, boundary);
+      assertEquals(subscription.matches("message"), false, boundary);
+      assertThrows(() => component.subscribe("late", () => {}), DOMException);
+      component.dispose();
+    }
+    const healthy = nextScreenChannel();
+    const healthyCall = callScreen({
+      id: "healthy",
+      schema: z.object({}),
+      model: new Model({}),
+    });
+    assertEquals(currentScreenChannel(), healthy);
+    healthy.exit();
+    await healthyCall;
+  } finally {
+    unbind();
+  }
+});
+
+Deno.test("covered provider failures keep current and next ownership and restore the previous snapshot", async () => {
+  for (const cover of [presentPage, presentModal]) {
+    const transport = new TestChannel();
+    const unbind = bindSession(transport);
+    const gate = Promise.withResolvers<import("./lists.ts").ListSourcePage>();
+    let child: Promise<unknown> | undefined,
+      preparing: Promise<unknown> | undefined;
+    try {
+      const previous = nextScreenChannel();
+      const first = callScreen({
+        id: "previous-root",
+        schema: z.object({}),
+        model: new Model({}),
+      });
+      previous.exit();
+      await first;
+      const previousSnapshot = topScreen(lastPresentation(transport));
+      let childChannel!: ScreenChannel;
+      child = cover(() => {
+        childChannel = nextScreenChannel();
+        return callScreen({
+          id: "child",
+          schema: z.object({}),
+          model: new Model({}),
+        });
+      });
+      void child.catch(() => {});
+      const candidate = nextScreenChannel(), component = new Channel();
+      const subscription = component.subscribe("*", () => {});
+      const model = new Model({ rows: [] as string[] });
+      setListSource(model, "rows", () => gate.promise);
+      preparing = callScreen({
+        id: "preparing-root",
+        schema: z.object({ rows: z.string().array() }),
+        model,
+        controls: [{ id: "rows", bind: "rows" }],
+      });
+      void preparing.catch(() => {});
+      const before = presentations(transport).length;
+      childChannel.redraw();
+      await flushMicrotasks();
+      assertEquals(presentations(transport).length, before + 1);
+      assertEquals(topScreen(lastPresentation(transport)).id, "child");
+      assertEquals(currentScreenChannel(), previous);
+      assertEquals(nextScreenChannel(), candidate);
+      gate.reject(new Error("Covered provider failed"));
+      await assertRejects(() => preparing!, Error, "Covered provider failed");
+      assertEquals(currentScreenChannel(), previous);
+      assertEquals(nextScreenChannel() === candidate, false);
+      assertEquals(candidate.signal.aborted, true);
+      assertEquals(component.signal.aborted, true);
+      assertEquals(subscription.matches("message"), false);
+      assertThrows(() => candidate.subscribe("late", () => {}), DOMException);
+      childChannel.exit();
+      await child;
+      const restored = lastPresentation(transport);
+      assertEquals(topScreen(restored), previousSnapshot);
+      assertEquals(restored.presentation.activeSurfaceId, null);
+      const healthy = nextScreenChannel();
+      const retry = callScreen({
+        id: "healthy-root",
+        schema: z.object({}),
+        model: new Model({}),
+      });
+      assertEquals(currentScreenChannel(), healthy);
+      healthy.exit();
+      await retry;
+    } finally {
+      gate.reject(new Error("Covered provider failed"));
+      await preparing?.catch(() => {});
+      unbind();
+      await child?.catch(() => {});
+    }
+  }
+});
+
+Deno.test("a prepared hidden candidate stays next until its own snapshot is published on restoration", async () => {
+  const transport = new TestChannel();
+  const unbind = bindSession(transport);
+  let child: Promise<unknown> | undefined,
+    pending: Promise<unknown> | undefined;
+  try {
+    const previous = nextScreenChannel();
+    const first = callScreen({
+      id: "previous-root",
+      schema: z.object({}),
+      model: new Model({}),
+    });
+    previous.exit();
+    await first;
+    let childChannel!: ScreenChannel;
+    child = presentPage(() => {
+      childChannel = nextScreenChannel();
+      return callScreen({
+        id: "child",
+        schema: z.object({}),
+        model: new Model({}),
+      });
+    });
+    void child.catch(() => {});
+    const candidate = nextScreenChannel();
+    pending = callScreen({
+      id: "prepared-root",
+      schema: z.object({}),
+      model: new Model({}),
+    });
+    void pending.catch(() => {});
+    childChannel.redraw();
+    await flushMicrotasks();
+    assertEquals(topScreen(lastPresentation(transport)).id, "child");
+    assertEquals(currentScreenChannel(), previous);
+    assertEquals(nextScreenChannel(), candidate);
+    childChannel.exit();
+    await child;
+    assertEquals(topScreen(lastPresentation(transport)).id, "prepared-root");
+    assertEquals(currentScreenChannel(), candidate);
+    const next = nextScreenChannel();
+    assertEquals(next === candidate, false);
+    candidate.redraw();
+    await flushMicrotasks();
+    assertEquals(currentScreenChannel(), candidate);
+    assertEquals(nextScreenChannel(), next);
+    candidate.exit();
+    await pending;
+  } finally {
+    unbind();
+    await Promise.allSettled([child, pending]);
+  }
+});
+
+Deno.test("pending and completed component bindings dispose explicitly and never migrate to a later call or session", async () => {
+  const transport = new TestChannel();
+  const unbind = bindSession(transport);
+  const unused = new Channel();
+  const subscription = unused.subscribe("*", () => {});
+  let cleaned = 0;
+  unused.signal.addEventListener("abort", () => cleaned++, { once: true });
+  unused.dispose();
+  unused.dispose();
+  assertEquals(cleaned, 1);
+  assertEquals(subscription.matches("message"), false);
+  const abandoned = new Channel();
+  const abandonedSubscription = abandoned.subscribe("*", () => {});
+  try {
+    for (let index = 0; index < 12; index++) {
+      const screen = nextScreenChannel(), component = new Channel();
+      const handler = () => {};
+      const subscription = component.subscribe("*", handler);
+      assertEquals(subscription.handler, handler);
+      const pending = callScreen({
+        id: "repeated-owner",
+        schema: z.object({}),
+        model: new Model({}),
+        customElements: [{
+          module: "/widget.js",
+          config: {},
+          channel: component,
+        }],
+      });
+      const next = nextScreenChannel();
+      await assertRejects(
+        () =>
+          callScreen({
+            id: "concurrent",
+            schema: z.object({}),
+            model: new Model({}),
+          }),
+        Error,
+        "only one",
+      );
+      assertEquals(nextScreenChannel(), next);
+      assertEquals(currentScreenChannel(), screen);
+      screen.exit();
+      await pending;
+      assertEquals(component.signal.aborted, true);
+      assertEquals(subscription.matches("message"), false);
+      assertThrows(() => screen.subscribe("late", handler), DOMException);
+      assertThrows(() => component.capture(false), DOMException);
+      await assertRejects(
+        () =>
+          callScreen({
+            id: "old-component",
+            schema: z.object({}),
+            model: new Model({}),
+            customElements: [{
+              module: "/widget.js",
+              config: {},
+              channel: component,
+            }],
+          }),
+        TypeError,
+        "different screen",
+      );
+    }
+    assertEquals(abandoned.signal.aborted, true);
+    assertEquals(abandonedSubscription.matches("message"), false);
+  } finally {
+    unbind();
+  }
+  const rebound = bindSession(new TestChannel());
+  try {
+    assertThrows(() => abandoned.subscribe("late", () => {}), DOMException);
+  } finally {
+    rebound();
+  }
+});
+
+Deno.test("settlement during unabortable preparation cannot clear a succeeding screen or its next candidate", async () => {
+  const transport = new TestChannel();
+  const unbind = bindSession(transport);
+  const gate = Promise.withResolvers<import("./lists.ts").ListSourcePage>();
+  const model = new Model({ rows: [] as string[] });
+  setListSource(model, "rows", () => gate.promise);
+  const preparing = nextScreenChannel();
+  const first = callScreen({
+    id: "preparing",
+    controls: [{ id: "rows", bind: "rows" }],
+    schema: z.object({ rows: z.string().array() }),
+    model,
+  });
+  const failed = assertRejects(() => first, DOMException);
+  try {
+    await flushMicrotasks();
+    preparing.exit();
+    const succeeding = nextScreenChannel();
+    assertEquals(succeeding === preparing, false);
+    const second = callScreen({
+      id: "successor",
+      schema: z.object({}),
+      model: new Model({}),
+    });
+    const next = nextScreenChannel();
+    gate.resolve({ rows: ["late"], more: false });
+    await failed;
+    assertEquals(currentScreenChannel(), succeeding);
+    assertEquals(nextScreenChannel(), next);
+    assertEquals(topScreen(lastPresentation(transport)).id, "successor");
+    succeeding.exit();
+    await second;
+  } finally {
+    gate.resolve({ rows: [], more: false });
+    unbind();
+  }
+});
+
+Deno.test("session end during preparation releases owners without an unhandled result rejection", async () => {
+  const transport = new TestChannel();
+  const unbind = bindSession(transport);
+  const gate = Promise.withResolvers<import("./lists.ts").ListSourcePage>();
+  const candidate = nextScreenChannel(), component = new Channel();
+  const subscription = component.subscribe("*", () => {});
+  const model = new Model({ rows: [] as string[] });
+  let providerSignal!: AbortSignal;
+  setListSource(model, "rows", ({ signal }) => {
+    providerSignal = signal;
+    return gate.promise;
+  });
+  const pending = callScreen({
+    id: "preparing-at-session-end",
+    controls: [{ id: "rows", bind: "rows" }],
+    schema: z.object({ rows: z.string().array() }),
+    model,
+  });
+  void pending.catch(() => {});
+  try {
+    unbind();
+    const error = await assertRejects(() => pending, DOMException);
+    assertEquals(error.name, "AbortError");
+    await flushMicrotasks();
+    assertEquals(providerSignal.aborted, true);
+    assertEquals(candidate.signal.aborted, true);
+    assertEquals(component.signal.aborted, true);
+    assertEquals(subscription.matches("message"), false);
+  } finally {
+    gate.resolve({ rows: ["late"], more: false });
+    unbind();
+  }
+});
+
+Deno.test("separate concurrent Workers own independent current and next screen channels", async () => {
+  const source = `
+    import { bindSession, callScreen, currentScreenChannel, nextScreenChannel, Channel } from ${
+    JSON.stringify(new URL("./session.ts", import.meta.url).href)
+  };
+    import { Model } from ${
+    JSON.stringify(new URL("./model.ts", import.meta.url).href)
+  };
+    import { z } from ${
+    JSON.stringify(new URL("../db/fields.ts", import.meta.url).href)
+  };
+    const unbind = bindSession({ sessionId: crypto.randomUUID(), send() {}, receive: () => new Promise(() => {}) });
+    const current = nextScreenChannel(), component = new Channel();
+    const pending = callScreen({ id: "worker-screen", schema: z.object({}), model: new Model({}) });
+    const next = nextScreenChannel();
+    postMessage({ namespace: current.capture(false).reference.namespace, current: currentScreenChannel() === current, next: next !== current });
+    onmessage = async () => { current.exit(); await pending; unbind(); postMessage({ disposed: current.signal.aborted && next.signal.aborted && component.signal.aborted }); };
+  `;
+  const url = URL.createObjectURL(
+    new Blob([source], { type: "text/javascript" }),
+  );
+  const workers = [
+    new Worker(url, { type: "module" }),
+    new Worker(url, { type: "module" }),
+  ];
+  const read = (worker: Worker) =>
+    new Promise<Record<string, unknown>>((resolve, reject) => {
+      const timeout = setTimeout(
+        () => reject(new Error("Worker channel verification timed out")),
+        10000,
+      );
+      worker.onmessage = (event) => {
+        clearTimeout(timeout);
+        resolve(event.data);
+      };
+      worker.onerror = (event) => {
+        clearTimeout(timeout);
+        event.preventDefault();
+        reject(new Error(event.message));
+      };
+    });
+  try {
+    const [one, two] = await Promise.all(workers.map(read));
+    assertEquals(one!.current && two!.current && one!.next && two!.next, true);
+    assertEquals(one!.namespace === two!.namespace, false);
+    const finished = workers.map(read);
+    workers.forEach((worker) => worker.postMessage("finish"));
+    assertEquals((await Promise.all(finished)).map((value) => value.disposed), [
+      true,
+      true,
+    ]);
+  } finally {
+    workers.forEach((worker) => worker.terminate());
+    URL.revokeObjectURL(url);
+  }
+});
+
+Deno.test("failed surface pushes restore ownership and session end releases covered removal waits", async () => {
+  const transport = new TestChannel();
+  const unbind = bindSession(transport);
+  const root = nextScreenChannel();
+  const pending = callScreen({
+    id: "root",
+    schema: z.object({}),
+    model: new Model({}),
+  });
+  void pending.catch(() => {});
+  let inner: Promise<void> | undefined;
+  let pageNext!: ScreenChannel, modalNext!: ScreenChannel;
+  try {
+    const send = transport.send;
+    let fail = true, called = false;
+    transport.send = (message) => {
+      if (fail) {
+        fail = false;
+        throw new Error("Push failed");
+      }
+      send.call(transport, message);
+    };
+    await assertRejects(
+      () =>
+        presentPage(() => {
+          called = true;
+        }),
+      Error,
+      "Push failed",
+    );
+    transport.send = send;
+    assertEquals(called, false);
+    assertEquals(topScreen(lastPresentation(transport)).id, "root");
+    assertEquals(currentScreenChannel(), root);
+    const closing = presentPage(() => {
+      pageNext = nextScreenChannel();
+      void callScreen({
+        id: "closing-page",
+        schema: z.object({}),
+        model: new Model({}),
+      }).catch(() => {});
+      inner = presentModal(async () => {
+        modalNext = nextScreenChannel();
+        await callScreen({
+          id: "open-modal",
+          schema: z.object({}),
+          model: new Model({}),
+        });
+      });
+      void inner.catch(() => {});
+      // Return without awaiting the child: removal must wait for the newer surface.
+    });
+    let removed = false;
+    void closing.then(() => removed = true);
+    await flushMicrotasks();
+    assertEquals(removed, false);
+    unbind();
+    await assertRejects(() => pending, DOMException);
+    await assertRejects(() => inner!, DOMException);
+    await closing;
+    assertEquals(removed, true);
+    assertEquals(pageNext.signal.aborted && modalNext.signal.aborted, true);
+  } finally {
     unbind();
   }
 });

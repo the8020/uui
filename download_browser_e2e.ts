@@ -13,7 +13,7 @@ import {
   defineSessionService,
   download,
   type DownloadHandle,
-  ScreenChannel,
+  nextScreenChannel,
   type StreamPolicy,
   z,
 } from "./mod.ts";
@@ -68,7 +68,7 @@ const session = defineSessionService(async ({ signal }) => {
     );
     let action = "";
     while (!signal.aborted) {
-      const channel = new ScreenChannel();
+      const channel = nextScreenChannel();
       const upload = new Channel();
       upload.subscribe("*", async (id, data) => {
         if (id !== "bytes" || !(data instanceof ReadableStream)) return;
@@ -76,7 +76,6 @@ const session = defineSessionService(async ({ signal }) => {
         uploadDone = true;
       });
       const pending = callScreen({
-        channel,
         id: "download-browser-test",
         title: `Downloads ${refreshing}`,
         schema: z.object({}),
@@ -830,9 +829,10 @@ try {
     deviceScaleFactor: 1,
     mobile: false,
   }, sid);
-  assertEquals(
-    await debug.evaluate(
-      `(() => {
+  await waitFor(
+    () =>
+      debug.evaluate(
+        `(() => {
     const group = document.querySelector('[data-layout-id="downloads"]');
     const bounds = group.getBoundingClientRect();
     return [group.querySelector('input'), ...group.querySelectorAll('button')].filter(element => element.getClientRects().length > 0).every(element => {
@@ -840,9 +840,9 @@ try {
       return rect.left >= bounds.left && rect.right <= bounds.right && rect.top >= bounds.top && rect.bottom <= bounds.bottom;
     }) && document.documentElement.scrollWidth <= innerWidth;
   })()`,
-      sid,
-    ),
-    true,
+        sid,
+      ),
+    "mobile download card layout",
   );
   assertEquals(backendDownloadRequests, 0);
   assertEquals(debug.exceptions, []);

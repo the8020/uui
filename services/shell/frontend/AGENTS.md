@@ -41,6 +41,8 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
   Missing executions never recreate their program automatically.
 - Take control and Reload page use the shared `btn btn-primary` styling.
 
+- The navbar right cluster permits shrinking at narrow widths so the session
+  username can ellipsize without overflowing the viewport.
 - Reconcile stable surfaces and retained DOM while preserving dirty values,
   focus, custom elements, and list state. Identical snapshots that retain DOM
   must also retain its bound model object so later edits reach submitted data.
@@ -56,21 +58,22 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
   special in full-ID filtering for ordinary messages and stream-open.
   ChannelBindings owns retention/reattachment and disposal for both backend
   Channels and browser component/program subscriptions, without handler records.
-  Every screen has a real program attachment, even when omitted by its author;
-  unconsumed ordinary data drops and streams cancel before source demand. No
-  payload/result schemas or method registry exist. Opaque routing references
-  come from each owning descriptor/program; there is no endpoint catalog or
-  authority layer. Browser custom contexts acquire a component view or owning
-  program view without named wiring. Preserved hosts reattach subscriptions
-  through the current owner; saved views retain their original call/connection
-  and cannot register/send into replacements. Acquire a view before awaiting.
-  Outgoing streams inherit their host lifetime, including program sends;
-  disposal/remount cancels them even while the screen call remains attached.
-  Handler failures leave other subscriptions usable; stream data requires one
-  matching consuming subscriber, never automatic tee/buffering. Only matching
-  list-domain results/errors or valid presentations release the list request
-  gate. Ordinary messages and stream controls do not. No server mod.ts imports
-  enter the bundle.
+  Backend retention ends at logical screen settlement; browser hosts retain
+  subscriptions only through their owning descriptor. Every screen has its
+  automatically managed program attachment; unconsumed ordinary data drops and
+  streams cancel before source demand. No payload/result schemas or method
+  registry exist. Opaque routing references come from each owning
+  descriptor/program; there is no endpoint catalog or authority layer. Browser
+  custom contexts acquire a component view or owning program view without named
+  wiring. Preserved hosts reattach subscriptions through the current owner;
+  saved views retain their original call/connection and cannot register/send
+  into replacements. Acquire a view before awaiting. Outgoing streams inherit
+  their host lifetime, including program sends; disposal/remount cancels them
+  even while the screen call remains attached. Handler failures leave other
+  subscriptions usable; stream data requires one matching consuming subscriber,
+  never automatic tee/buffering. Only matching list-domain results/errors or
+  valid presentations release the list request gate. Ordinary messages and
+  stream controls do not. No server mod.ts imports enter the bundle.
 - Each call registers its built-in message-center append/history consumer
   through the same core. Validated snapshots reconstruct accepted domain
   history; message-kind refresh never releases the interaction gate. Monotonic

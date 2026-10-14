@@ -4,9 +4,10 @@ import {
   captureMessages,
   Channel,
   Model,
+  nextScreenChannel,
   packageAssetURL,
   presentPage,
-  ScreenChannel,
+  type ScreenChannel,
   z,
 } from "./mod.ts";
 
@@ -151,9 +152,9 @@ async function runWidget(): Promise<void> {
   let module: string | undefined, label = "Program component";
   let preserve = true;
   while (true) {
-    const screenChannel = new ScreenChannel();
+    const screenChannel = nextScreenChannel();
     const widget = new Channel(), other = new Channel();
-    const attach = (channel: Channel, name: string) => {
+    const attach = (channel: Channel | ScreenChannel, name: string) => {
       const handler = (id: string, data: unknown) => {
         filteredUpdates.push([id, data]);
         channel.send("dashboard.updates.ack", data);
@@ -230,7 +231,6 @@ async function runWidget(): Promise<void> {
     attach(widget, "widget");
     attach(other, "other");
     const pending = callScreen({
-      channel: screenChannel,
       id: "custom-elements-test",
       title: "Custom elements",
       schema: z.object({

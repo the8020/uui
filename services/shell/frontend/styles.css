@@ -268,7 +268,7 @@ textarea {
   grid-column: 3;
   grid-row: 1;
   justify-self: end;
-  min-width: max-content;
+  min-width: 0;
   gap: 8px;
 }
 

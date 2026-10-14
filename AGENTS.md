@@ -195,6 +195,10 @@ below.
 
 # Local Contracts
 
+- UUI `0.8.1` and demo `0.8.0` are the paired managed-channel releases for the
+  kernel `0.8` line. Package tags use bare semantic versions; package manifests
+  and runtime `/p/` imports remain unversioned.
+
 - `session.exit` uses ordinary session termination and redirects to the
   configured post-login entry URL without signing out.
 
@@ -344,8 +348,8 @@ below.
   accepts synchronous program outcomes before/between calls as domain state; the
   next explicit presentation carries it, with no detached operation
   backlog/rebinding. Live append/history/refresh use the ordinary registered
-  message-center namespace of each call, including built-in calls without
-  ScreenChannel. `captureMessages()` captures trusted async context and the
+  message-center namespace of each call, including built-in calls with managed
+  ScreenChannels. `captureMessages()` captures trusted async context and the
   current screen and connection before asynchronous work;
   stale/cancelled/covered output rejects before history mutation.
   Download/provider error callbacks use captures. Four semantic kinds and
@@ -358,13 +362,14 @@ below.
   request-gate release. Arbitrary background work must retain a captured output
   rather than rediscover an ambient future call.
 - Programs call `download(options, channel.downloads)` only under an explicit
-  pending ScreenChannel attachment. The captured endpoint owns its screen and
-  connection; detached/old starts fail before source demand. Prepare options
-  between screens, create the next pending call explicitly, then start there.
-  Settlement/replacement, reset/removal/disposal, coverage, exit/failure and
-  disconnect/takeover cancel unfinished streams, without replay or buffering.
-  Background producers retain their initiating trusted context; abort-ignoring
-  awaits may continue internally while late framework output is dropped.
+  pending managed ScreenChannel attachment. The captured endpoint owns its
+  screen and connection; detached/old starts fail before source demand. Prepare
+  options between screens, create the next pending call explicitly, then start
+  there. Settlement/replacement, reset/removal/disposal, coverage, exit/failure
+  and disconnect/takeover cancel unfinished streams, without replay or
+  buffering. Background producers retain their initiating trusted context;
+  abort-ignoring awaits may continue internally while late framework output is
+  dropped.
 - `downloads.ts` is a native-save domain helper calling the shared stream core;
   `download_metadata.ts` owns filename/content-type validation and native bounds
   (64 KiB frames, 64 MiB source chunks, 32 active transfers, four per-stream, 16
@@ -417,13 +422,30 @@ below.
   the top screen; programs decide when returning should pop a wrapper. Closed
   async contexts cannot target another surface, and surface closure is strict
   LIFO rather than FIFO scheduling or last-writer replacement.
-- `ScreenChannel` is an argument-free, reusable controller optionally attached
-  to one unresolved `callScreen()`. It coalesces `redraw()` calls against that
-  call's existing model/contract, resolves `exit(action?)` with an honest
-  framework-originated exit lacking a fabricated client sequence, and rejects
-  through `fail(error)`. Covered redraws update the cached snapshot and publish
-  only when uncovered. Every settlement and session end detaches the channel;
-  detached commands are discarded rather than buffered.
+- `currentScreenChannel()` and `nextScreenChannel()` are read-only getters for
+  the existing async presentation surface. Next exists before the first call;
+  current is undefined until presentation. Plain `callScreen(options)` promotes
+  its exact captured next only after preparation finishes and that call's
+  snapshot is successfully published, then creates a fresh next. A prepared
+  hidden call stays next until its first visible publication on restoration.
+  Current retains its disposed reference after settlement until the next
+  successful call. Redraw, reset, reconnect and restoration of already-presented
+  calls do not rotate logical ownership. ScreenChannel is exported only as a
+  type; callScreen has no channel option or author-facing preparation wrapper.
+- Captured ScreenChannels control their one call: coalesced redraw, honest
+  framework-originated exit and failure. Settled controls drop; sends and
+  subscriptions reject. Covered redraws update the cached snapshot. Failed
+  validation/preparation/presentation before promotion disposes the candidate
+  and supplies a fresh next without replacing current. Recreate candidate
+  components before retrying. Same-surface concurrent rejection leaves the pair
+  unchanged; late failed preparation cannot overwrite a successor.
+- Each `new Channel()` acquires next internally and belongs to that logical
+  screen. Its declaration reference preserves existing per-instance namespaces.
+  Screen settlement disposes all owning logical bindings, including unrendered
+  ones. Channel.dispose() explicitly abandons pending components; unsubscribe()
+  abandons one subscription. Their signals let setup timers/resources stop
+  without GC/finalizers. Surface/session closure clears current and pending
+  next.
 - `channel.ts` owns the sole browser-safe ChannelRouter on the existing
   authenticated socket. Applications use send(ID, data) and subscribe(pattern,
   handler), returning a canonical ChannelSubscription with readonly id/original
@@ -437,12 +459,12 @@ below.
   validation and business policy belong to the consumer. Ordinary messages fan
   out; handler failures are isolated; no listeners means drop, never
   buffering/replay.
-- Every callScreen creates/attaches a real default ScreenChannel when authors
-  omit one; browser component/program channels are always available while live.
-  Unconsumed ordinary messages drop and streams cancel before source demand.
-  ScreenChannel implements program send/subscribe directly. Custom declarations
-  and custom-field options attach a Channel reference, removed from wire data.
-  UUI generates separate opaque component/list/program routing identities and
+- Every callScreen attaches its managed next ScreenChannel; browser
+  component/program channels are always available while live. Unconsumed
+  ordinary messages drop and streams cancel before source demand. ScreenChannel
+  implements program send/subscribe directly. Custom declarations and
+  custom-field options attach a Channel reference, removed from wire data. UUI
+  generates separate opaque component/list/program routing identities and
   publishes only owning descriptor references, with no catalog, grants or
   component-kind router. Authors never repeat element IDs as channel namespaces.
   Shared declaration cloning preserves live references through body/header,
@@ -450,17 +472,18 @@ below.
   presentation metadata uses weak schema keys and retains channel references
   separately from serializable cloned presentation options.
 - Every callScreen/reset generation owns its registrations, in-flight subscriber
-  work and streams. Settlement/removal/exit/failure disposes them. Reused
-  backend Channels and retained browser hosts reattach subscription bindings
-  without replay. Coverage aborts in-flight work and rejects admission. Backend
-  handlers retain initiating trusted async context; old handlers cannot send or
-  subscribe through a reused Channel. Browser views retain their acquired
-  generation and connection; acquire at the start of new work, retain across
-  awaits. Preserved subscriptions reacquire their owner for each new invocation,
-  never retarget saved output views. Unsubscribe aborts its work and cancels
-  streams it consumes. Browser stream sends inherit the host lifetime, including
-  sends through its program channel, so same-call remount/disposal cancels the
-  removed host's transfers.
+  work and streams. Settlement/removal/exit/failure disposes them. Backend
+  Channels reattach within the same logical call after reset; retained browser
+  hosts reattach through their owning descriptor without replay. Coverage aborts
+  in-flight work and rejects admission. Backend handlers retain initiating
+  trusted async context; old handlers cannot send or subscribe into a later
+  logical screen. Browser views retain their acquired generation and connection;
+  acquire at the start of new work, retain across awaits. Preserved
+  subscriptions reacquire their owner for each new invocation, never retarget
+  saved output views. Unsubscribe aborts its work and cancels streams it
+  consumes. Browser stream sends inherit the host lifetime, including sends
+  through its program channel, so same-call remount/disposal cancels the removed
+  host's transfers.
 - Transient frame admission retains current session/controller/socket checks,
   transport JSON/size validation, per-side sequence and screen/connection
   generations. Disconnect/takeover aborts work; a pending call may reconnect.
@@ -1204,11 +1227,14 @@ below.
   Canonical object identity, literal/global/prefix/internal-star matching,
   matching stream admission and repeated shared-binding cleanup are covered;
   default-screen routes reject unconsumed streams without source credit.
-  `uui_test.ts` checks call/reset/connection lifetimes, trusted context, opaque
-  identity isolation and custom-field binding serialization. The custom browser
-  fixture uses two live component instances and the program with distinct byte
-  content both ways, cancellation, preserved hosts and aborted saved views after
-  replacement/reconnect.
+  `uui_test.ts` checks automatic current/next identities, failure cleanup,
+  pending disposal, preparation failure under page/modal coverage, session end
+  during preparation, first visible publication after hidden preparation, nested
+  ownership, independent Workers, call/reset/connection lifetimes, trusted
+  context, opaque identity isolation and custom-field binding serialization. The
+  custom browser fixture uses two live component instances and the program with
+  distinct byte content both ways, cancellation, preserved hosts and aborted
+  saved views after replacement/reconnect.
 - `lists_test.ts`, `list_values_test.ts`, and `uui_test.ts` cover projections,
   source mappings, identities, typed semantics, atomic edits/query events, and
   page-five retention across selection and data refresh.

@@ -2,11 +2,11 @@ import { assertEquals } from "@std/assert";
 import {
   callScreen,
   codeEditor,
+  currentScreenChannel,
   field,
   Model,
   presentModal,
   presentPage,
-  ScreenChannel,
   z,
 } from "../../../../../mod.ts";
 import programTerminated from "../../../../../programs/program-terminated/program.ts";
@@ -50,7 +50,6 @@ export default function fixture() {
     reactive: false,
     note: "",
   });
-  const channel = new ScreenChannel();
   let saved = "";
   let lastEvent = "";
   let count = 0;
@@ -69,7 +68,6 @@ export default function fixture() {
           title: "Code editor",
           description: "Content above the editor.\n\n".repeat(24),
           model,
-          channel,
           schema: z.object({
             code: field(z.string(), {
               custom: codeEditor(),
@@ -187,7 +185,7 @@ export default function fixture() {
         }));
       }
       if (path === "/editor-redraw") {
-        channel.redraw();
+        currentScreenChannel()!.redraw();
         return Promise.resolve(new Response("ok"));
       }
       return Promise.resolve(undefined);

@@ -12,6 +12,7 @@ import {
   callScreen,
   captureMessages,
   currentBrowser,
+  currentScreenChannel,
   presentModal,
   presentPage,
   sendMessage,
@@ -35,14 +36,13 @@ import {
   workerFunctions,
 } from "./session_service.ts";
 import { field } from "./fields.ts";
-import { ScreenChannel } from "./session.ts";
+import { nextScreenChannel } from "./session.ts";
 import { codeEditor } from "./services/shell/frontend/components/code-editor/mod.ts";
 import type { AgentResponse } from "./agent.ts";
 import { encodeStreamChunk } from "./channel_streams.ts";
 
 Deno.test("agent commands share the live screen, reject stale edits, and return control without restarting its program", async () => {
   const metadataStore = new MemorySessionMetadataStore();
-  const channel = new ScreenChannel();
   const model = new Model({
     name: "Alice",
     role: "viewer" as "viewer" | "operator",
@@ -60,7 +60,6 @@ Deno.test("agent commands share the live screen, reject stale edits, and return 
         id: "agent-proof",
         title: "Agent proof",
         model,
-        channel,
         schema: z.object({
           name: field(z.string().min(2), { label: "Name" }),
           role: field(z.enum(["viewer", "operator"]), { label: "Role" }),
@@ -239,7 +238,7 @@ Deno.test("agent commands share the live screen, reject stale edits, and return 
     assert((await command({ op: "set", id: "name", value: "" })).error);
     assertEquals(model.data.name, "Alice");
     const before = expected!.revision;
-    channel.redraw();
+    currentScreenChannel()!.redraw();
     await until(() => {
       const status = workerFunctions["uui.session.inspect"]({ sessionId });
       return Number(status.server_sequence) > before;
@@ -1238,9 +1237,8 @@ Deno.test("public downloads use explicit pending screen ownership, cancel on rep
     let exportNext = false;
     try {
       while (!signal.aborted) {
-        const channel = new ScreenChannel();
+        const channel = nextScreenChannel();
         const pending = callScreen({
-          channel,
           id: "download-test",
           schema: z.object({}),
           model: new Model({}),

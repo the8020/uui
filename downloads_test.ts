@@ -1,9 +1,15 @@
 import { assertEquals, assertThrows } from "@std/assert";
-import { download, ScreenChannel } from "./session.ts";
+import { download, nextScreenChannel, type ScreenChannel } from "./session.ts";
 import { startDownload } from "./downloads.ts";
 import { validateDownloadMetadata } from "./download_metadata.ts";
 Deno.test("download start requires a live explicit attachment before touching its source", () => {
-  const channel = new ScreenChannel();
+  const unbind = bindSession({
+    sessionId: "pending-download",
+    send() {},
+    receive: () => new Promise(() => {}),
+  });
+  const channel = nextScreenChannel();
+  unbind();
   assertThrows(() => channel.downloads, DOMException, "live");
   let pulled = false;
   const body = {
@@ -102,7 +108,8 @@ Deno.test("screen owners cancel both stream directions and late handlers across 
     });
     connectChannels("connection");
     client.connect("connection");
-    const channel = new ScreenChannel(), model = new Model({});
+    let channel = nextScreenChannel();
+    const model = new Model({});
     const policy: StreamPolicy = {
       chunkBytes: 4,
       sourceChunkBytes: 8,
@@ -136,7 +143,6 @@ Deno.test("screen owners cancel both stream directions and late handlers across 
       }
     });
     const options = {
-      channel,
       model,
       id: "streams",
       schema: z.object({}),
@@ -184,7 +190,7 @@ Deno.test("screen owners cancel both stream directions and late handlers across 
     const saved = channel.downloads;
     const outgoing = download({ filename: "owned.bin", body: source() }, saved);
     const upload = incoming.send("bytes", source(), { policy });
-    const childChannel = new ScreenChannel();
+    let childChannel: ScreenChannel | undefined;
     let child: Promise<unknown> | undefined;
     try {
       await tick();
@@ -194,6 +200,7 @@ Deno.test("screen owners cancel both stream directions and late handlers across 
       if (action === "settlement") {
         await commandScreen({ op: "click", id: "next" }, 1);
         await pending;
+        channel = nextScreenChannel();
         pending = callScreen(options);
       } else if (action === "reset") {
         model.resetScreen();
@@ -204,6 +211,7 @@ Deno.test("screen owners cancel both stream directions and late handlers across 
       } else if (action === "exit") {
         channel.exit();
         await pending;
+        channel = nextScreenChannel();
         pending = callScreen(options);
       } else if (action === "failure") {
         channel.fail(new Error("Failed"));
@@ -213,16 +221,17 @@ Deno.test("screen owners cancel both stream directions and late handlers across 
           Error,
           "Failed",
         );
+        channel = nextScreenChannel();
         pending = callScreen(options);
       } else if (action === "cover") {
-        child = presentPage(() =>
-          callScreen({
+        child = presentPage(() => {
+          childChannel = nextScreenChannel();
+          return callScreen({
             id: "child",
             model: new Model({}),
             schema: z.object({}),
-            channel: childChannel,
-          })
-        );
+          });
+        });
       } else if (action === "disconnect") {
         disconnectChannels();
       } else if (action === "takeover") {
@@ -258,7 +267,7 @@ Deno.test("screen owners cancel both stream directions and late handlers across 
       );
     } finally {
       gate.resolve();
-      childChannel.exit();
+      childChannel?.exit();
       await child;
       channel.exit();
       await pending.catch(() => {});

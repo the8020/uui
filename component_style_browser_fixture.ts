@@ -7,10 +7,6 @@ interface Browser {
 
 export default function fixture() {
   let phase = 0;
-  const channel = new Channel();
-  channel.subscribe("echo", (_id, data) => {
-    channel.send("echo", data);
-  });
   const model = new Model({
     note: "Before",
     choice: "A" as "A" | "B",
@@ -19,6 +15,11 @@ export default function fixture() {
   return {
     async run() {
       while (true) {
+        const channel = new Channel();
+        channel.subscribe("echo", (_id, data) => {
+          channel.send("echo", data);
+        });
+
         const appearance = phase === 0
           ? { class: "marked\t extra marked", style: "border: 2px solid red;" }
           : phase === 1

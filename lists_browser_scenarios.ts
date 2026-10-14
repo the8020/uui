@@ -1,11 +1,11 @@
 import {
   BACK_EVENT,
   callScreen,
+  currentScreenChannel,
   field,
   Model,
   presentModal,
   presentPage,
-  ScreenChannel,
   type ScreenEvent,
   type UUIClientMessage,
   z,
@@ -48,21 +48,22 @@ const records = Array.from({ length: 251 }, (_, id) => ({
 }));
 export const listBrowserProbe = {
   model: new Model({ note: "Initial note", records }),
-  channel: new ScreenChannel(),
+  get channel() {
+    return currentScreenChannel()!;
+  },
   messages: [] as UUIClientMessage[],
   events: [] as ScreenEvent[],
   redraws: 0,
 };
 
 export async function runListsProgram(): Promise<void> {
-  const { model, channel } = listBrowserProbe;
+  const { model } = listBrowserProbe;
   while (true) {
     const event = await callScreen({
       id: "list-browser",
       title: "List browser",
       schema: Schema,
       model,
-      channel,
       layout: {
         schema: 1,
         id: "lists",

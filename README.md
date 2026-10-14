@@ -103,21 +103,47 @@ is needed. Subscribers own business validation and any actual request/reply
 correlation. `context.signal` cancels work when its subscription, screen or
 connection loses ownership.
 
-A backend program uses its ScreenChannel directly and attaches component Channel
-objects in their declarations. UUI assigns internal identities; authors never
-register channel names or repeat component IDs for wiring:
+UUI provides read-only `currentScreenChannel()` and `nextScreenChannel()`
+getters for the current presentation surface. Next exists before its first
+screen. Capture it during setup; plain `callScreen(options)` promotes that exact
+object after preparation finishes and its snapshot is first successfully
+presented, then provides a fresh next. A prepared hidden call stays next until
+restoration first presents it. Current is undefined before that first
+presentation and retains the settled reference until the next successful call.
+Redraw, Model reset, reconnect and restoration of already-presented calls keep
+the logical pair; physical endpoints still expire at their existing boundaries.
+
+`ScreenChannel` is a type, not an author-created controller. The `channel`
+option of `callScreen` is removed. Validation, preparation or presentation
+failure before promotion disposes its candidate and creates a fresh next;
+recreate its component bindings before retrying. A rejected concurrent call
+leaves the active pair alone. Surface/session closure disposes both owners,
+including never-rendered components.
+
+Release pairing: use UUI `0.8.1` with demo `0.8.0` for this managed-channel API.
+The kernel `0.8` release selector accepts these bare version tags; the `0.7`
+selector continues to select the older packages. External consumers must remove
+the `callScreen` channel option and use the managed getters.
+
+Each backend `new Channel()` internally acquires that surface's next owner. Keep
+its reference in the component declaration for per-instance routing; do not
+share one binding among components or across logical calls. `Channel.dispose()`
+abandons a component even before rendering, and `subscription.unsubscribe()`
+releases an individual subscription. Its `signal` ends with explicit disposal or
+screen settlement; use it to stop setup timers and other component resources.
+UUI assigns internal identities; authors never repeat component IDs for wiring:
 
 ```ts
 import {
   callScreen,
   Channel,
   Model,
+  nextScreenChannel,
   packageAssetURL,
-  ScreenChannel,
   z,
 } from "/p/the8020/uui/mod.ts";
 
-const program = new ScreenChannel();
+const program = nextScreenChannel();
 const widget = new Channel();
 widget.subscribe("*", async (id, data) => {
   if (data instanceof ReadableStream) {
@@ -135,7 +161,6 @@ const pending = callScreen({
   id: "channel-example",
   schema: z.object({}),
   model: new Model({}),
-  channel: program,
   customElements: [{
     id: "widget",
     module: packageAssetURL("example/widget", "widget.js"),
@@ -185,13 +210,13 @@ subscription.handler === handler; // true
 subscription.unsubscribe(); // safe to call repeatedly
 ```
 
-Every screen owns a real program channel even when `callScreen` omits `channel`.
-Custom hosts and custom fields always receive both `context.channel` and
+Every screen owns its automatically managed program channel. Custom hosts and
+custom fields always receive both `context.channel` and
 `context.programChannel`; component Channels are also created automatically when
-their declarations omit one. Explicit backend channels only add application
-listeners and screen commands. Sending to an unconsumed route drops ordinary
-data and cancels streams before source demand, without a backlog. Detached,
-disconnected, stale or covered owners still reject operations.
+their declarations omit one. Backend component bindings add application
+listeners. Sending to an unconsumed route drops ordinary data and cancels
+streams before source demand, without a backlog. Detached, disconnected, stale
+or covered owners still reject operations.
 
 Ordinary data fans out to the matching current subscribers. Synchronous throws
 and rejected handler promises are isolated; another subscriber and later
@@ -201,12 +226,14 @@ generic RPC layer. Owner-selected stream bounds and the list's 30-second read
 deadline stay at their owners; transport JSON, framing and size validation
 remain required.
 
-Each full `callScreen` and Model reset creates a new generation. Subscription
-bindings reattach for a reused backend Channel or preserved browser host; their
-in-flight work is aborted. Settlement, removal, failure, exit and disconnect or
-takeover cancel unfinished streams. Covered surfaces retain state but admit no
-new channel traffic. An unsubscribe removes that subscription and cancels
-streams it is consuming. Ordinary sends have no remote completion promise.
+Each full `callScreen` and Model reset creates a new physical generation.
+Backend subscriptions survive reset within their logical call; preserved browser
+hosts reattach to the owning descriptor. Settlement disposes backend
+subscriptions and requires new bindings for the next call. In-flight work is
+aborted. Settlement, removal, failure, exit and disconnect or takeover cancel
+unfinished streams. Covered surfaces retain state but admit no new channel
+traffic. An unsubscribe removes that subscription and cancels streams it is
+consuming. Ordinary sends have no remote completion promise.
 
 Browser `context.channel` and `context.programChannel` getters acquire a view of
 the current owning call/connection. At the start of a handler or UI action,
@@ -263,7 +290,7 @@ first connection change expires that capture too. The domain helper validates
 its registered owner before accepting history; generic channel sends require a
 live transport.
 
-The built-in message center attaches even without a supplied ScreenChannel. Its
+The built-in message center attaches through its managed ScreenChannel. Its
 `append`, `history`, and `refresh` IDs use generic subscriptions on the same
 ChannelRouter as lists, custom hosts and programs. Captured output preserves
 trusted async context and rejects before accepting history when its call,
@@ -786,16 +813,15 @@ import {
   callScreen,
   download,
   Model,
-  ScreenChannel,
+  nextScreenChannel,
   z,
 } from "/p/the8020/uui/mod.ts";
 
-const channel = new ScreenChannel();
+const channel = nextScreenChannel();
 const pending = callScreen({
   id: "export",
   schema: z.object({}),
   model: new Model({}),
-  channel,
 });
 const handle = download({
   filename: "backup.csv",

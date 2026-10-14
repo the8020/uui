@@ -26,11 +26,11 @@ import {
   type BrowserContext,
   callScreen,
   field,
+  nextScreenChannel,
   parseBrowserContext,
   parseClientMessage,
   presentModal,
   presentPage,
-  ScreenChannel,
   sendMessage,
   UUI_PROTOCOL_VERSION,
   type UUIClientMessage,
@@ -665,8 +665,8 @@ async function runModalB(): Promise<void> {
       status: "Waiting for background redraw",
     };
     const screenModel = new Model(model);
-    const channel = new ScreenChannel();
     while (true) {
+      const channel = nextScreenChannel();
       const redraw = setTimeout(() => {
         model.status = "Background redraw completed";
         channel.redraw();
@@ -678,7 +678,6 @@ async function runModalB(): Promise<void> {
           title: "Presentation modal B",
           schema: PresentationScreen,
           model: screenModel,
-          channel,
           actions: [
             { id: "open-modal", label: "Open nested modal" },
             { id: "open-page", label: "Open page" },
