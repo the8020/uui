@@ -13,7 +13,7 @@ status = 302
 [lifecycle]
 default_enabled = true
 service_type = "session"
-session_keep_alive = "10m"
+session_keep_alive = "1h"
 
 [scaling]
 minimum_workers = 0

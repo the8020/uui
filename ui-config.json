@@ -4,7 +4,7 @@
   "postLoginUrl": "/the8020/uui/shell/",
   "sessionWebSocketPath": "/the8020/uui/session/connect",
   "protocolVersion": 11,
-  "disconnectGraceMilliseconds": 120000,
+  "disconnectGraceMilliseconds": 3600000,
   "heartbeatIntervalMilliseconds": 30000,
   "heartbeatTimeoutMilliseconds": 60000,
   "reconnectInitialDelayMilliseconds": 250,

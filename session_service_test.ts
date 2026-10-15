@@ -1,5 +1,7 @@
 import { Model } from "./model.ts";
 import { isId } from "@the8020/kernel";
+import { createKernelBridge } from "../kernel/defaults/config/runtime/deno/kernel/bridge.ts";
+import uiConfig from "./ui-config.json" with { type: "json" };
 import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
 import { download, type DownloadHandle } from "./mod.ts";
 import {
@@ -1145,6 +1147,114 @@ Deno.test("session heartbeat uses package constants and closes timed-out clients
   }
 });
 
+Deno.test("closed WebSockets persist disconnection and expire through the session context", async () => {
+  const channel = new MessageChannel();
+  const bridge = createKernelBridge(channel.port1, {
+    ...metadata.execution,
+    workloadType: "service",
+    ownerId: metadata.serviceId,
+    workloadId: metadata.serviceId,
+    releaseId: "test",
+    entrypoint: "file:///workspace/service.ts",
+    debuggerName: "session-disconnect-test",
+    databaseBackend: "sqlite",
+    user: metadata.user,
+    origin: { type: "service", id: metadata.serviceId },
+  });
+  const stored = new MemorySessionMetadataStore();
+  let completions = 0;
+  channel.port2.onmessage = (event) => {
+    const call = event.data;
+    if (call.type !== "kernel_call") return;
+    if (call.payload.operation === "execution.completePersistent") {
+      assertEquals(stored.size, 0);
+      completions++;
+    }
+    bridge.handle({
+      type: "kernel_result",
+      correlationId: call.correlationId,
+      payload: { columns: [], rows: [] },
+    });
+  };
+  const { sessionMetadataStore } = await import(
+    "./session_metadata_database.ts"
+  );
+  const metadataStore: SessionMetadataStore = {
+    async create(row) {
+      await sessionMetadataStore.create(row);
+      await stored.create(row);
+    },
+    async put(row) {
+      await sessionMetadataStore.put(row);
+      await stored.put(row);
+    },
+    async remove(id) {
+      await sessionMetadataStore.remove(id);
+      await stored.remove(id);
+    },
+  };
+  const originalTimeout = globalThis.setTimeout;
+  let expire!: () => void;
+  let grace = 0;
+  globalThis.setTimeout = ((callback: TimerHandler, delay?: number) => {
+    if (delay === uiConfig.disconnectGraceMilliseconds) {
+      assert(typeof callback === "function");
+      expire = callback as () => void;
+      grace = delay;
+      return originalTimeout(callback, 60_000);
+    }
+    return originalTimeout(callback, delay);
+  }) as typeof setTimeout;
+  let aborted = false;
+  const service = defineSessionService(async ({ signal }) => {
+    await new Promise<void>((resolve) =>
+      signal.addEventListener("abort", () => {
+        aborted = true;
+        resolve();
+      }, { once: true })
+    );
+  }, { metadataStore });
+  const run = <T>(callback: () => T) =>
+    bridge.withRequest(metadata, callback, new AbortController().signal);
+  try {
+    const response = await run(() =>
+      service.fetch(
+        new Request("https://example.test/connect", { method: "POST" }),
+        context(metadata),
+      )
+    );
+    const sessionId = response.headers.get("the8020-session")!;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const socket = new TestSocket();
+      socket.message(connectMessage(0));
+      await bridge.withRequest(
+        { ...metadata, contextId: `socket-${attempt}` },
+        () =>
+          service.connectWebSocket(
+            new Request("https://example.test/connect"),
+            context(metadata),
+            socket,
+          ),
+        socket.signal,
+      );
+      await until(() => stored.get(sessionId)?.state === "CONNECTED");
+      socket.remoteClose();
+      await until(() => stored.get(sessionId)?.state === "DISCONNECTED");
+    }
+    assertEquals(grace, 3_600_000);
+    expire();
+    await until(() => completions === 1);
+    assertEquals(stored.size, 0);
+    assertEquals(aborted, true);
+  } finally {
+    await run(() => stored.clear());
+    globalThis.setTimeout = originalTimeout;
+    bridge.close();
+    channel.port1.close();
+    channel.port2.close();
+  }
+});
+
 Deno.test("only an active client cancels disconnect grace; waiting-client polls do not retain the execution", async () => {
   const metadataStore = new MemorySessionMetadataStore();
   const originalTimeout = globalThis.setTimeout;
@@ -1152,7 +1262,7 @@ Deno.test("only an active client cancels disconnect grace; waiting-client polls 
     ((callback: TimerHandler, delay?: number, ...args: unknown[]) =>
       originalTimeout(
         callback,
-        delay === 120_000 ? 30 : delay,
+        delay === uiConfig.disconnectGraceMilliseconds ? 30 : delay,
         ...args,
       )) as typeof setTimeout;
   let complete = false;

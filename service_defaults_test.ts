@@ -40,7 +40,7 @@ Deno.test("first-party UUI services retain their capacity defaults", async () =>
   assertEquals(setting(session, "scaling", "maximum_workers"), "0");
   assertEquals(setting(session, "scaling", "concurrency_per_worker"), "1");
   assertEquals(setting(session, "scaling", "target_utilization"), "1.00");
-  assertEquals(setting(session, "lifecycle", "session_keep_alive"), '"10m"');
+  assertEquals(setting(session, "lifecycle", "session_keep_alive"), '"1h"');
   assertEquals(setting(session, "placement", "sandbox_group"), '"uui"');
   assertEquals(setting(session, "placement", "minimum_sandboxes"), "0");
   assertEquals(setting(session, "placement", "workers_per_sandbox"), "64");

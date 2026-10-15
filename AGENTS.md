@@ -143,6 +143,10 @@ relevant child AGENTS.md
   previous available client. Session timeout starts after the last active
   connection disconnects. Keep authorization separate from controller identity
   so future authorized administration can reuse takeover.
+- Closed browser connections persist `DISCONNECTED`; sessions end after one hour
+  without an active client. Metadata writes and disconnect expiry run in the
+  session's establishment context, independent of a closed socket's aborted
+  request context.
 - Prefer ordinary JSON request/response commands for sandbox agents, with
   temporary client attachment and the existing persistent execution retained
   after the request. Build on standard services, signed reconnection routes, and
@@ -195,7 +199,7 @@ below.
 
 # Local Contracts
 
-- UUI `0.8.1` and demo `0.8.0` are the paired managed-channel releases for the
+- UUI `0.8.2` and demo `0.8.0` are the paired managed-channel releases for the
   kernel `0.8` line. Package tags use bare semantic versions; package manifests
   and runtime `/p/` imports remain unversioned.
 
@@ -315,7 +319,7 @@ below.
   address and network scope, and bounded current-screen metadata. Reconnection
   replaces the address fields with the latest observation. It never stores
   passwords, cookies, route tokens, replay buffers, or unbounded messages. Clean
-  termination removes the record after signaling generic persistent completion;
+  termination removes the record before signaling generic persistent completion;
   abnormal loss may leave recoverable stale metadata.
 - Session IDs use the shared `newId("uis")` helper with ten random lowercase
   alphanumeric characters. Initial metadata creation is an insert protected by
@@ -337,7 +341,7 @@ below.
   minutes. The session service also uses group `uui`, has an unbounded zero
   maximum, keeps 64 Workers per sandbox, uses canonical `session` lifecycle with
   concurrency one and 100% target utilization, and retains an inactive session
-  environment for ten minutes. These are worker/sandbox policies, not legacy
+  environment for one hour. These are worker/sandbox policies, not legacy
   instance reservations.
 - Initial program output may precede the physical WebSocket. The service replays
   that retained output in server-sequence order before `session.ready`, so the

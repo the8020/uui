@@ -10,6 +10,7 @@ import { decodeStreamChunk } from "./channel_streams.ts";
 import { MessageHistory } from "./messages.ts";
 import { context } from "@the8020/context";
 import { kernel, newId } from "@the8020/kernel";
+import { AsyncLocalStorage } from "node:async_hooks";
 import uiConfig from "./ui-config.json" with { type: "json" };
 import {
   invokeProgram,
@@ -108,6 +109,7 @@ interface SessionRecord {
   messageLog: SessionLogEntry[];
   metadataWrites: Promise<void>;
   metadataStore: SessionMetadataStore;
+  runInSession: ReturnType<typeof AsyncLocalStorage.snapshot>;
   completePersistent: () => Promise<void>;
   ended: boolean;
   terminationFailure?: string;
@@ -346,6 +348,7 @@ async function establish(
       messageLog: [],
       metadataWrites: Promise.resolve(),
       metadataStore,
+      runInSession: AsyncLocalStorage.snapshot(),
       completePersistent: options.completePersistent ??
         (() => kernel.execution.completePersistent()),
       ended: false,
@@ -737,7 +740,8 @@ function startDisconnectTimer(record: SessionRecord): void {
     clearTimeout(record.disconnectTimer);
   }
   record.disconnectTimer = setTimeout(
-    () => void end(record, "disconnect grace expired"),
+    () =>
+      void record.runInSession(() => end(record, "disconnect grace expired")),
     record.config.disconnectGraceMilliseconds,
   );
 }
@@ -840,7 +844,7 @@ function currentScreen(record: SessionRecord) {
 function updateMetadata(record: SessionRecord): void {
   if (record.ended) return;
   record.metadataWrites = record.metadataWrites.then(() =>
-    writeMetadata(record)
+    record.runInSession(() => writeMetadata(record))
   ).catch((error) => {
     console.error("UUI session metadata update failed", error);
   });
