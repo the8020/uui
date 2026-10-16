@@ -102,6 +102,7 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   assertEquals(body.includes('id="program-header-overflow"'), true);
   assertEquals(body.includes('id="program-header-overflow-toggle"'), true);
   assertEquals(body.includes('id="program-header-overflow-items"'), true);
+  assertEquals(body.includes('id="notice"'), false);
   assertEquals(body.includes('id="interaction-shield"'), true);
   assertEquals(body.includes('id="modal-layers"'), true);
   assertEquals(body.includes('class="interaction-indicator"'), true);
@@ -183,7 +184,7 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   assertEquals(cssBody.includes("--primary: #5b5bd6"), true);
   assertEquals(cssBody.includes("--brand-gold: #cd9d00"), true);
   assertEquals(cssBody.includes("--interaction-feedback-delay: 500ms"), true);
-  assertEquals(/\.notice\s*\{[^}]*border-left:/s.test(cssBody), false);
+  assertEquals(cssBody.includes(".notice"), false);
   assertMatch(
     cssBody,
     /html\[data-interaction-pending\] \.interaction-shield\s*\{[^}]*pointer-events:\s*auto;[^}]*backdrop-filter:\s*blur\(3px\);[^}]*transition-delay:\s*var\(--interaction-feedback-delay\);/s,

@@ -21,6 +21,9 @@ Parent DOX: [shell frontend](../../AGENTS.md).
 
 # Local Contracts
 
+- Lists send row indices and operations through their owning namespace without
+  list revisions or identity comparisons. The pending call retains source
+  mappings; validate row bounds, editability, queries and read ranges.
 - Optional custom toolbars render ordinary UUI element arrays above the list and
   stay visible independently of List tools. Include their actual height in
   capacity measurement; reuse the shared element renderer and surface callbacks.
@@ -138,8 +141,8 @@ Parent DOX: [shell frontend](../../AGENTS.md).
 - `data_test.ts` checks column projection, formats/quoting and list result
   validation; channel_test.ts owns generic delivery/lifetimes;
   `list_geometry_test.ts` checks layout. Root list/session tests cover bounded,
-  stale, filtered/sorted reads and preservation of source and screen state, and
-  actual session-service reload after reads.
+  cancelled, filtered/sorted reads and preservation of source and screen state,
+  and actual session-service reload after reads.
 - `deno task test:lists-browser` checks toolbar actions, real clipboard block
   and column selection, UUI versus spreadsheet pagination, dirty edits, all six
   downloaded formats/ranges, desktop/mobile geometry, and the existing list

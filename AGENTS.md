@@ -216,8 +216,8 @@ below.
 - The shell reads effective preferences through authenticated, uncached
   `GET /preferences` on each presentation update. The most recent bounded
   request owns application; no polling or browser preference persistence is
-  added. Theme switching immediately reapplies the last accent. Read failures
-  are visible and preserve the current accent.
+  added. Theme switching immediately reapplies the last accent. Read failures go
+  to `console.error` and preserve the current accent.
 - The reserved `CUSTOMIZATION_EVENT` opens `the8020/uui/customization` through
   the same protected page path as My account, retaining the pending caller and
   draft. Back discards unsaved preferences. Use system default changes the
@@ -500,9 +500,8 @@ below.
 - Message-center append/history/refresh are generic ID/data subscribers. Native
   saves send validated filename/content-type metadata, then stream data under
   their domain transfer ID; completion/admission failure forgets staged
-  metadata. Lists/providers/field help keep their own schemas, atomic edits,
-  revisions and read limits. Independent PTY/service authority remains in its
-  owning package.
+  metadata. Lists/providers/field help keep their own schemas, atomic edits, and
+  read limits. Independent PTY/service authority remains in its owning package.
 - `channel_streams.ts` retains the sole binary codec, lazy producer pump and
   consumption-credit accounting. Generic streams need exactly one matching
   subscriber, which consumes EOF and resolves only after consumption/handoff.
@@ -661,35 +660,35 @@ below.
   references resolve to control IDs centrally, and each descriptor has one
   placement. Column IDs are list-local; framework DOM IDs also include surface
   and Model identity. Component internals remain owned by the providing package.
-- Protocol version 11 carries generic ID/data channel frames and internally
+- Protocol version 12 carries generic ID/data channel frames and internally
   assigned component routing within each screen generation; it retains
   model-bound custom fields, component metadata, exact decimal semantics and
   field help. Model state and list snapshots remain screen-owned. Wire business
   list bindings contain empty arrays; displayed values live exclusively in
   `screen.lists`. `ScreenLists` owns search/filter, stable typed sort,
   pagination, and displayed-to-source mappings for explicit and inferred lists.
-  Views never reorder or truncate the source array. Mapping validation checks
-  the exact source identity, row order/content, and view revision before
-  applying a selection or edit. Stale views reject and publish a fresh snapshot;
-  invalid dirty edits change neither business nor screen state.
+  Views never reorder or truncate the source array. The pending call retains
+  displayed-to-source mappings for selections, edits and reads. Do not compare
+  list revisions, source identity, row order or contents before accepting input.
+  Invalid dirty edits change neither business nor screen state.
 - The list-owned `update` namespace operation carries validated page, query,
   capacity, refresh and checkbox changes. Browser and authenticated headless
-  commands invoke the same registered owner with current surface/Model/view
+  commands invoke the same registered owner with current surface/Model
   admission. Multi-list capacity updates stage and validate all edits/provider
-  results before committing one transaction. Invalid, stale, read-only or
-  malformed input changes neither business nor presentation state. Dirty row
-  edits retain exact source mappings and read-only schema fields.
+  results before committing one transaction. Invalid, read-only or malformed
+  input changes neither business nor presentation state. Dirty row edits retain
+  exact source mappings and read-only schema fields.
 - Bound arrays use local typed/decimal projection.
   `setListSource(model, id,
   source, { searchOnly? })` retains a
   program-selected async source and returns a disposer. Providers receive query,
   offset, 1–500-row limit and AbortSignal; return rows, more and optional
   matching/unfiltered totals. ScreenLists owns initial loading, visible refresh,
-  result state and revisions while callScreen stays pending. Redraw refreshes
-  providers, and covered redraws refresh on restoration. Provider ordering is
-  preserved; source-size lower bounds retain geometry when totals are unknown.
-  Known source shrinkage clamps the page and loads its current rows. Source
-  replacement/disposal invalidates cached views.
+  result state while callScreen stays pending. Redraw refreshes providers, and
+  covered redraws refresh on restoration. Provider ordering is preserved;
+  source-size lower bounds retain geometry when totals are unknown. Known source
+  shrinkage clamps the page and loads its current rows. Source
+  replacement/disposal cancels its outstanding work.
 - Provider page rows belong to each list ID, never to the shared business array
   binding. Separate provider and array views may share a binding without
   replacing each other's data. Provider row edits reject the whole transaction
@@ -700,13 +699,13 @@ below.
   `triggerFilterEvents: true` remains a deliberate changed-query program event
   after valid edits/state merge; repeat query/page/capacity/refresh emits none.
 - Independent `read` uses the same namespace, fixed row-schema validation and
-  current source/view checks without changing visible page or drafts. Results
-  are bounded to 1,000 rows and 900,000 JSON bytes, in at most 500-row batches.
-  Provider replacement/disposal, reset, settlement/removal, coverage and
-  connection loss cancel owning work and drop late output. Unabortable queries
-  may continue internally; remote consistency remains source-owned. Field help
-  retains typed columns, first-column selection, isolated drafts and Done-only
-  commits without ordinary browsing screen reissue.
+  range validation without changing visible page or drafts. Results are bounded
+  to 1,000 rows and 900,000 JSON bytes, in at most 500-row batches. Provider
+  replacement/disposal, reset, settlement/removal, coverage and connection loss
+  cancel owning work and drop late output. Unabortable queries may continue
+  internally; remote consistency remains source-owned. Field help retains typed
+  columns, first-column selection, isolated drafts and Done-only commits without
+  ordinary browsing screen reissue.
 - Capture scroll and toolbar metadata with existing interactions, including
   Back, paging, queries, and capacity. Never send standalone or periodic scroll
   updates. Browser-local positions survive redraw and surface/instance returns;
@@ -1018,6 +1017,9 @@ below.
 
 ## UI Rules
 
+- Use the existing message-center notifications for user-facing outcomes and
+  validation failures. Do not render warning/error banners. Frontend diagnostics
+  use `console.error`. Resynchronization requests a fresh snapshot directly.
 - Do not add explanatory helper copy that restates what the control already
   implies (e.g. "optional", "works without selection", "failure falls back to
   X"). Prefer clear labels and option text; surface status in results when
@@ -1047,10 +1049,11 @@ below.
   cover the session manifest's login redirect after a rejected reconnect,
   redirects during initial establishment and session lookup, missing execution
   handling without recreation, terminal navigation without further connection
-  attempts, and transient recovery with retained dirty values. It verifies clean
-  URLs, per-tab reload, explicit-link precedence, takeover, and starting a new
-  session through Reload page after an execution disappears. Redirected error
-  pages remain navigation outcomes.
+  attempts, automatic snapshot resynchronization without a banner, and transient
+  recovery with retained dirty values. It verifies clean URLs, per-tab reload,
+  explicit-link precedence, takeover, and starting a new session through Reload
+  page after an execution disappears. Redirected error pages remain navigation
+  outcomes.
 - `deno task test:presentation-browser` covers page/modal restoration and exact
   field heights and underlines across desktop, tablet, and mobile widths,
   including default one-row textareas and explicit multiple-row controls.
@@ -1249,8 +1252,10 @@ below.
   distinct byte content both ways, cancellation, preserved hosts and aborted
   saved views after replacement/reconnect.
 - `lists_test.ts`, `list_values_test.ts`, and `uui_test.ts` cover projections,
-  source mappings, identities, typed semantics, atomic edits/query events, and
-  page-five retention across selection and data refresh.
+  retained source mappings without identity checks, typed semantics, atomic
+  edits/query events, notification errors, and page-five retention across
+  selection and data refresh. Row clicks survive capacity updates and
+  replacement of business arrays within the pending call.
 - `deno task test:lists-browser` exercises real Chromium search/filter/sort,
   toolbar copy/export and spreadsheet selection/paging, real downloaded files,
   shared semantic field headings, focus/caret, empty counts, local/synchronized

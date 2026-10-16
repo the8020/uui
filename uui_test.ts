@@ -759,14 +759,13 @@ Deno.test("client protocol rejects malformed event metadata", () => {
       { ...valid, changes: [{ bind: "" }] },
       {
         ...validPage,
-        updates: [{ id: "items", revision: 0, operation: "page", page: 1 }],
+        updates: [{ id: "items", operation: "page", page: 0 }],
       },
       { ...validPage, surfaceId: "" },
       {
         ...validPage,
         updates: [{
           id: "items",
-          revision: 1,
           operation: "capacity",
           pageSize: 1.5,
         }],
@@ -829,10 +828,8 @@ Deno.test({
       assertEquals((topScreen(shown).model as typeof data).records, []);
       test.push(listInput({
         ...eventFor(shown, "", 1),
-
         updates: [{
           id: list.id,
-          revision: list.revision,
           operation: "capacity",
           pageSize: 10,
         }],
@@ -842,17 +839,14 @@ Deno.test({
       list = topScreen(shown).lists[0]!;
       test.push(listInput({
         ...eventFor(shown, "", 2),
-
         updates: [{
           id: list.id,
-          revision: list.revision,
           operation: "page",
           page: 5,
         }],
         changes: [{ bind: "note", value: "saved while paging" }],
         listChanges: [{
           id: list.id,
-          revision: list.revision,
           rows: [{ index: 0, value: { id: 0, name: "Edited on page one" } }],
         }],
         screenState: {
@@ -872,7 +866,7 @@ Deno.test({
       assertEquals(model.screen.scroll.y, 413);
       test.push({
         ...eventFor(shown, "select", 3, "select"),
-        selection: { id: list.id, revision: list.revision, index: 2 },
+        selection: { id: list.id, index: 2 },
       });
       const selected = await pending;
       assertEquals(selected.eventType, "select");
@@ -998,6 +992,8 @@ Deno.test({
           changes: [{ bind: "missing", value: "x" }],
         }),
       );
+      await flushMicrotasks();
+      assertEquals(test.messageHistory.snapshot().at(-1)?.level, "error");
       test.push(event({
         clientSequence: 2,
         screenRevision: 2,
@@ -1696,7 +1692,7 @@ function page(
 ): Extract<UUIClientMessage, { type: "channel.frame" }> {
   return listInput({
     ...event(),
-    updates: [{ id: "items", revision: 1, operation: "page", page: 2 }],
+    updates: [{ id: "items", operation: "page", page: 2 }],
     ...overrides,
   });
 }
@@ -1841,8 +1837,7 @@ Deno.test("field help drafts, cancels, commits, and pages searchable choices thr
     const shown = lastPresentation(test), list = topScreen(shown).lists[0]!;
     test.push(listInput({
       ...eventFor(shown, "", ++sequence),
-
-      updates: [{ id: list.id, revision: list.revision, ...update }],
+      updates: [{ id: list.id, ...update }],
     }));
     await flushMicrotasks();
   };
@@ -1917,7 +1912,7 @@ Deno.test("field help drafts, cancels, commits, and pages searchable choices thr
     assertEquals(list.totalPages, 1);
     test.push({
       ...eventFor(shown, "select", ++sequence, "select"),
-      selection: { id: list.id, revision: list.revision, index: 0 },
+      selection: { id: list.id, index: 0 },
     });
     await flushMicrotasks();
     assertEquals(
@@ -1969,7 +1964,6 @@ Deno.test("field help drafts, cancels, commits, and pages searchable choices thr
       ...eventFor(referenceHelp, "select", ++sequence, "select"),
       selection: {
         id: referenceChoices.id,
-        revision: referenceChoices.revision,
         index: 0,
       },
     });
@@ -2008,10 +2002,8 @@ Deno.test("enum field help exposes searchable options and commits only on Done",
     assertEquals(list.rows, [{ value: "red", label: "Red" }]);
     test.push(listInput({
       ...eventFor(help, "", 2),
-
       updates: [{
         id: list.id,
-        revision: list.revision,
         operation: "query",
         query: { search: "BLUE", filters: {}, sort: null },
       }],
@@ -2127,9 +2119,39 @@ Deno.test("field help preserves parent validation and returns reactive changes t
   }
 });
 
+Deno.test("row clicks survive capacity updates and replacement of the business array", async () => {
+  const test = new TestChannel();
+  const unbind = bindSession(test);
+  const model = new Model({ rows: [{ id: 7 }, { id: 8 }] });
+  try {
+    const pending = callScreen({
+      id: "retained-list",
+      schema: z.object({ rows: z.object({ id: z.number() }).array() }),
+      model,
+      controls: [{ id: "rows", bind: "rows", list: { key: "id" } }],
+    });
+    const shown = lastPresentation(test);
+    test.push(listInput({
+      ...eventFor(shown, "", 1),
+      updates: [{ id: "rows", operation: "capacity", pageSize: 10 }],
+    }));
+    await flushMicrotasks();
+    model.data.rows = structuredClone(model.data.rows);
+    test.push({
+      ...eventFor(shown, "select", 2, "select"),
+      selection: { id: "rows", index: 0 },
+    });
+    const event = await pending;
+    assertEquals(event.eventType === "select" && event.value, 7);
+    assertEquals(test.messageHistory.snapshot(), []);
+  } finally {
+    unbind();
+  }
+});
+
 Deno.test({
   name:
-    "query interactions validate edits and stale mappings before atomically merging metadata or resolving",
+    "query interactions validate edits and notify before atomically merging metadata or resolving",
   sanitizeOps: false,
   sanitizeResources: false,
   fn: async () => {
@@ -2171,10 +2193,8 @@ Deno.test({
       const query = { search: "changed", filters: {}, sort: null };
       const request = listInput({
         ...eventFor(shown, "", 1),
-
         updates: [{
           id: list.id,
-          revision: list.revision,
           operation: "query" as const,
           query,
         }],
@@ -2186,7 +2206,6 @@ Deno.test({
         changes: [{ bind: "note", value: 42 }],
         listChanges: [{
           id: list.id,
-          revision: list.revision,
           rows: [{ index: 0, value: { id: 1, label: "changed" } }],
         }],
       });
@@ -2198,39 +2217,23 @@ Deno.test({
       assertEquals(model.screen.scroll.y, 0);
       assertEquals(model.screen.elements.rows!.list!.query.search, "");
       model.data.rows.reverse();
-      channel.push(
-        listInput({ ...request, changes: [{ bind: "note", value: "saved" }] }),
-      );
-      await flushMicrotasks();
-      assertEquals(
-        ((channel.sent.findLast((message) =>
-          (message as ChannelFrame).id === "result"
-        ) as ChannelFrame).value as { error: string }).error?.includes(
-          "list changed",
-        ),
-        true,
-      );
-      assertEquals(model.data.note, "original");
-      assertEquals(model.data.rows[0]!.label, "Two");
+      assertEquals(channel.messageHistory.snapshot().at(-1)?.level, "error");
       shown = lastPresentation(channel);
       list = topScreen(shown).lists[0]!;
       channel.push(listInput({
         ...request,
         ...eventFor(shown, "", 1),
-
         screenState:
           (request.value as { request: { screenState: unknown } }).request
             .screenState,
         updates: [{
           id: list.id,
-          revision: list.revision,
           operation: "query",
           query,
         }],
         changes: [{ bind: "note", value: "saved" }],
         listChanges: [{
           id: list.id,
-          revision: list.revision,
           rows: [{ index: 0, value: { id: 2, label: "changed" } }],
         }],
       }));
@@ -2258,10 +2261,8 @@ Deno.test({
       assertEquals(list.totalItems, 1);
       channel.push(listInput({
         ...eventFor(shown, "", 2),
-
         updates: [{
           id: list.id,
-          revision: list.revision,
           operation: "query",
           query,
         }],
@@ -2398,7 +2399,6 @@ Deno.test("provider capacity batches remain in one pending screen", async () => 
         changes: [{ bind: "note", value: "must not commit" }],
         updates: topScreen(shown).lists.map((list) => ({
           id: list.id,
-          revision: list.revision,
           operation: "capacity",
           pageSize: 4,
         })),
@@ -2413,7 +2413,6 @@ Deno.test("provider capacity batches remain in one pending screen", async () => 
         ...eventFor(shown, "", 1),
         updates: topScreen(shown).lists.map((list) => ({
           id: list.id,
-          revision: list.revision,
           operation: "capacity",
           pageSize: 4,
         })),
@@ -2478,7 +2477,6 @@ Deno.test("list reads use the pending screen channel without committing edits or
         token: "read-1",
         request: {
           id: list.id,
-          revision: list.revision,
           offset: 1000,
           limit: 1000,
         },
@@ -2610,8 +2608,7 @@ Deno.test("list toolbars share controls, identities and atomic whole-table selec
       list = topScreen(shown).lists[0]!;
       channel.push(parseClientMessage(listInput({
         ...eventFor(shown, "", ++sequence),
-
-        updates: [{ id: list.id, revision: list.revision, ...update }],
+        updates: [{ id: list.id, ...update }],
         changes,
       })));
       await flushMicrotasks();
@@ -2655,14 +2652,13 @@ Deno.test("list toolbars share controls, identities and atomic whole-table selec
       model.data.rows.filter((row) => row.flags.selected).length,
       12,
     );
-    const stale = topScreen(lastPresentation(channel)).lists[0]!;
     model.data.rows.reverse();
     await request({
       operation: "selection",
       selected: false,
-      revision: stale.revision,
     });
-    assertEquals(model.data.rows.every((row) => row.flags.selected), true);
+    assertEquals(model.data.rows.every((row) => !row.flags.selected), true);
+    await request({ operation: "selection", selected: true });
     await commandScreen(
       agentOperation.parse({
         op: "list",
@@ -2997,7 +2993,7 @@ Deno.test("component and program subscriptions share screen generations, initiat
   }
 });
 
-Deno.test("retained async browsing refreshes rows totals and revisions under one pending call", async () => {
+Deno.test("retained async browsing refreshes rows and totals under one pending call", async () => {
   const test = new TestChannel();
   const unbind = bindSession(test);
   const model = new Model({ note: "original", rows: [] as { id: number }[] });
@@ -3045,7 +3041,6 @@ Deno.test("retained async browsing refreshes rows totals and revisions under one
       [view.state.page, view.source?.totalItems, view.source?.more],
       [2, undefined, true],
     );
-    assertEquals(view.revision > before.revision, true);
     await commandScreen({ op: "list", id: "rows", search: "1" }, 3);
     view = topScreen(lastPresentation(test)).lists[0]!;
     assertEquals(view.rows, [{ id: 1 }, { id: 10 }, { id: 11 }, { id: 12 }]);
@@ -3103,18 +3098,15 @@ Deno.test("provider row edits reject whole list and screen transactions without 
   try {
     await flushMicrotasks();
     const shown = lastPresentation(test);
-    const [local, remote] = topScreen(shown).lists;
     const state = structuredClone(model.screen);
     const data = structuredClone(model.data);
     const listChanges = [
       {
         id: "local",
-        revision: local!.revision,
         rows: [{ index: 0, value: { id: 0, label: "Discard" } }],
       },
       {
         id: "remote",
-        revision: remote!.revision,
         rows: [{ index: 0, value: { id: 1, label: "Edited" } }],
       },
     ];
@@ -3124,7 +3116,6 @@ Deno.test("provider row edits reject whole list and screen transactions without 
       listChanges,
       updates: topScreen(shown).lists.map((list) => ({
         id: list.id,
-        revision: list.revision,
         operation: "capacity",
         pageSize: 2,
       })),
@@ -3159,7 +3150,6 @@ Deno.test("provider row edits reject whole list and screen transactions without 
       }],
       updates: [{
         id: "remote",
-        revision: remote!.revision,
         operation: "capacity",
         pageSize: 2,
       }],
@@ -3186,7 +3176,7 @@ Deno.test("provider row edits reject whole list and screen transactions without 
   }
 });
 
-Deno.test("retained provider views sharing a binding own independent rows mappings and revisions", async () => {
+Deno.test("retained provider views sharing a binding own independent rows and mappings", async () => {
   const test = new TestChannel();
   const unbind = bindSession(test);
   const channel = nextScreenChannel();
@@ -3219,7 +3209,6 @@ Deno.test("retained provider views sharing a binding own independent rows mappin
   try {
     await flushMicrotasks();
     let shown = lastPresentation(test);
-    const [a, b] = topScreen(shown).lists;
     assertEquals(topScreen(shown).lists.map((list) => list.rows), [[rows[0]], [
       rows[1],
     ], [local[0]]]);
@@ -3231,14 +3220,12 @@ Deno.test("retained provider views sharing a binding own independent rows mappin
     const [nextA, nextB] = topScreen(shown).lists;
     assertEquals([nextA!.rows, nextB!.rows], [[rows[1]], [rows[1]]]);
     assertEquals([nextA!.state.pageSize, nextB!.state.pageSize], [2, 1]);
-    assertEquals(nextA!.revision > a!.revision, true);
-    assertEquals(nextB!.revision, b!.revision);
     assertEquals(model.data.rows, local);
     // Navigation must use the provider's accepted displayed row, not the business binding.
     test.push({
       ...eventFor(shown, "select", 2),
       eventType: "select",
-      selection: { id: "b", revision: nextB!.revision, index: 0 },
+      selection: { id: "b", index: 0 },
     });
     const event = await pending;
     assertEquals(event.eventType === "select" && event.value, rows[1]);
@@ -3289,13 +3276,11 @@ Deno.test("delayed visible providers cannot commit after coverage connection res
     try {
       await flushMicrotasks();
       delayed = true;
-      const view = topScreen(lastPresentation(test)).lists[0]!;
       test.push(
         listInput({
           ...eventFor(lastPresentation(test), "", 1),
           updates: [{
             id: "rows",
-            revision: view.revision,
             operation: "query",
             query: { search: "late", filters: {}, sort: null },
           }],

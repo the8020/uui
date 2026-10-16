@@ -10,12 +10,7 @@ import { z } from "/p/the8020/db/fields.ts";
 import { buildControls, buildFieldCatalog, field } from "./fields.ts";
 import { resolveElementIDs } from "./identifiers.ts";
 import { validateLayout } from "./layout.ts";
-import {
-  queryValueHelp,
-  ScreenLists,
-  setListSource,
-  StaleListView,
-} from "./lists.ts";
+import { queryValueHelp, ScreenLists, setListSource } from "./lists.ts";
 import { Model } from "./model.ts";
 import { emptyListQuery } from "./screen_state.ts";
 import { field as sharedField, money } from "/p/the8020/db/fields.ts";
@@ -164,11 +159,10 @@ Deno.test("independent list projections retain source order and stable pages", (
   let shown = lists.present(data);
   const request = {
     id: "first",
-    revision: shown[0]!.revision,
     operation: "page" as const,
     page: 5,
   };
-  lists.validateRequests([request], data);
+  lists.validateRequests([request]);
   lists.update(request);
   shown = lists.present(data);
   assertEquals(shown[0]!.rows[0], initial[40]);
@@ -185,7 +179,6 @@ Deno.test("query processing uses typed values, resets pages, and reports array t
   let shown = lists.present(data)[0]!;
   lists.update({
     id: "first",
-    revision: shown.revision,
     operation: "page",
     page: 5,
   });
@@ -197,11 +190,10 @@ Deno.test("query processing uses typed values, resets pages, and reports array t
   };
   const request = {
     id: "first",
-    revision: shown.revision,
     operation: "query" as const,
     query,
   };
-  lists.validateRequests([request], data);
+  lists.validateRequests([request]);
   assertEquals(lists.update(request), undefined);
   shown = lists.present(data)[0]!;
   assertEquals(shown.state.page, 1);
@@ -212,7 +204,6 @@ Deno.test("query processing uses typed values, resets pages, and reports array t
   assertEquals(model.screen.elements.first!.list!.query, query);
   const clear = {
     ...request,
-    revision: shown.revision,
     query: emptyListQuery(),
   };
   lists.update(clear);
@@ -221,10 +212,9 @@ Deno.test("query processing uses typed values, resets pages, and reports array t
 
 Deno.test("mapped edits and selection resolve original rows after sorting and filtering", () => {
   const { data, lists } = fixture();
-  const initial = lists.present(data)[0]!;
+  lists.present(data);
   lists.update({
     id: "first",
-    revision: initial.revision,
     operation: "query",
     query: {
       search: "",
@@ -232,9 +222,9 @@ Deno.test("mapped edits and selection resolve original rows after sorting and fi
       sort: { column: "id", direction: "desc" },
     },
   });
-  const shown = lists.present(data)[0]!;
+  lists.present(data);
   assertEquals(
-    lists.select({ id: "first", revision: shown.revision, index: 1 }, data)
+    lists.select({ id: "first", index: 1 })
       .value,
     126,
   );
@@ -242,10 +232,8 @@ Deno.test("mapped edits and selection resolve original rows after sorting and fi
   lists.applyEdits(
     [{
       id: "first",
-      revision: shown.revision,
       rows: [{ index: 1, value: { ...candidate.rows[126]!, name: "Edited" } }],
     }],
-    data,
     candidate,
   );
   assertEquals(candidate.rows[126]!.name, "Edited");
@@ -253,35 +241,22 @@ Deno.test("mapped edits and selection resolve original rows after sorting and fi
   assertEquals(data.rows[126]!.name, "Row 126");
 });
 
-Deno.test("stale mappings reject reordered and replaced sources even with identical values", () => {
-  for (
-    const mutation of [
-      (data: ReturnType<typeof fixture>["data"]) => data.rows.reverse(),
-      (data: ReturnType<typeof fixture>["data"]) =>
-        data.rows = structuredClone(data.rows),
-      (data: ReturnType<typeof fixture>["data"]) =>
-        data.rows[0]!.name = "Changed",
-    ]
-  ) {
-    const { data, lists } = fixture();
-    const shown = lists.present(data)[0]!;
-    mutation(data);
-    assertThrows(
-      () =>
-        lists.select({ id: "first", revision: shown.revision, index: 0 }, data),
-      StaleListView,
-    );
-    const fresh = lists.present(data)[0]!;
-    assertNotEquals(fresh.revision, shown.revision);
-  }
+Deno.test("selections use the retained source after array replacement and row edits", () => {
+  const { data, lists } = fixture();
+  lists.present(data);
+  const retained = data.rows;
+  data.rows = structuredClone(data.rows);
+  data.rows.reverse();
+  retained[0]!.name = "Changed";
+  assertEquals(lists.select({ id: "first", index: 0 }).value, 0);
+  assertEquals(retained[0]!.name, "Changed");
 });
 
 Deno.test("query events are opt-in and do not fire for repeat queries or capacity changes", () => {
   const { data, lists } = fixture(false, true);
-  let shown = lists.present(data)[0]!;
+  lists.present(data);
   const request = {
     id: "first",
-    revision: shown.revision,
     operation: "query" as const,
     query: { ...emptyListQuery(), search: "Row 129" },
   };
@@ -292,11 +267,10 @@ Deno.test("query events are opt-in and do not fire for repeat queries or capacit
     change: "search",
   });
   assertEquals(lists.update(request), undefined);
-  shown = lists.present(data)[0]!;
+  lists.present(data);
   assertEquals(
     lists.update({
       id: "first",
-      revision: shown.revision,
       operation: "capacity",
       pageSize: 30,
     }),
@@ -323,21 +297,18 @@ Deno.test("empty and implicit scalar lists retain columns and handle capacity an
   shown = lists.present(model.data)[0]!;
   lists.update({
     id: shown.id,
-    revision: shown.revision,
     operation: "capacity",
     pageSize: 10,
   });
   shown = lists.present(model.data)[0]!;
   lists.update({
     id: shown.id,
-    revision: shown.revision,
     operation: "page",
     page: 5,
   });
   shown = lists.present(model.data)[0]!;
   lists.update({
     id: shown.id,
-    revision: shown.revision,
     operation: "capacity",
     pageSize: 15,
   });
@@ -368,33 +339,30 @@ Deno.test("retained providers preserve remote ordering and reject unsupported qu
   model.screen.elements.rows!.list!.pageSize = 2;
   model.screen.elements.rows!.list!.query.search = "server-defined matching";
   let view = lists.present(model.data)[0]!;
-  await browse(lists, model, [{
+  await browse(lists, [{
     id: "rows",
-    revision: view.revision,
     operation: "refresh",
   }]);
   view = lists.present(model.data)[0]!;
   assertEquals(view.rows, model.data.rows);
   assertEquals(view.totalPages, 12);
   assertEquals(
-    lists.select({ id: "rows", revision: view.revision, index: 1 }, model.data)
+    lists.select({ id: "rows", index: 1 })
       .value,
     21,
   );
   lists.validateRequests([{
     id: "rows",
-    revision: view.revision,
     operation: "page",
     page: 12,
-  }], model.data);
+  }]);
   assertThrows(
     () =>
       lists.validateRequests([{
         id: "rows",
-        revision: view.revision,
         operation: "page",
         page: 13,
-      }], model.data),
+      }]),
     TypeError,
     "out of bounds",
   );
@@ -402,17 +370,15 @@ Deno.test("retained providers preserve remote ordering and reject unsupported qu
     () =>
       lists.validateRequests([{
         id: "rows",
-        revision: view.revision,
         operation: "query",
         query: { search: "", filters: { name: "Second" }, sort: null },
-      }], model.data),
+      }]),
     TypeError,
     "quick search only",
   );
   assertEquals(
     lists.update({
       id: "rows",
-      revision: view.revision,
       operation: "capacity",
       pageSize: 4,
     }),
@@ -422,12 +388,10 @@ Deno.test("retained providers preserve remote ordering and reject unsupported qu
 
 async function browse(
   lists: ScreenLists,
-  model: Model<{ rows: unknown[] }>,
   requests: import("./screen_state.ts").ListRequest[],
 ) {
   const staged = await lists.prepareUpdates(
     requests,
-    model.data,
     new AbortController().signal,
   );
   staged.commit();
@@ -438,7 +402,6 @@ Deno.test("independent reads share the filtered sorted projection and preserve t
   let shown = lists.present(model.data)[0]!;
   lists.update({
     id: shown.id,
-    revision: shown.revision,
     operation: "query",
     query: {
       search: "Row",
@@ -448,7 +411,6 @@ Deno.test("independent reads share the filtered sorted projection and preserve t
   });
   lists.update({
     id: shown.id,
-    revision: shown.revision,
     operation: "page",
     page: 3,
   });
@@ -457,11 +419,10 @@ Deno.test("independent reads share the filtered sorted projection and preserve t
   const data = structuredClone(model.data);
   const request = {
     id: shown.id,
-    revision: shown.revision,
     offset: 9,
     limit: 1000,
   };
-  const page = await lists.read(request, model.data);
+  const page = await lists.read(request);
   assertEquals(
     page.rows.map((row) => (row as { id: number }).id),
     Array.from({ length: 56 }, (_, i) => 110 - i * 2),
@@ -470,19 +431,23 @@ Deno.test("independent reads share the filtered sorted projection and preserve t
   assertEquals(page.more, false);
   assertEquals(model.screen, state);
   assertEquals(model.data, data);
-  assertStrictEquals(lists.present(model.data)[0], shown);
+  assertEquals(lists.present(model.data)[0], shown);
   for (
     const invalid of [{ offset: -1 }, { limit: 1001 }, { limit: 0 }, {
       offset: 0.5,
     }]
   ) {
     await assertRejects(
-      () => lists.read({ ...request, ...invalid }, model.data),
+      () => lists.read({ ...request, ...invalid }),
       TypeError,
     );
   }
   model.data.rows[0]!.name = "changed";
-  await assertRejects(() => lists.read(request, model.data), StaleListView);
+  assertEquals((await lists.read(request)).rows.at(-1), {
+    id: 0,
+    name: "changed",
+    enabled: true,
+  });
 });
 
 Deno.test("page-source readers fill independent pages in bounded batches without changing the program page", async () => {
@@ -515,25 +480,24 @@ Deno.test("page-source readers fill independent pages in bounded batches without
   const shown = lists.present(model.data)[0]!;
   const request = {
     id: shown.id,
-    revision: shown.revision,
     offset: 0,
     limit: 1000,
   };
-  assertEquals((await lists.read(request, model.data)).rows.length, 1000);
+  assertEquals((await lists.read(request)).rows.length, 1000);
   assertEquals(requests, [{ offset: 0, limit: 500 }, {
     offset: 500,
     limit: 500,
   }]);
-  const last = await lists.read({ ...request, offset: 1000 }, model.data);
+  const last = await lists.read({ ...request, offset: 1000 });
   assertEquals(last.totalItems, 1205);
   assertEquals(last.rows.length, 205);
   assertEquals(last.more, false);
-  const beyond = await lists.read({ ...request, offset: 2000 }, model.data);
+  const beyond = await lists.read({ ...request, offset: 2000 });
   assertEquals(beyond.rows, []);
   assertEquals(beyond.totalItems, undefined);
   assertEquals(model.data.rows.length, 1);
   assertEquals(model.screen.elements.rows!.list!.pageSize, 1);
-  assertStrictEquals(lists.present(model.data)[0], shown);
+  assertEquals(lists.present(model.data)[0], shown);
 });
 
 Deno.test("list source disposal cancels pending batches and typed results cannot bypass the owning row schema", async () => {
@@ -556,14 +520,13 @@ Deno.test("list source disposal cancels pending batches and typed results cannot
     return gate.promise;
   });
   const lists = new ScreenLists(schema, [], layout, model.screen, [], model);
-  const view = lists.present(model.data)[0]!;
+  lists.present(model.data);
   const request = {
     id: "rows",
-    revision: view.revision,
     offset: 0,
     limit: 1000,
   };
-  const pending = lists.read(request, model.data);
+  const pending = lists.read(request);
   dispose();
   assertEquals(signal?.aborted, true);
   gate.resolve({ rows: [{ id: 1, name: "Late", enabled: true }], more: true });
@@ -575,10 +538,9 @@ Deno.test("list source disposal cancels pending batches and typed results cannot
     () => ({ rows: [{ id: "wrong" }], more: false }),
   );
   try {
-    await assertRejects(() => lists.read(request, model.data), StaleListView);
-    const fresh = lists.present(model.data)[0]!;
+    lists.present(model.data);
     await assertRejects(
-      () => lists.read({ ...request, revision: fresh.revision }, model.data),
+      () => lists.read(request),
       z.ZodError,
     );
     assertEquals(model.data.rows, [{ id: 0, name: "Row", enabled: true }]);
@@ -605,11 +567,10 @@ Deno.test("provider updates stage rows and totals atomically and require explici
     [],
     model,
   );
-  const view = lists.present(model.data)[0]!;
+  lists.present(model.data);
   const before = structuredClone(model.screen);
   const request = {
     id: "rows",
-    revision: view.revision,
     operation: "query" as const,
     query: { search: "new", filters: {}, sort: null },
   };
@@ -633,7 +594,7 @@ Deno.test("provider updates stage rows and totals atomically and require explici
     ]
   ) {
     result = invalid;
-    await assertRejects(() => browse(lists, model, [request]));
+    await assertRejects(() => browse(lists, [request]));
     assertEquals(model.screen, before);
     assertEquals(model.data.rows, [{ id: 0, name: "Original", enabled: true }]);
   }
@@ -643,7 +604,7 @@ Deno.test("provider updates stage rows and totals atomically and require explici
     totalItems: 1,
     totalSourceItems: 7,
   };
-  await browse(lists, model, [request]);
+  await browse(lists, [request]);
   const fresh = lists.present(model.data)[0]!;
   assertEquals([
     fresh.state.query.search,
@@ -651,7 +612,6 @@ Deno.test("provider updates stage rows and totals atomically and require explici
     fresh.totalSourceItems,
     fresh.source?.more,
   ], ["new", 1, 7, false]);
-  assertNotEquals(fresh.revision, view.revision);
   const rebuiltSchema = z.object({
     rows: z.object({ key: z.string(), rank: z.number() }).array(),
   });
@@ -669,10 +629,9 @@ Deno.test("provider updates stage rows and totals atomically and require explici
     [],
     model,
   );
-  const next = rebuilt.present(model.data)[0]!;
-  await browse(rebuilt, model, [{
+  rebuilt.present(model.data);
+  await browse(rebuilt, [{
     id: "rows",
-    revision: next.revision,
     operation: "refresh",
   }]);
   assertEquals(
@@ -681,7 +640,7 @@ Deno.test("provider updates stage rows and totals atomically and require explici
   );
 });
 
-Deno.test("provider replacement disposal and reset cancel visible work and invalidate cached mappings", async () => {
+Deno.test("provider replacement disposal and reset cancel visible work", async () => {
   for (const action of ["replace", "dispose", "reset"]) {
     const model = new Model({
       rows: [{ id: 0, name: "Original", enabled: true }],
@@ -700,10 +659,9 @@ Deno.test("provider replacement disposal and reset cancel visible work and inval
       [],
       model,
     );
-    const view = lists.present(model.data)[0]!;
-    const pending = browse(lists, model, [{
+    lists.present(model.data);
+    const pending = browse(lists, [{
       id: "rows",
-      revision: view.revision,
       operation: "refresh",
     }]);
     if (action === "reset") model.resetScreen();
@@ -717,15 +675,6 @@ Deno.test("provider replacement disposal and reset cancel visible work and inval
     });
     await assertRejects(() => pending, DOMException);
     assertEquals(model.data.rows[0]!.name, "Original");
-    await assertRejects(
-      () =>
-        lists.read(
-          { id: "rows", revision: view.revision, offset: 0, limit: 1 },
-          model.data,
-        ),
-      StaleListView,
-    );
-    assertNotEquals(lists.present(model.data)[0]!.revision, view.revision);
   }
 });
 
@@ -744,11 +693,10 @@ Deno.test("mapped row edits preserve readonly schema fields and complete rows", 
     undefined,
     model.screen,
   );
-  const view = lists.present(model.data)[0]!;
+  lists.present(model.data);
   const edit = (value: unknown) =>
     lists.applyEdits(
-      [{ id: "rows", revision: view.revision, rows: [{ index: 0, value }] }],
-      model.data,
+      [{ id: "rows", rows: [{ index: 0, value }] }],
       structuredClone(model.data),
     );
   assertThrows(
@@ -784,16 +732,14 @@ Deno.test("mapped row edits preserve readonly schema fields and complete rows", 
     undefined,
     selectionModel.screen,
   );
-  const selectionView = selected.present(selectionModel.data)[0]!;
+  selected.present(selectionModel.data);
   const candidate = structuredClone(selectionModel.data);
   selected.applySelection(
     [{
       id: "rows",
-      revision: selectionView.revision,
       operation: "selection",
       selected: true,
     }],
-    selectionModel.data,
     candidate,
   );
   assertEquals(candidate.rows, [{ key: "original", selected: true }]);
@@ -815,10 +761,8 @@ Deno.test("mapped row edits preserve readonly schema fields and complete rows", 
       explicit.applyEdits(
         [{
           id: explicitView.id,
-          revision: explicitView.revision,
           rows: [{ index: 0, value: { key: "forged", selected: false } }],
         }],
-        selectionModel.data,
         candidate,
       ),
     TypeError,
@@ -829,10 +773,8 @@ Deno.test("mapped row edits preserve readonly schema fields and complete rows", 
       selected.applyEdits(
         [{
           id: "rows",
-          revision: selectionView.revision,
           rows: [{ index: 0, value: { key: "forged", selected: true } }],
         }],
-        selectionModel.data,
         candidate,
       ),
     TypeError,
@@ -858,10 +800,9 @@ Deno.test("provider results retain unfiltered geometry across searches and rebui
       [],
       model,
     );
-    const view = lists.present(model.data)[0]!;
-    await browse(lists, model, [{
+    lists.present(model.data);
+    await browse(lists, [{
       id: "rows",
-      revision: view.revision,
       operation: "refresh",
     }]);
     return lists.present(model.data)[0]!;
@@ -952,11 +893,10 @@ Deno.test("selection requires an editable boolean in a complete row collection",
     () =>
       lists.validateRequests([{
         id: "rows",
-        revision: snapshot.revision,
         operation: "selection",
         selected: true,
         range: { from: 0, to: 1 },
-      }], model),
+      }]),
     TypeError,
     "selection range",
   );

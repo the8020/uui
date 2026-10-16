@@ -53,18 +53,17 @@ Deno.test("list exports retain displayed columns, exact text and table quoting",
   );
 });
 
-Deno.test("list read results match the requested view and range", () => {
-  const request = { id: "rows", revision: 2, offset: 10, limit: 1 };
+Deno.test("list read results match the requested list and range", () => {
+  const request = { id: "rows", offset: 10, limit: 1 };
   const page = {
     id: "rows",
-    revision: 2,
     offset: 10,
     rows: ["row"],
     more: false,
   };
   assertEquals(validListDataPage(page, request), page);
   for (
-    const invalid of [{ ...page, revision: 1 }, { ...page, offset: 0 }, {
+    const invalid of [{ ...page, id: "other" }, { ...page, offset: 0 }, {
       ...page,
       rows: [1, 2],
     }, { ...page, rows: [], more: true }]

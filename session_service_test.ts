@@ -1793,7 +1793,6 @@ Deno.test("structured list replies stay transient and reload submits the next sc
         token: "read",
         request: {
           id: list.id,
-          revision: list.revision,
           offset: 1000,
           limit: 1000,
         },
@@ -1834,7 +1833,6 @@ Deno.test("structured list replies stay transient and reload submits the next sc
           changes: [],
           updates: [{
             id: list.id,
-            revision: list.revision,
             operation: "capacity",
             pageSize: 10,
           }],

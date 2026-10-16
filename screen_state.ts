@@ -88,7 +88,6 @@ export interface ScreenListSnapshot {
   toolbar?: ScreenElement[];
   id: string;
   bind: string;
-  revision: number;
   columns: ListColumn[];
   rows: unknown[];
   state: ListState;
@@ -105,14 +104,12 @@ export interface ScreenListSnapshot {
 
 export interface ListReadRequest {
   id: string;
-  revision: number;
   offset: number;
   limit: number;
 }
 
 export interface ListDataPage {
   id: string;
-  revision: number;
   offset: number;
   rows: unknown[];
   totalItems?: number;
@@ -124,7 +121,6 @@ export const MAX_LIST_READ_SIZE = 1000;
 export function validListRead(value: unknown): value is ListReadRequest {
   return isRecord(value) && typeof value.id === "string" &&
     value.id.length > 0 &&
-    Number.isSafeInteger(value.revision) && Number(value.revision) > 0 &&
     Number.isSafeInteger(value.offset) && Number(value.offset) >= 0 &&
     Number.isSafeInteger(value.limit) && Number(value.limit) > 0 &&
     Number(value.limit) <= MAX_LIST_READ_SIZE &&
@@ -132,13 +128,12 @@ export function validListRead(value: unknown): value is ListReadRequest {
 }
 
 export type ListRequest =
-  | { id: string; revision: number; operation: "page"; page: number }
-  | { id: string; revision: number; operation: "capacity"; pageSize: number }
-  | { id: string; revision: number; operation: "query"; query: ListQuery }
-  | { id: string; revision: number; operation: "refresh" }
+  | { id: string; operation: "page"; page: number }
+  | { id: string; operation: "capacity"; pageSize: number }
+  | { id: string; operation: "query"; query: ListQuery }
+  | { id: string; operation: "refresh" }
   | {
     id: string;
-    revision: number;
     operation: "selection";
     selected: boolean;
     /** Inclusive positions in the complete filtered/sorted view; omit for all source rows. */
@@ -149,11 +144,10 @@ export function validListRequests(value: unknown): value is ListRequest[] {
   return Array.isArray(value) && value.length > 0 && value.length <= 200 &&
     value.every((item) => {
       if (
-        !isRecord(item) || typeof item.id !== "string" || !item.id.length ||
-        !Number.isSafeInteger(item.revision) || Number(item.revision) < 1
+        !isRecord(item) || typeof item.id !== "string" || !item.id.length
       ) return false;
       const positive = (n: unknown) => Number.isSafeInteger(n) && Number(n) > 0;
-      const keys = ["id", "revision", "operation"];
+      const keys = ["id", "operation"];
       let valid = false;
       if (item.operation === "page") {
         keys.push("page");
@@ -184,13 +178,11 @@ export function validListRequests(value: unknown): value is ListRequest[] {
 
 export interface ListSelection {
   id: string;
-  revision: number;
   index: number;
 }
 
 export interface ListChange {
   id: string;
-  revision: number;
   rows: Array<{ index: number; value: unknown }>;
 }
 

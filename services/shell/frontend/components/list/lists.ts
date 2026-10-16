@@ -205,7 +205,6 @@ class ListController {
     disposeOverflowText(this.host);
     this.host.replaceChildren();
     this.host.dataset.listId = snapshot.id;
-    this.host.dataset.viewRevision = String(snapshot.revision);
     this.reserveRows(snapshot.state.pageSize);
     this.host.id = this.#prefix;
     this.#measures = [];
@@ -298,7 +297,6 @@ class ListController {
         this.#selectionAnchor = undefined;
         callbacks.request([{
           id: snapshot.id,
-          revision: snapshot.revision,
           operation: "selection",
           selected: checkbox.checked,
         }]);
@@ -391,7 +389,6 @@ class ListController {
       const select = () =>
         callbacks.select({
           id: snapshot.id,
-          revision: snapshot.revision,
           index,
         });
       row.addEventListener("click", select);
@@ -558,7 +555,6 @@ class ListController {
     if (pageSize !== snapshot.state.pageSize || !snapshot.state.measured) {
       return {
         id: snapshot.id,
-        revision: snapshot.revision,
         operation: "capacity",
         pageSize,
       };
@@ -636,7 +632,6 @@ class ListController {
         () =>
           this.#callbacks.request([{
             id: snapshot.id,
-            revision: snapshot.revision,
             operation: "page",
             page: item,
           }]),
@@ -681,7 +676,6 @@ class ListController {
       if (
         this.#callbacks.request([{
           id: snapshot.id,
-          revision: snapshot.revision,
           operation: "selection",
           selected,
           range: selectedRange,
@@ -931,7 +925,6 @@ class ListController {
     ) return false;
     return this.#callbacks.request([{
       id: this.#snapshot.id,
-      revision: this.#snapshot.revision,
       operation: "query",
       query: structuredClone(this.#draft),
     }]);

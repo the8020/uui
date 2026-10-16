@@ -15,11 +15,7 @@ import {
 } from "./custom_elements.ts";
 import { validateElementDeclarations } from "./list_options.ts";
 import { resolveLayoutReferences, validateLayout } from "./layout.ts";
-import {
-  type ListTransactionContext,
-  ScreenLists,
-  StaleListView,
-} from "./lists.ts";
+import { type ListTransactionContext, ScreenLists } from "./lists.ts";
 import {
   type AttachedChannel,
   ChannelBindings,
@@ -905,7 +901,6 @@ async function showScreen<T extends z.ZodRawShape>(
             eventType: "select",
             selection: {
               id: list.id,
-              revision: list.revision,
               index: command.index,
             },
           });
@@ -914,7 +909,6 @@ async function showScreen<T extends z.ZodRawShape>(
         if (command.search !== undefined) {
           updates.push({
             id: list.id,
-            revision: list.revision,
             operation: "query",
             query: { ...list.state.query, search: command.search },
           });
@@ -922,7 +916,6 @@ async function showScreen<T extends z.ZodRawShape>(
         if (command.pageSize !== undefined) {
           updates.push({
             id: list.id,
-            revision: list.revision,
             operation: "capacity",
             pageSize: command.pageSize,
           });
@@ -930,7 +923,6 @@ async function showScreen<T extends z.ZodRawShape>(
         if (command.page !== undefined) {
           updates.push({
             id: list.id,
-            revision: list.revision,
             operation: "page",
             page: command.page,
           });
@@ -938,7 +930,6 @@ async function showScreen<T extends z.ZodRawShape>(
         if (command.selection !== undefined) {
           updates.push({
             id: list.id,
-            revision: list.revision,
             operation: "selection",
             ...command.selection,
           });
@@ -1222,14 +1213,13 @@ async function showScreen<T extends z.ZodRawShape>(
         const controller = new AbortController();
         running.set(token, controller);
         const signal = AbortSignal.any([context.signal, controller.signal]);
+        const output = captureCallMessages(state, call);
         let complete: (() => void) | undefined;
         try {
           const value = message === "read"
             ? await lists.readMessage(
               id,
               request,
-              options.model.data,
-              () => scheduleRedraw(state, call, options.schema, options.model),
               signal,
             )
             : await lists.updateMessage(id, request, signal, {
@@ -1241,12 +1231,11 @@ async function showScreen<T extends z.ZodRawShape>(
           complete?.();
         } catch (error) {
           if (!signal.aborted) {
-            endpoint.send("result", {
-              token,
-              error: error instanceof Error
-                ? error.message.slice(0, 1000)
-                : "List operation failed",
-            });
+            const message =
+              (error instanceof Error ? error.message.slice(0, 1000) : "") ||
+              "List operation failed";
+            output.send(message, "error");
+            endpoint.send("result", { token, error: message });
           }
         } finally {
           running.delete(token);
@@ -1296,62 +1285,53 @@ async function showScreen<T extends z.ZodRawShape>(
     if (
       request.updates.filter((item) => item.operation === "query").length > 1
     ) throw new TypeError("only one query may change per interaction");
-    try {
-      lists.validateRequests(request.updates, options.model.data);
-      const edits = prepareChanges(
-        options.schema,
-        options.model.data,
-        request.changes,
-        lists,
-        request.listChanges ?? [],
-        resolvedControls,
-        request.updates,
-      );
-      const staged = await lists.prepareUpdates(
-        request.updates,
-        options.model.data,
-        signal,
-      );
-      const parsed = options.schema.parse(edits.candidate);
-      signal.throwIfAborted();
-      validateScreenUpdate(request.screenState, options.model, elementIDs);
-      staged.commit();
-      for (const bind of edits.changed) {
-        setPath(options.model.data, bind, getPath(parsed, bind));
-      }
-      mergeScreenUpdate(request.screenState, options.model);
-      const sequence = context?.clientSequence ?? state.lastClientSequence;
-      state.lastClientSequence = Math.max(state.lastClientSequence, sequence);
-      if (context?.clientSequence !== undefined) {
-        state.messages.clear(previousMessages);
-        state.channel.send({ type: "server.ack", clientSequence: sequence });
-      }
-      surface.snapshot = snapshot();
-      const changed = staged.events[0];
-      context?.afterReply?.(() => {
-        publishPresentation(state);
-        if (changed) {
-          settleCall(state, call, {
-            event: {
-              action: "list-query",
-              eventType: "list-query",
-              clientSequence: sequence,
-              listId: changed.id,
-              bind: changed.bind,
-              change: changed.change,
-              query: changed.query,
-            },
-          });
-        }
-      });
-      return null;
-    } catch (error) {
-      if (error instanceof StaleListView) {
-        surface.snapshot = snapshot();
-        publishPresentation(state);
-      }
-      throw error;
+    lists.validateRequests(request.updates);
+    const edits = prepareChanges(
+      options.schema,
+      options.model.data,
+      request.changes,
+      lists,
+      request.listChanges ?? [],
+      resolvedControls,
+      request.updates,
+    );
+    const staged = await lists.prepareUpdates(
+      request.updates,
+      signal,
+    );
+    const parsed = options.schema.parse(edits.candidate);
+    signal.throwIfAborted();
+    validateScreenUpdate(request.screenState, options.model, elementIDs);
+    staged.commit();
+    for (const bind of edits.changed) {
+      setPath(options.model.data, bind, getPath(parsed, bind));
     }
+    mergeScreenUpdate(request.screenState, options.model);
+    const sequence = context?.clientSequence ?? state.lastClientSequence;
+    state.lastClientSequence = Math.max(state.lastClientSequence, sequence);
+    if (context?.clientSequence !== undefined) {
+      state.messages.clear(previousMessages);
+      state.channel.send({ type: "server.ack", clientSequence: sequence });
+    }
+    surface.snapshot = snapshot();
+    const changed = staged.events[0];
+    context?.afterReply?.(() => {
+      publishPresentation(state);
+      if (changed) {
+        settleCall(state, call, {
+          event: {
+            action: "list-query",
+            eventType: "list-query",
+            clientSequence: sequence,
+            listId: changed.id,
+            bind: changed.bind,
+            change: changed.change,
+            query: changed.query,
+          },
+        });
+      }
+    });
+    return null;
   }
   call.refresh = async () => {
     const ids = lists.providerIDs();
@@ -1374,7 +1354,6 @@ async function showScreen<T extends z.ZodRawShape>(
           list,
         ) => ({
           id: list.id,
-          revision: list.revision,
           operation: "refresh",
         })),
       },
@@ -1650,7 +1629,7 @@ function receiveScreenMessage<T extends z.ZodRawShape>(
       ) throw new TypeError("unknown or unavailable field help");
     }
     if (message.selection !== undefined) {
-      selection = lists.select(message.selection, model.data);
+      selection = lists.select(message.selection);
     }
     applyChanges(
       schema,
@@ -1663,19 +1642,15 @@ function receiveScreenMessage<T extends z.ZodRawShape>(
     mergeScreenUpdate(message.screenState, model);
     call.surface.snapshot = call.snapshot();
   } catch (error) {
+    const message =
+      (error instanceof Error ? error.message.slice(0, 1000) : "") ||
+      "screen changes are invalid";
+    captureCallMessages(state, call).send(message, "error");
     state.channel.send({
       type: "session.error",
-      code: error instanceof StaleListView
-        ? "list_view_mismatch"
-        : "validation_failed",
-      message: error instanceof Error
-        ? error.message
-        : "screen changes are invalid",
+      code: "validation_failed",
+      message,
     });
-    if (error instanceof StaleListView) {
-      call.surface.snapshot = call.snapshot();
-      publishPresentation(state);
-    }
     return;
   }
   state.lastClientSequence = message.clientSequence;
@@ -1968,8 +1943,8 @@ function prepareChanges<T extends z.ZodRawShape>(
   ) return { candidate: structuredClone(model), changed: new Set<string>() };
   const candidate = structuredClone(model) as Record<string, unknown>;
   const bindings = lists.bindings();
-  const changed = lists.applyEdits(listChanges, model, candidate);
-  for (const bind of lists.applySelection(requests, model, candidate)) {
+  const changed = lists.applyEdits(listChanges, candidate);
+  for (const bind of lists.applySelection(requests, candidate)) {
     changed.add(bind);
   }
   for (const change of changes) {

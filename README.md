@@ -247,10 +247,10 @@ is discarded. Arbitrary business side effects remain owner responsibilities.
 One ChannelRouter handles all traffic on the existing authenticated UUI
 WebSocket. The session service retains controller/socket/session checks;
 internal envelopes bind messages and stream controls to their initiating side,
-sequence and screen/connection generations. Protocol version 11 replaces the
-previous channel wire forms without a compatibility layer. No endpoint catalog,
-permission system, extra backend service or socket is exposed. Do not import the
-server `mod.ts` barrel into browser modules.
+sequence and screen/connection generations. Protocol version 12 omits list
+revisions; the pending call retains the displayed-to-source mappings. No
+endpoint catalog, permission system, extra backend service or socket is exposed.
+Do not import the server `mod.ts` barrel into browser modules.
 
 Lists use ordinary `read`, `update`, `result` and `cancel` IDs and only the
 list-owned token needed to match a read/update. Headless commands use the same
@@ -260,6 +260,9 @@ results/errors or valid presentations release the shell's interaction gate;
 ordinary messages, stream controls and acknowledgements never release it.
 
 ## Messages
+
+User-facing outcomes and validation failures use the message center. The shell
+has no warning/error banners; frontend diagnostics use `console.error`.
 
 `sendMessage(body, kind?)` records an ordinary program outcome in the current
 session's bounded message history. Kinds are `info` (default), `success`,
@@ -547,12 +550,12 @@ The program chooses the authorized source. Bound arrays use local projection;
 registered sources receive the ordinary typed query, offset, a 1–500-row limit
 and AbortSignal. Return `{ rows, more, totalItems?, totalSourceItems? }`. UUI
 loads and refreshes the visible page, validates its fixed row schema and totals,
-and updates rows, geometry and view revisions while `callScreen` stays pending.
-Paging, queries, capacity changes and `ScreenChannel.redraw()` do not require
-program reload loops. Providers retain remote order and own filtering, sorting
-and consistency; `searchOnly: true` registration options hide and reject
-unsupported column queries. Whole-table checkbox selection requires a complete
-bound array, so registered paged sources cannot opt into selection.
+and updates rows and geometry while `callScreen` stays pending. Paging, queries,
+capacity changes and `ScreenChannel.redraw()` do not require program reload
+loops. Providers retain remote order and own filtering, sorting and consistency;
+`searchOnly: true` registration options hide and reject unsupported column
+queries. Whole-table checkbox selection requires a complete bound array, so
+registered paged sources cannot opt into selection.
 
 Provider pages belong to their list ID and never replace the bound business
 array; separate lists may query the same binding independently. Row navigation
@@ -561,17 +564,17 @@ a provider list reject the entire interaction before any data, query, capacity
 or page state commits. Editable rows and checkbox updates require a complete
 bound array. Other editable fields can still commit with provider browsing.
 
-The disposer or replacement cancels the source's work and invalidates old row
-mappings. Reset, screen settlement/replacement, coverage and connection loss
-cancel active work; late results are discarded even if the source ignores abort.
-Covered redraws retain presentation state and refresh when restored. Remote
-snapshot consistency and interrupting unabortable queries remain source-owned.
-Schema and columns stay fixed within a screen call; rebuild the screen contract
-explicitly to change them. Optional source-returned value-help schemas must
-match that contract. Unknown totals remain unknown until an accepted end page.
-The same provider fills bounded independent `read` operations without changing
-the visible page or committing drafts. Field help registers its provider
-automatically and retains its first-column key, isolated draft and Done commit.
+The disposer or replacement cancels the source's outstanding work. Reset, screen
+settlement/replacement, coverage and connection loss cancel active work; late
+results are discarded even if the source ignores abort. Covered redraws retain
+presentation state and refresh when restored. Remote snapshot consistency and
+interrupting unabortable queries remain source-owned. Schema and columns stay
+fixed within a screen call; rebuild the screen contract explicitly to change
+them. Optional source-returned value-help schemas must match that contract.
+Unknown totals remain unknown until an accepted end page. The same provider
+fills bounded independent `read` operations without changing the visible page or
+committing drafts. Field help registers its provider automatically and retains
+its first-column key, isolated draft and Done commit.
 
 The first presentation supplies one row for measurement. The browser reports
 capacity from the actual page/modal viewport and list geometry; the Worker
@@ -733,15 +736,16 @@ mount and use the returned `editor` (native `EditorView`) for commands and
 extensions; the vendored library exports the shared CodeMirror state/view
 primitives.
 
-Protocol version 11 carries generic ID/data channel frames. Each screen snapshot
+Protocol version 12 carries generic ID/data channel frames. Each screen snapshot
 carries `state`, element-specific `lists`, and `channelGeneration`. List
 bindings in the wire business model are empty arrays; displayed rows live in
 `lists[].rows`. The list's `update` operation on the common namespace carries
 page/capacity/query/refresh/selection with validated dirty edits and
 presentation metadata; multi-list capacity updates commit as one transaction.
-Independent reads use that namespace's `read` operation. View revision and
-source identity/content/order checks remain list-owned. There are no read wire
-aliases.
+Independent reads use that namespace's `read` operation. Selections, edits and
+reads use the mappings retained by the pending call without comparing list
+identity, revision, source order or contents. Row bounds, schema validation and
+editability checks remain list-owned.
 
 ## Binary streams
 

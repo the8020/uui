@@ -110,14 +110,14 @@ export function textExport(
     ).join("\n") + "\n</rows>\n";
 }
 
-/** The list domain checks the shared core's result against its observed view/range. */
+/** The list domain checks the shared core's result against its requested range. */
 export function validListDataPage(
   value: unknown,
   request: ListReadRequest,
 ): ListDataPage {
   const page = value as ListDataPage | null;
   if (
-    !page || page.id !== request.id || page.revision !== request.revision ||
+    !page || page.id !== request.id ||
     page.offset !== request.offset ||
     !Array.isArray(page.rows) || page.rows.length > request.limit ||
     typeof page.more !== "boolean" ||

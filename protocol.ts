@@ -533,7 +533,6 @@ export function parseClientMessage(
         !eventTypes.has(value.eventType as ScreenEventType)) ||
     (value.selection !== undefined && (!isRecord(value.selection) ||
       typeof value.selection.id !== "string" ||
-      !isPositiveSequence(value.selection.revision) ||
       !isSequence(value.selection.index) || value.action !== "select" ||
       value.eventType !== "select")) ||
     !validChanges(value.changes) ||
@@ -603,7 +602,6 @@ function validListChanges(value: unknown): boolean {
     Array.isArray(value) && value.length <= 200 &&
       value.every((item) =>
         isRecord(item) && typeof item.id === "string" &&
-        isPositiveSequence(item.revision) &&
         Array.isArray(item.rows) && item.rows.length <= MAX_LIST_PAGE_SIZE &&
         item.rows.every((row) =>
           isRecord(row) && isSequence(row.index) && Object.hasOwn(row, "value")

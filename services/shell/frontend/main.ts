@@ -119,7 +119,6 @@ const connectionState = requiredElement<HTMLElement>("connection-state");
 const connectionIndicator = requiredElement<HTMLElement>(
   "connection-indicator",
 );
-const notice = requiredElement<HTMLElement>("notice");
 const sessionMenu = requiredElement<HTMLDetailsElement>("session-menu");
 const sessionMenuToggle = requiredElement<HTMLElement>("session-menu-toggle");
 const sessionMenuIcon = requiredElement<HTMLElement>("session-menu-icon");
@@ -770,7 +769,7 @@ function receive(raw: unknown): void {
     } catch {
       closeNativeDownloads();
       socket?.close(1003, "invalid stream frame");
-      showNotice("The server sent invalid stream data.");
+      console.error("The server sent invalid stream data.");
     }
     return;
   }
@@ -779,7 +778,7 @@ function receive(raw: unknown): void {
   try {
     message = JSON.parse(raw) as UUIServerMessage;
   } catch {
-    showNotice("The server sent an invalid message.");
+    console.error("The server sent an invalid message.");
     return;
   }
   if (
@@ -817,9 +816,7 @@ function receive(raw: unknown): void {
       closeChannels("UUI resynchronization required");
       if (message.connection) connectChannelRouters(message.connection);
       setInteractionPending(undefined);
-      showResync(
-        message.message ?? "This session needs a fresh screen snapshot.",
-      );
+      sendClient({ type: "client.ack", resync: true });
       break;
     case "session.ping":
       sendClient({ type: "session.pong" });
@@ -827,14 +824,13 @@ function receive(raw: unknown): void {
     case "presentation.show":
       void refreshPreferences();
 
-      notice.hidden = true;
       try {
         reconcilePresentation(message.presentation);
         syncEndpoints();
         messageCenter.synchronize(message.presentation.messages ?? []);
         if (!suspended && controlDialog.open) controlDialog.close();
       } catch {
-        showNotice("The server sent an invalid presentation.");
+        console.error("The server sent an invalid presentation.");
       }
       break;
     case "channel.frame":
@@ -842,7 +838,7 @@ function receive(raw: unknown): void {
       break;
     case "clipboard.write":
       void writeClipboard(message.text).catch(() =>
-        showNotice("The browser did not allow copying.")
+        console.error("The browser did not allow copying.")
       );
       break;
     case "session.open": {
@@ -869,7 +865,7 @@ function receive(raw: unknown): void {
         pending.delete(interactionSequence);
       }
       setInteractionPending(undefined);
-      showNotice(message.message ?? message.code ?? "Session error");
+      console.error(message.message ?? message.code ?? "Session error");
       break;
     }
     case "session.end":
@@ -916,7 +912,7 @@ async function refreshPreferences(): Promise<void> {
     applyAccent(document.documentElement, accentColor);
   } catch (error) {
     if (!request.signal.aborted) {
-      showNotice(
+      console.error(
         error instanceof Error
           ? error.message
           : "Could not load your UUI preferences.",
@@ -1011,7 +1007,7 @@ function reconcilePresentation(presentation: PresentationSnapshot): void {
     presentation.activeSurfaceId !== null &&
       presentation.activeSurfaceId !== surfaces.at(-1)?.surfaceId
   ) {
-    showNotice("The server sent an invalid presentation.");
+    console.error("The server sent an invalid presentation.");
     return;
   }
 
@@ -1035,7 +1031,7 @@ function reconcilePresentation(presentation: PresentationSnapshot): void {
       presentation.pageDepth,
     );
   } catch {
-    showNotice("The server sent an invalid presentation.");
+    console.error("The server sent an invalid presentation.");
     return;
   }
 
@@ -1418,7 +1414,7 @@ function requestLists(
     layer.dirty.acknowledge(dirty)
   ).catch((error) => {
     if (error instanceof DOMException && error.name === "AbortError") return;
-    showNotice(
+    console.error(
       error instanceof Error ? error.message : "Could not update the list",
     );
   });
@@ -1794,25 +1790,6 @@ function elementsInLayer(layer: PresentationLayer): HTMLElement[] {
 
 function send(value: unknown): void {
   if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(value));
-}
-
-function showNotice(message: string): void {
-  renderIconText(notice, message);
-  notice.hidden = false;
-}
-
-function showResync(message: string): void {
-  const text = document.createElement("span");
-  renderIconText(text, message);
-  const button = document.createElement("button");
-  button.type = "button";
-  renderIconText(button, "Reload current screen");
-  button.addEventListener("click", () => {
-    notice.hidden = true;
-    sendClient({ type: "client.ack", resync: true });
-  });
-  notice.replaceChildren(text, document.createTextNode(" "), button);
-  notice.hidden = false;
 }
 
 function requiredElement<T extends HTMLElement>(id: string): T {

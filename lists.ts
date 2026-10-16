@@ -105,23 +105,17 @@ interface ListDefinition extends ListOptions {
 
 interface ListView {
   provider?: SourceEntry;
-  version: number;
   source: unknown[];
-  originals: unknown[];
-  sourceText: string;
   indices: number[];
   allIndices: number[];
   snapshot: ScreenListSnapshot;
 }
-
-export class StaleListView extends Error {}
 
 /** Owns all projections and displayed-to-source mappings for one screen call. */
 export class ScreenLists {
   readonly #definitions = new Map<string, ListDefinition>();
   readonly #views = new Map<string, ListView>();
   readonly #screen: ScreenState;
-  #sequence = 0;
 
   constructor(
     schema: z.ZodObject<z.ZodRawShape>,
@@ -218,19 +212,8 @@ export class ScreenLists {
         throw new TypeError(`list binding ${definition.bind} must be an array`);
       }
       const state = this.state(definition.id);
-      const sourceText = JSON.stringify(source);
-      const existing = this.#views.get(definition.id);
       if (definition.selection && provider) {
         throw new TypeError("list selection requires the complete bound array");
-      }
-      if (
-        existing !== undefined && currentSource(existing, source, sourceText) &&
-        existing.provider === provider &&
-        existing.version === this.#screen.version &&
-        JSON.stringify(existing.snapshot.state) === JSON.stringify(state)
-      ) {
-        result.push(existing.snapshot);
-        continue;
       }
       const page: ListSourcePage = provider?.result ??
         { rows: source, more: false };
@@ -275,7 +258,6 @@ export class ScreenLists {
           : { toolbar: definition.toolbar as ScreenElement[] }),
         id: definition.id,
         bind: definition.bind,
-        revision: ++this.#sequence,
         columns: definition.columns,
         rows: structuredClone(indices.map((index) => source[index])),
         state: structuredClone(state),
@@ -305,10 +287,7 @@ export class ScreenLists {
       };
       this.#views.set(definition.id, {
         provider,
-        version: this.#screen.version,
         source,
-        originals: [...source],
-        sourceText,
         indices,
         allIndices,
         snapshot,
@@ -321,22 +300,13 @@ export class ScreenLists {
   async readMessage(
     id: string,
     value: unknown,
-    model: object,
-    refresh: () => void,
     signal: AbortSignal,
   ): Promise<ListDataPage> {
     if (
       !validListRead(value) || value.id !== id ||
-      Object.keys(value).some((key) =>
-        !["id", "revision", "offset", "limit"].includes(key)
-      )
+      Object.keys(value).some((key) => !["id", "offset", "limit"].includes(key))
     ) throw new TypeError("Invalid list read");
-    try {
-      return await this.read(value, model, signal);
-    } catch (error) {
-      if (error instanceof StaleListView) refresh();
-      throw error;
-    }
+    return await this.read(value, signal);
   }
   updateMessage(
     id: string,
@@ -363,12 +333,10 @@ export class ScreenLists {
   /** Stage every list-owned result before changing page state or source totals. */
   async prepareUpdates(
     requests: readonly ListRequest[],
-    model: object,
     signal: AbortSignal,
   ) {
-    this.validateRequests(requests, model);
+    this.validateRequests(requests);
     signal = AbortSignal.any([signal, this.model?.resetSignal ?? signal]);
-    const version = this.#screen.version;
     const states = new Map<string, ListState>();
     const results = new Map<
       string,
@@ -407,17 +375,8 @@ export class ScreenLists {
     }
     const check = () => {
       signal.throwIfAborted();
-      if (this.#screen.version !== version) {
-        throw new StaleListView("Screen was reset");
-      }
-      for (const request of requests) {
-        this.view(request.id, request.revision, model);
-      }
-      for (const [id, result] of results) {
+      for (const result of results.values()) {
         result.source.lifetime.signal.throwIfAborted();
-        if (this.source(id) !== result.source) {
-          throw new StaleListView("List source was replaced");
-        }
       }
     };
     check();
@@ -426,9 +385,8 @@ export class ScreenLists {
       commit: () => {
         check();
         for (const [id, state] of states) Object.assign(this.state(id), state);
-        for (const [id, result] of results) {
+        for (const result of results.values()) {
           result.source.result = result.page;
-          this.#views.delete(id);
         }
       },
     };
@@ -497,16 +455,14 @@ export class ScreenLists {
 
   async read(
     request: ListReadRequest,
-    model: object,
     signal = new AbortController().signal,
   ): Promise<ListDataPage> {
     signal = AbortSignal.any([signal, this.model?.resetSignal ?? signal]);
     signal.throwIfAborted();
     if (!validListRead(request)) throw new TypeError("invalid list read range");
-    const view = this.view(request.id, request.revision, model);
+    const view = this.view(request.id);
     const data: ListDataPage = {
       id: request.id,
-      revision: request.revision,
       offset: request.offset,
       rows: [],
       more: false,
@@ -550,10 +506,8 @@ export class ScreenLists {
       ) {
         data.totalItems = request.offset + data.rows.length;
       }
-      this.view(request.id, request.revision, model);
     }
     signal.throwIfAborted();
-    this.view(request.id, request.revision, model);
     return structuredClone(data);
   }
 
@@ -564,7 +518,7 @@ export class ScreenLists {
     return structuredClone(result);
   }
 
-  validateRequests(requests: readonly ListRequest[], model: object): void {
+  validateRequests(requests: readonly ListRequest[]): void {
     if (!validListRequests(requests)) {
       throw new TypeError("invalid list updates");
     }
@@ -573,7 +527,7 @@ export class ScreenLists {
       const key = `${request.id}:${request.operation}`;
       if (ids.has(key)) throw new TypeError("duplicate list update");
       ids.add(key);
-      const view = this.view(request.id, request.revision, model);
+      const view = this.view(request.id);
       if (request.operation === "page") {
         if (
           !Number.isSafeInteger(request.page) || request.page < 1 ||
@@ -656,9 +610,8 @@ export class ScreenLists {
 
   select(
     selection: ListSelection,
-    model: object,
   ): { value: unknown; bind: string; controlId: string } {
-    const view = this.view(selection.id, selection.revision, model);
+    const view = this.view(selection.id);
     const index = view.indices[selection.index];
     if (!Number.isSafeInteger(selection.index) || index === undefined) {
       throw new TypeError("invalid displayed row index");
@@ -676,13 +629,12 @@ export class ScreenLists {
 
   applySelection(
     requests: readonly ListRequest[],
-    source: object,
     candidate: Record<string, unknown>,
   ): Set<string> {
     const changed = new Set<string>();
     for (const request of requests) {
       if (request.operation !== "selection") continue;
-      const view = this.view(request.id, request.revision, source);
+      const view = this.view(request.id);
       const definition = this.#definitions.get(request.id)!;
       const rows = getPath(candidate, definition.bind) as unknown[];
       const indices = request.range === undefined
@@ -701,13 +653,12 @@ export class ScreenLists {
 
   applyEdits(
     changes: readonly ListChange[],
-    source: object,
     candidate: Record<string, unknown>,
   ): Set<string> {
     const bindings = new Set<string>();
     const edited = new Set<string>();
     for (const change of changes) {
-      const view = this.view(change.id, change.revision, source);
+      const view = this.view(change.id);
       const definition = this.#definitions.get(change.id)!;
       if (view.provider && change.rows.length > 0) {
         throw new TypeError("List providers do not support row edits");
@@ -744,24 +695,9 @@ export class ScreenLists {
     return element.list ??= initialListState();
   }
 
-  private view(id: string, revision: number, model: object): ListView {
-    const definition = this.#definitions.get(id);
+  private view(id: string): ListView {
     const view = this.#views.get(id);
-    if (definition === undefined || view === undefined) {
-      throw new TypeError(`unknown list ${id}`);
-    }
-    const source = this.source(id)?.result?.rows ??
-      getPath(model, definition.bind);
-    if (
-      view.snapshot.revision !== revision ||
-      view.version !== this.#screen.version ||
-      view.provider !== this.source(id) || !Array.isArray(source) ||
-      !currentSource(view, source, JSON.stringify(source))
-    ) {
-      throw new StaleListView(
-        "The list changed. Review its current rows and try again.",
-      );
-    }
+    if (view === undefined) throw new TypeError(`unknown list ${id}`);
     return view;
   }
 }
@@ -795,16 +731,6 @@ function validateRowEdit(
       validateRowEdit(raw.element as z.ZodType, before[index], value)
     );
   }
-}
-
-function currentSource(
-  view: ListView,
-  source: unknown[],
-  text: string,
-): boolean {
-  return view.source === source && view.sourceText === text &&
-    view.originals.length === source.length &&
-    view.originals.every((item, index) => item === source[index]);
 }
 
 function normalizeQuery(

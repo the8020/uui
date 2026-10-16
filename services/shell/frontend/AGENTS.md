@@ -17,6 +17,9 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
 
 # Local Contracts
 
+- Use existing message-center notifications for user-facing messages. No screen
+  banners; frontend diagnostics use `console.error`. On resync, acknowledge with
+  `client.ack` and request the current snapshot directly.
 - Back, Exit, and New form one gapless segmented navigation group. Exit sends
   `session.exit` and uses the upward arrow icon. It follows the server-selected
   entry URL after termination clears per-tab state. New is a normal base-URL
@@ -85,8 +88,8 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
 - Ordinary list updates and independent reads use the list namespace's update
   and read messages on this same core. Updates carry captured dirty bindings and
   screen state; only matching results acknowledge those drafts. Capacity batches
-  remain one transaction. Browser list tools use provider totals and revisions;
-  no program reload loop is required for visible browsing.
+  remain one transaction. Browser list tools use provider totals; no program
+  reload loop is required for visible browsing.
 - Keep one shell-owned in-flight interaction gate, bounded message/history
   rendering, and shared consumption-based stream flow control.
 - Native saves subscribe to `save` metadata and its domain transfer-ID stream
@@ -104,10 +107,10 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
   stays disabled while unavailable or already active. `presentation.show`
   refreshes effective preferences from the uncached authenticated shell
   endpoint. Abort superseded requests and bound reads to ten seconds; errors
-  preserve the applied accent and show a notice. `accent.ts` applies shared
-  accent/hover/soft and contrasting foreground tokens in both themes; built-in
-  purple clears overrides. Light/dark switching reapplies the last accent
-  immediately.
+  preserve the applied accent and use `console.error`. `accent.ts` applies
+  shared accent/hover/soft and contrasting foreground tokens in both themes;
+  built-in purple clears overrides. Light/dark switching reapplies the last
+  accent immediately.
 - The shared CSS uses the accent token for navbar underlines, every field-group,
   detail, and list card outline (including title tabs), and dialog frames and
   toolbar underlines in both themes. Saved colors and defaults apply across all

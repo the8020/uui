@@ -55,9 +55,6 @@ export class ListTools {
     snapshot: ScreenListSnapshot,
     callbacks: ListToolCallbacks,
   ): HTMLElement[] {
-    if (this.#snapshot && snapshot.revision !== this.#snapshot.revision) {
-      this.close();
-    }
     this.#snapshot = snapshot;
     this.#callbacks = callbacks;
     const readable = snapshot.source === undefined || snapshot.readable;
@@ -188,7 +185,6 @@ export class ListTools {
     }
     const result: ListDataPage = {
       id: snapshot.id,
-      revision: snapshot.revision,
       offset,
       rows: [],
       more: false,
@@ -198,7 +194,6 @@ export class ListTools {
       const page = await this.#callbacks.read(
         {
           id: snapshot.id,
-          revision: snapshot.revision,
           offset: offset + result.rows.length,
           limit: Math.min(MAX_LIST_READ_SIZE, limit - result.rows.length),
         },

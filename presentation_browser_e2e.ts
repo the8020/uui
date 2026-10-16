@@ -326,6 +326,7 @@ let currentSocket: WebSocket | undefined;
 let serverSequence = 0;
 let connectionSequence = 0;
 let processedClientSequence = 0;
+let resyncConfirmed = false;
 let lastInteraction: UUIClientMessage | undefined;
 const initialOutbounds: UUIWorkerOutbound[] = [];
 let retainedPresentation:
@@ -862,6 +863,14 @@ async function serve(request: Request): Promise<Response> {
         }
         return;
       }
+      if (message.type === "client.ack" && message.resync) {
+        resyncConfirmed = true;
+        sendServer({
+          type: "presentation.show",
+          presentation: retainedPresentation,
+        });
+        return;
+      }
       if (
         message.type === "screen.event" ||
         message.type === "channel.frame" && message.kind === "message" &&
@@ -967,6 +976,15 @@ async function verifyConnectionFlow(page: BrowserPage): Promise<void> {
     assertEquals(await storedRoute(), null);
   };
   await connected();
+  const connection = crypto.randomUUID();
+  connectChannels(connection);
+  sendServer({ type: "session.resync_required", connection });
+  await waitFor(
+    () => resyncConfirmed,
+    "automatic snapshot resynchronization",
+    5_000,
+  );
+  assertEquals(await page.evaluate(`document.querySelector('#notice')`), null);
   assertEquals(
     await page.evaluate(`new URL(location.href).searchParams.has('session')`),
     false,
