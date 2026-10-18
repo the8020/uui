@@ -1302,6 +1302,18 @@ async function verifyPresentationFlow(page: BrowserPage): Promise<void> {
     })()`,
     "first modal and preserved page",
   );
+  assert(
+    await page.evaluate<boolean>(`(() => {
+      const dialog = document.querySelector('dialog.presentation-modal[open]');
+      const input = document.createElement('input');
+      input.type = 'file';
+      dialog.append(input);
+      input.dispatchEvent(new Event('cancel', { bubbles: true }));
+      input.remove();
+      return dialog.open && !dialog.inert;
+    })()`),
+    "a descendant's cancel event must not navigate Back from its modal",
+  );
   await setValue(
     page,
     'dialog.presentation-modal[open] [data-bind="value"]',

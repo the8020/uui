@@ -1149,6 +1149,7 @@ function createLayer(surface: PresentationSurfaceSnapshot): PresentationLayer {
     frame.append(toolbar, root, shield);
     dialog.append(frame);
     dialog.addEventListener("cancel", (event) => {
+      if (event.target !== dialog) return;
       event.preventDefault();
       requestLayerBack(surface.surfaceId);
     });
