@@ -948,6 +948,10 @@ below.
   dependencies and language chunks are vendored and loaded on demand. Local
   parser diagnostics never resolve external references. The terminated program
   uses read-only source excerpts with original line numbers and error markers.
+- `fileUpload()` supplies a bounded transient receiver and a standalone native
+  file picker through the same custom-field and binary Channel contracts. Only
+  filenames enter Models; programs consume completed bytes after a screen action
+  and validate their formats. File fields suppress text-value help.
 - Custom-element hosts expose `renderText(target, text)` for the shared plain
   text/Material icon renderer. `uui-content-fullscreen` is a generic CSS hook
   for filling the content viewport; the shell measures `--uui-content-top` from
@@ -1028,6 +1032,10 @@ below.
   explicitly asks for onboarding help.
 
 # Verification
+
+- `deno task test:file-upload-browser` checks real browser byte transfer,
+  oversized replacements, single consumption, and cancellation of partial
+  uploads. File bytes never enter the bound Model.
 
 - `preferences_test.ts` covers the actual nullable table descriptor through
   SQLite, per-field inheritance, own-user saves, override removal, validation,

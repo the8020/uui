@@ -14,6 +14,9 @@ Parent DOX: [uui/services DOX](../AGENTS.md).
   `.generated/components/code-editor/`; its external vendored modules remain in
   the frontend component folder. Neither editor code nor language dependencies
   enter the main shell bundle.
+- Build the file-upload entry separately in
+  `.generated/components/file-upload/`. Its native file picker uses the existing
+  component Channel byte transport.
 
 # Local Contracts
 

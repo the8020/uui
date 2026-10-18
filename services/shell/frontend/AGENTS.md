@@ -14,6 +14,8 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
   Markdown lives at the repository's frontend root.
 - The code editor child owns the optional prebuilt custom field and its vendored
   editor and language modules.
+- The file-upload child owns the native picker and bounded transient receiver
+  used by ordinary programs through the existing binary Channel transport.
 
 # Local Contracts
 
@@ -264,6 +266,9 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
   and backend draft application.
 
 # Child DOX Index
+
+- [components/file-upload/AGENTS.md](components/file-upload/AGENTS.md): Own the
+  bounded file picker and transient binary uploads for ordinary programs.
 
 - [components/code-editor/AGENTS.md](components/code-editor/AGENTS.md): Own the
   optional code field, local syntax diagnostics, line markers, and vendored
