@@ -134,6 +134,9 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
 - Dialogs grow with their content up to 90% of the dynamic viewport height;
   mobile dialogs leave a 12px outer height gutter. Keep tall-window list pages
   governed by the viewport instead of a fixed maximum height.
+- Only a presentation dialog's own `cancel` event requests Back. Ignore
+  descendant cancellation, including native file-picker cancellation, so the
+  modal and its draft remain open.
 - Startup and failed WebSocket admission share HTTP route establishment. A
   redirected response ends reconnecting, clears the route, and navigates to its
   final URL before checking status or route headers. Preserve retry behavior for
