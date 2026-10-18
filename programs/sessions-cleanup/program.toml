@@ -1,0 +1,4 @@
+schema = 1
+description = "Remove obsolete UUI session metadata"
+entrypoint = "program.ts"
+discoverable = false

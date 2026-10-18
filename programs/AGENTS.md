@@ -9,6 +9,8 @@ Parent DOX: [uui DOX](../AGENTS.md).
 
 - Own program manifests and common verification; each child owns its screen
   implementation and layouts.
+- Own the thin `sessions-cleanup` entrypoint; root `session_cleanup.ts` owns
+  obsolete-session inspection and conditional metadata deletion.
 
 # Local Contracts
 

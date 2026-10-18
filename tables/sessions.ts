@@ -35,6 +35,7 @@ const Sessions = table("the8020__uui__sessions", {
   indexes: [
     { columns: ["authenticatedUserId"] },
     { columns: ["state", "updatedAt"] },
+    { columns: ["updatedAt", "sessionId"] },
     { columns: ["workerId"] },
   ],
 });

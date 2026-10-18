@@ -27,6 +27,8 @@ Parent DOX: [uui DOX](../AGENTS.md).
   table identity follows the package and file path.
 - Record exact execution placement, authenticated user, lifecycle, observed
   client address, and bounded current-screen metadata.
+- The `updatedAt,sessionId` index supports deletion-safe keyset paging for the
+  hourly obsolete-session scan.
 - The session ID primary key rejects colliding initial inserts. Creation and
   updates are separate store operations; creation never upserts another owner.
 - Never persist credentials, routing tokens, replay buffers, or unbounded

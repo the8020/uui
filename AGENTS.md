@@ -173,6 +173,7 @@ below.
   terminated, customization, user cleanup, and session administration programs.
 - [events/AGENTS.md](events/AGENTS.md): Subscribe to account deletion for UUI
   preference cleanup.
+- [jobs/AGENTS.md](jobs/AGENTS.md): Schedule hourly obsolete-session cleanup.
 - [services/AGENTS.md](services/AGENTS.md): Declare and expose the login, shell,
   and persistent session services.
 - [src/AGENTS.md](src/AGENTS.md): Own shared preference/session/short-dump
@@ -321,6 +322,14 @@ below.
   passwords, cookies, route tokens, replay buffers, or unbounded messages. Clean
   termination removes the record before signaling generic persistent completion;
   abnormal loss may leave recoverable stale metadata.
+- `jobs/cleanup-sessions.toml` schedules `the8020/uui/sessions-cleanup` hourly
+  through the jobs package, once per system by default. Root
+  `session_cleanup.ts` pages metadata older than the disconnect grace in 100-row
+  keyset batches with a four-minute scan budget. It removes only exact targets
+  reported missing, conditionally on unchanged placement and timestamp. Live
+  idle sessions and ambiguous failures remain; age alone is never proof of
+  disconnection. Counts and scan completion are retained in ordinary job
+  results. Normal live disconnect expiry stays in the session Worker.
 - Session IDs use the shared `newId("uis")` helper with ten random lowercase
   alphanumeric characters. Initial metadata creation is an insert protected by
   the database primary key; an ID collision fails creation and releases the
