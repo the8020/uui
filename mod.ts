@@ -1,4 +1,5 @@
 export { Model } from "./model.ts";
+export { fileUpload } from "./services/shell/frontend/components/file-upload/mod.ts";
 export { fetchUserPreferences, saveUserPreferences } from "./preferences.ts";
 export {
   codeEditor,
