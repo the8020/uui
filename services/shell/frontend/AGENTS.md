@@ -127,8 +127,9 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
 - `renderElements` shares ordered native/custom controls, actions, and
   `{ type: "separator" }` gaps between list toolbars, program/modal headers, and
   layout element rows. Separators share free flex space, have no focus target,
-  and are ignored when measuring the header's minimum item widths. Header
-  overflow hides its separators; ordinary element rows wrap at narrow widths.
+  and are ignored when measuring the header's minimum item widths. Header and
+  list-toolbar overflow hide their separators; other element rows wrap at narrow
+  widths. The navbar and every list toolbar share `--uui-bar-height`.
 - Use the shared responsive geometry, accessible dialogs, complete local
   Material Symbols catalogue, and browser-only theme state.
 - Dialogs grow with their content up to 90% of the dynamic viewport height;

@@ -15,6 +15,12 @@
       "description": {
         "length": "long"
       }
-    }
+    },
+    "toolbar": [
+      {
+        "id": "refresh",
+        "label": "[[icon=refresh color=warning]] Refresh"
+      }
+    ]
   }
 }

@@ -259,6 +259,7 @@ export async function runProgramsBrowser(root: string): Promise<void> {
       "auth/tables/user_roles",
       "auth/tables/role_includes",
       "auth/tables/failures",
+      "users/tables/certificates",
       "services/tables/services",
       "services/tables/overrides",
       "services/tables/versions",
@@ -648,6 +649,13 @@ worker_keep_alive = "30s"
       "service.list": { services: [runtimeService] },
       "service.inspect": { service: runtimeService },
       "service.refresh": { service: runtimeService },
+      "sandbox.list": {
+        sandboxes: [{
+          sandbox_id: "sbx-runtime001",
+          reason: "service:example/testing/api",
+          state: "READY",
+        }],
+      },
       "sandbox.refresh": {
         sandbox: {
           spec: {
@@ -1811,7 +1819,7 @@ async function verifyDevelopment(page: BrowserDriver): Promise<void> {
   await button(page, "Continue activation");
   await wait(
     page,
-    `document.querySelector('.presentation-page-layer:not([hidden]) [data-bind="status"]')?.value === 'No private changes'`,
+    `document.querySelector('.presentation-page-layer:not([hidden]) [data-bind="status"]')?.value === 'All package changes activated'`,
     "activation refresh",
   );
   assert(developmentActivated, "activation was not submitted");

@@ -6,6 +6,17 @@
   min-width: 0;
 }
 
+.data-list-custom-toolbar {
+  height: var(--uui-bar-height);
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.data-list-custom-toolbar > .program-header {
+  width: 100%;
+}
+
 .data-list {
   width: 100%;
   table-layout: fixed;

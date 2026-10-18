@@ -21,6 +21,11 @@ Parent DOX: [shell frontend](../../AGENTS.md).
 
 # Local Contracts
 
+- Every list reserves `--uui-bar-height` for its custom toolbar, including empty
+  toolbars. Reuse `ResponsiveProgramHeader` for ordered three-dot overflow and
+  native controls; dispose its observers/listeners on redraw and removal.
+  Overflow menus do not change list capacity or table alignment.
+
 - Lists send row indices and operations through their owning namespace without
   list revisions or identity comparisons. The pending call retains source
   mappings; validate row bounds, editability, queries and read ranges.
@@ -137,7 +142,9 @@ Parent DOX: [shell frontend](../../AGENTS.md).
 - Run UUI `deno task check`, `deno task test`, and `services/shell/build.sh`.
 - `deno task test:list-selection-browser` covers native/Shift/drag/keyboard
   selection, all pages and filters, reload, selected totals, toolbar controls,
-  and actual demo bulk actions.
+  actual demo bulk actions, equal navbar/list toolbar heights, paired lists with
+  empty toolbars, and native/custom fields inside narrow overflow menus. Pass
+  `--screenshots` to capture the paired desktop and mobile overflow layouts.
 - `data_test.ts` checks column projection, formats/quoting and list result
   validation; channel_test.ts owns generic delivery/lifetimes;
   `list_geometry_test.ts` checks layout. Root list/session tests cover bounded,

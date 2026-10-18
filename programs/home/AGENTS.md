@@ -10,6 +10,9 @@ Parent DOX: [uui/programs DOX](../AGENTS.md).
 
 # Local Contracts
 
+- Refresh belongs in the Available programs toolbar; Logout stays in the page
+  header.
+
 - Reuse package-owned program identifiers and descriptions in the launch list.
 
 - Rescan program manifests before rendering and on explicit Refresh; require

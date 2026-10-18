@@ -14,8 +14,10 @@ export default function fixture() {
     count: 2,
     custom: "Before",
     rows: [{ id: 1, selected: false }],
+    otherRows: [{ id: 2 }],
   });
   const schema = z.object({
+    otherRows: z.array(z.object({ id: z.number() })),
     note: z.string().min(1),
     enabled: z.boolean(),
     count: z.number(),
@@ -75,7 +77,23 @@ export default function fixture() {
           title: "Toolbar fixture",
           model,
           schema,
-          controls: [{ id: "implicit-rows", bind: "rows" }],
+          controls: [{ id: "implicit-rows", bind: "rows" }, {
+            id: "empty-toolbar-rows",
+            bind: "otherRows",
+          }],
+          layout: {
+            schema: 1,
+            id: "paired-lists",
+            root: {
+              type: "split",
+              ratio: [50, 50],
+              responsive: "stack",
+              children: [
+                { type: "section", controls: ["implicit-rows"] },
+                { type: "section", controls: ["empty-toolbar-rows"] },
+              ],
+            },
+          },
           header: { elements: split("header") },
           actions: [{ id: "modal", label: "Open modal" }],
         });
@@ -99,6 +117,16 @@ export default function fixture() {
       }
     },
     async verify(page: Browser) {
+      const screenshot = async (name: string) => {
+        if (!Deno.args.includes("--screenshots")) return;
+        const { data } = await page.command("Page.captureScreenshot", {
+          format: "png",
+        }) as { data: string };
+        await Deno.writeFile(
+          `/tmp/uui-list-toolbar-${name}.png`,
+          Uint8Array.from(atob(data), (character) => character.charCodeAt(0)),
+        );
+      };
       const idle = async () => {
         await wait(
           () =>
@@ -175,11 +203,18 @@ export default function fixture() {
       });
       await selected(0);
       const toolbarGaps = await page.evaluate<number[]>(
-        `Array.from(document.querySelectorAll('.data-list-custom-toolbar > .uui-separator')).map(e=>e.getBoundingClientRect().width)`,
+        `Array.from(document.querySelectorAll('.data-list-custom-toolbar .program-header-visible > .uui-separator')).map(e=>e.getBoundingClientRect().width)`,
       );
-      assertEquals(toolbarGaps.length, 2);
+      assertEquals(
+        await page.evaluate<number>(
+          `document.querySelectorAll('.data-list-custom-toolbar .uui-separator').length`,
+        ),
+        2,
+      );
       assert(
-        toolbarGaps[0]! > 10 && Math.abs(toolbarGaps[0]! - toolbarGaps[1]!) < 1,
+        toolbarGaps.every((gap) =>
+          gap > 0 && Math.abs(gap - toolbarGaps[0]!) < 1
+        ),
         "list toolbar distributes flexible gaps",
       );
       assert(
@@ -350,6 +385,27 @@ export default function fixture() {
       );
       await idle();
       await checkGaps(".program-header-visible");
+      const alignedToolbars = async (sideBySide: boolean) => {
+        assert(
+          await page.evaluate<boolean>(`(() => {
+          const bars = [...document.querySelectorAll('.data-list-custom-toolbar')];
+          const height = document.querySelector('.navbar-inner').getBoundingClientRect().height;
+          const tables = [...document.querySelectorAll('.data-list')];
+          return bars.length === 2 && bars.every(bar => Math.abs(bar.getBoundingClientRect().height - height) < 1)
+            && (!${sideBySide} || Math.abs(tables[0].getBoundingClientRect().top - tables[1].getBoundingClientRect().top) < 1);
+        })()`),
+          "list toolbars match navbar height and paired tables align",
+        );
+      };
+      await alignedToolbars(true);
+      await screenshot("paired");
+      const revealToolbar = async () => {
+        await page.evaluate(`(() => {
+          const more = document.querySelector('.data-list-custom-toolbar details');
+          if (!more.hidden && !more.open) more.querySelector('summary').click();
+        })()`);
+      };
+      await revealToolbar();
       await input("[data-element-id=toolbar-note] input", "Saved");
       await click("[data-element-id=toolbar-enabled] input");
       await input("[data-element-id=toolbar-count] input", "7");
@@ -377,6 +433,7 @@ export default function fixture() {
         count: 7,
         custom: "Custom saved",
         rows: [{ id: 1, selected: false }],
+        otherRows: [{ id: 2 }],
       });
       assert(events.includes("save-toolbar"));
       await input("[data-element-id=toolbar-note] input", "");
@@ -450,6 +507,26 @@ export default function fixture() {
         mobile: true,
       });
       await idle();
+      await alignedToolbars(false);
+      assert(
+        await page.evaluate<boolean>(`(() => {
+        const more = document.querySelector('.data-list-custom-toolbar details');
+        return !more.hidden && more.querySelector('summary').getAttribute('aria-label') === 'More list controls';
+      })()`),
+        "narrow list exposes the standard three-dot disclosure",
+      );
+      await revealToolbar();
+      await wait(() =>
+        page.evaluate<boolean>(`(() => {
+        const menu = document.querySelector('.data-list-custom-toolbar .program-header-overflow-items');
+        const bounds = menu.getBoundingClientRect();
+        return bounds.width > 0 && bounds.left >= 9 && bounds.right <= innerWidth - 9;
+      })()`), "toolbar overflow fits the viewport");
+      await alignedToolbars(false);
+      await input("#custom-toolbar-input", "Overflow saved");
+      await screenshot("overflow");
+      await click("[data-element-id=save-toolbar]");
+      assertEquals(model.data.custom, "Overflow saved");
       assert(
         await page.evaluate<boolean>(
           `document.documentElement.scrollWidth<=innerWidth && document.querySelector('.data-list-custom-toolbar').getBoundingClientRect().right<=innerWidth`,

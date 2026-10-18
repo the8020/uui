@@ -10,6 +10,9 @@ Parent DOX: [uui/programs DOX](../AGENTS.md).
 
 # Local Contracts
 
+- Collection Refresh and newer/older backend paging belong in the sessions
+  toolbar. Selected-session actions stay in the detail header.
+
 - Reuse `src/session_fields.ts` across lists, details, and compatible table
   columns; its help distinguishes UUI executions from authentication sign-ins.
   Runtime and account references retain their owning fields.

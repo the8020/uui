@@ -105,15 +105,18 @@ export default async function sessionsProgram(
         : `Sessions for ${username}`,
       schema: ListScreen,
       model: screenModel,
-      layout: listLayout,
-      header: {
-        actions: [
-          { id: "refresh", label: "[[icon=refresh]] Refresh" },
-          ...(offset > 0 ? [{ id: "newer", label: "Newer sessions" }] : []),
-          ...(page.length > maximumSessions
-            ? [{ id: "older", label: "Older sessions" }]
-            : []),
-        ],
+      layout: {
+        ...listLayout,
+        root: {
+          ...listLayout.root,
+          toolbar: [
+            { id: "refresh", label: "[[icon=refresh]] Refresh" },
+            ...(offset > 0 ? [{ id: "newer", label: "Newer sessions" }] : []),
+            ...(page.length > maximumSessions
+              ? [{ id: "older", label: "Older sessions" }]
+              : []),
+          ],
+        },
       },
     });
     if (event.action === BACK_EVENT) return;

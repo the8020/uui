@@ -200,6 +200,12 @@ below.
 
 # Local Contracts
 
+- List-specific controls and actions belong in that list's `toolbar`, including
+  creation, selection operations, refresh, and backend paging. Screen navigation
+  and form-wide Save/Cancel stay in the page header. Every list reserves the
+  shared navbar-height toolbar row, even when empty; controls keep one line and
+  overflow into the same ordered three-dot disclosure as page headers.
+
 - UUI `0.8.2` and demo `0.8.0` are the paired managed-channel releases for the
   kernel `0.8` line. Package tags use bare semantic versions; package manifests
   and runtime `/p/` imports remain unversioned.
@@ -1297,4 +1303,6 @@ below.
   built shell and real session engine. It verifies checkbox/keyboard/drag/Shift
   selection, cross-page ranges, filtered whole-table selection, reload, selected
   counts, explicit/inferred toolbars, native/custom field binding, and flexible
-  separators in desktop/mobile list, program-header, and modal action rows.
+  separators in desktop/mobile list, program-header, and modal action rows. It
+  also verifies fixed toolbar heights, adjacent table alignment with empty
+  toolbars, and bound controls inside the shared overflow disclosure.

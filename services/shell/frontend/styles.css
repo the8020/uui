@@ -24,6 +24,7 @@
   --shadow: 0 18px 45px rgb(31 38 65 / 9%);
   --radius: 18px;
   --section-card-gap: 24px;
+  --uui-bar-height: 58px;
   --interaction-feedback-delay: 500ms;
   --font:
     Inter,
@@ -252,7 +253,7 @@ textarea {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 12px;
-  min-height: 58px;
+  height: var(--uui-bar-height);
   align-items: center;
 }
 
@@ -2034,8 +2035,4 @@ body:has(.uui-content-fullscreen) {
 
 .program-header-overflow-items > .uui-separator {
   display: none;
-}
-
-.data-list-custom-toolbar {
-  padding-block: 8px;
 }

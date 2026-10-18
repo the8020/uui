@@ -122,12 +122,13 @@ Deno.test("Home refresh lists only discoverable UUI programs", async () => {
     assertEquals(programIDs(first), ["example/testing/first"]);
     assertEquals(
       topSurface(first).screen.header.actions.map((action) => action.id),
-      [
-        "refresh",
-        "logout",
-      ],
+      ["logout"],
     );
 
+    assertEquals(
+      topSurface(first).screen.lists[0]!.toolbar?.map((item) => item.id),
+      ["refresh"],
+    );
     await writeProgram(root, "second", "Second program");
     channel.event(first, "refresh");
     const refreshed = await channel.screen();

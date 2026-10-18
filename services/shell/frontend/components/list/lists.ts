@@ -11,6 +11,7 @@ import {
 import type { ScreenElement } from "../../../../../protocol.ts";
 import { listValueText } from "../../../../../list_values.ts";
 import { AnchoredPopover } from "../../popover.ts";
+import { ResponsiveProgramHeader } from "../../responsive_header.ts";
 import {
   createOverflowText,
   disposeOverflowText,
@@ -157,6 +158,7 @@ class ListController {
   #selectionAnchor: number | undefined;
   #drag: AbortController | undefined;
   #filterFocus: { start: number | null; end: number | null } | undefined;
+  #toolbar: ResponsiveProgramHeader | undefined;
 
   constructor(readonly schedule: () => void) {
     this.host.className = "data-list-container";
@@ -208,12 +210,37 @@ class ListController {
     this.reserveRows(snapshot.state.pageSize);
     this.host.id = this.#prefix;
     this.#measures = [];
-    if (snapshot.toolbar?.length) {
-      const customToolbar = document.createElement("div");
-      customToolbar.className = "uui-elements data-list-custom-toolbar";
-      customToolbar.append(...callbacks.elements(snapshot.toolbar));
-      this.host.append(customToolbar);
-    }
+    this.#toolbar?.dispose();
+    const customToolbar = document.createElement("div");
+    customToolbar.className = "data-list-custom-toolbar";
+    const header = document.createElement("div");
+    header.className = "program-header";
+    const visible = document.createElement("div");
+    visible.className = "program-header-visible";
+    const overflow = document.createElement("details");
+    overflow.className = "program-header-overflow";
+    const moreToggle = document.createElement("summary");
+    moreToggle.className =
+      "btn btn-ghost btn-sm program-header-overflow-toggle";
+    moreToggle.setAttribute("aria-label", "More list controls");
+    moreToggle.title = "More list controls";
+    renderIconText(moreToggle, "[[icon=more_vert]]");
+    const overflowItems = document.createElement("div");
+    overflowItems.className = "program-header-overflow-items";
+    overflowItems.setAttribute("aria-label", "Additional list controls");
+    overflow.append(moreToggle, overflowItems);
+    header.append(visible, overflow);
+    customToolbar.append(header);
+    this.host.append(customToolbar);
+    this.#toolbar = new ResponsiveProgramHeader(
+      header,
+      visible,
+      overflow,
+      overflowItems,
+    );
+    const items = callbacks.elements(snapshot.toolbar ?? []);
+    for (const item of items) item.classList.add("program-header-item");
+    this.#toolbar.render(items);
     const toolbar = document.createElement("div");
     toolbar.className = "data-list-toolbar";
     toolbar.id = `${this.#prefix}-toolbar`;
@@ -931,6 +958,7 @@ class ListController {
   }
   dispose(): void {
     this.#drag?.abort();
+    this.#toolbar?.dispose();
     this.tools.close();
     if (this.#timer !== undefined) clearTimeout(this.#timer);
     this.#resize.disconnect();

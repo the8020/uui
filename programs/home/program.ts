@@ -32,15 +32,7 @@ export async function runHome(programsRoot: string): Promise<void> {
       schema: HomeScreen,
       model: screenModel,
       layout,
-      header: {
-        actions: [
-          {
-            id: "refresh",
-            label: "[[icon=refresh color=warning]] Refresh",
-          },
-          { id: "logout", label: "Logout" },
-        ],
-      },
+      header: { actions: [{ id: "logout", label: "Logout" }] },
     });
     if (event.action === BACK_EVENT) continue;
     if (event.action === "logout") {
