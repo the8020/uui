@@ -205,6 +205,11 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
 - Decimal fields use text inputs with decimal input mode and retain exact
   strings. Decimal list comparisons share the exact server comparator and
   numeric filter guidance.
+- Datetime controls project ISO timestamps with a timezone into browser-local
+  native input values, preserving milliseconds. Display never changes the model.
+  Edits to timestamp-backed controls return ISO UTC, including after
+  clearing/refilling; timezone-free controls retain local strings. Apply the
+  same conversion when synchronizing controls that share a binding.
 - `overflow.ts` owns reusable `createOverflowText`, batched responsive
   measurement, and disposal for list values, field hints, and column
   descriptions. Keep text selectable and its normal click behavior; only a
@@ -236,6 +241,10 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
 
 - Run UUI `deno task check` and `deno task test`, and rebuild with
   `services/shell/build.sh` for browser-source changes.
+- `presentation_browser_e2e.ts --fixture=./datetime_browser_fixture.ts` checks
+  timestamp display, offsets, shared bindings, clearing/refilling, and model
+  submission in a non-UTC browser timezone. `test:programs-browser --users`
+  opens a real Users sign-in detail and verifies both readonly timestamps.
 - `deno task test:component-style-browser` checks root styling and redraws on
   ordinary components and retained custom hosts through the session engine,
   including custom-field channel traffic after a shared-binding edit and real

@@ -15,7 +15,12 @@ import { humanize } from "../../../humanize.ts";
 import { fieldGridPositions } from "./field_grid.ts";
 import { createOverflowText, disposeOverflowText } from "./overflow.ts";
 import { createMaterialIcon, renderIconText } from "./icon_text.ts";
-import { getPath, setPath } from "./model.ts";
+import {
+  dateTimeInputValue,
+  getPath,
+  isDateTimeInstant,
+  setPath,
+} from "./model.ts";
 import { renderMarkdown } from "../../../frontend/mod.ts";
 
 export interface RenderCallbacks {
@@ -509,6 +514,7 @@ function renderControlBody(
   } else {
     input = document.createElement("input");
     input.type = inputType(control.control);
+    if (control.control === "datetime") input.step = "any";
     if (control.semanticType === "decimal") input.inputMode = "decimal";
     if (control.control === "password") input.autocomplete = "new-password";
     if (control.control === "checkbox" || control.control === "switch") {
@@ -524,7 +530,7 @@ function renderControlBody(
         input.step = String(control.step ?? 1);
         input.dataset.valueSuffix = control.valueSuffix ?? "";
       }
-      input.value = value == null ? "" : String(value);
+      setInputValue(input, value);
     }
   }
   input.id = `control-${control.id}`;
@@ -731,13 +737,28 @@ export function synchronizeBinding(
       candidate instanceof HTMLInputElement && candidate.type === "checkbox"
     ) {
       candidate.checked = Boolean(value);
-    } else if (candidate.value !== (value == null ? "" : String(value))) {
-      candidate.value = value == null ? "" : String(value);
+    } else {
+      setInputValue(candidate, value);
     }
     if (candidate instanceof HTMLInputElement && candidate.type === "range") {
       updateRangeOutput(candidate);
     }
   }
+}
+
+function setInputValue(
+  input: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+  value: unknown,
+): void {
+  let text = value == null ? "" : String(value);
+  if (input instanceof HTMLInputElement && input.type === "datetime-local") {
+    // Retain the timestamp representation while the user clears and refills it.
+    if (text !== "") {
+      input.dataset.dateTimeInstant = String(isDateTimeInstant(text));
+    }
+    text = dateTimeInputValue(text);
+  }
+  if (input.value !== text) input.value = text;
 }
 
 function updateRangeOutput(input: HTMLInputElement): void {
@@ -769,6 +790,13 @@ function inputValue(
   ) return input.checked;
   if (kind === "number" || kind === "range") {
     return input.value === "" ? 0 : Number(input.value);
+  }
+  if (
+    input instanceof HTMLInputElement && kind === "datetime" &&
+    input.dataset.dateTimeInstant === "true" && input.value !== ""
+  ) {
+    const date = new Date(input.value);
+    if (Number.isFinite(date.getTime())) return date.toISOString();
   }
   return input.value;
 }

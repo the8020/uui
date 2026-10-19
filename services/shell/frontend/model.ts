@@ -1,5 +1,17 @@
 export { getPath, setPath } from "../../../bindings.ts";
 
+export function isDateTimeInstant(value: string): boolean {
+  return /T.*(?:Z|[+-]\d{2}:?\d{2})$/i.test(value);
+}
+
+export function dateTimeInputValue(value: string): string {
+  if (!isDateTimeInstant(value)) return value;
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return value;
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+    .toISOString().slice(0, -1);
+}
+
 export function shouldRenderMessage(type: string): boolean {
   return type === "presentation.show";
 }

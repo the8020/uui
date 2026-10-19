@@ -786,28 +786,30 @@ worker_keep_alive = "30s"
   };
   jobStore.runs.inspect = () => Promise.resolve(result);
   try {
-    await runAdmin({ view: "programs" });
-    await runProgram(interactiveId, `${root}/packages`);
     const { default: users } = await import(
       "/p/the8020/users/programs/users/program.ts"
     );
-    await runAdmin({ view: "service", serviceId });
-    const { default: sessions } = await import(
-      "./programs/sessions/program.ts"
-    );
-    await sessions("robot");
-    const { default: tables } = await import(
-      "/p/the8020/admin-db/programs/database/program.ts"
-    );
-    await tables();
-    const { default: browse } = await import(
-      "/p/the8020/admin-db/programs/browse/program.ts"
-    );
-    await browse(tableId);
-    const { default: development } = await import(
-      "/p/the8020/dev-core/programs/development-test/program.ts"
-    );
-    await development();
+    if (!Deno.args.includes("--users")) {
+      await runAdmin({ view: "programs" });
+      await runProgram(interactiveId, `${root}/packages`);
+      await runAdmin({ view: "service", serviceId });
+      const { default: sessions } = await import(
+        "./programs/sessions/program.ts"
+      );
+      await sessions("robot");
+      const { default: tables } = await import(
+        "/p/the8020/admin-db/programs/database/program.ts"
+      );
+      await tables();
+      const { default: browse } = await import(
+        "/p/the8020/admin-db/programs/browse/program.ts"
+      );
+      await browse(tableId);
+      const { default: development } = await import(
+        "/p/the8020/dev-core/programs/development-test/program.ts"
+      );
+      await development();
+    }
     await users();
     const accounts = await import("/p/the8020/users/src/admin.ts");
     const { authenticatePassword } = await import("/p/the8020/users/mod.ts");
@@ -860,6 +862,11 @@ worker_keep_alive = "30s"
 export async function verifyProgramsBrowser(
   page: BrowserDriver,
 ): Promise<void> {
+  if (Deno.args.includes("--users")) {
+    await verifyUsers(page);
+    await title(page, "Program checks complete");
+    return;
+  }
   await title(page, "Programs");
   await wait(
     page,
@@ -1945,7 +1952,38 @@ async function verifyUsers(page: BrowserDriver): Promise<void> {
   await title(page, "Sessions for reader");
   await button(page, "Back");
   await title(page, "User reader");
+  const { default: AuthenticationSessions } = await import(
+    "/p/the8020/users/tables/sessions.ts"
+  );
+  const accounts = await import("/p/the8020/users/src/admin.ts");
+  const signedInAt = "2026-10-18T10:20:30.123Z";
+  const expiresAt = "2026-10-18T22:20:30.123Z";
+  await AuthenticationSessions.insert({
+    sessionId: "1".repeat(32),
+    username: "reader",
+    type: "username",
+    transport: "remote",
+    authVersion: (await accounts.user("reader")).auth_version,
+    createdAt: new Date(signedInAt),
+    expiresAt: new Date(expiresAt),
+  }).execute();
   await button(page, "Sign-ins");
+  await title(page, "Sign-ins for reader");
+  await row(page, "username");
+  await title(page, "Sign-in for reader");
+  for (
+    const [bind, instant] of [["created", signedInAt], ["expires", expiresAt]]
+  ) {
+    assert(
+      await page.evaluate<boolean>(`(() => {
+        const input = document.querySelector('dialog[open] [data-bind="${bind}"]');
+        return input.readOnly && input.value !== '' &&
+          Date.parse(input.value) === Date.parse(${JSON.stringify(instant)});
+      })()`),
+      `sign-in detail lost its ${bind} timestamp`,
+    );
+  }
+  await button(page, "Back");
   await title(page, "Sign-ins for reader");
   await button(page, "Back");
   await title(page, "User reader");

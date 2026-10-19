@@ -1048,6 +1048,13 @@ below.
 
 # Verification
 
+- `deno run -A --import-map=deno.local.json presentation_browser_e2e.ts
+  --fixture=./datetime_browser_fixture.ts`
+  checks shared datetime rendering and editing.
+  `deno task test:programs-browser --users` runs the Users flow alone, including
+  Sign-ins list-to-detail navigation and its readonly login/expiration
+  timestamps.
+
 - `deno task test:file-upload-browser` checks real browser byte transfer,
   oversized replacements, single consumption, and cancellation of partial
   uploads. File bytes never enter the bound Model.

@@ -1,7 +1,9 @@
 import { assertEquals, assertThrows } from "@std/assert";
 import {
+  dateTimeInputValue,
   DirtyBindings,
   getPath,
+  isDateTimeInstant,
   paginationItems,
   reconnectDelay,
   setPath,
@@ -10,6 +12,22 @@ import {
   shouldRenderMessage,
   synchronizeClientSequence,
 } from "./model.ts";
+
+Deno.test("datetime inputs show timestamp instants as local wall-clock values", () => {
+  for (const local of ["2026-01-06T10:20:30.123", "2026-07-06T10:20:30.123"]) {
+    const instant = new Date(local).toISOString();
+    assertEquals(dateTimeInputValue(instant), local);
+    assertEquals(dateTimeInputValue(instant.replace("Z", "+00:00")), local);
+  }
+  const offset = "2026-10-18T12:20:30.123+02:00";
+  assertEquals(Date.parse(dateTimeInputValue(offset)), Date.parse(offset));
+  for (const value of ["", "2026-10-18T10:20", "invalid", "invalidTZ"]) {
+    assertEquals(dateTimeInputValue(value), value);
+  }
+  assertEquals(isDateTimeInstant("2026-10-18T10:20:30.123Z"), true);
+  assertEquals(isDateTimeInstant(offset), true);
+  assertEquals(isDateTimeInstant("2026-10-18T10:20"), false);
+});
 
 Deno.test("frontend model binding and reconnect decisions are deterministic", () => {
   const model = { selected: { email: "old@example.com" } };
