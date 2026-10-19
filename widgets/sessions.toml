@@ -1,0 +1,9 @@
+schema = 1
+title = "UI sessions"
+description = "Inspect UUI sessions"
+icon = "devices"
+category = "operations"
+order = 50
+
+[open]
+program = "the8020/uui/sessions"

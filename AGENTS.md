@@ -190,6 +190,8 @@ below.
 
 # Ownership
 
+- `widgets/` declares this package's Home tiles and categories through the
+  `the8020/packages/widgets.ts` format.
 - Own the public login service, authenticated browser shell, authenticated
   persistent UUI service, Home and Program terminated programs, browser
   protocol/configuration, session metadata and administration, source/build,

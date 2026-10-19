@@ -1,49 +1,89 @@
 import {
   BACK_EVENT,
   callScreen,
-  discoverPrograms,
+  Channel,
   endSession,
   invokeProgram,
   Model,
+  packageAssetURL,
   z,
 } from "/p/the8020/uui/mod.ts";
-import { programId, programInfo } from "/p/the8020/packages/types/program.ts";
 import layout from "./layouts/main.json" with { type: "json" };
+import { homeCatalog } from "./catalog.ts";
+import { homeTree } from "./tree.ts";
+import { readTileData } from "./tile_data.ts";
 
-const HomeScreen = z.object({
-  programs: z.array(
-    z.object({ id: programId, description: programInfo.shape.description }),
-  ),
-});
+/** Upper bound on tiles one `load` request may ask for. */
+const MAX_TILES_PER_LOAD = 100;
+
+const HomeScreen = z.object({});
 
 export default function home(): Promise<void> {
   return runHome("/workspace/packages");
 }
 
 export async function runHome(programsRoot: string): Promise<void> {
-  let screenModel: Model<z.infer<typeof HomeScreen>> | undefined;
+  // One Model keeps the navigator's selected folder across program returns.
+  const screenModel = new Model<z.infer<typeof HomeScreen>>({});
   while (true) {
-    const model = { programs: await discoverPrograms(programsRoot) };
-    screenModel ??= new Model(model);
-    screenModel.data = model;
-    const event = await callScreen({
-      id: "home",
-      title: "Welcome to 80|20",
-      schema: HomeScreen,
-      model: screenModel,
-      layout,
-      header: { actions: [{ id: "logout", label: "Logout" }] },
+    const catalog = await homeCatalog(programsRoot);
+    const channel = new Channel();
+    // The browser asks for the tiles it shows, so no result precedes its
+    // subscription; each tile is sent as soon as its program answers.
+    const loading = channel.subscribe("load", async (_id, data) => {
+      const output = channel.capture();
+      const requested = typeof data === "object" && data !== null &&
+          Array.isArray((data as { tiles?: unknown }).tiles)
+        ? (data as { tiles: unknown[] }).tiles
+        : [];
+      const tiles = [...new Set(requested)].filter((tile): tile is string =>
+        typeof tile === "string" && catalog.data.has(tile)
+      ).slice(0, MAX_TILES_PER_LOAD);
+      await Promise.all(tiles.map(async (tile) => {
+        const message = await readTileData(
+          tile,
+          catalog.data.get(tile)!,
+          programsRoot,
+        );
+        if (!output.signal.aborted) output.send("data", message);
+      }));
     });
-    if (event.action === BACK_EVENT) continue;
+    let event: Awaited<ReturnType<typeof callScreen>>;
+    try {
+      event = await callScreen({
+        id: "home",
+        title: "Welcome to 80|20",
+        schema: HomeScreen,
+        model: screenModel,
+        layout,
+        header: {
+          actions: [
+            { id: "refresh", label: "[[icon=refresh color=warning]] Refresh" },
+            { id: "logout", label: "Logout" },
+          ],
+        },
+        customElements: [{
+          id: "programs",
+          channel,
+          preserve: true,
+          module: packageAssetURL("the8020/uui", "home-navigator.js"),
+          styles: [packageAssetURL("the8020/uui", "home-navigator.css")],
+          config: { tree: homeTree(catalog.tiles) },
+        }],
+      });
+    } finally {
+      loading.unsubscribe();
+      channel.dispose();
+    }
+    if (event.action === BACK_EVENT || event.action === "refresh") continue;
     if (event.action === "logout") {
       endSession("Signing out…", "/the8020/uui/login/logout");
       return;
     }
     if (event.action === "select" && typeof event.value === "string") {
-      if (!model.programs.some((program) => program.id === event.value)) {
-        continue;
-      }
-      await invokeProgram(event.value, [], programsRoot);
+      const action = catalog.actions.get(event.value);
+      if (action === undefined) continue;
+      await invokeProgram(action.program, action.arguments, programsRoot);
     }
   }
 }

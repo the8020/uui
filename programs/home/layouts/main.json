@@ -1,26 +1,5 @@
 {
   "schema": 1,
   "id": "main",
-  "root": {
-    "id": "available-programs",
-    "type": "list",
-    "title": "Available programs",
-    "bind": "programs",
-    "key": "id",
-    "display": [
-      "id",
-      "description"
-    ],
-    "columnOptions": {
-      "description": {
-        "length": "long"
-      }
-    },
-    "toolbar": [
-      {
-        "id": "refresh",
-        "label": "[[icon=refresh color=warning]] Refresh"
-      }
-    ]
-  }
+  "root": { "type": "custom", "customElement": "programs" }
 }

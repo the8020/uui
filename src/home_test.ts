@@ -13,6 +13,7 @@ import type {
 import { bindSession, type SessionChannel } from "/p/the8020/uui/internal.ts";
 import { commandScreen } from "../session.ts";
 import { runHome } from "../programs/home/program.ts";
+import type { HomeNode } from "../programs/home/tree.ts";
 
 type PresentationShow = Extract<
   UUIWorkerOutbound,
@@ -122,12 +123,7 @@ Deno.test("Home refresh lists only discoverable UUI programs", async () => {
     assertEquals(programIDs(first), ["example/testing/first"]);
     assertEquals(
       topSurface(first).screen.header.actions.map((action) => action.id),
-      ["logout"],
-    );
-
-    assertEquals(
-      topSurface(first).screen.lists[0]!.toolbar?.map((item) => item.id),
-      ["refresh"],
+      ["refresh", "logout"],
     );
     await writeProgram(root, "second", "Second program");
     channel.event(first, "refresh");
@@ -228,10 +224,16 @@ Deno.test("Home propagates program failures without reporting success", async ()
 });
 
 function programIDs(presentation: PresentationShow): string[] {
-  return (topSurface(presentation).screen.lists.find((list) =>
-    list.bind === "programs"
-  )!.rows as Array<{ id: string }>)
-    .map((program) => program.id);
+  const tree = topSurface(presentation).screen.customElements.find((item) =>
+    item.id === "programs"
+  )!.config.tree as HomeNode;
+  const ids: string[] = [];
+  const walk = (node: HomeNode) => {
+    if (node.tile !== undefined) ids.push(node.tile);
+    node.children?.forEach(walk);
+  };
+  walk(tree);
+  return ids;
 }
 
 function topSurface(presentation: PresentationShow) {
