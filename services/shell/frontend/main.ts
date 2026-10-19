@@ -1279,6 +1279,7 @@ function renderLayer(layer: PresentationLayer): void {
         );
       },
     },
+    layer.screen.id,
   );
   layer.customElements.begin({
     channel: (namespace) => endpointFor(layer, namespace),

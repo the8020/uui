@@ -732,15 +732,17 @@ below.
   interactions.
 - Browser lists measure a bounded row capacity from page/modal and card
   geometry, including toolbar, headers, footer, and horizontal scrollbar. The
-  first snapshot has one measurement row; there is no fixed 25-row default.
-  Resizing and visibility/toolbar changes may remeasure; scrolling may not.
-  Capacity changes keep the former first row within the new page when possible.
-  Tab selection is element state, so measuring a revealed list retains its tab.
-  Rows have a fixed height, nowrap ellipsis, and full values through a distinct,
-  subtle ellipsis button. Clicking the value retains standard row selection even
-  when every column overflows. Reserve body space from the unfiltered source
-  total up to one page's capacity, including after reload; short pages and
-  filtered results retain the card height and pagination position.
+  first snapshot has one measurement row; there is no fixed 25-row default. A
+  browser-remembered `Rows per page` choice in the expanded toolbar may replace
+  measured capacity with 25, 50, 100, or 200 rows. Resizing and
+  visibility/toolbar changes may remeasure; scrolling may not. Capacity changes
+  keep the former first row within the new page when possible. Tab selection is
+  element state, so measuring a revealed list retains its tab. Rows have a fixed
+  height, nowrap ellipsis, and full values through a distinct, subtle ellipsis
+  button. Clicking the value retains standard row selection even when every
+  column overflows. Reserve body space from the unfiltered source total up to
+  one page's capacity, including after reload; short pages and filtered results
+  retain the card height and pagination position.
 - List headers use full/short headings and semantic widths from schema and
   declarative `columnOptions`. Only genuinely wider columns overflow
   horizontally; fractional sizing and invisible heading measurements must not

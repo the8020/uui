@@ -8,6 +8,7 @@ Parent DOX: [shell frontend](../../AGENTS.md).
 
 - `lists.ts` owns UUI rendering, query drafts, popovers, paging, and state.
 - `list_geometry.ts` owns measured UUI capacity and column widths.
+- `page_size.ts` owns the browser-only rows-per-page choice.
 - `tools.ts` owns the expanded toolbar, native dialogs, spreadsheet lifecycle,
   export options, and clipboard writes. `data.ts` owns list result validation
   and displayed-column serializers; token/result/cancel correlation belongs to
@@ -91,6 +92,11 @@ Parent DOX: [shell frontend](../../AGENTS.md).
   so filtering and shorter pages retain the card and footer geometry after
   reload. Reserved blank body space never enters capacity overhead; viewport,
   toolbar, and visibility changes may still remeasure capacity.
+- The expanded toolbar's `Rows per page` select offers Auto, 25, 50, 100, and
+  200. Auto keeps measured capacity; a fixed choice replaces it in the ordinary
+  capacity update, so the list grows and the page scrolls. `localStorage`
+  remembers the choice per screen ID and list ID; unavailable storage falls back
+  to Auto. It never enters UUI messages beyond capacity.
 - Size pages from the full page or modal content viewport, excluding fixed
   headers, modal height limits/padding, and list chrome. Content above a list
   scrolls away and never reduces its capacity. One scroll must expose the whole

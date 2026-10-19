@@ -20,6 +20,7 @@ import {
 import { renderIconText } from "../../icon_text.ts";
 import { iconButton, type ListToolCallbacks, ListTools } from "./tools.ts";
 import { listColumnWidths, listRowCapacity } from "./list_geometry.ts";
+import { browserPageSizes, LIST_PAGE_SIZES } from "./page_size.ts";
 import { getPath, paginationItems } from "../../model.ts";
 
 export interface ListCallbacks extends ListToolCallbacks {
@@ -27,6 +28,8 @@ export interface ListCallbacks extends ListToolCallbacks {
   request(updates: ListRequest[]): boolean;
   select(selection: ListSelection): void;
 }
+
+const pageSizes = browserPageSizes();
 
 /** Keeps local query drafts/popovers alive while screen DOM is reconciled. */
 export class ListRenderer {
@@ -36,6 +39,7 @@ export class ListRenderer {
   #state!: ScreenState;
   #callbacks!: ListCallbacks;
   #prefix = "";
+  #scope = "";
   #frame: number | undefined;
 
   constructor() {
@@ -48,6 +52,7 @@ export class ListRenderer {
     state: ScreenState,
     prefix: string,
     callbacks: ListCallbacks,
+    scope = "",
   ): void {
     const instance = `${state.instanceId}:${state.version}`;
     if (instance !== this.#instance) {
@@ -61,6 +66,7 @@ export class ListRenderer {
     this.#state = state;
     this.#callbacks = callbacks;
     this.#prefix = prefix;
+    this.#scope = scope;
     for (const [id, controller] of this.#controllers) {
       if (!this.#snapshots.has(id)) {
         controller.dispose();
@@ -82,6 +88,7 @@ export class ListRenderer {
       this.#state.elements[id]!,
       this.#prefix,
       this.#callbacks,
+      `${this.#scope}:${id}`,
     );
     this.schedule();
     return host;
@@ -153,6 +160,7 @@ class ListController {
     }
   > = [];
   #prefix = "";
+  #pageSizeKey = "";
   #rendering = false;
   #restoreScroll = false;
   #selectionAnchor: number | undefined;
@@ -171,6 +179,7 @@ class ListController {
     state: ScreenElementState,
     prefix: string,
     callbacks: ListCallbacks,
+    pageSizeKey: string,
   ): HTMLElement {
     this.capture();
     this.#drag?.abort();
@@ -190,6 +199,7 @@ class ListController {
     this.#snapshot = snapshot;
     this.#state = state;
     this.#prefix = `${prefix}-list-${snapshot.id}`;
+    this.#pageSizeKey = pageSizeKey;
     this.#callbacks = callbacks;
     this.#rendering = true;
     const focused = document.activeElement;
@@ -283,7 +293,7 @@ class ListController {
         this.flushQuery();
       }
     });
-    toolbar.append(actions, search);
+    toolbar.append(actions, this.pageSizeSelect(), search);
     this.host.append(toolbar);
     this.#scroll = document.createElement("div");
     this.#scroll.className = "data-list-scroll";
@@ -567,7 +577,7 @@ class ListController {
         Number.parseFloat(style.paddingTop) -
         Number.parseFloat(style.paddingBottom);
     }
-    const pageSize = listRowCapacity(
+    const pageSize = pageSizes.get(this.#pageSizeKey) ?? listRowCapacity(
       available,
       overhead + (snapshot.selection ? paginationHeight : 0),
       rowHeight,
@@ -587,6 +597,27 @@ class ListController {
       };
     }
     return undefined;
+  }
+
+  private pageSizeSelect(): HTMLSelectElement {
+    const select = document.createElement("select");
+    select.id = `${this.#prefix}-page-size`;
+    select.className = "data-list-page-size";
+    select.setAttribute("aria-label", "Rows per page");
+    select.title = "Rows per page";
+    select.append(new Option("Auto", ""));
+    for (const size of LIST_PAGE_SIZES) {
+      select.append(new Option(String(size), String(size)));
+    }
+    select.value = String(pageSizes.get(this.#pageSizeKey) ?? "");
+    select.addEventListener("change", () => {
+      pageSizes.set(
+        this.#pageSizeKey,
+        select.value === "" ? undefined : Number(select.value),
+      );
+      this.schedule();
+    });
+    return select;
   }
 
   private reserveRows(pageSize: number): void {

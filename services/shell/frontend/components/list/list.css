@@ -71,6 +71,23 @@
   font: inherit;
 }
 
+.data-list-page-size {
+  flex: 0 0 auto;
+  height: var(--list-row-height);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 0 4px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.86rem;
+}
+
+.data-list-page-size option {
+  background: var(--surface);
+  color: var(--text);
+}
+
 .data-list-search {
   width: min(18rem, 100%);
   height: var(--list-row-height);
