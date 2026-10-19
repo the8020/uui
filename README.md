@@ -894,8 +894,8 @@ stream and the local service worker acknowledged handoff, not that UUI knows the
 final disk path or can attest to durable storage.
 
 Run `deno task check`, `deno task test`, rebuild with
-`DENO_IMPORT_MAP="$PWD/deno.local.json" bash services/shell/build.sh`, then run
-`deno task test:download-browser` for native browser download verification.
+`bash services/shell/build.sh`, then run `deno task test:download-browser` for
+native browser download verification.
 
 ## Material icons
 

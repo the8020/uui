@@ -532,10 +532,9 @@ below.
 - Runtime-loaded package modules address shared package APIs through the generic
   `/p/` mount alias. The package does not depend on a UUI-specific runtime
   import-map entry that the generic image would have to know.
-- `deno.json` contains the canonical deployed `/opt/runtime` and
-  `/workspace/packages` mappings. Package-local checks and tests override only
-  those mappings with `deno.local.json` so they resolve sibling source trees
-  while retaining the production compiler options.
+- `deno.json` owns package dependencies, compiler settings, and tasks. The
+  shared 80|20 Deno workspace supplies platform imports for checks and browser
+  builds.
 - Layouts and future overrides are serializable data without executable code;
   user-specific layout variants are not persisted in this phase.
 - Every component descriptor accepts optional string `class` and `style`:
@@ -1048,7 +1047,7 @@ below.
 
 # Verification
 
-- `deno run -A --import-map=deno.local.json presentation_browser_e2e.ts
+- `deno run -A presentation_browser_e2e.ts
   --fixture=./datetime_browser_fixture.ts`
   checks shared datetime rendering and editing.
   `deno task test:programs-browser --users` runs the Users flow alone, including
