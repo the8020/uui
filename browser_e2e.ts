@@ -813,7 +813,7 @@ async function verifyUUI(
 
   await waitForPage(
     first,
-    `document.querySelectorAll(".data-list tbody tr").length >= 2`,
+    `document.querySelectorAll(".home-navigator .home-tile").length >= 2`,
     "home program discovery",
   );
 
@@ -4246,6 +4246,7 @@ async function clickRow(page: BrowserPage, text: string): Promise<void> {
     return true;
   })()`);
   if (await clickVisible()) return;
+  if (await openHomeTile(page, text)) return;
   const lists = await page.evaluate<string[]>(
     `[...document.querySelectorAll('.data-list-container')]
       .filter((list) => list.getClientRects().length > 0)
@@ -4256,6 +4257,35 @@ async function clickRow(page: BrowserPage, text: string): Promise<void> {
     if (await clickVisible()) return;
   }
   throw new Error(`missing row containing ${text}`);
+}
+
+/**
+ * Home lists programs as tiles in a folder tree. Expand every folder until the
+ * tile's tree leaf exists, then open it like a user would.
+ */
+function openHomeTile(page: BrowserPage, id: string): Promise<boolean> {
+  return page.evaluate<boolean>(`(() => {
+    const tree = [...document.querySelectorAll(".home-navigator .home-tree")]
+      .find((item) => item.getClientRects().length > 0 && !item.closest("[inert]"));
+    if (!tree) return false;
+    const leaf = () => tree.querySelector(
+      '[data-node-id="' + CSS.escape("tile:" + ${
+    JSON.stringify(id)
+  }) + '"] > .home-tree-row',
+    );
+    // Each expansion re-renders the tree, so expand one folder per round.
+    for (let round = 0; round < 200 && !leaf(); round++) {
+      const collapsed = tree.querySelector(
+        '[aria-expanded="false"] > .home-tree-row .home-tree-twisty',
+      );
+      if (!(collapsed instanceof HTMLElement)) break;
+      collapsed.click();
+    }
+    const target = leaf();
+    if (!(target instanceof HTMLElement)) return false;
+    target.click();
+    return true;
+  })()`);
 }
 
 async function waitForScreen(

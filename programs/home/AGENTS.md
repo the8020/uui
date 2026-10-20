@@ -65,6 +65,9 @@ Parent DOX: [uui programs DOX](../AGENTS.md).
   sources and default tiles, `tile_data_test.ts` covers data validation,
   failures and timeouts, and `tree_test.ts` covers folder ordering.
 - Run `deno task test:programs-browser` for the shared interactive launch path.
+- The native `browser_e2e.ts` harness opens programs from Home through its
+  shared `clickRow` helper: when no list row matches, it expands the tree one
+  folder at a time and clicks the tile's tree leaf.
 
 # Child DOX Index
 
