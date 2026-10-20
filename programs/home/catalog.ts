@@ -35,8 +35,22 @@ export async function homeCatalog(packagesRoot: string): Promise<HomeCatalog> {
   const actions = new Map<string, WidgetProgram>();
   const data = new Map<string, WidgetProgram>();
   const opened = new Set<string>();
+  // Read every referenced manifest at once, then resolve widgets in order.
+  const ids = new Set(
+    catalog.widgets.flatMap((widget) => [
+      widget.open.program,
+      ...(widget.data === undefined ? [] : [widget.data.program]),
+    ]),
+  );
+  const manifests = new Map(
+    await Promise.all(
+      [...ids].map(async (id) =>
+        [id, await manifest(packagesRoot, id)] as const
+      ),
+    ),
+  );
   for (const widget of catalog.widgets) {
-    if ((await manifest(packagesRoot, widget.open.program))?.uui !== true) {
+    if (manifests.get(widget.open.program)?.uui !== true) {
       console.error(
         `Ignoring widget ${widget.id}: ${widget.open.program} is not an installed UUI program`,
       );
@@ -44,7 +58,7 @@ export async function homeCatalog(packagesRoot: string): Promise<HomeCatalog> {
     }
     let refresh: number | undefined;
     if (widget.data !== undefined) {
-      if ((await manifest(packagesRoot, widget.data.program))?.uui === false) {
+      if (manifests.get(widget.data.program)?.uui === false) {
         data.set(widget.id, {
           program: widget.data.program,
           arguments: widget.data.arguments,
