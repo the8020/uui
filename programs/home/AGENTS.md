@@ -23,6 +23,16 @@ Parent DOX: [uui programs DOX](../AGENTS.md).
   UUI program that no widget opens gets a default tile, titled from its name, in
   a folder named after its package placed after declared categories. Invalid
   widgets are skipped and logged with `console.error`.
+- Visibility: a widget with `[visible] permission` appears only to users whom
+  `permitsAny` (no audit) grants that action for some value, evaluated on each
+  render; selecting such a tile checks again and shows a message instead of
+  launching. The permission must be declared by an installed package, or the
+  widget is skipped. Platform (`the8020/*`) widgets without `[visible]` are
+  skipped (`public = true` makes one public on purpose), and platform programs
+  never get a default tile. A skipped widget's program, and every program of a
+  package with an unreadable widget file, gets no default tile either, so no
+  tile becomes public by mistake. Folders appear only with visible tiles. Hiding
+  is not enforcement: programs still check their own permissions.
 - Texts are English only until platform localization is designed.
 - Widgets with `[data]` show live status. The data program must be an installed
   non-interactive (`uui = false`) program; otherwise its data is ignored and

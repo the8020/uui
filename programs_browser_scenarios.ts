@@ -259,6 +259,8 @@ export async function runProgramsBrowser(root: string): Promise<void> {
       "auth/tables/user_roles",
       "auth/tables/role_includes",
       "auth/tables/failures",
+      "auth/tables/grants",
+      "auth/tables/audit_flags",
       "users/tables/certificates",
       "services/tables/services",
       "services/tables/overrides",

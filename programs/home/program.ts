@@ -6,10 +6,13 @@ import {
   invokeProgram,
   Model,
   packageAssetURL,
+  sendMessage,
   z,
 } from "/p/the8020/uui/mod.ts";
+import { context } from "@the8020/context";
+import { permitsAny } from "/p/the8020/auth/mod.ts";
 import layout from "./layouts/main.json" with { type: "json" };
-import { homeCatalog } from "./catalog.ts";
+import { homeCatalog, permittedTiles } from "./catalog.ts";
 import { homeTree } from "./tree.ts";
 import { readTileData } from "./tile_data.ts";
 import { concurrencyLimit } from "./limiter.ts";
@@ -34,6 +37,10 @@ export async function runHome(programsRoot: string): Promise<void> {
   while (true) {
     catalog ??= await homeCatalog(programsRoot);
     const current = catalog;
+    // Roles may change between renders, so visibility is evaluated each time.
+    const permits = (action: string) => permitsAny(context.username, action);
+    const tiles = await permittedTiles(current, permits);
+    const shown = new Set(tiles.map((tile) => tile.id));
     const channel = new Channel();
     // The browser asks for the tiles it shows, so no result precedes its
     // subscription; each tile is sent as soon as its program answers.
@@ -44,7 +51,7 @@ export async function runHome(programsRoot: string): Promise<void> {
         ? (data as { tiles: unknown[] }).tiles
         : [];
       const tiles = [...new Set(requested)].filter((tile): tile is string =>
-        typeof tile === "string" && current.data.has(tile)
+        typeof tile === "string" && shown.has(tile) && current.data.has(tile)
       ).slice(0, MAX_TILES_PER_LOAD);
       await Promise.all(tiles.map((tile) =>
         runData(async () => {
@@ -79,7 +86,7 @@ export async function runHome(programsRoot: string): Promise<void> {
           preserve: true,
           module: packageAssetURL("the8020/uui", "home-navigator.js"),
           styles: [packageAssetURL("the8020/uui", "home-navigator.css")],
-          config: { tree: homeTree(current.tiles) },
+          config: { tree: homeTree(tiles) },
         }],
       });
     } finally {
@@ -95,6 +102,12 @@ export async function runHome(programsRoot: string): Promise<void> {
     if (event.action === "select" && typeof event.value === "string") {
       const action = current.actions.get(event.value);
       if (action === undefined) continue;
+      // Hiding is not enforcement, but a stale tile still must not launch.
+      const permission = current.visible.get(event.value);
+      if (permission !== undefined && !await permits(permission)) {
+        sendMessage("You no longer have access to this program.", "error");
+        continue;
+      }
       await invokeProgram(action.program, action.arguments, programsRoot);
     }
   }

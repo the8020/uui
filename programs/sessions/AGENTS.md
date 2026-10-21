@@ -10,6 +10,10 @@ Parent DOX: [uui/programs DOX](../AGENTS.md).
 
 # Local Contracts
 
+- The session list filters in SQL with auth's `sqlPredicate` for
+  `the8020.uui.session.view` (value the owner's username) and always includes
+  the user's own sessions. Opening another user's session requires that view;
+  ending it or removing stale metadata requires `the8020.uui.session.edit`.
 - Collection Refresh and newer/older backend paging belong in the sessions
   toolbar. Selected-session actions stay in the detail header.
 

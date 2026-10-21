@@ -15,6 +15,8 @@ import listLayout from "./layouts/list.json" with { type: "json" };
 import { sessionInfo } from "../../src/session_fields.ts";
 import type { SessionMetadata } from "../../session_metadata.ts";
 import Sessions from "../../tables/sessions.ts";
+import { context } from "@the8020/context";
+import { requirePermission, sqlPredicate } from "/p/the8020/auth/mod.ts";
 import { username } from "/p/the8020/users/types/user.ts";
 import { currentUser } from "/p/the8020/users/mod.ts";
 import { serviceId } from "/p/the8020/services/types/service.ts";
@@ -138,6 +140,7 @@ async function sessionDetail(
   metadata: SessionMetadata,
   advanced = false,
 ): Promise<void> {
+  await requireSession(VIEW, metadata);
   let screenModel1: Model<z.infer<typeof DetailScreen>> | undefined;
   while (true) {
     const live = await invoke(metadata, "uui.session.inspect", {
@@ -233,6 +236,7 @@ async function sessionDetail(
       currentUser()?.id === metadata.authenticatedUserId
     ) openSession(metadata.sessionId);
     if (event.action === "clean") {
+      await requireSession(EDIT, metadata);
       await removeMetadata(metadata.sessionId);
       sendMessage("Stale session metadata removed", "success");
       return;
@@ -254,6 +258,7 @@ async function sessionDetail(
         })
       );
       if (confirmed.action !== "end") continue;
+      await requireSession(EDIT, metadata);
       const result = await invoke(metadata, "uui.session.terminate", {
         sessionId: metadata.sessionId,
       });
@@ -297,12 +302,32 @@ async function invoke(
   }
 }
 
+const VIEW = "the8020.uui.session.view";
+const EDIT = "the8020.uui.session.edit";
+
+/** Other users' sessions need the permission; your own never do. */
+async function requireSession(action: string, metadata: SessionMetadata) {
+  if (
+    !context.authenticated || context.username !== metadata.authenticatedUser
+  ) await requirePermission(action, metadata.authenticatedUser);
+}
+
 export async function readSessionMetadata(
   username?: string,
   offset = 0,
   limit = maximumSessions,
 ): Promise<SessionMetadata[]> {
-  return await Sessions.selectAll().$if(
+  // Filtering in SQL keeps the page size exact; own sessions always appear.
+  const viewable = await sqlPredicate(
+    context.username,
+    VIEW,
+    Sessions.authenticatedUser,
+  );
+  return await Sessions.selectAll().where((eb) =>
+    context.authenticated
+      ? eb.or([viewable, eb(Sessions.authenticatedUser, "=", context.username)])
+      : viewable
+  ).$if(
     username !== undefined,
     (query) => query.where(Sessions.authenticatedUser, "=", username!),
   ).orderBy(Sessions.updatedAt, "desc").orderBy(Sessions.sessionId).offset(

@@ -7,3 +7,6 @@ order = 50
 
 [open]
 program = "the8020/uui/sessions"
+
+[visible]
+permission = "the8020.uui.session.view"

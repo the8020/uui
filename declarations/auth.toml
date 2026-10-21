@@ -1,0 +1,2 @@
+"the8020.uui.session.view" = "View another user's UUI sessions, their screens and message logs; value is the session owner's username. Users always see their own sessions."
+"the8020.uui.session.edit" = "End another user's UUI session or remove its stale metadata; value is the session owner's username."
