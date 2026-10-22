@@ -328,6 +328,7 @@ let connectionSequence = 0;
 let processedClientSequence = 0;
 let resyncConfirmed = false;
 let lastInteraction: UUIClientMessage | undefined;
+let logoutReceived = false;
 const initialOutbounds: UUIWorkerOutbound[] = [];
 let retainedPresentation:
   | Extract<
@@ -722,15 +723,24 @@ async function runPageD(): Promise<void> {
 async function runLeaf(title: string): Promise<void> {
   const model = { value: title, status: "Ready" };
   const screenModel = new Model(model);
+  sendMessage(
+    `${title}: this notification must remain visible and clickable above the nested modal and its blurred backdrop.`,
+  );
   while (true) {
     const event = await callScreen({
       id: "presentation-leaf",
       title,
       schema: PresentationScreen,
       model: screenModel,
-      header: { actions: [{ id: "close", label: "Close modal" }] },
+      header: {
+        actions: [
+          { id: "slow", label: "Slow action" },
+          { id: "close", label: "Close modal" },
+        ],
+      },
     });
     if (event.action === BACK_EVENT || event.action === "close") return;
+    if (event.action === "slow") await delay(1_500);
   }
 }
 
@@ -877,6 +887,10 @@ async function serve(request: Request): Promise<Response> {
           message.id === "update"
       ) {
         lastInteraction = message;
+      }
+      if (message.type === "session.logout") {
+        logoutReceived = true;
+        return;
       }
       channel.push(message);
     };
@@ -1342,6 +1356,42 @@ async function verifyPresentationFlow(page: BrowserPage): Promise<void> {
     })()`,
     "nested modal",
   );
+  await clickPointer(page, ".message-toast-top .message-toast-body");
+  await waitForPage(
+    page,
+    `document.querySelector('#message-dialog')?.open === true &&
+      document.querySelector('#message-history-list')?.textContent?.includes('Presentation modal C:')`,
+    "notification opens Messages above nested modals",
+  );
+  await verifySessionControls(page);
+  await clickPointer(page, "#message-dialog-close");
+  await waitForPage(
+    page,
+    "!document.querySelector('#message-dialog').open",
+    "Messages closes above nested modals",
+  );
+  await verifySessionControls(page);
+  await page.command("Emulation.setDeviceMetricsOverride", {
+    width: 390,
+    height: 844,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await verifySessionControls(page);
+  await page.command("Emulation.clearDeviceMetricsOverride");
+  await clickButton(page, "Slow action");
+  await waitForPage(
+    page,
+    `document.querySelector('.presentation-modal[data-interaction-pending]') !== null`,
+    "pending modal action",
+  );
+  await clickPointer(page, "#session-menu-toggle");
+  await clickPointer(page, "#theme-toggle");
+  await waitForPage(
+    page,
+    `document.querySelector('.presentation-modal[data-interaction-pending]') === null`,
+    "modal action completes with session controls available",
+  );
   await pressEscape(page);
   await waitForPage(
     page,
@@ -1446,6 +1496,96 @@ async function verifyPresentationFlow(page: BrowserPage): Promise<void> {
       window.__restoredProbe === document.querySelector('[data-custom-element-id="probe"]')`,
     "modal close returns to page A without recreating its custom element",
   );
+  await verifySessionControls(page);
+  await clickButton(page, "Presentation flow");
+  await clickPointer(page, "#session-menu-toggle");
+  await clickPointer(page, "#session-logout");
+  await waitFor(() => logoutReceived, "logout from an open modal", 1_000);
+}
+
+async function verifySessionControls(page: BrowserPage): Promise<void> {
+  const messagesOpen = await page.evaluate<boolean>(
+    "document.querySelector('#message-dialog').open",
+  );
+  const modalCount = await page.evaluate<number>(
+    "document.querySelectorAll('dialog:modal').length",
+  );
+  await clickPointer(page, "#session-menu-toggle");
+  const theme = await page.evaluate<string>(
+    "document.documentElement.dataset.theme",
+  );
+  await clickPointer(page, "#theme-toggle");
+  await waitForPage(
+    page,
+    `document.documentElement.dataset.theme !== ${JSON.stringify(theme)}`,
+    "theme changes above modal",
+  );
+  await clickPointer(page, "#session-menu-toggle");
+  await pressEscape(page);
+  assertEquals(
+    await page.evaluate<number>(
+      "document.querySelectorAll('dialog:modal').length",
+    ),
+    modalCount,
+    "closing the user menu must preserve every modal",
+  );
+  await waitForPage(
+    page,
+    `document.activeElement?.id === 'session-menu-toggle' &&
+      !document.querySelector('#session-menu').open`,
+    "Escape restores menu focus",
+  );
+  await pressKey(page, "Enter");
+  await clickPointer(page, "#messages-open");
+  await waitForPage(
+    page,
+    "document.querySelector('#message-dialog').open",
+    "keyboard-opened user menu exposes Messages",
+  );
+  if (!messagesOpen) {
+    await clickPointer(page, "#message-dialog-close");
+    await waitForPage(
+      page,
+      "!document.querySelector('#message-dialog').open",
+      "Messages returns to the underlying surface",
+    );
+  }
+}
+
+async function clickPointer(
+  page: BrowserPage,
+  selector: string,
+): Promise<void> {
+  await waitForPage(
+    page,
+    `(() => {
+      const target = document.querySelector(${JSON.stringify(selector)});
+      if (!target || !target.checkVisibility() || target.disabled) return false;
+      const rect = target.getBoundingClientRect();
+      return rect.top >= 0 && rect.left >= 0 && rect.right <= innerWidth &&
+        rect.bottom <= innerHeight && target.contains(document.elementFromPoint(
+          rect.x + rect.width / 2, rect.y + rect.height / 2));
+    })()`,
+    `unobscured ${selector}`,
+  );
+  const point = await page.evaluate<{ x: number; y: number }>(`(() => {
+    const rect = document.querySelector(${
+    JSON.stringify(selector)
+  }).getBoundingClientRect();
+    return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+  })()`);
+  await page.command("Input.dispatchMouseEvent", {
+    type: "mouseMoved",
+    ...point,
+  });
+  for (const type of ["mousePressed", "mouseReleased"]) {
+    await page.command("Input.dispatchMouseEvent", {
+      type,
+      ...point,
+      button: "left",
+      clickCount: 1,
+    });
+  }
 }
 
 async function verifyFieldHelp(page: BrowserPage): Promise<void> {
@@ -2096,6 +2236,7 @@ async function pressKey(
       type,
       key,
       code: key,
+      text: key === "Enter" && type === "keyDown" ? "\r" : undefined,
       windowsVirtualKeyCode: key === "Tab"
         ? 9
         : key === "Enter"

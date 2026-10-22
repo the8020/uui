@@ -48,6 +48,13 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
 
 - The navbar right cluster permits shrinking at narrow widths so the session
   username can ellipsize without overflowing the viewport.
+- `session_controls.ts` keeps the user menu and notifications in a manual
+  top-layer popover above every modal and backdrop. Retain the same controls in
+  the active native dialog's DOM scope so theme, logout, and Messages remain
+  interactive; reserve their navbar position with the original slot. Pending
+  modal interactions make only the program frame inert. Escape closes an open
+  user menu before dismissing its modal. Native Tab can reach the global
+  controls; field-navigation shortcuts remain scoped to the dialog frame.
 - Reconcile stable surfaces and retained DOM while preserving dirty values,
   focus, custom elements, and list state. Identical snapshots that retain DOM
   must also retain its bound model object so later edits reach submitted data.
@@ -87,10 +94,6 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
   history entries and ten toasts, existing Markdown/dialog/badge/focus/dismissal
   behavior, and roundtrip collection clearing. Live output retains the captured
   screen/connection; stale frames cannot mutate the message collection.
-- Modal dialogs render in the top layer, above any `z-index`. While one is open,
-  `modal_messages.ts` moves the toast stack into the most recently opened modal
-  (`message-toast-stack-modal`, pinned to the viewport's top right) and returns
-  it to the header when the last one closes, keeping toast focus.
 - Ordinary list updates and independent reads use the list namespace's update
   and read messages on this same core. Updates carry captured dirty bindings and
   screen state; only matching results acknowledge those drafts. Capacity batches
@@ -260,6 +263,9 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
 
 - Run UUI `deno task check` and `deno task test`, and rebuild with
   `services/shell/build.sh` for browser-source changes.
+- `test:presentation-browser` checks notification hit testing and user-menu
+  mouse/keyboard access above nested modals, Messages, and their backdrops,
+  including theme changes and desktop/mobile positioning.
 - `presentation_browser_e2e.ts --fixture=./datetime_browser_fixture.ts` checks
   timestamp display, offsets, shared bindings, clearing/refilling, and model
   submission in a non-UTC browser timezone. `test:programs-browser --users`

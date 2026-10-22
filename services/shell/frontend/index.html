@@ -81,92 +81,95 @@
             ></div>
           </details>
         </div>
-        <nav class="navbar-actions" aria-label="Session controls">
-          <details class="session-menu" id="session-menu">
-            <summary
-              class="btn btn-ghost btn-sm session-menu-toggle"
-              id="session-menu-toggle"
-              aria-controls="session-menu-panel"
-              aria-expanded="false"
-              aria-haspopup="true"
-            >
-              <span
-                class="status-dot"
-                id="connection-indicator"
-                data-state="connecting"
-                aria-hidden="true"
-              ></span>
-              <span class="session-username" id="session-username">User</span>
-              <span class="session-menu-icon" id="session-menu-icon"></span>
-              <span
-                class="visually-hidden"
-                id="connection-state"
-                role="status"
-                aria-live="polite"
-              >Connecting…</span>
-            </summary>
-            <div
-              class="session-menu-panel"
-              id="session-menu-panel"
-              aria-label="Session menu"
-            >
-              <button
-                class="btn btn-ghost btn-sm session-menu-action"
-                id="session-account"
-                type="button"
-                disabled
-              ><span class="session-menu-action-label">My account</span></button>
-              <button
-                class="btn btn-ghost btn-sm session-menu-action"
-                id="session-customization"
-                type="button"
-                disabled
-              ><span class="session-menu-action-label">Customization</span></button>
-              <button
-                class="btn btn-ghost btn-sm session-menu-action messages-open"
-                id="messages-open"
-                type="button"
+        <div class="navbar-actions" id="session-controls-slot">
+          <nav class="session-controls" id="session-controls" popover="manual"
+            aria-label="Session controls">
+            <details class="session-menu" id="session-menu">
+              <summary
+                class="btn btn-ghost btn-sm session-menu-toggle"
+                id="session-menu-toggle"
+                aria-controls="session-menu-panel"
+                aria-expanded="false"
+                aria-haspopup="true"
               >
                 <span
-                  class="message-count"
-                  id="messages-count"
-                  data-count="0"
+                  class="status-dot"
+                  id="connection-indicator"
+                  data-state="connecting"
                   aria-hidden="true"
-                >0</span>
-                <span class="session-menu-action-label">Messages</span>
-              </button>
-              <button
-                class="btn btn-ghost btn-sm session-menu-action theme-toggle"
-                id="theme-toggle"
-                type="button"
-                aria-pressed="true"
-                aria-label="Switch to light mode"
-              ></button>
-              <button
-                class="btn btn-ghost btn-sm session-menu-action session-logout"
-                id="session-logout"
-                type="button"
-              ><span class="session-menu-action-label">Logout</span></button>
-            </div>
-          </details>
-          <div
-            class="message-toast-stack"
-            id="message-toast-stack"
-            aria-label="New messages"
-            aria-live="polite"
-            aria-relevant="additions"
-            hidden
-          >
-            <button
-              class="message-toast-dismiss-all"
-              id="message-toast-dismiss-all"
-              type="button"
-              aria-label="Dismiss all message notifications"
-              title="Dismiss all messages"
+                ></span>
+                <span class="session-username" id="session-username">User</span>
+                <span class="session-menu-icon" id="session-menu-icon"></span>
+                <span
+                  class="visually-hidden"
+                  id="connection-state"
+                  role="status"
+                  aria-live="polite"
+                >Connecting…</span>
+              </summary>
+              <div
+                class="session-menu-panel"
+                id="session-menu-panel"
+                aria-label="Session menu"
+              >
+                <button
+                  class="btn btn-ghost btn-sm session-menu-action"
+                  id="session-account"
+                  type="button"
+                  disabled
+                ><span class="session-menu-action-label">My account</span></button>
+                <button
+                  class="btn btn-ghost btn-sm session-menu-action"
+                  id="session-customization"
+                  type="button"
+                  disabled
+                ><span class="session-menu-action-label">Customization</span></button>
+                <button
+                  class="btn btn-ghost btn-sm session-menu-action messages-open"
+                  id="messages-open"
+                  type="button"
+                >
+                  <span
+                    class="message-count"
+                    id="messages-count"
+                    data-count="0"
+                    aria-hidden="true"
+                  >0</span>
+                  <span class="session-menu-action-label">Messages</span>
+                </button>
+                <button
+                  class="btn btn-ghost btn-sm session-menu-action theme-toggle"
+                  id="theme-toggle"
+                  type="button"
+                  aria-pressed="true"
+                  aria-label="Switch to light mode"
+                ></button>
+                <button
+                  class="btn btn-ghost btn-sm session-menu-action session-logout"
+                  id="session-logout"
+                  type="button"
+                ><span class="session-menu-action-label">Logout</span></button>
+              </div>
+            </details>
+            <div
+              class="message-toast-stack"
+              id="message-toast-stack"
+              aria-label="New messages"
+              aria-live="polite"
+              aria-relevant="additions"
               hidden
-            ></button>
-          </div>
-        </nav>
+            >
+              <button
+                class="message-toast-dismiss-all"
+                id="message-toast-dismiss-all"
+                type="button"
+                aria-label="Dismiss all message notifications"
+                title="Dismiss all messages"
+                hidden
+              ></button>
+            </div>
+          </nav>
+        </div>
       </div>
     </header>
     <dialog
