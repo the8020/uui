@@ -667,26 +667,30 @@ below.
   caller schema and commits; Close, Back, and Escape discard even invalid
   drafts. On every screen, Back (Close, Escape) applies the edits it carries
   when they are valid and otherwise discards them; it is never refused for an
-  invalid draft. Empty separated tags send no value rather than `""`. Show Done
-  only in edit mode, followed by Navigate when semantic `open(value)` exists.
-  Navigate opens a related page without committing and restores help on return.
-  Markdown descriptions appear in full. `fieldHelp: false` suppresses help.
-  Field help shows a Value help card below the value when the field has a
-  provider or ordinary control options. Its list opens with search visible and
-  focused (`focusSearch`), and its value's field group is a layout `summary`:
-  once it scrolls away, the dialog shows a compact bar under its toolbar
-  (outside the scrolling body) with the label, the value or tags (removable
-  there, at most three lines, then `+N more`, which scrolls back to the field)
-  and a search mirroring the list's. One value: the current value's row is
-  highlighted, a click selects it into the draft, and a double-click or Enter
-  selects it and finishes like Done. Several values (arrays of scalars, or text
-  declaring `multiple`): rows have checkboxes kept by key across pages and
-  searches; the header selects every match within the on-screen limit
-  (`SELECT_ALL_LIMITS`, default 500, read in pages of 500) or refuses above it;
-  values not offered by help, such as ranges, stay as written; the schema's
-  array maximum refuses more; selection order is kept; there is no double-click
-  finish, only Done. Read-only fields retain lookup and navigation, but choices
-  never edit their bound value.
+  invalid draft. Empty separated tags send no value rather than `""`. A cleared
+  input (`""`) of an optional field is stored as no value. Validation problems
+  are reported through `describeError(error, schema?, bind?)` (`errors.ts`,
+  exported from `mod.ts`): the field's label and a plain message, with "Enter a
+  value." for empty or missing required values; programs use it instead of
+  showing raw Zod messages. Show Done only in edit mode, followed by Navigate
+  when semantic `open(value)` exists. Navigate opens a related page without
+  committing and restores help on return. Markdown descriptions appear in full.
+  `fieldHelp: false` suppresses help. Field help shows a Value help card below
+  the value when the field has a provider or ordinary control options. Its list
+  opens with search visible and focused (`focusSearch`), and its value's field
+  group is a layout `summary`: once it scrolls away, the dialog shows a compact
+  bar under its toolbar (outside the scrolling body) with the label, the value
+  or tags (removable there, at most three lines, then `+N more`, which scrolls
+  back to the field) and a search mirroring the list's. One value: the current
+  value's row is highlighted, a click selects it into the draft, and a
+  double-click or Enter selects it and finishes like Done. Several values
+  (arrays of scalars, or text declaring `multiple`): rows have checkboxes kept
+  by key across pages and searches; the header selects every match within the
+  on-screen limit (`SELECT_ALL_LIMITS`, default 500, read in pages of 500) or
+  refuses above it; values not offered by help, such as ranges, stay as written;
+  the schema's array maximum refuses more; selection order is kept; there is no
+  double-click finish, only Done. Read-only fields retain lookup and navigation,
+  but choices never edit their bound value.
 - Fields holding several values default to the `tags` control: separated text,
   and arrays whose element has value help or enum options (other scalar arrays
   stay lists unless `control: "tags"`). `FieldDescriptor.multiple` carries the

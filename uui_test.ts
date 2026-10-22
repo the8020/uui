@@ -23,6 +23,7 @@ import {
 } from "./fields.ts";
 import { field as sharedField, money } from "/p/the8020/db/fields.ts";
 import { CONFIRM_CLASS, confirmAction } from "./confirm.ts";
+import { describeError } from "./errors.ts";
 import {
   applyLayoutOverride,
   type LayoutDocument,
@@ -2214,6 +2215,41 @@ Deno.test("field help selects several values by key, all matches within a limit,
     assertEquals(model.data.roles, ["C1"], "closing discards the draft");
     test.push(eventFor(lastPresentation(test), "save", ++sequence));
     await pending;
+  } finally {
+    unbind();
+  }
+});
+
+Deno.test("validation errors read as the field label and a plain message", () => {
+  const schema = z.object({
+    name: field(z.string().min(1), { label: "Role" }),
+    note: z.string().max(3),
+  });
+  const empty = schema.safeParse({ name: "", note: "" });
+  assertEquals(describeError(empty.error, schema), "Role: Enter a value.");
+  const long = schema.safeParse({ name: "a", note: "toolong" });
+  assertEquals(describeError(long.error, schema).startsWith("Note: "), true);
+  const missing = schema.safeParse({ note: "" });
+  assertEquals(describeError(missing.error, schema), "Role: Enter a value.");
+  assertEquals(describeError(new Error("Role exists")), "Role exists");
+});
+
+Deno.test("clearing an optional input sends no value instead of an invalid empty text", async () => {
+  const test = new TestChannel();
+  const unbind = bindSession(test);
+  const model = new Model<{ name?: string }>({ name: "sales" });
+  try {
+    const pending = callScreen({
+      id: "optional-owner",
+      schema: z.object({ name: z.string().min(1).optional() }),
+      model,
+    });
+    test.push({
+      ...eventFor(lastPresentation(test), "save", 1),
+      changes: [{ bind: "name", value: "" }],
+    });
+    assertEquals((await pending).action, "save");
+    assertEquals(model.data.name, undefined);
   } finally {
     unbind();
   }

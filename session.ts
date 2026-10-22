@@ -1,3 +1,4 @@
+import { describeError } from "./errors.ts";
 import { getPath, setPath } from "./bindings.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { z } from "/p/the8020/db/fields.ts";
@@ -1975,14 +1976,31 @@ function prepareChanges<T extends z.ZodRawShape>(
     ) {
       throw new TypeError("list edits require a displayed-row mapping");
     }
-    const parsed = target.safeParse(change.value);
-    if (!parsed.success) throw parsed.error;
+    let parsed = target.safeParse(change.value);
+    // A cleared input of an optional field means no value.
+    if (!parsed.success && change.value === "") {
+      const empty = target.safeParse(undefined);
+      if (empty.success) parsed = empty;
+    }
+    if (!parsed.success) {
+      throw new TypeError(readableIssue(schema, parsed.error, change.bind));
+    }
     setPath(candidate, change.bind, parsed.data);
     changed.add(change.bind);
   }
-  schema.parse(candidate);
+  const whole = schema.safeParse(candidate);
+  if (!whole.success) throw new TypeError(readableIssue(schema, whole.error));
   return { candidate, changed };
 }
+/** A validation problem as the user reads it: the field's label and message. */
+function readableIssue(
+  schema: z.ZodObject<z.ZodRawShape>,
+  error: z.ZodError,
+  bind?: string,
+): string {
+  return describeError(error, schema, bind);
+}
+
 function mergeScreenUpdate(
   update: ScreenStateUpdate,
   model: Model<object>,

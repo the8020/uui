@@ -66,6 +66,7 @@ export type {
   LayoutOverride,
 } from "./layout.ts";
 export { applyLayoutOverride, validateLayout } from "./layout.ts";
+export { describeError } from "./errors.ts";
 export {
   CONFIRM_CLASS,
   confirmAction,
