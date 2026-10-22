@@ -897,6 +897,17 @@ textarea {
   padding: clamp(18px, 3vw, 32px) 0 40px;
 }
 
+/* Fullscreen (shell bar toggle): programs and dialogs use the window width. */
+:root.uui-app-fullscreen .navbar-inner,
+:root.uui-app-fullscreen .shell-main > .container {
+  width: calc(100% - 32px);
+  max-width: none;
+}
+
+:root.uui-app-fullscreen .uui-dialog:not(.uui-control-dialog):not(.uui-dialog-compact):not(:has(.screen.uui-confirm)) {
+  --uui-dialog-width: calc(100vw - 48px);
+}
+
 /* Program-owned elements can fill the content viewport below shell controls. */
 .uui-content-fullscreen {
   position: fixed;

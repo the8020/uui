@@ -56,6 +56,7 @@ import {
 import { MessageCenter } from "./message_center.ts";
 import { installSessionControls } from "./session_controls.ts";
 import { SummaryBar } from "./summary_bar.ts";
+import { installAppFullscreen } from "./app_fullscreen.ts";
 import { parseMessage, parseMessageHistory } from "../../../messages.ts";
 import { mergeServerModel, PresentationHistory } from "./presentation.ts";
 import { windowTitleForHeading } from "./window_title.ts";
@@ -486,6 +487,10 @@ screenBack.addEventListener("click", requestBack);
 sessionNew.href = new URL(boot.entryUrl ?? "./", location.href).href;
 renderIconText(sessionExit, "[[icon=arrow_upward]]", { decorativeIcons: true });
 renderIconText(sessionNew, "[[icon=add]]", { decorativeIcons: true });
+installAppFullscreen(
+  requiredElement<HTMLButtonElement>("app-fullscreen"),
+  localStorage,
+);
 sessionExit.addEventListener("click", () => {
   sessionExit.disabled = true;
   sendClient({ type: "session.exit" });

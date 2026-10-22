@@ -153,6 +153,12 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
 - Send browser origin, language, and time zone in the HTTP establishment body
   and each WebSocket `session.connect`. The package session binding owns these
   presentation values; authenticated identity remains runtime-owned.
+- `app_fullscreen.ts` owns the shell bar's Fullscreen toggle (after New): the
+  `uui-app-fullscreen` root class widens the navbar and program container to the
+  window and widens dialogs except confirmations and compact/control dialogs.
+  The choice is kept in `localStorage` (`the8020.app-fullscreen`) until turned
+  off; it never enters the browser's own fullscreen, and component-level
+  `uui-content-fullscreen` keeps working independently.
 - The generic custom-element context exposes `renderText` for shared text and
   icons. `uui-content-fullscreen` fills only the content viewport, using the
   measured global-bar height in `--uui-content-top`, and locks background
