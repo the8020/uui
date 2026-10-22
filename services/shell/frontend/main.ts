@@ -54,6 +54,7 @@ import {
   renderIconText,
 } from "./icon_text.ts";
 import { MessageCenter } from "./message_center.ts";
+import { installSessionControls } from "./session_controls.ts";
 import { parseMessage, parseMessageHistory } from "../../../messages.ts";
 import { mergeServerModel, PresentationHistory } from "./presentation.ts";
 import { windowTitleForHeading } from "./window_title.ts";
@@ -441,6 +442,10 @@ sessionUsername.textContent = username;
 sessionUsername.title = username;
 updateSessionMenuLabel();
 applyTheme(themePreferences.current());
+installSessionControls(
+  requiredElement<HTMLElement>("session-controls"),
+  requiredElement<HTMLElement>("session-controls-slot"),
+);
 themeToggle.addEventListener("click", () => {
   applyTheme(
     themePreferences.select(
@@ -470,6 +475,7 @@ document.addEventListener("pointerdown", (event) => {
 });
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape" || !sessionMenu.open) return;
+  event.preventDefault();
   sessionMenu.open = false;
   sessionMenuToggle.focus();
 });
@@ -1579,7 +1585,12 @@ function updateInteractionState(): void {
     const isActive = activeSurfaceID === layer.surfaceId;
     layer.customElements.setActive(isVisible && isActive);
     if (!isVisible || !isActive) layer.lists.closeTools();
-    layer.shell.inert = !isVisible || waiting || !isActive;
+    layer.shell.inert = !isVisible ||
+      (layer.kind === "modal" ? layer !== feedbackLayer : waiting || !isActive);
+    if (layer.kind === "modal") {
+      (layer.shell.firstElementChild as HTMLElement).inert = waiting ||
+        !isActive;
+    }
     const modalWaiting = waiting && feedbackLayer === layer &&
       layer.kind === "modal";
     layer.shell.toggleAttribute("data-interaction-pending", modalWaiting);

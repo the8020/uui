@@ -251,7 +251,7 @@ textarea {
 
 .navbar-inner {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, auto);
   gap: 12px;
   height: var(--uui-bar-height);
   align-items: center;
@@ -270,11 +270,25 @@ textarea {
   grid-row: 1;
   justify-self: end;
   min-width: 0;
+  max-width: 100%;
   gap: 8px;
 }
 
 .session-menu {
   position: relative;
+}
+
+.session-controls {
+  position: fixed;
+  inset: auto;
+  width: max-content;
+  overflow: visible;
+  margin: 0;
+  border: 0;
+  border-radius: 6px;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
 }
 
 .session-menu > summary {
@@ -287,6 +301,7 @@ textarea {
 
 .session-menu-toggle {
   min-width: 0;
+  max-width: 100%;
   gap: 8px;
   padding-inline: 0.65rem;
 }

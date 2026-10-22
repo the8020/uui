@@ -297,7 +297,7 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   );
   assertMatch(
     cssBody,
-    /\.navbar-inner\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto;[^}]*gap:\s*12px;/s,
+    /\.navbar-inner\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*auto minmax\(0, 1fr\) minmax\(0, auto\);[^}]*gap:\s*12px;/s,
   );
   assertMatch(
     cssBody,

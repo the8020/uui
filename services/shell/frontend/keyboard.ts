@@ -84,7 +84,9 @@ export function installKeyboardShortcuts(options: {
       event.metaKey
     ) return;
     const dialog = activeDialog();
-    const roots = dialog ? [dialog] : options.roots();
+    const roots = dialog
+      ? [dialog.querySelector(".uui-dialog-frame") ?? dialog]
+      : options.roots();
     const key = shortcutKey({
       key: event.key as KeyboardShortcut["key"],
       control: event.ctrlKey,
