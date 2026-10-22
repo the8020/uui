@@ -43,6 +43,8 @@ export interface LayoutNode extends ListOptions, ComponentStyle {
   primary?: boolean;
   secondary?: boolean;
   collapsed?: boolean;
+  /** A field group a modal keeps in view as a compact bar while scrolling. */
+  summary?: boolean;
   selectedTab?: string;
   customElement?: string;
 }
@@ -99,6 +101,7 @@ const nodeKeys = new Set([
   "headings",
   "columnOptions",
   "triggerFilterEvents",
+  "focusSearch",
   "toolbar",
   "elements",
   "controls",
@@ -111,6 +114,7 @@ const nodeKeys = new Set([
   "primary",
   "secondary",
   "collapsed",
+  "summary",
   "selectedTab",
   "customElement",
 ]);
@@ -349,7 +353,9 @@ function validateNode(
       `layout node ${value.id} has invalid minimum region width`,
     );
   }
-  for (const name of ["primary", "secondary", "collapsed"] as const) {
+  for (
+    const name of ["primary", "secondary", "collapsed", "summary"] as const
+  ) {
     if (value[name] !== undefined && typeof value[name] !== "boolean") {
       throw new TypeError(`layout node ${value.id} has invalid ${name}`);
     }

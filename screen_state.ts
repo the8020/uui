@@ -36,6 +36,8 @@ export interface ListOptions {
   headings?: Record<string, string>;
   columnOptions?: Record<string, ListColumnOptions>;
   triggerFilterEvents?: boolean;
+  /** Open List tools initially and put the cursor in its search. */
+  focusSearch?: boolean;
 }
 
 export interface ListColumn extends ListColumnOptions {
@@ -96,9 +98,20 @@ export interface ScreenListSnapshot {
   totalPages: number;
   filtered: boolean;
   triggerFilterEvents: boolean;
+  focusSearch?: boolean;
   /** Retained providers support independent reads as well as visible browsing. */
   readable?: boolean;
-  selection?: { bind: string; selectedItems: number };
+  selection?: {
+    bind: string;
+    selectedItems: number;
+    /**
+     * Provider selections by key: `multiple` shows checkboxes and toggles a
+     * row on click; `single` highlights the selected row without checkboxes.
+     */
+    mode?: "single" | "multiple";
+    /** Whether every row matching the current query is selected. */
+    allSelected?: boolean;
+  };
   source?: { more: boolean; searchOnly?: boolean; totalItems?: number };
 }
 

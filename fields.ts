@@ -7,6 +7,7 @@ import {
   type FieldMetadata as SharedFieldMetadata,
   fieldMetadata as sharedFieldMetadata,
   fieldSchemas,
+  multipleValues,
 } from "/p/the8020/db/fields.ts";
 import { humanize } from "./humanize.ts";
 import type {
@@ -17,6 +18,7 @@ import type {
   CustomElementOptions,
   FieldDescriptor,
   FieldLength,
+  FieldMultiple,
   FieldOption,
   KeyboardShortcut,
   ListOptions,
@@ -57,7 +59,11 @@ export interface FieldMetadata<Value = unknown>
 
 const metadata = new WeakMap<
   z.ZodType,
-  Omit<FieldMetadata, "valueHelp" | "open" | "storage" | "custom"> & {
+  & Omit<
+    FieldMetadata,
+    "valueHelp" | "open" | "storage" | "custom" | "multiple"
+  >
+  & {
     custom?: Omit<CustomElementOptions, "channel">;
   }
 >();
@@ -71,7 +77,7 @@ export function field<T extends z.ZodType>(
   validateComponentStyle(options);
   normalizeRowSpan(options.rowSpan);
   validateKeyboardMetadata(options);
-  const { valueHelp, open, storage, ...presentation } = {
+  const { valueHelp, open, storage, multiple, ...presentation } = {
     ...fieldMetadata(schema),
     ...options,
   };
@@ -93,6 +99,7 @@ export function field<T extends z.ZodType>(
     description: configured.description,
     valueHelp,
     open,
+    ...(multiple === undefined ? {} : { multiple }),
   });
   metadata.set(result, configured);
   if (customChannel) customChannels.set(result, customChannel);
@@ -225,13 +232,18 @@ function visitShape(
       visitShape(unwrapped.schema.shape, bind, output);
       continue;
     }
+    const multiple = multipleDescriptor(declaredSchema);
     output.push({
       bind,
+      ...(multiple === undefined ? {} : { multiple }),
       ...(configured.class === undefined ? {} : { class: configured.class }),
       ...(configured.style === undefined ? {} : { style: configured.style }),
       label: configured.label ?? humanize(name),
       description: configured.description,
-      control: configured.control ?? inferControl(unwrapped.schema, configured),
+      control: configured.control ??
+        (choosesSeveral(declaredSchema)
+          ? "tags"
+          : inferControl(unwrapped.schema, configured)),
       group: configured.group,
       length: configured.length ?? "medium",
       rowSpan: normalizeRowSpan(configured.rowSpan),
@@ -268,6 +280,36 @@ function visitShape(
       }),
     });
   }
+}
+
+/**
+ * Tags by default: separated text, and arrays whose values come from help or
+ * options. Other scalar arrays stay lists unless a control asks for tags.
+ */
+function choosesSeveral(schema: z.ZodType): boolean {
+  const multiple = multipleValues(schema);
+  if (multiple === undefined) return false;
+  if (multiple.kind === "text") return true;
+  return sharedFieldMetadata(multiple.element)?.valueHelp !== undefined ||
+    fieldSchemas(multiple.element).at(-1) instanceof z.ZodEnum;
+}
+
+/** Several values: arrays of scalars, or text that declares `multiple`. */
+function multipleDescriptor(schema: z.ZodType): FieldMultiple | undefined {
+  const multiple = multipleValues(schema);
+  if (multiple === undefined) return undefined;
+  if (multiple.kind === "text") {
+    return {
+      separator: multiple.separator,
+      ...(multiple.escape === "" ? {} : { escape: multiple.escape }),
+    };
+  }
+  const maximum = (unwrap(schema).schema as unknown as {
+    _zod?: { bag?: { maximum?: unknown } };
+  })._zod?.bag?.maximum;
+  return typeof maximum === "number" && Number.isSafeInteger(maximum)
+    ? { maximum }
+    : {};
 }
 
 function normalizeRangeMetadata(

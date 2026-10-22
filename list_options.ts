@@ -52,6 +52,11 @@ export function validateListOptions(value: ListOptions): void {
     throw new TypeError("triggerFilterEvents must be boolean");
   }
   if (
+    value.focusSearch !== undefined && typeof value.focusSearch !== "boolean"
+  ) {
+    throw new TypeError("focusSearch must be boolean");
+  }
+  if (
     value.key !== undefined &&
     (typeof value.key !== "string" || value.key.length === 0)
   ) {

@@ -6,7 +6,11 @@ Parent DOX: [shell frontend](../../AGENTS.md).
 
 # Ownership
 
-- `lists.ts` owns UUI rendering, query drafts, popovers, paging, and state.
+- `lists.ts` owns UUI rendering, query drafts, popovers, paging, and state,
+  including key selections of paged sources (`multiple` checkboxes toggled by
+  row clicks, header checked by `allSelected`; `single` highlighted rows with a
+  250 ms click delay so double-click sends `activate`) and `focusSearch` (marks
+  its search `data-autofocus` for the modal's first focus).
 - `list_geometry.ts` owns measured UUI capacity and column widths.
 - `page_size.ts` owns the browser-only rows-per-page choice.
 - `tools.ts` owns the expanded toolbar, native dialogs, spreadsheet lifecycle,

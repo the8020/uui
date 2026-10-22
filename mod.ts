@@ -66,6 +66,11 @@ export type {
   LayoutOverride,
 } from "./layout.ts";
 export { applyLayoutOverride, validateLayout } from "./layout.ts";
+export {
+  CONFIRM_CLASS,
+  confirmAction,
+  type ConfirmOptions,
+} from "./confirm.ts";
 export * from "./protocol.ts";
 export { Channel } from "./session.ts";
 export { ChannelSubscription } from "./channel.ts";

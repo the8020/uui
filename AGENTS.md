@@ -429,6 +429,16 @@ below.
   `presentModal(() => program())` and `presentPage(() => program())` alone push
   presentation surfaces, and an async-safe ambient context makes direct calls
   and awaited descendants inherit their caller's surface.
+- `confirm.ts` owns confirmations:
+  `confirmAction({ id?, title, message?,
+  confirm, kind?, cancel? })` presents
+  a modal with a short title, the consequence as Markdown body text, one
+  confirming header action (`confirm`, `danger` by default) and an optional
+  cancel; it resolves true only for `confirm`, closing cancels. Its screen class
+  `CONFIRM_CLASS` (`uui-confirm`) makes the shell render a narrow dialog with a
+  body-size title and text, from one stylesheet rule. Programs use it for every
+  yes/no question; dialogs that confirm with extra fields set
+  `class: CONFIRM_CLASS` themselves.
 - A session owns one logical LIFO surface stack whose root is a page. Each
   surface owns at most one snapshot and one unresolved `callScreen()`. The
   visible presentation is the suffix beginning with the most recent page: that
@@ -572,6 +582,20 @@ below.
   path; transcripts show selected row flags and totals. Selection requires the
   complete bound array and an editable boolean row field; registered paged
   sources cannot supply whole-table row-model updates and reject this option.
+- Paged sources keep a selection by key instead:
+  `setListSource(model, id,
+  source, { selection })` with `ListSourceSelection`
+  (`mode`, `isSelected`, `count`, `set`, optional `matching` and `allSelected`).
+  Snapshot rows carry `__uuiSelected`, and `selection` reports `mode` and
+  `allSelected`. `multiple` shows checkboxes; a row click or its checkbox
+  toggles that row, and the header selects or clears every row `matching`
+  returns for the current query (it may refuse, e.g. above a limit). Rows are
+  read while preparing the list transaction and the owner's `set` applies on
+  commit. `single` shows no checkboxes and highlights the selected row. Row
+  events with `eventType: "activate"` (double-click, or Enter on a highlighted
+  list) choose decisively; a single click waits 250 ms so a double-click is not
+  also a select. `focusSearch: true` opens List tools on first display and gives
+  a new modal's first focus to its search.
 - Layout regions may place their ordered `actions` alongside their controls,
   including buttons inside field groups. Those buttons are omitted from the
   fallback screen action bar; an explicit `actions` region still owns screen
@@ -641,18 +665,39 @@ below.
   focused-field F1/F4 help. The modal owns an isolated draft and keeps the
   caller Model and surface reserved. Only Done validates against the complete
   caller schema and commits; Close, Back, and Escape discard even invalid
-  drafts. Show Done only in edit mode, followed by Navigate when semantic
-  `open(value)` exists. Navigate opens a related page without committing and
-  restores help on return. Markdown descriptions appear in full.
-  `fieldHelp: false` suppresses help. Field help shows a Value help card below
-  the value when the field has a provider or ordinary control options. Its
-  standard list starts with its extended toolbar collapsed; List tools reveals
-  search and tools. Selecting a row fills editable drafts. Read-only fields
-  retain lookup and navigation, but choices never edit their bound value.
-  Identifier screens retain their semantic `open` callbacks.
-  `valueHelp({ query, offset, limit })` receives the complete ordinary list
-  query and fetches a page bounded by measured capacity (1–500). Providers
-  return a Zod row schema, at most `limit` rows, `more`, and optional
+  drafts. On every screen, Back (Close, Escape) applies the edits it carries
+  when they are valid and otherwise discards them; it is never refused for an
+  invalid draft. Empty separated tags send no value rather than `""`. Show Done
+  only in edit mode, followed by Navigate when semantic `open(value)` exists.
+  Navigate opens a related page without committing and restores help on return.
+  Markdown descriptions appear in full. `fieldHelp: false` suppresses help.
+  Field help shows a Value help card below the value when the field has a
+  provider or ordinary control options. Its list opens with search visible and
+  focused (`focusSearch`), and its value's field group is a layout `summary`:
+  once it scrolls away, the dialog shows a compact bar under its toolbar
+  (outside the scrolling body) with the label, the value or tags (removable
+  there, at most three lines, then `+N more`, which scrolls back to the field)
+  and a search mirroring the list's. One value: the current value's row is
+  highlighted, a click selects it into the draft, and a double-click or Enter
+  selects it and finishes like Done. Several values (arrays of scalars, or text
+  declaring `multiple`): rows have checkboxes kept by key across pages and
+  searches; the header selects every match within the on-screen limit
+  (`SELECT_ALL_LIMITS`, default 500, read in pages of 500) or refuses above it;
+  values not offered by help, such as ranges, stay as written; the schema's
+  array maximum refuses more; selection order is kept; there is no double-click
+  finish, only Done. Read-only fields retain lookup and navigation, but choices
+  never edit their bound value.
+- Fields holding several values default to the `tags` control: separated text,
+  and arrays whose element has value help or enum options (other scalar arrays
+  stay lists unless `control: "tags"`). `FieldDescriptor.multiple` carries the
+  separator, escape characters and array maximum. Tags show each value with a
+  remove button; typing adds values on Enter or the separator (typed text keeps
+  the field's grammar), Backspace on an empty input removes the last, and the
+  edit pencil opens field help. Values in grammar (ranges, exclusions) show as
+  outlined expressions. Identifier screens retain their semantic `open`
+  callbacks. `valueHelp({ query, offset, limit })` receives the complete
+  ordinary list query and fetches a page bounded by measured capacity (1–500).
+  Providers return a Zod row schema, at most `limit` rows, `more`, and optional
   matching/unfiltered totals. The first schema field supplies the selected
   value; every column uses ordinary field types, labels, help, sorting,
   filtering, and list tools. `queryValueHelp()` in `lists.ts` shares ordinary

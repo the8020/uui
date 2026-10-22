@@ -87,6 +87,10 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
   history entries and ten toasts, existing Markdown/dialog/badge/focus/dismissal
   behavior, and roundtrip collection clearing. Live output retains the captured
   screen/connection; stale frames cannot mutate the message collection.
+- Modal dialogs render in the top layer, above any `z-index`. While one is open,
+  `modal_messages.ts` moves the toast stack into the most recently opened modal
+  (`message-toast-stack-modal`, pinned to the viewport's top right) and returns
+  it to the header when the last one closes, keeping toast focus.
 - Ordinary list updates and independent reads use the list namespace's update
   and read messages on this same core. Updates carry captured dirty bindings and
   screen state; only matching results acknowledge those drafts. Capacity batches
@@ -210,6 +214,21 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
   Edits to timestamp-backed controls return ISO UTC, including after
   clearing/refilling; timezone-free controls retain local strings. Apply the
   same conversion when synchronizing controls that share a binding.
+- `tags.ts` owns the `tags` control for fields holding several values: entries
+  from arrays or separated text (via `/p/the8020/db/multiple.ts`), removable
+  tags, typed additions in the field's grammar, local redraw and the array
+  maximum. `renderer.ts` places it with the ordinary label, message and field
+  help pencil. Its typing input keeps `data-bind` for focus restoration but is
+  marked `data-tags-input`, so binding synchronization never writes the bound
+  value into it.
+- The shell gives a new modal's first focus to `[data-autofocus]` before its
+  first focusable control.
+- `summary_bar.ts` owns a modal's compact bar for its `summary` field group
+  (`data-summary`): placed between the dialog toolbar and body, shown by an
+  IntersectionObserver once the group's input leaves the body's view, rebuilt
+  from the rendered group (tag removal clicks the field's own button), capped at
+  `SUMMARY_LINES` (3) with a `+N more` button that scrolls the body to the top,
+  and a search that types into the list's own search.
 - `overflow.ts` owns reusable `createOverflowText`, batched responsive
   measurement, and disposal for list values, field hints, and column
   descriptions. Keep text selectable and its normal click behavior; only a

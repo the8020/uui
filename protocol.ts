@@ -32,6 +32,8 @@ export type ScreenEventType =
   | "action"
   | "change"
   | "select"
+  /** A row chosen decisively (double-click): select it and finish. */
+  | "activate"
   | "field-help"
   | typeof BACK_EVENT
   | "exit";
@@ -249,7 +251,8 @@ export type ControlKind =
   | "datetime"
   | "file"
   | "custom"
-  | "list";
+  | "list"
+  | "tags";
 
 export type FieldLength = "short" | "medium" | "long";
 
@@ -308,11 +311,23 @@ export function validateComponentStyle(value: {
   }
 }
 
+/**
+ * A field holding several values: an array (no separator) or text joined by
+ * `separator`, where backslash escapes it and each `escape` character.
+ */
+export interface FieldMultiple {
+  separator?: string;
+  escape?: string;
+  /** At most this many values, from the array schema. */
+  maximum?: number;
+}
+
 export interface FieldDescriptor extends ComponentStyle {
   bind: string;
   label: string;
   description?: string;
   control: ControlKind;
+  multiple?: FieldMultiple;
   group?: string;
   length: FieldLength;
   rowSpan: number;
@@ -515,6 +530,7 @@ export function parseClientMessage(
     "action",
     "change",
     "select",
+    "activate",
     "field-help",
     BACK_EVENT,
     "exit",
@@ -531,10 +547,12 @@ export function parseClientMessage(
     value.eventType !== undefined &&
       (typeof value.eventType !== "string" ||
         !eventTypes.has(value.eventType as ScreenEventType)) ||
+    // Only a list row can be activated.
+    value.eventType === "activate" && value.selection === undefined ||
     (value.selection !== undefined && (!isRecord(value.selection) ||
       typeof value.selection.id !== "string" ||
       !isSequence(value.selection.index) || value.action !== "select" ||
-      value.eventType !== "select")) ||
+      value.eventType !== "select" && value.eventType !== "activate")) ||
     !validChanges(value.changes) ||
     (value.action === BACK_EVENT || value.eventType === BACK_EVENT) &&
       (value.action !== BACK_EVENT || value.eventType !== BACK_EVENT)

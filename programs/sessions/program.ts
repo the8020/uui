@@ -2,10 +2,10 @@ import { isId, kernel, WorkerInvokeError } from "@the8020/kernel";
 import {
   BACK_EVENT,
   callScreen,
+  confirmAction,
   field,
   Model,
   openSession,
-  presentModal,
   presentPage,
   sendMessage,
   z,
@@ -242,22 +242,14 @@ async function sessionDetail(
       return;
     }
     if (event.action === "terminate") {
-      const confirmed = await presentModal(() =>
-        callScreen({
-          id: "uui-session-end",
-          title: `End ${metadata.authenticatedUser}'s session?`,
-          description: "Any interactive work in this session will stop.",
-          schema: z.object({}),
-          model: new Model({}),
-          header: {
-            actions: [{ id: "end", label: "End session", kind: "danger" }, {
-              id: "keep",
-              label: "Keep session",
-            }],
-          },
-        })
-      );
-      if (confirmed.action !== "end") continue;
+      const confirmed = await confirmAction({
+        id: "uui-session-end",
+        title: `End ${metadata.authenticatedUser}'s session?`,
+        message: "Any interactive work in this session will stop.",
+        confirm: "End session",
+        cancel: "Keep session",
+      });
+      if (!confirmed) continue;
       await requireSession(EDIT, metadata);
       const result = await invoke(metadata, "uui.session.terminate", {
         sessionId: metadata.sessionId,

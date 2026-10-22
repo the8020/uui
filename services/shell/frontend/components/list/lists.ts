@@ -26,7 +26,8 @@ import { getPath, paginationItems } from "../../model.ts";
 export interface ListCallbacks extends ListToolCallbacks {
   elements(elements: ScreenElement[]): HTMLElement[];
   request(updates: ListRequest[]): boolean;
-  select(selection: ListSelection): void;
+  /** `activate` chooses the row decisively (double-click or Enter). */
+  select(selection: ListSelection, activate?: boolean): void;
 }
 
 const pageSizes = browserPageSizes();
@@ -167,6 +168,9 @@ class ListController {
   #drag: AbortController | undefined;
   #filterFocus: { start: number | null; end: number | null } | undefined;
   #toolbar: ResponsiveProgramHeader | undefined;
+  /** Row property marking the chosen row of a single-value selection. */
+  #highlight: string | undefined;
+  #pendingSelect: ReturnType<typeof setTimeout> | undefined;
 
   constructor(readonly schedule: () => void) {
     this.host.className = "data-list-container";
@@ -183,6 +187,14 @@ class ListController {
   ): HTMLElement {
     this.capture();
     this.#drag?.abort();
+    clearTimeout(this.#pendingSelect);
+    // A single-value selection highlights its row instead of checkboxes.
+    this.#highlight = snapshot.selection?.mode === "single"
+      ? snapshot.selection.bind
+      : undefined;
+    if (this.#highlight !== undefined) {
+      snapshot = { ...snapshot, selection: undefined };
+    }
     if (
       this.#snapshot &&
       (JSON.stringify(this.#snapshot.state.query) !==
@@ -317,8 +329,7 @@ class ListController {
       const checkbox = document.createElement("input");
       checkbox.type = "checkbox";
       checkbox.id = `${this.#prefix}-select-all`;
-      checkbox.checked = snapshot.totalSourceItems > 0 &&
-        snapshot.selection.selectedItems === snapshot.totalSourceItems;
+      checkbox.checked = allChecked(snapshot);
       checkbox.indeterminate = snapshot.selection.selectedItems > 0 &&
         !checkbox.checked;
       checkbox.disabled = snapshot.totalSourceItems === 0;
@@ -337,8 +348,7 @@ class ListController {
           operation: "selection",
           selected: checkbox.checked,
         }]);
-        checkbox.checked = snapshot.totalSourceItems > 0 &&
-          snapshot.selection!.selectedItems === snapshot.totalSourceItems;
+        checkbox.checked = allChecked(snapshot);
         checkbox.indeterminate = snapshot.selection!.selectedItems > 0 &&
           !checkbox.checked;
       });
@@ -423,18 +433,43 @@ class ListController {
       const row = body.insertRow();
       row.tabIndex = 0;
       row.dataset.rowIndex = String(index);
-      const select = () =>
-        callbacks.select({
+      const select = (activate = false) =>
+        callbacks.select({ id: snapshot.id, index }, activate);
+      const position = (snapshot.state.page - 1) * snapshot.state.pageSize +
+        index;
+      // Rows of a key selection toggle; their checkbox cell handles itself.
+      const toggle = () =>
+        callbacks.request([{
           id: snapshot.id,
-          index,
-        });
-      row.addEventListener("click", select);
+          operation: "selection",
+          selected: getPath(item, snapshot.selection!.bind) !== true,
+          range: { from: position, to: position },
+        }]);
+      const toggles = snapshot.selection?.mode === "multiple";
+      if (
+        this.#highlight !== undefined &&
+        getPath(item, this.#highlight) === true
+      ) {
+        row.classList.add("is-selected");
+        row.setAttribute("aria-selected", "true");
+      }
+      row.addEventListener("click", (event) => {
+        if (toggles) {
+          toggle();
+        } else if (this.#highlight !== undefined) {
+          // Wait briefly so a double-click activates instead of selecting.
+          clearTimeout(this.#pendingSelect);
+          if (event.detail >= 2) select(true);
+          else this.#pendingSelect = setTimeout(() => select(), 250);
+        } else select();
+      });
       row.addEventListener("keydown", (event) => {
         if (
           event.target === row && (event.key === "Enter" || event.key === " ")
         ) {
           event.preventDefault();
-          select();
+          if (toggles) toggle();
+          else select(this.#highlight !== undefined && event.key === "Enter");
         }
       });
       if (snapshot.selection) this.selectionCell(row, item, index);
@@ -466,6 +501,10 @@ class ListController {
     this.#pagination = this.pagination();
     this.host.append(viewport, this.#pagination);
     this.#rendering = false;
+    // The shell gives a new modal's first focus to this search.
+    if (snapshot.focusSearch && state.toolbarOpen) {
+      search.dataset.autofocus = "true";
+    }
     return this.host;
   }
 
@@ -997,4 +1036,11 @@ class ListController {
     disposeOverflowText(this.host);
     this.host.remove();
   }
+}
+
+/** Header checkbox: a key selection knows whether all matches are selected. */
+function allChecked(snapshot: ScreenListSnapshot): boolean {
+  return snapshot.selection?.allSelected ??
+    (snapshot.totalSourceItems > 0 &&
+      snapshot.selection!.selectedItems === snapshot.totalSourceItems);
 }

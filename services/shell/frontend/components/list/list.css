@@ -403,6 +403,13 @@
   color: var(--primary);
 }
 
+/* The chosen row of a single-value selection. */
+.data-list tbody tr.is-selected {
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+  font-weight: 600;
+}
+
 .data-list-dialog .data-list-icon-button {
   border: 0;
   background: transparent;

@@ -54,6 +54,8 @@ import {
   renderIconText,
 } from "./icon_text.ts";
 import { MessageCenter } from "./message_center.ts";
+import { followModalDialogs } from "./modal_messages.ts";
+import { SummaryBar } from "./summary_bar.ts";
 import { parseMessage, parseMessageHistory } from "../../../messages.ts";
 import { mergeServerModel, PresentationHistory } from "./presentation.ts";
 import { windowTitleForHeading } from "./window_title.ts";
@@ -87,6 +89,8 @@ interface PresentationLayer {
   focus?: FocusState;
   viewState: ScreenState;
   readonly lists: ListRenderer;
+  /** A modal's compact bar for its `summary` field group. */
+  summary?: SummaryBar;
 }
 
 interface BootData {
@@ -421,6 +425,8 @@ const messageCenter = new MessageCenter({
   closeButton: messageDialogClose,
   dismissAllButton: messageToastDismissAll,
 });
+// Toasts stay visible above open modal dialogs.
+followModalDialogs(messageToastStack);
 addEventListener("pagehide", () => {
   closeNativeDownloads();
   closeChannels("Page closed");
@@ -1272,7 +1278,8 @@ function renderLayer(layer: PresentationLayer): void {
     {
       elements: (elements) => renderElements(elements, layer.model, callbacks),
       request: (updates) => requestLists(layer, updates),
-      select: (selection) => selectListRow(layer, selection),
+      select: (selection, activate) =>
+        selectListRow(layer, selection, activate),
       read: (read, signal) => {
         return listRequest(layer, "read", read, read.id, signal).then((value) =>
           validListDataPage(value, read)
@@ -1315,6 +1322,10 @@ function renderLayer(layer: PresentationLayer): void {
   }
   if (layer.kind === "modal") {
     layer.headerRoot!.replaceChildren(...layer.headerItems);
+    if (layer.root.querySelector('[data-summary="true"]') !== null) {
+      layer.summary ??= new SummaryBar(layer.root);
+    }
+    layer.summary?.update();
     const heading = layer.root.querySelector<HTMLElement>(".screen-title");
     if (heading !== null) {
       heading.id = `presentation-title-${layer.surfaceId}`;
@@ -1354,6 +1365,7 @@ function disposeLayer(surfaceId: string): void {
   for (const item of layer.headerItems) disposeFieldMessages(item);
   layer.lists.dispose();
   layer.customElements.dispose();
+  layer.summary?.dispose();
   layer.shell.remove();
   layers.delete(surfaceId);
   if (globalHeaderSurfaceID === surfaceId) globalHeaderSurfaceID = undefined;
@@ -1426,12 +1438,13 @@ function requestLists(
 function selectListRow(
   layer: PresentationLayer,
   selection: ListSelection,
+  activate = false,
 ): void {
   if (!layerIsActive(layer)) return;
   sendInteraction(layer, {
     type: "screen.event",
     action: "select",
-    eventType: "select",
+    eventType: activate ? "activate" : "select",
     selection,
     changes: changesForBindings(layer.model, layer.dirty.bindings()),
   });
@@ -1761,7 +1774,9 @@ function restoreFocus(layer: PresentationLayer): void {
     );
   }
   if (target === undefined && layer.kind === "modal") {
-    target = focusableControls([layer.root, layer.headerRoot!])[0] ??
+    // An element asking for the first focus (a value help's search) wins.
+    target = layer.root.querySelector<HTMLElement>("[data-autofocus]") ??
+      focusableControls([layer.root, layer.headerRoot!])[0] ??
       layer.root.querySelector<HTMLElement>(".screen-title") ?? undefined;
   }
   if (target === undefined) return;

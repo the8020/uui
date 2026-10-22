@@ -22,6 +22,7 @@ import {
   fieldMetadata,
 } from "./fields.ts";
 import { field as sharedField, money } from "/p/the8020/db/fields.ts";
+import { CONFIRM_CLASS, confirmAction } from "./confirm.ts";
 import {
   applyLayoutOverride,
   type LayoutDocument,
@@ -1697,6 +1698,80 @@ function page(
   });
 }
 
+Deno.test({
+  name: "confirmations share one compact modal and answer only on confirm",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    const test = new TestChannel();
+    const unbind = bindSession(test);
+    try {
+      const root = callScreen({
+        id: "root",
+        schema: z.object({}),
+        model: new Model({}),
+      });
+      // A failed assertion ends the session; keep that from masking it.
+      root.catch(() => {});
+      await flushMicrotasks();
+      const ask = () =>
+        confirmAction({
+          id: "role-delete",
+          title: "Delete role",
+          message: "Role **sales** will be deleted.",
+          confirm: "Delete role",
+          cancel: "Keep role",
+        });
+      let answer = ask();
+      await flushMicrotasks();
+      let shown = lastPresentation(test);
+      const screen = topScreen(shown);
+      assertEquals(surfaceSummary(shown), [
+        ["surface-1", "page", "root"],
+        ["surface-2", "modal", "role-delete"],
+      ]);
+      assertEquals(
+        [screen.title, screen.description, screen.class],
+        ["Delete role", "Role **sales** will be deleted.", CONFIRM_CLASS],
+      );
+      assertEquals(
+        screen.header.actions.map((
+          action,
+        ) => [action.id, action.label, action.kind]),
+        [["confirm", "Delete role", "danger"], [
+          "cancel",
+          "Keep role",
+          undefined,
+        ]],
+      );
+      test.push(eventFor(shown, "confirm", 1));
+      assertEquals(await answer, true);
+
+      for (
+        const [action, sequence] of [["cancel", 2], [BACK_EVENT, 3]] as const
+      ) {
+        answer = ask();
+        await flushMicrotasks();
+        shown = lastPresentation(test);
+        test.push(
+          eventFor(
+            shown,
+            action,
+            sequence,
+            action === BACK_EVENT ? BACK_EVENT : "action",
+          ),
+        );
+        assertEquals(await answer, false);
+      }
+      await flushMicrotasks();
+      test.push(eventFor(lastPresentation(test), "done", 4));
+      assertEquals((await root).action, "done");
+    } finally {
+      unbind();
+    }
+  },
+});
+
 function presentation(value: unknown): PresentationShow {
   const message = value as PresentationShow;
   if (message.type !== "presentation.show") {
@@ -1858,7 +1933,7 @@ Deno.test("field help drafts, cancels, commits, and pages searchable choices thr
     }]);
     assertEquals(
       topScreen(lastPresentation(test)).state.elements.choices?.toolbarOpen,
-      false,
+      true,
     );
     await assertRejects(
       () => callScreen({ id: "concurrent", schema, model }),
@@ -1881,6 +1956,7 @@ Deno.test("field help drafts, cancels, commits, and pages searchable choices thr
       username: "user7",
       rank: 7,
       enabled: false,
+      __uuiSelected: false,
     });
     await request({
       operation: "query",
@@ -1894,6 +1970,7 @@ Deno.test("field help drafts, cancels, commits, and pages searchable choices thr
       username: "user2000",
       rank: 2000,
       enabled: true,
+      __uuiSelected: false,
     });
     assertEquals(
       topScreen(lastPresentation(test)).lists[0]!.totalSourceItems,
@@ -1982,6 +2059,246 @@ Deno.test("field help drafts, cancels, commits, and pages searchable choices thr
   }
 });
 
+Deno.test("field help selects several values by key, all matches within a limit, and keeps written values", async () => {
+  const test = new TestChannel();
+  const unbind = bindSession(test);
+  const codes = Array.from({ length: 30 }, (_, index) => `C${index}`);
+  const help = (request: ValueHelpRequest) =>
+    queryValueHelp(
+      z.object({
+        code: field(z.string(), { label: "Code" }),
+        name: field(z.string(), { label: "Name" }),
+      }),
+      [
+        { code: "a-b", name: "Hyphen" },
+        ...codes.map((code) => ({
+          code,
+          name: `Country ${code}`,
+        })),
+      ],
+      request,
+    );
+  const values = field(z.string(), {
+    label: "Allowed values",
+    valueHelp: help,
+    multiple: { separator: ",", escape: "-*?!" },
+  });
+  const roles = z.array(field(z.string(), { label: "Role", valueHelp: help }))
+    .max(3);
+  const schema = z.object({ values, roles });
+  const model = new Model({ values: "C1,7500-7599,!C2", roles: ["C1"] });
+  let sequence = 0;
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const open = async (bind: string) => {
+    const shown = lastPresentation(test);
+    const control = topScreen(shown).controls.find((item) =>
+      item.bind === bind
+    )!;
+    test.push({
+      ...eventFor(shown, "field-help", ++sequence, "field-help"),
+      controlId: control.id,
+      bind,
+    });
+    await settle();
+  };
+  const update = async (updates: Record<string, unknown>[], changes = []) => {
+    const shown = lastPresentation(test), list = topScreen(shown).lists[0]!;
+    test.push(listInput({
+      ...eventFor(shown, "", ++sequence),
+      changes,
+      updates: updates.map((item) => ({ id: list.id, ...item })),
+    }));
+    await settle();
+    await settle();
+  };
+  const list = () => topScreen(lastPresentation(test)).lists[0]!;
+  const value = () =>
+    topScreen(lastPresentation(test)).model as { value: unknown };
+  try {
+    const pending = callScreen({ id: "multi-owner", schema, model });
+    void pending.catch(() => {});
+    const owner = topScreen(lastPresentation(test));
+    assertEquals(
+      owner.controls.map((item) => [item.bind, item.control, item.multiple]),
+      [
+        ["roles", "tags", { maximum: 3 }],
+        ["values", "tags", { separator: ",", escape: "-*?!" }],
+      ],
+    );
+
+    // Separated text: written literals are selected, grammar stays as written.
+    await open("values");
+    await update([{ operation: "capacity", pageSize: 40 }]);
+    assertEquals(list().selection?.mode, "multiple");
+    assertEquals(
+      topScreen(lastPresentation(test)).state.elements.choices?.toolbarOpen,
+      true,
+    );
+    assertEquals(list().focusSearch, true);
+    assertEquals(
+      list().rows.slice(0, 3).map((row) => [
+        (row as { code: string }).code,
+        (row as { __uuiSelected: boolean }).__uuiSelected,
+      ]),
+      [["a-b", false], ["C0", false], ["C1", true]],
+    );
+    await update([{
+      operation: "selection",
+      selected: true,
+      range: { from: 0, to: 0 },
+    }]);
+    assertEquals(value().value, "C1,7500-7599,!C2,a\\-b");
+    await update([{
+      operation: "selection",
+      selected: false,
+      range: { from: 2, to: 2 },
+    }]);
+    assertEquals(value().value, "7500-7599,!C2,a\\-b");
+
+    // Select all matching loads every match, within the chosen limit.
+    await update([{
+      operation: "query",
+      query: { search: "Country C2", filters: {}, sort: null },
+    }]);
+    await update([{ operation: "selection", selected: true }]);
+    assertEquals(
+      value().value,
+      "7500-7599,!C2,a\\-b,C2,C20,C21,C22,C23,C24,C25,C26,C27,C28,C29",
+    );
+    assertEquals(list().selection?.allSelected, true);
+    await update([{
+      operation: "query",
+      query: { search: "", filters: {}, sort: null },
+    }]);
+    assertEquals(list().selection?.allSelected, false);
+    // More matches than the limit: nothing is selected.
+    await update(
+      [{ operation: "capacity", pageSize: 40 }],
+      [{ bind: "limit", value: 5 }] as never,
+    );
+    const before = value().value;
+    await update([{ operation: "selection", selected: true }]);
+    assertEquals(value().value, before, "a refused select-all changes nothing");
+    assertEquals(
+      JSON.stringify(test.sent).includes("matches more than 5 values"),
+      true,
+    );
+
+    test.push(eventFor(lastPresentation(test), "done", ++sequence));
+    await settle();
+    assertEquals(model.data.values, before);
+
+    // An array: values are its elements, bounded by the schema maximum.
+    await open("roles");
+    await update([{ operation: "capacity", pageSize: 40 }]);
+    await update([{
+      operation: "selection",
+      selected: true,
+      range: { from: 0, to: 1 },
+    }]);
+    assertEquals(value().value, ["C1", "a-b", "C0"]);
+    await update([{
+      operation: "selection",
+      selected: true,
+      range: { from: 3, to: 3 },
+    }]);
+    assertEquals(
+      value().value,
+      ["C1", "a-b", "C0"],
+      "the maximum refuses more",
+    );
+    test.push(
+      eventFor(lastPresentation(test), BACK_EVENT, ++sequence, BACK_EVENT),
+    );
+    await settle();
+    assertEquals(model.data.roles, ["C1"], "closing discards the draft");
+    test.push(eventFor(lastPresentation(test), "save", ++sequence));
+    await pending;
+  } finally {
+    unbind();
+  }
+});
+
+Deno.test("back always leaves a screen and discards invalid drafts", async () => {
+  const test = new TestChannel();
+  const unbind = bindSession(test);
+  const model = new Model({ code: "SK" });
+  try {
+    const pending = callScreen({
+      id: "draft-owner",
+      schema: z.object({ code: z.string().min(1) }),
+      model,
+    });
+    test.push({
+      ...eventFor(lastPresentation(test), BACK_EVENT, 1, BACK_EVENT),
+      changes: [{ bind: "code", value: "" }],
+    });
+    assertEquals((await pending).action, BACK_EVENT);
+    assertEquals(model.data.code, "SK");
+  } finally {
+    unbind();
+  }
+});
+
+Deno.test("single-value field help highlights the value and finishes on activate", async () => {
+  const test = new TestChannel();
+  const unbind = bindSession(test);
+  const country = field(z.string(), {
+    label: "Country",
+    valueHelp: (request) =>
+      queryValueHelp(
+        z.object({ code: field(z.string(), { label: "Code" }) }),
+        [{ code: "CZ" }, { code: "SK" }],
+        request,
+      ),
+  });
+  const model = new Model({ country: "CZ" });
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+  try {
+    const pending = callScreen({
+      id: "single-owner",
+      schema: z.object({ country }),
+      model,
+    });
+    void pending.catch(() => {});
+    let shown = lastPresentation(test);
+    test.push({
+      ...eventFor(shown, "field-help", 1, "field-help"),
+      controlId: topScreen(shown).controls[0]!.id,
+      bind: "country",
+    });
+    await settle();
+    shown = lastPresentation(test);
+    test.push(listInput({
+      ...eventFor(shown, "", 2),
+      updates: [{
+        id: topScreen(shown).lists[0]!.id,
+        operation: "capacity",
+        pageSize: 10,
+      }],
+    }));
+    await settle();
+    shown = lastPresentation(test);
+    const list = topScreen(shown).lists[0]!;
+    assertEquals(list.selection?.mode, "single");
+    assertEquals(
+      list.rows.map((row) => (row as { __uuiSelected: boolean }).__uuiSelected),
+      [true, false],
+    );
+    test.push({
+      ...eventFor(shown, "select", 3, "activate"),
+      selection: { id: list.id, index: 1 },
+    });
+    await settle();
+    assertEquals(model.data.country, "SK");
+    assertEquals(topScreen(lastPresentation(test)).id, "single-owner");
+    test.push(eventFor(lastPresentation(test), "save", 4));
+    await pending;
+  } finally {
+    unbind();
+  }
+});
+
 Deno.test("enum field help exposes searchable options and commits only on Done", async () => {
   const test = new TestChannel();
   const unbind = bindSession(test);
@@ -1999,7 +2316,12 @@ Deno.test("enum field help exposes searchable options and commits only on Done",
     });
     await flushMicrotasks();
     const help = lastPresentation(test), list = topScreen(help).lists[0]!;
-    assertEquals(list.rows, [{ value: "red", label: "Red" }]);
+    // The current value is highlighted.
+    assertEquals(list.rows, [{
+      value: "red",
+      label: "Red",
+      __uuiSelected: true,
+    }]);
     test.push(listInput({
       ...eventFor(help, "", 2),
       updates: [{
@@ -2012,6 +2334,7 @@ Deno.test("enum field help exposes searchable options and commits only on Done",
     assertEquals(topScreen(lastPresentation(test)).lists[0]!.rows, [{
       value: "blue",
       label: "Blue",
+      __uuiSelected: false,
     }]);
     test.push(eventFor(lastPresentation(test), BACK_EVENT, 3, BACK_EVENT));
     await flushMicrotasks();

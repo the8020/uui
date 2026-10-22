@@ -60,10 +60,31 @@ export type ListSource = (request: {
   offset: number;
   limit: number;
 }) => ListSourcePage | Promise<ListSourcePage>;
+/**
+ * A selection kept by its owner, by row key, across a provider's pages and
+ * queries. The list shows it; the owner decides what each row means.
+ */
+export interface ListSourceSelection {
+  mode: "single" | "multiple";
+  isSelected(row: unknown): boolean;
+  count(): number;
+  /** Refuse a toggle before anything is applied, e.g. above a maximum. */
+  validate?(rows: readonly unknown[], selected: boolean): void;
+  /** Apply a toggle of rows the list already read. */
+  set(rows: readonly unknown[], selected: boolean): void;
+  /** Every row matching the query, for the header checkbox; may refuse. */
+  matching?(query: ListQuery, signal: AbortSignal): Promise<readonly unknown[]>;
+  allSelected?(query: ListQuery): boolean;
+}
+
+/** Row property carrying a provider selection to the browser. */
+export const SOURCE_SELECTED = "__uuiSelected";
+
 interface SourceEntry {
   read: ListSource;
   lifetime: AbortController;
   searchOnly?: boolean;
+  selection?: ListSourceSelection;
   result: ListSourcePage;
 }
 const listSources = new WeakMap<Model<object>, Map<string, SourceEntry>>();
@@ -73,11 +94,14 @@ export function setListSource(
   model: Model<object>,
   id: string,
   source: ListSource,
-  options: { searchOnly?: boolean } = {},
+  options: { searchOnly?: boolean; selection?: ListSourceSelection } = {},
 ): () => void {
   if (
     typeof source !== "function" || !id.length ||
-    options.searchOnly !== undefined && typeof options.searchOnly !== "boolean"
+    options.searchOnly !== undefined &&
+      typeof options.searchOnly !== "boolean" ||
+    options.selection !== undefined &&
+      !["single", "multiple"].includes(options.selection.mode)
   ) throw new TypeError("Invalid list source");
   let sources = listSources.get(model);
   if (!sources) listSources.set(model, sources = new Map());
@@ -190,6 +214,11 @@ export class ScreenLists {
           ),
       });
       const element = screenElement(this.#screen, declaration.id);
+      // A new list that searches first opens its tools once; later the
+      // user's choice is kept.
+      if (declaration.focusSearch && element.list === undefined) {
+        element.toolbarOpen = true;
+      }
       element.list ??= initialListState();
       // Dynamic schemas can remove columns; retire their filters and sort.
       element.list.query = normalizeQuery(element.list.query, columns, false);
@@ -259,7 +288,14 @@ export class ScreenLists {
         id: definition.id,
         bind: definition.bind,
         columns: definition.columns,
-        rows: structuredClone(indices.map((index) => source[index])),
+        rows: structuredClone(
+          indices.map((index) =>
+            provider?.selection === undefined ? source[index] : {
+              ...(source[index] as object),
+              [SOURCE_SELECTED]: provider.selection.isSelected(source[index]),
+            }
+          ),
+        ),
         state: structuredClone(state),
         totalItems,
         totalSourceItems: provider === undefined
@@ -275,14 +311,28 @@ export class ScreenLists {
         totalPages,
         filtered,
         triggerFilterEvents: definition.triggerFilterEvents ?? false,
-        ...(definition.selection === undefined ? {} : {
-          selection: {
-            bind: definition.selection,
-            selectedItems: source.filter((row) =>
-              getPath(row, definition.selection!) === true
-            ).length,
-          },
-        }),
+        ...(definition.focusSearch ? { focusSearch: true } : {}),
+        ...(provider?.selection !== undefined
+          ? {
+            selection: {
+              bind: SOURCE_SELECTED,
+              selectedItems: provider.selection.count(),
+              mode: provider.selection.mode,
+              ...(provider.selection.allSelected === undefined ? {} : {
+                allSelected: provider.selection.allSelected(state.query),
+              }),
+            },
+          }
+          : definition.selection === undefined
+          ? {}
+          : {
+            selection: {
+              bind: definition.selection,
+              selectedItems: source.filter((row) =>
+                getPath(row, definition.selection!) === true
+              ).length,
+            },
+          }),
         readable: true,
       };
       this.#views.set(definition.id, {
@@ -350,6 +400,35 @@ export class ScreenLists {
       const event = this.update(request, state);
       if (event) events.push(event);
     }
+    // Keyed provider selections: rows are read now, applied on commit.
+    const selections: {
+      selection: ListSourceSelection;
+      rows: readonly unknown[];
+      selected: boolean;
+    }[] = [];
+    for (const request of requests) {
+      if (request.operation !== "selection") continue;
+      const source = this.source(request.id);
+      if (source?.selection === undefined) continue;
+      const view = this.view(request.id);
+      const rows = request.range !== undefined
+        ? view.allIndices.slice(
+          Math.min(request.range.from, request.range.to),
+          Math.max(request.range.from, request.range.to) + 1,
+        ).map((index) => view.source[index])
+        : source.selection.matching === undefined
+        ? view.source
+        : await source.selection.matching(
+          structuredClone(states.get(request.id)!.query),
+          AbortSignal.any([signal, source.lifetime.signal]),
+        );
+      source.selection.validate?.(rows, request.selected);
+      selections.push({
+        selection: source.selection,
+        rows,
+        selected: request.selected,
+      });
+    }
     for (const [id, state] of states) {
       const source = this.source(id);
       if (!source) continue;
@@ -387,6 +466,9 @@ export class ScreenLists {
         for (const [id, state] of states) Object.assign(this.state(id), state);
         for (const result of results.values()) {
           result.source.result = result.page;
+        }
+        for (const item of selections) {
+          item.selection.set(item.rows, item.selected);
         }
       },
     };
@@ -539,8 +621,10 @@ export class ScreenLists {
           request.pageSize > MAX_LIST_PAGE_SIZE
         ) throw new TypeError("invalid list capacity");
       } else if (request.operation === "selection") {
+        const keyed = this.source(request.id)?.selection;
         if (
-          this.#definitions.get(request.id)!.selection === undefined ||
+          this.#definitions.get(request.id)!.selection === undefined &&
+            keyed?.mode !== "multiple" ||
           typeof request.selected !== "boolean" ||
           request.range !== undefined &&
             [request.range.from, request.range.to].some((index) =>
@@ -634,6 +718,8 @@ export class ScreenLists {
     const changed = new Set<string>();
     for (const request of requests) {
       if (request.operation !== "selection") continue;
+      // Provider selections belong to their owner, applied in prepareUpdates.
+      if (this.source(request.id)?.selection) continue;
       const view = this.view(request.id);
       const definition = this.#definitions.get(request.id)!;
       const rows = getPath(candidate, definition.bind) as unknown[];

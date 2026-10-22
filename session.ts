@@ -84,7 +84,13 @@ interface ScreenEventBase {
   action: string;
   controlId?: string;
   bind?: string;
-  eventType: "action" | "change" | "select" | typeof BACK_EVENT | "exit";
+  eventType:
+    | "action"
+    | "change"
+    | "select"
+    | "activate"
+    | typeof BACK_EVENT
+    | "exit";
   value?: unknown;
 }
 
@@ -1631,14 +1637,19 @@ function receiveScreenMessage<T extends z.ZodRawShape>(
     if (message.selection !== undefined) {
       selection = lists.select(message.selection);
     }
-    applyChanges(
-      schema,
-      model.data,
-      message.changes,
-      lists,
-      message.listChanges ?? [],
-      controls,
-    );
+    try {
+      applyChanges(
+        schema,
+        model.data,
+        message.changes,
+        lists,
+        message.listChanges ?? [],
+        controls,
+      );
+    } catch (error) {
+      // Back always leaves: invalid drafts are discarded, not reported.
+      if (message.action !== BACK_EVENT) throw error;
+    }
     mergeScreenUpdate(message.screenState, model);
     call.surface.snapshot = call.snapshot();
   } catch (error) {

@@ -22,6 +22,7 @@ import {
   setPath,
 } from "./model.ts";
 import { renderMarkdown } from "../../../frontend/mod.ts";
+import { renderTags } from "./tags.ts";
 
 export interface RenderCallbacks {
   changed(bind: string, value: unknown, control: ControlDescriptor): void;
@@ -199,6 +200,10 @@ function renderLayout(
     region.append(title);
   } else if (node.type === "field-group" || node.type === "detail") {
     region.setAttribute("role", "group");
+  }
+  // The modal shows this group as a compact bar once it scrolls away.
+  if (node.summary && node.type === "field-group") {
+    region.dataset.summary = "true";
   }
   if (node.type === "list" && node.bind) {
     const control = byBind.get(node.bind)?.find((control) =>
@@ -498,6 +503,36 @@ function renderControlBody(
     return wrapper;
   }
   const value = getPath(model, control.bind);
+  if (control.control === "tags") {
+    const input = document.createElement("input");
+    input.type = "text";
+    input.id = `control-${control.id}`;
+    input.dataset.bind = control.bind;
+    // It types a new tag; the tags, not this input, show the bound value.
+    input.dataset.tagsInput = "true";
+    input.placeholder = control.placeholder ?? "";
+    input.setAttribute("aria-label", control.label ?? control.bind);
+    const inputShell = element("div", "field-input-shell");
+    inputShell.append(
+      renderTags(
+        input,
+        value,
+        control.multiple ?? {},
+        control.readOnly ?? false,
+        (next) => {
+          setPath(model, control.bind, next);
+          callbacks.changed(control.bind, next, control);
+        },
+      ),
+    );
+    addFieldHelp(wrapper, inputShell, control, callbacks, false);
+    wrapper.append(
+      label,
+      inputShell,
+      renderFieldMessage(control.label ?? control.id, hintFor(control)),
+    );
+    return wrapper;
+  }
   let input: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
   if (control.control === "textarea") {
     input = document.createElement("textarea");
@@ -731,6 +766,7 @@ export function synchronizeBinding(
     >("input[data-bind], textarea[data-bind], select[data-bind]")
   ) {
     if (candidate.dataset.bind !== bind) continue;
+    if (candidate.dataset.tagsInput === "true") continue;
     if (candidate instanceof HTMLInputElement && candidate.type === "radio") {
       candidate.checked = candidate.value === String(value);
     } else if (
