@@ -24,7 +24,25 @@ Deno.test("home discovers canonical visible program manifests", async () => {
         .pathname;
       await copyDirectory(source, `${root}/the8020/${repository}/programs`);
     }
-    const programs = await discoverPrograms(root);
+    const invalid = `${root}/the8020/broken/programs/no-description`;
+    await Deno.mkdir(invalid, { recursive: true });
+    await Deno.writeTextFile(`${invalid}/program.toml`, "schema = 1\n");
+    const errors: unknown[] = [];
+    const consoleError = console.error;
+    console.error = (...data: unknown[]) => errors.push(data.join(" "));
+    let programs;
+    try {
+      programs = await discoverPrograms(root);
+    } finally {
+      console.error = consoleError;
+    }
+    assertEquals(errors.length, 1);
+    assertEquals(
+      String(errors[0]).startsWith(
+        "Ignoring program the8020/broken/no-description: invalid program manifest",
+      ),
+      true,
+    );
     assertEquals(
       programs.some((item) => item.id === "the8020/demo/demo-form"),
       true,

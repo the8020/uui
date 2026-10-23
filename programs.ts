@@ -58,8 +58,15 @@ export async function discoverPrograms(
               `${programsRoot}/${program.name}/program.toml`,
             );
           } catch (error) {
-            if (error instanceof Deno.errors.NotFound) continue;
-            throw error;
+            // One package's invalid manifest must not stop the whole catalog.
+            if (!(error instanceof Deno.errors.NotFound)) {
+              console.error(
+                `Ignoring program ${namespace.name}/${repository.name}/${program.name}: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              );
+            }
+            continue;
           }
           if (!manifest.discoverable || !manifest.uui) continue;
           result.push({

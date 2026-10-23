@@ -245,10 +245,11 @@ below.
   stack, source context, and copyable dump data.
 - `program.toml` declares `uui` as an optional boolean defaulting to false. Home
   includes only programs with `uui = true` and `discoverable = true`, and
-  returns silently after invocation. Hidden helpers retain their UUI flag. The
-  program loader uses the shared `the8020/packages/programs.ts` manifest reader,
-  which validates application metadata and duplicate keys. UUI owns Home
-  filtering and invokes default exports with positional arguments.
+  returns silently after invocation. Discovery logs and skips an invalid
+  manifest, so one package cannot stop Home. Hidden helpers retain their UUI
+  flag. The program loader uses the shared `the8020/packages/programs.ts`
+  manifest reader, which validates application metadata and duplicate keys. UUI
+  owns Home filtering and invokes default exports with positional arguments.
   `the8020/admin-core/programs` owns the complete catalog and delegates custom
   execution inputs to `the8020/jobs/run-program`.
 - `ui-config.json` is the sole current UUI configuration source. It owns login,
