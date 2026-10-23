@@ -236,6 +236,72 @@ function programIDs(presentation: PresentationShow): string[] {
   return ids;
 }
 
+Deno.test("Home batches visibility and rechecks a revoked tile before launching", async () => {
+  const { authDatabase } = await import("/p/the8020/auth/src/test_support.ts");
+  const fixture = await authDatabase();
+  const admin = await import("/p/the8020/auth/src/admin.ts");
+  const users = await import("/p/the8020/users/src/admin.ts");
+  const root = await Deno.makeTempDir({ prefix: "the8020-home-permissions-" });
+  const channel = new HomeChannel();
+  const unbind = bindSession(channel);
+  try {
+    await users.add("alice");
+    await admin.createRole({
+      name: "alice",
+      description: "",
+      permissions: {
+        "example.testing.first": "*",
+        "example.testing.second": "*",
+      },
+    });
+    const packageRoot = `${root}/example/testing`;
+    await Deno.mkdir(`${packageRoot}/widgets`, { recursive: true });
+    await Deno.mkdir(`${packageRoot}/declarations`, { recursive: true });
+    await Deno.writeTextFile(
+      `${packageRoot}/declarations/auth.toml`,
+      '"example.testing.first" = "First"\n"example.testing.second" = "Second"\n',
+    );
+    for (const name of ["first", "second"]) {
+      await writeProgram(
+        root,
+        name,
+        name,
+        'export default function() { throw new Error("revoked program ran"); }',
+      );
+      await Deno.writeTextFile(
+        `${packageRoot}/widgets/${name}.toml`,
+        `schema = 1\ntitle = "${name}"\n[open]\nprogram = "example/testing/${name}"\n[visible]\npermission = "example.testing.${name}"\n`,
+      );
+    }
+    fixture.asUser("alice");
+    fixture.queries.length = 0;
+    const running = runHome(root);
+    const first = await channel.screen();
+    assertEquals(programIDs(first), [
+      "example/testing/first",
+      "example/testing/second",
+    ]);
+    assertEquals(
+      fixture.queries.length,
+      4,
+      "both actions use one role traversal",
+    );
+
+    fixture.asUser("system");
+    await admin.setPermission("alice", "example.testing.first", "!*");
+    fixture.asUser("alice");
+    channel.event(first, "select", "example/testing/first");
+    const refreshed = await channel.screen();
+    assertEquals(programIDs(refreshed), ["example/testing/second"]);
+    channel.event(refreshed, "logout");
+    await running;
+  } finally {
+    unbind();
+    fixture.close();
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
 function topSurface(presentation: PresentationShow) {
   return presentation.presentation.surfaces.at(-1)!;
 }

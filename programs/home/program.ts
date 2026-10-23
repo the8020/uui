@@ -10,7 +10,7 @@ import {
   z,
 } from "/p/the8020/uui/mod.ts";
 import { context } from "@the8020/context";
-import { permitsAny } from "/p/the8020/auth/mod.ts";
+import { permitsAny, permittedActions } from "/p/the8020/auth/mod.ts";
 import layout from "./layouts/main.json" with { type: "json" };
 import { homeCatalog, permittedTiles } from "./catalog.ts";
 import { homeTree } from "./tree.ts";
@@ -38,8 +38,10 @@ export async function runHome(programsRoot: string): Promise<void> {
     catalog ??= await homeCatalog(programsRoot);
     const current = catalog;
     // Roles may change between renders, so visibility is evaluated each time.
-    const permits = (action: string) => permitsAny(context.username, action);
-    const tiles = await permittedTiles(current, permits);
+    const tiles = await permittedTiles(
+      current,
+      (actions) => permittedActions(context.username, actions),
+    );
     const shown = new Set(tiles.map((tile) => tile.id));
     const channel = new Channel();
     // The browser asks for the tiles it shows, so no result precedes its
@@ -104,7 +106,10 @@ export async function runHome(programsRoot: string): Promise<void> {
       if (action === undefined) continue;
       // Hiding is not enforcement, but a stale tile still must not launch.
       const permission = current.visible.get(event.value);
-      if (permission !== undefined && !await permits(permission)) {
+      if (
+        permission !== undefined &&
+        !await permitsAny(context.username, permission)
+      ) {
         sendMessage("You no longer have access to this program.", "error");
         continue;
       }

@@ -26,7 +26,7 @@ Deno.test("first-party UUI services retain their capacity defaults", async () =>
   }
 
   for (const manifest of [login, shell]) {
-    assertEquals(setting(manifest, "scaling", "minimum_workers"), "0");
+    assertEquals(setting(manifest, "scaling", "minimum_workers"), "1");
     assertEquals(setting(manifest, "scaling", "maximum_workers"), "128");
     assertEquals(setting(manifest, "scaling", "concurrency_per_worker"), "16");
     assertEquals(setting(manifest, "scaling", "target_utilization"), "0.70");

@@ -10,6 +10,7 @@ Parent DOX: [uui/services DOX](../AGENTS.md).
 
 # Local Contracts
 
+- The manifest keeps one Worker warm by default to avoid idle cold starts.
 - Call the users package explicitly; passwords and authentication cookies never
   enter UUI boot data or messages.
 - Read the HTML template per response and serve supported frontend assets

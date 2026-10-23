@@ -170,20 +170,20 @@ Deno.test("Home tiles need a declared visibility permission and platform tiles a
       true,
     );
 
-    const asked: string[] = [];
-    const tiles = await permittedTiles(catalog, (action) => {
-      asked.push(action);
-      return Promise.resolve(action === "acme.orders.order.view");
+    const asked: string[][] = [];
+    const tiles = await permittedTiles(catalog, (actions) => {
+      asked.push(actions);
+      return Promise.resolve(new Set(["acme.orders.order.view"]));
     });
     assertEquals(tiles.map((tile) => tile.id).sort(), [
       "acme/orders/open",
       "acme/orders/orders",
       "the8020/users/plain",
     ]);
-    assertEquals(asked.sort(), [
+    assertEquals(asked, [[
       "acme.orders.order.view",
       "the8020.users.user.view",
-    ]);
+    ]]);
 
     // An unreadable widget suppresses its package's default tiles.
     await write(root, "acme/orders/widgets/open.toml", "schema = 1\n");

@@ -177,21 +177,17 @@ async function manifest(root: string, id: string) {
 
 /**
  * Tiles the user may see: public ones, and those whose action some role grants
- * for any value. Each distinct action is evaluated once, without auditing.
+ * for any value. All distinct actions are evaluated in one unaudited batch.
  */
 export async function permittedTiles(
   catalog: Pick<HomeCatalog, "tiles" | "visible">,
-  permits: (action: string) => Promise<boolean>,
+  permits: (actions: string[]) => Promise<ReadonlySet<string>>,
 ): Promise<HomeTile[]> {
-  const granted = new Map(
-    await Promise.all(
-      [...new Set(catalog.visible.values())].map(async (action) =>
-        [action, await permits(action)] as const
-      ),
-    ),
-  );
+  const granted = catalog.visible.size === 0
+    ? new Set<string>()
+    : await permits([...new Set(catalog.visible.values())]);
   return catalog.tiles.filter((tile) => {
     const action = catalog.visible.get(tile.id);
-    return action === undefined || granted.get(action) === true;
+    return action === undefined || granted.has(action);
   });
 }

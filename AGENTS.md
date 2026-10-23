@@ -239,9 +239,10 @@ below.
   `packages/the8020/uui`; login, shell, and session are ordinary default-enabled
   services.
 - `the8020/uui/home` and `the8020/uui/program-terminated` are hidden ordinary
-  programs selected by package-local `ui-config.json`. Home rescans the mounted
-  package tree before each render and on Refresh; Program terminated defensively
-  presents bounded exception, stack, source context, and copyable dump data.
+  programs selected by package-local `ui-config.json`. Home keeps its catalog
+  for the session and rebuilds it on Refresh, batching fresh permission checks
+  on each render; Program terminated defensively presents bounded exception,
+  stack, source context, and copyable dump data.
 - `program.toml` declares `uui` as an optional boolean defaulting to false. Home
   includes only programs with `uui = true` and `discoverable = true`, and
   returns silently after invocation. Hidden helpers retain their UUI flag. The
@@ -353,7 +354,8 @@ below.
   Session lists page 200 rows at a time; selected refreshes query the exact row.
   The main detail shows user/activity, Advanced owns execution references and
   message logs, and ending a live session requires confirmation.
-- Login, shell, and session declare zero minimum sandboxes and Workers. Login
+- Login and shell each keep one Worker warm by default; session retains zero
+  minimum Workers. All three declare zero additional minimum sandboxes. Login
   and shell share sandbox group `uui`, permit 128 Workers at 64 per sandbox, use
   concurrency 16, target 70% utilization, and retain idle Workers for two
   minutes. The session service also uses group `uui`, has an unbounded zero

@@ -16,7 +16,7 @@ service_type = "stateless"
 session_keep_alive = "10m"
 
 [scaling]
-minimum_workers = 0
+minimum_workers = 1
 maximum_workers = 128
 concurrency_per_worker = 16
 target_utilization = 0.70

@@ -20,6 +20,7 @@ Parent DOX: [uui/services DOX](../AGENTS.md).
 
 # Local Contracts
 
+- The manifest keeps one Worker warm by default to avoid idle cold starts.
 - Authenticated `GET /preferences` resolves only `meta.user.username` through
   the shared UUI preferences API and returns `no-store` JSON. Boot data supplies
   its canonical URL; the browser reads it on presentation updates.
