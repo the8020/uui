@@ -258,6 +258,16 @@ Deno.test("field catalog infers controls and keeps id separate from shared bind"
   assertEquals(controls.map((item) => item.bind), ["email", "email"]);
   assertEquals(controls.map((item) => item.length), ["short", "long"]);
   assertEquals(controls.map((item) => item.rowSpan), [1, 1]);
+  assertEquals(
+    buildControls(buildFieldCatalog(z.object({
+      output: field(z.string(), { length: "full" }),
+    })))[0]?.length,
+    "full",
+  );
+  assertEquals(
+    buildControls(fields, [{ bind: "email", length: "full" }])[0]?.length,
+    "full",
+  );
   assertThrows(
     () =>
       buildControls(fields, [

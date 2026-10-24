@@ -57,6 +57,22 @@ Deno.test("lists use shared structure field names and Zod value types", () => {
   );
 });
 
+Deno.test("full-width fields infer long list columns and retain column overrides", () => {
+  const schema = z.object({
+    rows: z.array(z.object({ output: field(z.string(), { length: "full" }) })),
+  });
+  const model = new Model({ rows: [{ output: "Result" }] });
+  for (const length of [undefined, "short"] as const) {
+    const controls = buildControls(buildFieldCatalog(schema), [{
+      bind: "rows",
+      list: { columnOptions: { output: { length } } },
+    }]);
+    const lists = new ScreenLists(schema, controls, undefined, model.screen);
+    const list = Object.values(lists.present(model.data))[0]!;
+    assertEquals(list.columns[0]!.length, length ?? "long");
+  }
+});
+
 function fixture(duplicate = false, triggerFilterEvents = false) {
   const data = {
     rows: Array.from(

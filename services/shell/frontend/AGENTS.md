@@ -221,6 +221,9 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
   ordinary inputs, and multiline textareas end at the corresponding ordinary
   row's underline. Native inline baselines must not add control-shell height.
   Radio options scroll inside the declared height when needed.
+- `length: "full"` spans every column in the enclosing field grid at all
+  breakpoints. It starts after preceding occupied rows and retains its declared
+  `rowSpan`; following fields never share its reserved rows.
 - Decimal fields use text inputs with decimal input mode and retain exact
   strings. Decimal list comparisons share the exact server comparator and
   numeric filter guidance.
@@ -275,6 +278,8 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
 
 - Run UUI `deno task check` and `deno task test`, and rebuild with
   `services/shell/build.sh` for browser-source changes.
+- `test:presentation-browser --field-geometry` checks row heights and full-width
+  fields at desktop, tablet, and mobile sizes.
 - `test:presentation-browser` checks notification hit testing and user-menu
   mouse/keyboard access above nested modals, Messages, and their backdrops,
   including theme changes and desktop/mobile positioning.

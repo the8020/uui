@@ -943,13 +943,16 @@ below.
   vertical-gap token, so the H1-to-first-card distance exactly matches the
   distance between subsequent cards; horizontal card gutters remain `16px`. Only
   section H1s may separate card regions. Group-local responsive grid planning
-  honors `short`, `medium`, and `long` field lengths via container breakpoints,
-  preserves source order, distributes unused row width in canonical grid units,
-  and restricts long and medium field starts to half-row and quarter-row
-  boundaries respectively. Bounded field row spans reserve their complete grid
-  rectangle at every breakpoint; later fields use only legal space at or after
-  their source-order position, leaving holes instead of backfilling. All fields
-  use one exact row metric shared by sibling groups, including groups containing
+  honors `short`, `medium`, `long`, and `full` field lengths via container
+  breakpoints, preserves source order, distributes unused row width in canonical
+  grid units, and restricts long and medium field starts to half-row and
+  quarter-row boundaries respectively. `full` reserves the entire enclosing
+  field grid width at every breakpoint, including for custom fields and control
+  overrides. List columns infer `long` from a `full` field unless column options
+  override it. Bounded field row spans reserve their complete grid rectangle at
+  every breakpoint; later fields use only legal space at or after their
+  source-order position, leaving holes instead of backfilling. All fields use
+  one exact row metric shared by sibling groups, including groups containing
   only default one-row controls: an `N`-row field consumes `N` standard label,
   control, and supporting-message row heights plus `N - 1` 20px row gaps,
   aligning its underline and reserved message slot with the `N`th ordinary

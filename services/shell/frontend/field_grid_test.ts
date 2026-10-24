@@ -151,15 +151,31 @@ Deno.test("field grid rejects unbounded row spans", () => {
   );
 });
 
+Deno.test("full fields reserve the entire width and wait for preceding row spans", () => {
+  const positions = fieldGridPositions(fields(
+    ["short", "full", "short", "full"],
+    { 0: 2, 1: 8 },
+  ));
+  for (const mode of ["mobile", "tablet", "desktop"] as const) {
+    const span = { mobile: 2, tablet: 4, desktop: 8 }[mode];
+    assertEquals(positions.map((position) => position[mode]), [
+      { column: 1, row: 1, span, rowSpan: 2 },
+      { column: 1, row: 3, span, rowSpan: 8 },
+      { column: 1, row: 11, span, rowSpan: 1 },
+      { column: 1, row: 12, span, rowSpan: 1 },
+    ]);
+  }
+});
+
 Deno.test("responsive row-span plans preserve order, boundaries, and occupancy", () => {
   const modes: FieldGridMode[] = ["mobile", "tablet", "desktop"];
   const columns = { mobile: 2, tablet: 4, desktop: 8 };
   const minimumSpans = {
-    mobile: { short: 1, medium: 2, long: 2 },
-    tablet: { short: 1, medium: 2, long: 4 },
-    desktop: { short: 1, medium: 2, long: 4 },
+    mobile: { short: 1, medium: 2, long: 2, full: 2 },
+    tablet: { short: 1, medium: 2, long: 4, full: 4 },
+    desktop: { short: 1, medium: 2, long: 4, full: 8 },
   } as const;
-  const lengths: SemanticFieldLength[] = ["short", "medium", "long"];
+  const lengths: SemanticFieldLength[] = ["short", "medium", "long", "full"];
 
   for (let seed = 0; seed < 64; seed++) {
     const items = Array.from({ length: 12 }, (_, index): FieldGridItem => ({
@@ -180,6 +196,7 @@ Deno.test("responsive row-span plans preserve order, boundaries, and occupancy",
           `${mode} reordered field ${index}`,
         );
         assertEquals((position.column - 1) % minimumSpan, 0);
+        assert(position.span >= minimumSpan);
         assert(position.column + position.span - 1 <= columns[mode]);
         for (
           let row = position.row;

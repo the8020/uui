@@ -911,7 +911,8 @@ function buildColumns(
           options.headings?.[key] ?? metadata?.label ??
           (key === "" ? options.label ?? "Value" : humanize(key)),
         description: metadata?.description,
-        length: options.columnOptions?.[key]?.length ?? metadata?.length ??
+        length: options.columnOptions?.[key]?.length ??
+          (metadata?.length === "full" ? "long" : metadata?.length) ??
           (semanticType === "number" || semanticType === "decimal" ||
               semanticType === "boolean"
             ? "compact"

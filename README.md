@@ -359,6 +359,11 @@ shared definition: `field(customer, { length: "long" })`, using UUI's `field`
 import. Shared field storage travels with the schema; table-specific keys and
 defaults stay in the table declaration.
 
+Field `length` accepts `short`, `medium`, `long`, or `full`. Use `full` to span
+the enclosing field grid at every screen width; `rowSpan` still controls height.
+Custom fields and control overrides use the same sizing. When reused as a table
+column, a `full` field defaults to `long`; column options can override it.
+
 Every scalar field has pencil help, or a Chevron Right when read-only. Click the
 button or press F1 or F4 on the field to open its value with the full Markdown
 description. The helper owns a separate draft. **Done** validates against the

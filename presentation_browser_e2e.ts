@@ -454,6 +454,9 @@ try {
     await verifyConnectionFlow(page);
   } else if (Deno.args.includes("--field-help")) {
     await verifyFieldHelp(page);
+  } else if (Deno.args.includes("--field-geometry")) {
+    await clickButton(page, "Next");
+    await verifyFieldGeometry(page);
   } else await verifyPresentationFlow(page);
   if (programError !== undefined) throw programError;
   assert(
@@ -615,6 +618,12 @@ async function runFieldGeometry(): Promise<void> {
         quantity: z.number(),
         date: field(z.string(), { control: "date" }),
         datetime: field(z.string(), { control: "datetime" }),
+        fullOutput: field(z.string(), {
+          control: "textarea",
+          length: "full",
+          rowSpan,
+          readOnly: true,
+        }),
       }),
       model: new Model({
         liveState: "LIVE",
@@ -633,6 +642,7 @@ async function runFieldGeometry(): Promise<void> {
         quantity: 10,
         date: "2026-09-05",
         datetime: "2026-09-05T09:30",
+        fullOutput: "Full-width output",
       }),
       layout: {
         schema: 1,
@@ -652,6 +662,7 @@ async function runFieldGeometry(): Promise<void> {
             "quantity",
             "date",
             "datetime",
+            "fullOutput",
           ],
         },
       },
@@ -2334,6 +2345,15 @@ async function verifyFieldGeometry(page: BrowserPage): Promise<void> {
         `fields clamp to their declared rows at ${width}px: ${
           JSON.stringify(failures)
         }`,
+      );
+      assert(
+        await page.evaluate<boolean>(`(() => {
+          const field = document.querySelector('[data-bind=fullOutput]').closest('.field');
+          const bounds = field.getBoundingClientRect();
+          const grid = field.parentElement.getBoundingClientRect();
+          return Math.abs(bounds.left - grid.left) < 0.5 && Math.abs(bounds.right - grid.right) < 0.5;
+        })()`),
+        `full-width textarea spans its field grid at ${width}px`,
       );
       if (width === 1280) {
         assert(

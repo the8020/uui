@@ -254,7 +254,7 @@ export type ControlKind =
   | "list"
   | "tags";
 
-export type FieldLength = "short" | "medium" | "long";
+export type FieldLength = "short" | "medium" | "long" | "full";
 
 export const MAX_FIELD_ROW_SPAN = 8;
 

@@ -1,6 +1,9 @@
-import { MAX_FIELD_ROW_SPAN } from "/p/the8020/uui/protocol.ts";
+import {
+  type FieldLength,
+  MAX_FIELD_ROW_SPAN,
+} from "/p/the8020/uui/protocol.ts";
 
-export type SemanticFieldLength = "short" | "medium" | "long";
+export type SemanticFieldLength = FieldLength;
 export type FieldGridMode = "mobile" | "tablet" | "desktop";
 
 export interface FieldGridItem {
@@ -41,15 +44,15 @@ interface RowPlacement {
 const profiles: Record<FieldGridMode, GridProfile> = {
   mobile: {
     columns: 2,
-    spans: { short: 1, medium: 2, long: 2 },
+    spans: { short: 1, medium: 2, long: 2, full: 2 },
   },
   tablet: {
     columns: 4,
-    spans: { short: 1, medium: 2, long: 4 },
+    spans: { short: 1, medium: 2, long: 4, full: 4 },
   },
   desktop: {
     columns: 8,
-    spans: { short: 1, medium: 2, long: 4 },
+    spans: { short: 1, medium: 2, long: 4, full: 8 },
   },
 };
 
