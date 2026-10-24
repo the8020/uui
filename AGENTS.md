@@ -1256,7 +1256,9 @@ below.
   source root, and process cleanup is time-bounded. Stage the complete native
   `bin/` owner so its relative sentry alias resolves to the same runsc engine.
 - The native browser harness accepts `--fixture=<module>` to run a package's
-  default-exported scenario after its normal node setup and real login. The
+  default-exported scenario after its normal node setup and real login. Node
+  setup uses the ordinary `install-development-assets.sh` so development tools
+  and their runtime SDK mounts are staged together. The
   `NativeBrowserFixtureContext` supplies the browser, disposable node
   references, ordinary administrative commands for each node (`admin` and
   `otherAdmin`), bounded `restartNodes` for startup-only node configuration, and

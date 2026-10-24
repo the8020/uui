@@ -3537,7 +3537,16 @@ async function prepareWorkspaces(
       `${options.sourceRoot}/defaults/config/runtime`,
       `${root}/node/kernel/runtime/definitions`,
     );
-    await copyTree(`${options.sourceRoot}/defaults/scripts`, `${root}/scripts`);
+    const assets = await new Deno.Command("bash", {
+      args: [`${options.sourceRoot}/install-development-assets.sh`, root],
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    if (!assets.success) {
+      throw new Error(
+        `stage development assets: ${new TextDecoder().decode(assets.stderr)}`,
+      );
+    }
     await linkTree(
       `${options.runtimeRoot}/node/kernel/runtime/images/rootless`,
       `${root}/node/kernel/runtime/images/rootless`,
