@@ -20,6 +20,17 @@ Parent DOX: [uui/services DOX](../AGENTS.md).
 
 # Local Contracts
 
+- Root branding APIs supply the server title in HTML and boot data, plus
+  branding metadata on `/preferences`. The frontend reapplies it on presentation
+  changes.
+- `branding.ts` shares escaped page/Open Graph/Twitter metadata and fixed
+  `/branding/favicon.png` and `/branding/social.jpg` responses with public
+  login. Custom bytes come from UUI's database; defaults are frontend files.
+  Responses use fixed MIME types, `nosniff`, revalidation, ETags, and bodyless
+  HEAD/304.
+- `build.sh` builds System customization separately; its previews use temporary
+  browser blob URLs authorized by the shell image CSP.
+
 - The manifest keeps one Worker warm by default to avoid idle cold starts.
 - Authenticated `GET /preferences` resolves only `meta.user.username` through
   the shared UUI preferences API and returns `no-store` JSON. Boot data supplies

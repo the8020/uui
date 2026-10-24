@@ -10,6 +10,11 @@ Parent DOX: [uui/services DOX](../AGENTS.md).
 
 # Local Contracts
 
+- Page titles use the configured server title plus Sign in. Shared shell
+  branding code supplies escaped Open Graph/Twitter metadata and public
+  `/branding/favicon.png` and `/branding/social.jpg` responses, including custom
+  database images. These routes expose only branding, never editing operations.
+
 - The manifest keeps one Worker warm by default to avoid idle cold starts.
 - Call the users package explicitly; passwords and authentication cookies never
   enter UUI boot data or messages.

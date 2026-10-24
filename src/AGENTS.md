@@ -12,6 +12,10 @@ Parent DOX: [uui DOX](../AGENTS.md).
 
 # Local Contracts
 
+- `branding_fields.ts` owns the bounded server-title field and default;
+  browser-safe `branding_images.ts` owns image dimensions, formats, and output
+  byte limits shared by conversion, validation, and serving.
+
 - `preference_fields.ts` owns the shared six-digit hex accent-color field,
   effective preference schema, nullable override schema, and built-in purple.
   Tables and Customization reuse these definitions; screens own the color

@@ -101,6 +101,12 @@ Default section order:
 
 ## User Preferences
 
+- Administration provides System customization for the server title, favicon,
+  and social preview. Defaults are `80|20`, the square yellow `80` icon, and the
+  branded social image. Center-crop uploads with minimal removal and convert to
+  optimized output formats; custom images live in the database, defaults in the
+  shell package. Browser titles combine the saved server title and screen title.
+
 - Group Back, Exit, and New beside the brand as one gapless segmented control.
   Exit terminates the current session and returns to the entry screen, retaining
   authentication. New opens the base UUI URL with target blank.
@@ -623,9 +629,16 @@ below.
   contract, not the program-facing `mod.ts` barrel; the latter exports the
   server session engine and must never pull Node built-ins into the shell
   bundle.
-- The shell window title is `80|20 <top visible heading>`, using normalized
-  heading text from the active page or modal; before a presentation exists or
-  after it closes, the title is the generic `80|20`.
+- The shell window title combines the configured server title (default `80|20`)
+  and normalized heading text from the active page or modal. Without a
+  presentation it shows only the server title. Branding refreshes with ordinary
+  presentation preference reads.
+- `branding.ts` owns the singleton title and custom image overrides, guarded on
+  writes by `the8020.uui.branding.edit`. System customization is an
+  Administration tile separate from personal Customization. The shell serves
+  fixed PNG/JPEG files from the database or disk defaults, also exposed through
+  public login routes so Open Graph and Twitter previews work before
+  authentication.
 - Sending any `screen.event` or structured request enters one shell-owned
   in-flight interaction state for the top surface. It immediately makes
   presentation and applicable header controls inert, disables Back, rejects

@@ -1,0 +1,12 @@
+schema = 1
+title = "System customization"
+description = "Title and brand images"
+icon = "palette"
+category = "administration"
+order = 60
+
+[open]
+program = "the8020/uui/system-customization"
+
+[visible]
+permission = "the8020.uui.branding.edit"

@@ -20,6 +20,8 @@ Deno.test("UUI preferences inherit per field, save only personal overrides, and 
   );
   const database = new DatabaseSync(":memory:");
   database.exec(createTableSQL("sqlite", descriptorOf(table)));
+  const { default: Branding } = await import("./tables/branding.ts");
+  database.exec(createTableSQL("sqlite", descriptorOf(Branding)));
   let authenticated = true;
   const restoreContext = installContextProvider(() => ({
     type: "program",
@@ -90,7 +92,10 @@ Deno.test("UUI preferences inherit per field, save only personal overrides, and 
     );
     assertEquals(response.status, 200);
     assertEquals(response.headers.get("cache-control"), "no-store");
-    assertEquals(await response.json(), { accentColor: "#ff8800" });
+    assertEquals(await response.json(), {
+      accentColor: "#ff8800",
+      branding: { title: "80|20", revision: "default" },
+    });
     await saveUserPreferences({ accentColor: "#AB1234" });
     assertEquals(await fetchUserPreferences(), { accentColor: "#ab1234" });
     assertEquals(await fetchUserPreferences("bob"), { accentColor: "#ff8800" });

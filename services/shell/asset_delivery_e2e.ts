@@ -11,6 +11,16 @@ const supervisor = new Supervisor({
   workloadType: "service",
   token,
   supervisorVersion: "asset-delivery-test",
+  kernelCall: (call) => {
+    if (call.operation === "database.execute") {
+      assert(
+        String(call.arguments.statement).includes("the8020__uui__branding"),
+      );
+      return Promise.resolve({ columns: [], rows: [] });
+    }
+    if (call.operation === "database.scope.close") return Promise.resolve();
+    throw new Error(`Unexpected asset-test kernel call: ${call.operation}`);
+  },
 });
 const worker = await supervisor.startWorker({
   metadata: {

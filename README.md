@@ -2,6 +2,17 @@
 
 Programs import the standard UUI functions from `/p/the8020/uui/mod.ts`.
 
+## System branding
+
+Open **Administration → System customization** to set the server title, favicon,
+and social preview. Save applies the changes; Back discards them. Editing
+requires `the8020.uui.branding.edit`.
+
+Defaults are `80|20`, a yellow `80` favicon, and the branded social image.
+Uploaded images are center-cropped and resized to 64×64 PNG or 1200×630 JPEG.
+Custom images are stored in the database and served publicly for link previews.
+Browser tabs show the server title followed by the current screen title.
+
 ## Program declarations and launching
 
 Mark interactive programs in `programs/<name>/program.toml`:

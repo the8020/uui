@@ -1,5 +1,6 @@
 import { assertEquals, assertMatch } from "@std/assert";
 import service from "./service.ts";
+import { brandingDatabase } from "../../branding_test_support.ts";
 import materialSymbols from "./frontend/assets/material_symbols.json" with {
   type: "json",
 };
@@ -31,6 +32,7 @@ const context = {
 };
 
 Deno.test("shell emits only non-secret boot data and local assets", async () => {
+  using _database = await brandingDatabase();
   const response = await service.fetch(
     new Request("https://service/"),
     context,
@@ -53,6 +55,11 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   );
   assertEquals(body.includes('<html lang="en" data-theme="dark">'), true);
   assertEquals(body.includes("<title>80|20</title>"), true);
+  assertEquals(
+    body.includes('rel="icon" type="image/png" sizes="64x64"'),
+    true,
+  );
+  assertEquals(body.includes('property="og:image"'), true);
   assertEquals(body.includes('id="session-menu"'), true);
   assertEquals(body.includes('id="session-menu-toggle"'), true);
   assertEquals(body.includes('id="session-username"'), true);

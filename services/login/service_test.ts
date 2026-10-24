@@ -35,6 +35,12 @@ Deno.test("public login page, users-package login, and stale-cookie logout", asy
   const passwordHash = await hashPassword("private");
   (globalThis as unknown as Record<symbol, unknown>)[kernelInvokeSymbol] =
     ((operation, input) => {
+      if (
+        operation === "database.execute" &&
+        String(input.statement).includes("the8020__uui__branding")
+      ) {
+        return Promise.resolve({ columns: [], rows: [] });
+      }
       calls.push(operation);
       if (operation === "database.execute") {
         if (String(input.statement).includes("the8020__system__settings")) {
@@ -92,6 +98,8 @@ Deno.test("public login page, users-package login, and stale-cookie logout", asy
     );
     assertEquals(page.status, 200);
     const markup = await page.text();
+    assertEquals(markup.includes('property="og:image"'), true);
+    assertEquals(markup.includes('rel="icon"'), true);
     assertEquals(markup.includes('type="password"'), true);
     assertEquals(markup.includes('<html lang="en" data-theme="dark">'), true);
     assertEquals(

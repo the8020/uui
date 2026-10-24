@@ -27,6 +27,9 @@ Parent DOX: [uui DOX](../AGENTS.md).
 
 # Child DOX Index
 
+- [system-customization/AGENTS.md](system-customization/AGENTS.md): Edit the
+  system server title, favicon, and social preview through Administration.
+
 - [customization/AGENTS.md](customization/AGENTS.md): Edit authenticated UUI
   preferences with save, default inheritance, and cancel behavior.
 - [user-deleted/AGENTS.md](user-deleted/AGENTS.md): Remove UUI-owned preference

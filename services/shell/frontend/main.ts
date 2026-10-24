@@ -95,6 +95,7 @@ interface PresentationLayer {
 }
 
 interface BootData {
+  serverTitle?: string;
   entryUrl?: string;
   preferencesUrl?: string;
   username?: string;
@@ -924,6 +925,18 @@ async function refreshPreferences(): Promise<void> {
     if (request.signal.aborted) return;
     accentColor = preferences.accentColor;
     applyAccent(document.documentElement, accentColor);
+    if (typeof preferences.branding?.title === "string") {
+      boot.serverTitle = preferences.branding.title;
+      synchronizeWindowTitle();
+      const favicon = document.querySelector<HTMLLinkElement>(
+        "#system-favicon",
+      );
+      if (favicon) {
+        const url = new URL(favicon.href);
+        url.searchParams.set("v", preferences.branding.revision);
+        if (url.href !== favicon.href) favicon.href = url.href;
+      }
+    }
   } catch (error) {
     if (!request.signal.aborted) {
       console.error(
@@ -1406,7 +1419,10 @@ function synchronizeWindowTitle(): void {
     : layers.get(top)?.root.querySelector<HTMLElement>(
       ".screen > h1.screen-title",
     );
-  document.title = windowTitleForHeading(heading?.textContent);
+  document.title = windowTitleForHeading(
+    heading?.textContent,
+    boot.serverTitle,
+  );
 }
 
 function requestLists(

@@ -19,6 +19,12 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
 
 # Local Contracts
 
+- Default brand files are `default-favicon.png` (64×64 optimized palette PNG)
+  and `default-social.jpg` (1200×630 progressive JPEG). Their generated masters
+  use yellow `80` and yellow/white `80|20` on the dark brand background.
+- Window titles prepend boot's server title to the active heading. Ordinary
+  preference refreshes update the title and revisioned favicon without polling.
+
 - Use existing message-center notifications for user-facing messages. No screen
   banners; frontend diagnostics use `console.error`. On resync, acknowledge with
   `client.ack` and request the current snapshot directly.

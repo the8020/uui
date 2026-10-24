@@ -13,4 +13,6 @@ Deno.test("window title follows a normalized page heading with a generic fallbac
   assertEquals(windowTitleForHeading(""), GENERIC_WINDOW_TITLE);
   assertEquals(windowTitleForHeading(null), GENERIC_WINDOW_TITLE);
   assertEquals(windowTitleForHeading(undefined), GENERIC_WINDOW_TITLE);
+  assertEquals(windowTitleForHeading(" Home ", "My server"), "My server Home");
+  assertEquals(windowTitleForHeading("", "My server"), "My server");
 });

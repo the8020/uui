@@ -1,0 +1,4 @@
+schema = 1
+uui = true
+description = "Customize the server title, favicon, and social preview"
+entrypoint = "program.ts"

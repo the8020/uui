@@ -1,3 +1,8 @@
+[administration]
+title = "Administration"
+icon = "admin_panel_settings"
+order = 10
+
 [operations]
 title = "Operations"
 icon = "monitoring"

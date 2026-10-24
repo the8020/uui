@@ -1,6 +1,8 @@
 import { defineService } from "/p/the8020/services/http.ts";
 import { login, logout as logoutUser } from "/p/the8020/users/mod.ts";
 import uiConfig from "../../ui-config.json" with { type: "json" };
+import { fetchBranding } from "../../branding.ts";
+import { brandingAsset, brandingHead } from "../shell/branding.ts";
 
 const frontend = new URL("./frontend/", import.meta.url);
 const staticContentTypes = new Map([
@@ -12,20 +14,20 @@ const service = defineService();
 service.get(
   "/",
   { summary: "Render the user login" },
-  async () => htmlResponse(await loginPage()),
+  async ({ meta }) => htmlResponse(await loginPage(meta.originalUrl)),
 );
 
 service.post(
   "/",
   { summary: "Authenticate a user" },
-  async ({ request }) => {
+  async ({ request, meta }) => {
     const form = await request.formData();
     const username = String(form.get("username") ?? "");
     const password = String(form.get("password") ?? "");
     const result = await login(request, { username, password });
     if (!result.authenticated || result.setCookie === undefined) {
       return htmlResponse(
-        await loginPage("Invalid username or password."),
+        await loginPage(meta.originalUrl, "Invalid username or password."),
         401,
       );
     }
@@ -60,15 +62,21 @@ service.get(
 service.get(
   "/*",
   { summary: "Serve a static login asset" },
-  ({ request }) => staticResponse(new URL(request.url).pathname),
+  async ({ request }) =>
+    await brandingAsset(request) ??
+      staticResponse(new URL(request.url).pathname),
 );
 
-async function loginPage(error = ""): Promise<string> {
+async function loginPage(originalUrl: string, error = ""): Promise<string> {
   const source = await Deno.readTextFile(new URL("index.html", frontend));
   const errorMarkup = error === ""
     ? ""
     : `<p class="error" role="alert">${escapeHTML(error)}</p>`;
-  return source.replace("<!--__the8020_login_error__-->", errorMarkup);
+  return source.replace("<!--__the8020_login_error__-->", errorMarkup)
+    .replace(
+      "<title>80|20 sign in</title>",
+      brandingHead(await fetchBranding(), originalUrl, "Sign in"),
+    );
 }
 
 async function staticResponse(path: string): Promise<Response> {

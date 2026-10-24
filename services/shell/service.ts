@@ -6,6 +6,8 @@ import {
 import { kernel, WorkerInvokeError } from "@the8020/kernel";
 import { controlRequest } from "../../agent.ts";
 import { AssetServer } from "./assets.ts";
+import { fetchBranding } from "../../branding.ts";
+import { brandingAsset, brandingHead } from "./branding.ts";
 import uiConfig from "../../ui-config.json" with { type: "json" };
 
 const frontend = new URL("./frontend/", import.meta.url);
@@ -20,7 +22,10 @@ service.get(
   { summary: "Read your effective UUI preferences" },
   async ({ meta }) => {
     const { fetchUserPreferences } = await import("../../preferences.ts");
-    return Response.json(await fetchUserPreferences(meta.user.username), {
+    return Response.json({
+      ...await fetchUserPreferences(meta.user.username),
+      branding: await fetchBranding(),
+    }, {
       headers: { "cache-control": "no-store" },
     });
   },
@@ -106,6 +111,11 @@ service.get(
 
 async function shellResponse(meta: RequestMetadata): Promise<Response> {
   let source = await Deno.readTextFile(new URL("index.html", frontend));
+  const branding = await fetchBranding();
+  source = source.replace(
+    "<title>80|20</title>",
+    brandingHead(branding, meta.originalUrl),
+  );
   const versions = await Promise.all([
     assets.version(generated, "main.js"),
     assets.version(frontend, "styles.css"),
@@ -120,6 +130,7 @@ async function shellResponse(meta: RequestMetadata): Promise<Response> {
   const websocketScheme = requestURL.protocol === "https:" ? "wss:" : "ws:";
   const themeNonce = contentSecurityNonce();
   const boot = {
+    serverTitle: branding.title,
     username: meta.user.username,
     entryUrl: uiConfig.postLoginUrl,
     preferencesUrl: `${meta.canonicalBasePath}/preferences`,
@@ -141,7 +152,7 @@ async function shellResponse(meta: RequestMetadata): Promise<Response> {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store",
       "content-security-policy":
-        `default-src 'self'; connect-src 'self' ws: wss:; script-src 'self' 'nonce-${themeNonce}'; style-src 'self' 'nonce-${themeNonce}'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`,
+        `default-src 'self'; connect-src 'self' ws: wss:; script-src 'self' 'nonce-${themeNonce}'; style-src 'self' 'nonce-${themeNonce}'; img-src 'self' data: blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`,
       "referrer-policy": "no-referrer",
       "x-content-type-options": "nosniff",
     },
@@ -156,6 +167,8 @@ function contentSecurityNonce(): string {
 }
 
 async function staticResponse(request: Request): Promise<Response> {
+  const branding = await brandingAsset(request);
+  if (branding) return branding;
   const path = new URL(request.url).pathname.replace(/^\/+/, "");
   if (path.startsWith("package-assets/")) {
     return await assets.package(
@@ -164,7 +177,9 @@ async function staticResponse(request: Request): Promise<Response> {
     ) ?? notFoundResponse();
   }
   // Authored TypeScript and unrelated package files are never shell assets.
-  if (!/\.(?:js|js\.map|css|svg|woff2)$/.test(path)) return notFoundResponse();
+  if (!/\.(?:js|js\.map|css|svg|png|jpg|woff2)$/.test(path)) {
+    return notFoundResponse();
+  }
   for (const root of staticRoots) {
     const response = await assets.file(request, root, path);
     if (response) return response;

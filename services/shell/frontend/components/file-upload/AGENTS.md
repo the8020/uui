@@ -21,6 +21,10 @@ Parent DOX: [shell frontend](../../AGENTS.md).
   or replaced uploads. Screen and connection cancellation terminate reads.
 - Load the standalone browser entry only when the field is shown. No upload
   service, temporary file, dependency, or application-specific parser is needed.
+- Program browser modules may compose `mount(context, prepare)` with an async
+  File-to-Blob converter. The picker retains its busy, cancellation, and
+  ordinary byte-upload behavior; consumers own conversion and conversion-error
+  messages.
 
 # Work Guidance
 

@@ -5,6 +5,7 @@ import type {
 
 export default function mount(
   context: CustomElementContext,
+  prepare?: (file: File) => Promise<Blob>,
 ): CustomElementInstance {
   const input = document.createElement("input");
   input.type = "file";
@@ -26,7 +27,8 @@ export default function mount(
     input.setAttribute("aria-busy", "true");
     update();
     try {
-      await channel.send("file", file.stream(), { signal: context.signal })
+      const content = prepare ? await prepare(file) : file;
+      await channel.send("file", content.stream(), { signal: context.signal })
         .done;
       if (!context.signal.aborted) context.setValue(file.name);
     } catch {
