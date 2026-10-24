@@ -4306,10 +4306,11 @@ async function waitForScreen(
     await waitForPage(
       page,
       `document.querySelector("#connection-state")?.textContent === "Connected" &&
+      !document.documentElement.hasAttribute('data-interaction-pending') &&
       [...document.querySelectorAll('.screen-title')].find(element =>
         element.getClientRects().length > 0 && !element.closest('[inert]'))?.textContent?.trim() === ${
         JSON.stringify(title)
-      } && document.title === ${JSON.stringify(`80|20 ${title}`)}`,
+      } && document.title.endsWith(${JSON.stringify(` ${title}`)})`,
       title,
       timeout,
     );

@@ -1282,6 +1282,12 @@ below.
   active surfaces. The default UUI scenario remains the default; fixture runs
   share exception checks and bounded teardown and add no application behavior to
   the runtime.
+- `--fixture=./branding_native_fixture.ts` grants its test user the managed
+  administrator role and checks default images, converted uploads, database
+  persistence, public delivery across nodes, custom titles, reload, and reset.
+  Run against installed nodes natively or inside Docker. Screen waits require
+  the interaction gate to clear and accept a customized server-title prefix; the
+  branding fixture checks that prefix explicitly.
 - Native browser startup seeds an obsolete UUI session cookie before login and
   requires the first login to reach Home without an ended-session reload.
 - `--fixture=./connections_native_fixture.ts` checks real entity lookups and

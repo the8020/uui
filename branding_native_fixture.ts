@@ -1,4 +1,4 @@
-import { assert, assertEquals } from "@std/assert";
+import { assert, assertEquals, assertNotEquals } from "@std/assert";
 import type { NativeBrowserFixtureContext } from "./browser_e2e.ts";
 
 /** Installed package, real authentication/SQL, and both native service nodes. */
@@ -28,9 +28,21 @@ export default async function verify(context: NativeBrowserFixtureContext) {
   assert(defaultSocial.length < 50_000);
   const initial = await fetch(`${baseURL}/the8020/uui/login/`);
   assert((await initial.text()).includes('property="og:image"'));
+  await context.admin([
+    "auth.users.assign",
+    context.credentials.username,
+    "the8020.users.administrator",
+  ]);
+  await clickButton(page, "Refresh");
+  await waitForScreen(page, "Welcome to 80|20");
   await clickRow(page, "the8020/uui/system-customization");
   await waitForScreen(page, "System customization");
   await context.setValue(page, '[data-bind="title"]', "Native branding");
+  await waitForPage(
+    page,
+    `document.querySelectorAll('input[type=file]').length === 2`,
+    "image upload controls",
+  );
   await page.evaluate(`(async () => {
     const canvas = new OffscreenCanvas(180,100);
     const ctx = canvas.getContext('2d'); ctx.fillStyle='#ff8000'; ctx.fillRect(0,0,180,100);
@@ -53,6 +65,8 @@ export default async function verify(context: NativeBrowserFixtureContext) {
   );
   const customIcon = await publicAsset(baseURL, "favicon.png");
   const customSocial = await publicAsset(baseURL, "social.jpg");
+  assertNotEquals(customIcon, defaultIcon);
+  assertNotEquals(customSocial, defaultSocial);
   assertEquals(customIcon.slice(0, 4), new Uint8Array([137, 80, 78, 71]));
   assertEquals(customSocial.slice(0, 2), new Uint8Array([255, 216]));
   assertEquals(await publicAsset(otherNodeURL, "favicon.png"), customIcon);
