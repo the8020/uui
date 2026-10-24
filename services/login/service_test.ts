@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { assertEquals } from "@std/assert";
 import {
   kernelDatabaseBackendSymbol,
@@ -32,7 +33,7 @@ const context = {
 
 Deno.test("public login page, users-package login, and stale-cookie logout", async () => {
   const calls: string[] = [];
-  const passwordHash = await hashPassword("private");
+  let passwordHash = "";
   (globalThis as unknown as Record<symbol, unknown>)[kernelInvokeSymbol] =
     ((operation, input) => {
       if (
@@ -40,6 +41,18 @@ Deno.test("public login page, users-package login, and stale-cookie logout", asy
         String(input.statement).includes("the8020__uui__branding")
       ) {
         return Promise.resolve({ columns: [], rows: [] });
+      }
+      if (
+        operation === "runtime.operation" &&
+        input.operation === "crypto.password.digest"
+      ) {
+        return Promise.resolve({
+          success: true,
+          result: {
+            digest: createHash("sha256").update(JSON.stringify(input.input))
+              .digest("base64"),
+          },
+        });
       }
       calls.push(operation);
       if (operation === "database.execute") {
@@ -90,6 +103,7 @@ Deno.test("public login page, users-package login, and stale-cookie logout", asy
       });
     }) satisfies KernelInvoke;
   try {
+    passwordHash = await hashPassword("admin", "private");
     const page = await service.fetch(
       new Request("https://service/", {
         headers: { cookie: "the8020_auth_sys-aaaaaaaaaa=expired" },

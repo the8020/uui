@@ -1169,8 +1169,9 @@ below.
   execution, Back, and mobile sizing. Job fixtures retain canonical execution
   references and serve bounded `logs.query` pages separately from run metadata;
   browser assertions verify rendered log messages and execution usernames. It
-  also drives the real Users program against SQLite: account creation, password
-  changes, full-name creation/editing, My account through the quick menu,
+  supplies deterministic test-only digests through the kernel bridge, and drives
+  the real Users program against SQLite: account creation, password changes,
+  full-name creation/editing, My account through the quick menu,
   password-mismatch clearing, authenticated self-targeting, password
   replacement, profile cancellation, and pending configuration drafts across My
   account, enable/disable, Advanced confirmation, user-filtered UUI sessions,

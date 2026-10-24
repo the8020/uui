@@ -4,6 +4,7 @@ entrypoint = "service.ts"
 
 [access]
 mode = "public"
+credential_namespace = "package:the8020/users"
 
 [lifecycle]
 default_enabled = true

@@ -12,6 +12,7 @@ import type { JobInput, JobRun } from "/p/the8020/jobs/src/types.ts";
 import { callScreen, Model, z } from "./mod.ts";
 import { field } from "./fields.ts";
 import { DatabaseSync } from "node:sqlite";
+import { createHash } from "node:crypto";
 import { username } from "/p/the8020/users/types/user.ts";
 
 interface BrowserDriver {
@@ -412,6 +413,17 @@ worker_keep_alive = "30s"
     const name = String(
       operation === "admin.execute" ? input.command_id : input.operation,
     );
+    if (name === "crypto.password.digest") {
+      const data = input.input as Record<string, unknown>;
+      return Promise.resolve({
+        success: true,
+        result: {
+          digest: createHash("sha256")
+            .update(JSON.stringify([data.user_id, data.password, data.nonce]))
+            .digest("base64"),
+        },
+      });
+    }
     if (name === "kernel.reindex") {
       assert(
         (input.arguments as { packages: string }).packages ===

@@ -23,6 +23,11 @@ Parent DOX: [uui/services DOX](../AGENTS.md).
 - The login page uses the fixed dark palette and does not read
   authenticated-shell theme state.
 
+- The public login declaration explicitly selects
+  `access.credential_namespace = "package:the8020/users"` so password
+  verification uses the same credential namespace as users CBus programs and
+  protected services.
+
 # Work Guidance
 
 # Verification
