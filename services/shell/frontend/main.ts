@@ -1003,7 +1003,7 @@ function updateSessionMenuLabel(): void {
     "aria-label",
     `${username}, ${connectionText} ${
       sessionMenu.open ? t("shell.close") : t("main.open")
-    } session menu`,
+    } ${t("shell.session_menu")}`,
   );
 }
 

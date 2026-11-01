@@ -272,6 +272,7 @@
     "tools.exported": "Exported {count} rows.",
     "program.uui_sessions": "UUI sessions",
     "program.advanced_session": "Advanced · {id}",
-    "shell.openingSession": "Opening your session…"
+    "shell.openingSession": "Opening your session…",
+    "summary_bar.more_values": "+{count} more"
   }
 }

@@ -162,7 +162,10 @@ test("shell emits only non-secret boot data and local assets", async () => {
   assertEquals(body.includes("theme-icon-moon"), false);
   assertEquals(body.includes(">Light mode</button>"), false);
   assertEquals(body.includes(">Dark mode</button>"), false);
-  assertEquals(body.includes('aria-label="80|20 platform session"'), true);
+  assertEquals(
+    body.includes('class="brand" dir="ltr" aria-label="80|20"'),
+    true,
+  );
   assertEquals(body.includes('class="brand-gold"'), true);
   assertEquals(body.includes('class="brand-pipe"'), true);
   assertEquals(body.includes('id="screen-back"'), true);

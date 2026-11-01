@@ -65,6 +65,10 @@ Deno.test("login uses its configured default and remembers browser choices befor
   await withLocalization(
     new Localization("en", {
       ...defaultConfiguration,
+      languages: [{ code: "en", name: "English" }, {
+        code: "cs",
+        name: "Čeština",
+      }],
       defaultLoginLanguage: "cs",
     }, loader),
     async () => {

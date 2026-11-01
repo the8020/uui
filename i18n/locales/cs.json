@@ -272,6 +272,7 @@
     "tools.exported": "Exportováno řádků: {count}.",
     "program.uui_sessions": "Relace UUI",
     "program.advanced_session": "Pokročilé · {id}",
-    "shell.openingSession": "Otevírání vaší relace…"
+    "shell.openingSession": "Otevírání vaší relace…",
+    "summary_bar.more_values": "+{count} dalších"
   }
 }

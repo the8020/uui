@@ -26,7 +26,7 @@ export class SummaryBar {
     this.#values.className = "uui-summary-values";
     this.#search.type = "search";
     this.#search.className = "uui-summary-search";
-    this.#search.placeholder = "Search…";
+    this.#search.placeholder = t("lists.search");
     this.#search.setAttribute("aria-label", t("shell.searchList"));
     // The list's own search owns the query; this one only types into it.
     this.#search.addEventListener("input", () => {
@@ -172,7 +172,9 @@ export class SummaryBar {
     });
     this.#values.append(more);
     const label = () =>
-      more.textContent = `+${chips.filter((chip) => chip.hidden).length} more`;
+      more.textContent = t("summary_bar.more_values", {
+        count: chips.filter((chip) => chip.hidden).length,
+      });
     label();
     // Make room on the last line for the summary itself.
     const visible = chips.filter((chip) => !chip.hidden);

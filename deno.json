@@ -51,6 +51,6 @@
     "test:component-style-browser": "deno run -A presentation_browser_e2e.ts --fixture=./component_style_browser_fixture.ts",
     "test:file-upload-browser": "deno run -A presentation_browser_e2e.ts --fixture=./services/shell/frontend/components/file-upload/browser_fixture.ts",
     "test:branding-browser": "deno run -A presentation_browser_e2e.ts --fixture=./branding_browser_fixture.ts",
-    "check:i18n": "deno run --allow-read ../i18n/check.ts --complete=cs ."
+    "check:i18n": "deno run --allow-read ../i18n/check.ts --complete=builtin ."
   }
 }
