@@ -1,3 +1,9 @@
+import { browserLocalization } from "./localization.ts";
+import {
+  currentLocalization,
+  type Localization,
+  withLocalization,
+} from "/p/the8020/i18n/mod.ts";
 import {
   defineService,
   HTTPError,
@@ -76,6 +82,8 @@ interface SessionLogEntry {
 }
 
 interface SessionRecord {
+  localization: Localization;
+  languageBundle: import("/p/the8020/i18n/messages.ts").Bundle;
   executionId: string;
   serviceId: string;
   placement: RequestMetadata["execution"];
@@ -176,7 +184,10 @@ export function defineSessionService(
           throw new HTTPError(400, { error: "invalid_browser_context" });
         }
       }
-      return establish(meta, handler, options, browser, program, inputs);
+      return withLocalization(
+        await browserLocalization(request),
+        () => establish(meta, handler, options, browser, program, inputs),
+      );
     },
   );
   service.websocket("/connect", async ({ meta, socket }) => {
@@ -242,7 +253,8 @@ export function defineSessionService(
         }
         const result = command.command.op === "screen"
           ? undefined
-          : await commandScreen(command.command, record.lastClientSequence + 1);
+          : await withLocalization(record.localization, () =>
+            commandScreen(command.command, record.lastClientSequence + 1));
         // A program may still be working after accepting its event. Wait for its
         // next interactive screen, never for a quiet period between redraws.
         const deadline = Date.now() + 2000;
@@ -306,6 +318,8 @@ async function establish(
   const input = new AsyncQueue<UUIClientMessage | Uint8Array>();
   const controller = new AbortController();
   const record = {} as SessionRecord;
+  await currentLocalization()?.bundle("the8020/uui");
+  await currentLocalization()?.bundle("the8020/i18n");
   const messages = new MessageHistory();
   const unbind = bindSession({
     sessionId,
@@ -320,6 +334,8 @@ async function establish(
   Object.assign(
     record,
     {
+      localization: currentLocalization()!,
+      languageBundle: await currentLocalization()!.bundle("the8020/uui"),
       executionId,
       serviceId: meta.serviceId,
       placement: structuredClone(meta.execution),
@@ -473,6 +489,7 @@ async function connect(
       serverSequence: ++record.serverSequence,
       sessionId: record.sessionId,
       resumeToken: "",
+      localization: record.languageBundle,
       resumed: false,
       connection,
     }, false);
@@ -628,6 +645,7 @@ function emit(
     | UUIWorkerOutbound
     | {
       type: "session.resumed";
+      localization?: import("/p/the8020/i18n/messages.ts").Bundle;
       resumed: true;
       lastClientSequence: number;
       connection: string;
@@ -688,6 +706,7 @@ function replay(
   if (lastSequence === 0) {
     emit(record, {
       type: "session.resumed",
+      localization: record.languageBundle,
       resumed: true,
       connection,
       lastClientSequence: record.lastClientSequence,

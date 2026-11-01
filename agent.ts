@@ -1,3 +1,4 @@
+import { msg } from "/p/the8020/uui/i18n/messages.ts";
 import { z } from "/p/the8020/db/fields.ts";
 import { getPath } from "./bindings.ts";
 import type { LayoutDocument, LayoutNode } from "./layout.ts";
@@ -148,8 +149,7 @@ function screenText(screen: ScreenSnapshot): Element {
       total: item.totalItems,
       ...(item.rows.length > 100
         ? {
-          hint:
-            "Transcript shows 100 rows; use list --page-size 100 to page through all rows.",
+          hint: msg("agent.transcript_shows_100_rows_use_list_page"),
         }
         : {}),
     }];

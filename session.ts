@@ -1,3 +1,11 @@
+import {
+  currentLocalization,
+  prepareTexts,
+  resolveTexts,
+  type Text,
+  text,
+} from "/p/the8020/i18n/mod.ts";
+import { validationError } from "/p/the8020/i18n/validation.ts";
 import { describeError } from "./errors.ts";
 import { getPath, setPath } from "./bindings.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -6,6 +14,7 @@ import {
   buildControls,
   buildFieldCatalog,
   fieldMetadata,
+  prepareSchemaTexts,
   schemaAtPath,
 } from "./fields.ts";
 import {
@@ -134,8 +143,8 @@ export interface CallScreenOptions<T extends z.ZodRawShape>
     controls?: ControlDeclaration[];
     actions?: ScreenActionDeclaration[];
   };
-  title?: string;
-  description?: string;
+  title?: Text;
+  description?: Text;
   customElements?: CustomElementDeclaration[];
 }
 
@@ -548,7 +557,27 @@ async function showScreen<T extends z.ZodRawShape>(
       );
     }
   }
-  const initial = options.schema.safeParse(options.model.data);
+  if (currentLocalization()) {
+    const schemaTexts = prepareSchemaTexts(options.schema);
+    if (schemaTexts) await schemaTexts;
+    const declaredTexts = prepareTexts(
+      options.title,
+      options.description,
+      options.controls,
+      options.actions,
+      options.header,
+      options.layout,
+    );
+    if (declaredTexts) await declaredTexts;
+    if (!currentLocalization()!.hasBundle("the8020/i18n")) {
+      await currentLocalization()!.bundle("the8020/i18n");
+    }
+  }
+  const title = text(options.title);
+  const description = text(options.description);
+  const initial = options.schema.safeParse(options.model.data, {
+    error: validationError,
+  });
   if (!initial.success) throw initial.error;
   const fields = buildFieldCatalog(options.schema);
   const headerDeclarations = cloneDeclaration(options.header?.controls ?? []);
@@ -658,12 +687,12 @@ async function showScreen<T extends z.ZodRawShape>(
           undefined;
     }
   }
-  const resolvedActions = resolveElementIDs(
+  const resolvedActions = resolveTexts(resolveElementIDs(
     cloneDeclaration(actionDeclarations),
     (action) => ({ label: action.label, kind: action.kind }),
     "action",
     reserved,
-  );
+  ));
   const shortcuts = new Set<string>();
   for (const element of [...resolvedControls, ...resolvedActions]) {
     validateComponentStyle(element);
@@ -803,8 +832,8 @@ async function showScreen<T extends z.ZodRawShape>(
       ...(options.class === undefined ? {} : { class: options.class }),
       ...(options.style === undefined ? {} : { style: options.style }),
       revision: screenRevision,
-      title: options.title,
-      description: options.description,
+      title,
+      description,
       fields: wireFields,
       controls,
       model: lists.presentModel(options.model.data),
@@ -1006,6 +1035,7 @@ async function showScreen<T extends z.ZodRawShape>(
           offset: command.offset,
           limit: command.limit,
         });
+        await prepareSchemaTexts(page.schema);
         return {
           columns: buildFieldCatalog(page.schema).map((
             { bind, label, description },
@@ -1739,7 +1769,7 @@ function scheduleRedraw<T extends z.ZodRawShape>(
       return;
     }
     if (call.settled) return;
-    const parsed = schema.safeParse(model.data);
+    const parsed = schema.safeParse(model.data, { error: validationError });
     if (!parsed.success) {
       settleCall(state, call, { error: parsed.error });
       return;
@@ -1976,10 +2006,13 @@ function prepareChanges<T extends z.ZodRawShape>(
     ) {
       throw new TypeError("list edits require a displayed-row mapping");
     }
-    let parsed = target.safeParse(change.value);
-    // A cleared input of an optional field means no value.
+    let parsed = target.safeParse(change.value, { error: validationError });
+    // Prefer null for a cleared nullable field so optional updates can reset it.
     if (!parsed.success && change.value === "") {
-      const empty = target.safeParse(undefined);
+      const nullable = target.safeParse(null, { error: validationError });
+      const empty = nullable.success
+        ? nullable
+        : target.safeParse(undefined, { error: validationError });
       if (empty.success) parsed = empty;
     }
     if (!parsed.success) {
@@ -1988,7 +2021,7 @@ function prepareChanges<T extends z.ZodRawShape>(
     setPath(candidate, change.bind, parsed.data);
     changed.add(change.bind);
   }
-  const whole = schema.safeParse(candidate);
+  const whole = schema.safeParse(candidate, { error: validationError });
   if (!whole.success) throw new TypeError(readableIssue(schema, whole.error));
   return { candidate, changed };
 }

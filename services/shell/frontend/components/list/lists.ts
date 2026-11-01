@@ -1,3 +1,4 @@
+import { t } from "../../i18n.ts";
 import {
   type ListColumn,
   type ListQuery,
@@ -244,12 +245,12 @@ class ListController {
     const moreToggle = document.createElement("summary");
     moreToggle.className =
       "btn btn-ghost btn-sm program-header-overflow-toggle";
-    moreToggle.setAttribute("aria-label", "More list controls");
-    moreToggle.title = "More list controls";
+    moreToggle.setAttribute("aria-label", t("shell.moreListControls"));
+    moreToggle.title = t("shell.moreListControls");
     renderIconText(moreToggle, "[[icon=more_vert]]");
     const overflowItems = document.createElement("div");
     overflowItems.className = "program-header-overflow-items";
-    overflowItems.setAttribute("aria-label", "Additional list controls");
+    overflowItems.setAttribute("aria-label", t("shell.additionalListControls"));
     overflow.append(moreToggle, overflowItems);
     header.append(visible, overflow);
     customToolbar.append(header);
@@ -272,7 +273,7 @@ class ListController {
     actions.append(...this.tools.render(snapshot, callbacks));
     if (snapshot.state.query.sort !== null) {
       actions.append(
-        iconButton("Clear all sorts", "filter_list_off", () => {
+        iconButton(t("shell.clearSorts"), "filter_list_off", () => {
           this.#draft.sort = null;
           this.queueQuery(true);
         }),
@@ -280,7 +281,7 @@ class ListController {
     }
     if (snapshot.filtered) {
       actions.append(
-        iconButton("Clear all filters", "filter_alt_off", () => {
+        iconButton(t("shell.clearFilters"), "filter_alt_off", () => {
           this.#draft.search = "";
           this.#draft.filters = {};
           this.queueQuery(true);
@@ -292,8 +293,8 @@ class ListController {
     search.maxLength = MAX_LIST_QUERY_LENGTH;
     search.id = `${this.#prefix}-search`;
     search.className = "data-list-search";
-    search.placeholder = "Search…";
-    search.setAttribute("aria-label", "Search list");
+    search.placeholder = t("lists.search");
+    search.setAttribute("aria-label", t("shell.searchList"));
     search.value = this.#draft.search;
     search.addEventListener("input", () => {
       this.#draft.search = search.value;
@@ -335,9 +336,11 @@ class ListController {
       checkbox.disabled = snapshot.totalSourceItems === 0;
       checkbox.setAttribute(
         "aria-label",
-        checkbox.checked ? "Select none" : "Select all",
+        checkbox.checked ? t("shell.selectNone") : t("shell.selectAll"),
       );
-      cell.title = checkbox.checked ? "Select none" : "Select all";
+      cell.title = checkbox.checked
+        ? t("shell.selectNone")
+        : t("shell.selectAll");
       cell.addEventListener("click", (event) => {
         if (event.target !== checkbox && !checkbox.disabled) checkbox.click();
       });
@@ -369,7 +372,7 @@ class ListController {
       renderIconText(full, column.heading);
       button.setAttribute(
         "aria-label",
-        full.textContent || column.key || "Value",
+        full.textContent || column.key || t("field_help.value"),
       );
       const short = document.createElement("span");
       short.className = "data-list-heading data-list-short-heading";
@@ -410,12 +413,14 @@ class ListController {
     toggle.className = "data-list-tools-toggle";
     toggle.id = `${this.#prefix}-tools`;
     toggle.textContent = state.toolbarOpen ? "−" : "+";
-    toggle.setAttribute("aria-label", "List tools");
+    toggle.setAttribute("aria-label", t("shell.listTools"));
     toggle.setAttribute("aria-expanded", String(state.toolbarOpen));
     toggle.setAttribute("aria-controls", toolbar.id);
     toggle.title = snapshot.state.query.search
-      ? `List tools — search: ${snapshot.state.query.search}`
-      : "List tools";
+      ? t("lists.list_tools_search_value1", {
+        value1: snapshot.state.query.search,
+      })
+      : t("shell.listTools");
     toggle.classList.toggle(
       "has-filter",
       snapshot.state.query.search.trim() !== "",
@@ -479,7 +484,7 @@ class ListController {
           column.key === "" ? item : getPath(item, column.key),
         );
         const overflow = createOverflowText(value, {
-          label: "Show complete value",
+          label: t("shell.completeValue"),
           className: "data-list-cell-value",
         });
         overflow.querySelector(".overflow-text-content")!.classList.add(
@@ -492,7 +497,9 @@ class ListController {
       const cell = body.insertRow().insertCell();
       cell.colSpan = snapshot.columns.length + (snapshot.selection ? 1 : 0);
       cell.className = "data-list-empty";
-      cell.textContent = snapshot.filtered ? "No matching items" : "No items";
+      cell.textContent = snapshot.filtered
+        ? t("shell.noMatchingItems")
+        : t("shell.noItems");
     }
     this.#scroll.append(this.#table);
     const viewport = document.createElement("div");
@@ -642,9 +649,9 @@ class ListController {
     const select = document.createElement("select");
     select.id = `${this.#prefix}-page-size`;
     select.className = "data-list-page-size";
-    select.setAttribute("aria-label", "Rows per page");
-    select.title = "Rows per page";
-    select.append(new Option("Auto", ""));
+    select.setAttribute("aria-label", t("shell.rowsPerPage"));
+    select.title = t("shell.rowsPerPage");
+    select.append(new Option(t("lists.auto"), ""));
     for (const size of LIST_PAGE_SIZES) {
       select.append(new Option(String(size), String(size)));
     }
@@ -680,7 +687,10 @@ class ListController {
     const navigation = document.createElement("nav");
     navigation.className = "data-list-pagination";
     navigation.hidden = snapshot.totalPages <= 1 && !snapshot.selection;
-    navigation.setAttribute("aria-label", `Pages for ${snapshot.bind}`);
+    navigation.setAttribute(
+      "aria-label",
+      t("lists.pages_for_value1", { value1: snapshot.bind }),
+    );
     const summary = document.createElement("span");
     summary.className = "data-list-page-summary";
     const start = snapshot.rows.length === 0
@@ -693,14 +703,17 @@ class ListController {
     summary.textContent = snapshot.source !== undefined &&
         snapshot.source.totalItems === undefined
       ? `${start}–${end}`
-      : `${start}–${end} of ${snapshot.totalItems}${
+      : `${t("lists.range", { start, end, total: snapshot.totalItems })}${
         snapshot.filtered
-          ? ` (filtered, total ${snapshot.totalSourceItems})`
+          ? t("lists.filtered", { total: snapshot.totalSourceItems })
           : ""
       }`;
     if (snapshot.selection) {
-      summary.textContent =
-        `(${snapshot.selection.selectedItems} of ${snapshot.totalSourceItems} selected) · ${summary.textContent}`;
+      summary.textContent = t("lists.selected", {
+        selected: snapshot.selection.selectedItems,
+        total: snapshot.totalSourceItems,
+        summary: summary.textContent,
+      });
     }
     summary.title = summary.textContent;
     const pages = document.createElement("span");
@@ -719,7 +732,7 @@ class ListController {
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = String(item);
-      button.setAttribute("aria-label", `Page ${item}`);
+      button.setAttribute("aria-label", t("lists.page", { page: item }));
       if (item === snapshot.state.page) {
         button.setAttribute("aria-current", "page");
         button.disabled = true;
@@ -755,9 +768,9 @@ class ListController {
     checkbox.checked = getPath(item, snapshot.selection!.bind) === true;
     checkbox.setAttribute(
       "aria-label",
-      `Select row ${
-        (snapshot.state.page - 1) * snapshot.state.pageSize + index + 1
-      }`,
+      t("lists.select_row_value1", {
+        value1: (snapshot.state.page - 1) * snapshot.state.pageSize + index + 1,
+      }),
     );
     cell.append(checkbox);
     const position = (snapshot.state.page - 1) * snapshot.state.pageSize +
@@ -866,7 +879,7 @@ class ListController {
     popover.append(title);
     if (column.description) {
       popover.append(createOverflowText(column.description, {
-        label: `${column.heading}: full description`,
+        label: t("lists.value1_full_description", { value1: column.heading }),
         preview: "markdown",
         maxCharacters: 100,
         className: "data-list-column-description",
@@ -888,11 +901,11 @@ class ListController {
       option.classList.toggle("is-selected", selected);
       const button = document.createElement("button");
       button.type = "button";
-      button.textContent = "Sort";
+      button.textContent = t("lists.sort");
       button.append(this.sortIcon(direction));
       button.setAttribute(
         "aria-label",
-        `Sort ${direction === "asc" ? "ascending" : "descending"}`,
+        t(direction === "asc" ? "lists.ascending" : "lists.descending"),
       );
       button.setAttribute("aria-pressed", String(selected));
       button.addEventListener("click", () => {
@@ -901,7 +914,7 @@ class ListController {
       });
       option.append(button);
       if (selected) {
-        option.append(iconButton("Clear sort", "close", () => {
+        option.append(iconButton(t("shell.clearSort"), "close", () => {
           this.#draft.sort = null;
           this.confirmQuery();
         }));
@@ -912,17 +925,20 @@ class ListController {
     field.className = "data-list-filter";
     const input = document.createElement("input");
     input.id = `${this.#prefix}-filter-${column.id}`;
-    input.setAttribute("aria-label", `Filter ${title.textContent}`);
+    input.setAttribute(
+      "aria-label",
+      t("lists.filter_column", { column: title.textContent ?? "" }),
+    );
     input.type = "text";
     input.maxLength = MAX_LIST_QUERY_LENGTH;
     input.placeholder =
       column.semanticType === "number" || column.semanticType === "decimal"
-        ? "Filter: e.g. >= 10"
+        ? t("lists.filter_number")
         : column.semanticType === "boolean"
-        ? "Filter: true or false"
+        ? t("lists.filter_boolean")
         : column.semanticType === "date" || column.semanticType === "datetime"
-        ? "Filter: YYYY-MM-DD"
-        : "Filter: contains…";
+        ? t("lists.filter_date")
+        : t("lists.filter_text");
     input.value = this.#draft.filters[column.key] ?? "";
     input.addEventListener("input", () => {
       this.#draft.filters[column.key] = input.value;
@@ -935,7 +951,7 @@ class ListController {
         this.confirmQuery();
       }
     });
-    const clear = iconButton("Clear filter", "close", () => {
+    const clear = iconButton(t("shell.clearFilter"), "close", () => {
       delete this.#draft.filters[column.key];
       input.value = "";
       this.confirmQuery();

@@ -75,7 +75,7 @@ export function brandingHead(
     <meta name="twitter:image" content="${social}">`;
 }
 
-function escapeHTML(value: string): string {
+export function escapeHTML(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 }

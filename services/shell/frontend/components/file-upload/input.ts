@@ -1,3 +1,4 @@
+import { t } from "../../i18n.ts";
 import type {
   CustomElementContext,
   CustomElementInstance,
@@ -10,7 +11,7 @@ export default function mount(
   const input = document.createElement("input");
   input.type = "file";
   input.accept = String(context.config.accept ?? "");
-  input.setAttribute("aria-label", context.control?.label ?? "File");
+  input.setAttribute("aria-label", context.control?.label ?? t("input.file"));
   input.style.width = "100%";
   input.style.color = "inherit";
   let active = true;

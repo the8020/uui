@@ -1,0 +1,33 @@
+{
+  "name": "Slovenčina",
+  "texts": {
+    "login.signIn": "Prihlásiť sa",
+    "login.username": "Používateľské meno",
+    "login.password": "Heslo",
+    "login.language": "Jazyk",
+    "login.accountLanguage": "Podľa účtu",
+    "login.invalid": "Nesprávne používateľské meno alebo heslo.",
+    "shell.connecting": "Pripájanie…",
+    "shell.connected": "Pripojené",
+    "shell.reconnecting": "Opätovné pripájanie…",
+    "shell.takeControl": "Prevziať ovládanie",
+    "shell.reload": "Znova načítať stránku",
+    "shell.loading": "Načítavanie…",
+    "shell.searchList": "Hľadať v zozname",
+    "shell.selectNone": "Zrušiť výber",
+    "shell.selectAll": "Vybrať všetko",
+    "shell.listTools": "Nástroje zoznamu",
+    "shell.noMatchingItems": "Žiadne zodpovedajúce položky",
+    "shell.noItems": "Žiadne položky",
+    "shell.rowsPerPage": "Riadkov na stránku",
+    "shell.back": "Späť",
+    "shell.exit": "Ukončiť",
+    "shell.new": "Nové",
+    "shell.fullscreen": "Celá obrazovka",
+    "shell.close": "Zavrieť",
+    "shell.account": "Môj účet",
+    "shell.customization": "Prispôsobenie",
+    "shell.messages": "Správy",
+    "shell.logout": "Odhlásiť sa"
+  }
+}

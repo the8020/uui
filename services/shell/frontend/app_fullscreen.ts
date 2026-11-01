@@ -1,3 +1,4 @@
+import { t } from "./i18n.ts";
 import { renderIconText } from "./icon_text.ts";
 
 /** Browser-wide choice, kept until the user turns it off. */
@@ -17,7 +18,9 @@ export function installAppFullscreen(
 ): (expanded: boolean) => void {
   const apply = (expanded: boolean) => {
     root.classList.toggle(APP_FULLSCREEN_CLASS, expanded);
-    const label = expanded ? "Exit fullscreen" : "Fullscreen";
+    const label = expanded
+      ? t("app_fullscreen.exit_fullscreen")
+      : t("shell.fullscreen");
     button.setAttribute("aria-label", label);
     button.setAttribute("aria-pressed", String(expanded));
     button.title = label;

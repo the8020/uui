@@ -41,23 +41,26 @@
             >|</span><span aria-hidden="true">20</span>
           </div>
           <div class="session-navigation" role="group"
-            aria-label="Session navigation">
+            aria-label="Session navigation"
+            data-i18n-aria="shell.session_navigation">
             <button
               class="btn btn-ghost btn-sm screen-back"
               id="screen-back"
               type="button"
               aria-label="Back"
-              title="Back"
+              title="Back" data-i18n-title="shell.back"
               disabled
             >
           </button>
             <button class="btn btn-ghost btn-sm screen-back" id="session-exit"
-              type="button" aria-label="Exit" title="Exit" disabled></button>
+              type="button" aria-label="Exit" title="Exit"
+              data-i18n-title="shell.exit" disabled></button>
             <a class="btn btn-ghost btn-sm screen-back" id="session-new"
               href="./" target="_blank" rel="noopener" aria-label="New"
-              title="New"></a>
+              title="New" data-i18n-title="shell.new"></a>
             <button class="btn btn-ghost btn-sm screen-back" id="app-fullscreen"
               type="button" aria-label="Fullscreen" title="Fullscreen"
+              data-i18n-title="shell.fullscreen"
               aria-pressed="false"></button>
           </div>
         </div>
@@ -76,17 +79,20 @@
               id="program-header-overflow-toggle"
               aria-label="More program controls"
               title="More program controls"
+              data-i18n-title="shell.program_controls"
             ></summary>
             <div
               class="program-header-overflow-items"
               id="program-header-overflow-items"
               aria-label="Additional program controls"
+              data-i18n-aria="shell.program_controls"
             ></div>
           </details>
         </div>
         <div class="navbar-actions" id="session-controls-slot">
           <nav class="session-controls" id="session-controls" popover="manual"
-            aria-label="Session controls">
+            aria-label="Session controls"
+            data-i18n-aria="shell.session_controls">
             <details class="session-menu" id="session-menu">
               <summary
                 class="btn btn-ghost btn-sm session-menu-toggle"
@@ -113,20 +119,20 @@
               <div
                 class="session-menu-panel"
                 id="session-menu-panel"
-                aria-label="Session menu"
+                aria-label="Session menu" data-i18n-aria="shell.session_menu"
               >
                 <button
                   class="btn btn-ghost btn-sm session-menu-action"
                   id="session-account"
                   type="button"
                   disabled
-                ><span class="session-menu-action-label">My account</span></button>
+                ><span class="session-menu-action-label" data-i18n="shell.account">My account</span></button>
                 <button
                   class="btn btn-ghost btn-sm session-menu-action"
                   id="session-customization"
                   type="button"
                   disabled
-                ><span class="session-menu-action-label">Customization</span></button>
+                ><span class="session-menu-action-label" data-i18n="shell.customization">Customization</span></button>
                 <button
                   class="btn btn-ghost btn-sm session-menu-action messages-open"
                   id="messages-open"
@@ -138,7 +144,8 @@
                     data-count="0"
                     aria-hidden="true"
                   >0</span>
-                  <span class="session-menu-action-label">Messages</span>
+                  <span class="session-menu-action-label"
+                    data-i18n="shell.messages">Messages</span>
                 </button>
                 <button
                   class="btn btn-ghost btn-sm session-menu-action theme-toggle"
@@ -151,13 +158,13 @@
                   class="btn btn-ghost btn-sm session-menu-action session-logout"
                   id="session-logout"
                   type="button"
-                ><span class="session-menu-action-label">Logout</span></button>
+                ><span class="session-menu-action-label" data-i18n="shell.logout">Logout</span></button>
               </div>
             </details>
             <div
               class="message-toast-stack"
               id="message-toast-stack"
-              aria-label="New messages"
+              aria-label="New messages" data-i18n-aria="shell.new_messages"
               aria-live="polite"
               aria-relevant="additions"
               hidden
@@ -167,7 +174,7 @@
                 id="message-toast-dismiss-all"
                 type="button"
                 aria-label="Dismiss all message notifications"
-                title="Dismiss all messages"
+                title="Dismiss all messages" data-i18n-title="shell.dismiss_all"
                 hidden
               ></button>
             </div>
@@ -182,13 +189,14 @@
     >
       <section class="uui-dialog-frame message-dialog-frame">
         <header class="uui-dialog-toolbar message-dialog-header">
-          <h2 class="uui-dialog-title" id="message-dialog-title">Messages</h2>
+          <h2 class="uui-dialog-title" id="message-dialog-title"
+            data-i18n="shell.messages">Messages</h2>
           <button
             class="btn btn-ghost btn-sm uui-dialog-close message-dialog-close"
             id="message-dialog-close"
             type="button"
             aria-label="Close"
-            title="Close"
+            title="Close" data-i18n-title="shell.close"
           ></button>
         </header>
         <div
@@ -200,13 +208,14 @@
     <div id="interaction-shield" class="interaction-shield" aria-hidden="true">
       <div class="interaction-indicator">
         <span class="interaction-spinner"></span>
-        <span>Loading…</span>
+        <span data-i18n="shell.loading">Loading…</span>
       </div>
     </div>
     <main class="shell-main">
       <div class="container">
         <div id="app" aria-live="polite">
-          <p class="loading">Opening your session…</p>
+          <p class="loading"
+            data-i18n="shell.openingSession">Opening your session…</p>
         </div>
       </div>
     </main>

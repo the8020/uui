@@ -1,3 +1,4 @@
+import type { Text } from "/p/the8020/i18n/messages.ts";
 /** Serializable screen state and list contracts, shared with the browser. */
 import type { ScreenElement, ScreenElementDeclaration } from "./protocol.ts";
 import type { ListQuery } from "/p/the8020/db/fields.ts";
@@ -20,8 +21,8 @@ export type ColumnLength = "compact" | "short" | "medium" | "long";
 
 export interface ListColumnOptions {
   id?: string;
-  heading?: string;
-  shortHeading?: string;
+  heading?: Text;
+  shortHeading?: Text;
   length?: ColumnLength;
   semanticType?: ListValueType;
 }
@@ -33,7 +34,7 @@ export interface ListOptions {
   /** Boolean path relative to each row; enables whole-table checkbox selection. */
   selection?: string;
   display?: string[];
-  headings?: Record<string, string>;
+  headings?: Record<string, Text>;
   columnOptions?: Record<string, ListColumnOptions>;
   triggerFilterEvents?: boolean;
   /** Open List tools initially and put the cursor in its search. */
@@ -41,6 +42,7 @@ export interface ListOptions {
 }
 
 export interface ListColumn extends ListColumnOptions {
+  shortHeading?: string;
   id: string;
   key: string;
   heading: string;

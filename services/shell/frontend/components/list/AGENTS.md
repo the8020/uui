@@ -26,6 +26,9 @@ Parent DOX: [shell frontend](../../AGENTS.md).
 
 # Local Contracts
 
+- List chrome uses the shell formatter. Server-provided headings/help are
+  already resolved; list values remain application data.
+
 - Every list reserves `--uui-bar-height` for its custom toolbar, including empty
   toolbars. Reuse `ResponsiveProgramHeader` for ordered three-dot overflow and
   native controls; dispose its observers/listeners on redraw and removal.

@@ -1,3 +1,5 @@
+import { text as localizedText } from "/p/the8020/i18n/mod.ts";
+import { msg } from "/p/the8020/uui/i18n/messages.ts";
 import {
   BACK_EVENT,
   callScreen,
@@ -100,9 +102,11 @@ export default async function programTerminated(
     screenModel.data = model;
     const event = await callScreen({
       id: "program-terminated",
-      title: "[[icon=error color=error]] Program terminated",
-      description:
-        `Uncaught exception of type '${model.exceptionType}' was raised in '${model.location}' and terminated the current program.`,
+      title: msg("program.program_terminated"),
+      description: msg("program.uncaught_exception_of_type_value1_was_raised", {
+        value1: model.exceptionType,
+        value2: model.location,
+      }),
       schema: TerminationScreen,
       model: screenModel,
       layout,
@@ -136,19 +140,21 @@ export default async function programTerminated(
       ],
       header: {
         actions: [
-          { id: "home", label: "Home", kind: "primary" },
-          { id: "copy", label: "Copy short dump" },
+          { id: "home", label: msg("program.home"), kind: "primary" },
+          { id: "copy", label: msg("program.copy_short_dump") },
           ...(browseSource
-            ? [{ id: "browse-source", label: "[[icon=code]] Browse source" }]
+            ? [{ id: "browse-source", label: msg("program.browse_source") }]
             : []),
-          { id: "end", label: "End session", kind: "danger" },
+          { id: "end", label: msg("program.end_session"), kind: "danger" },
         ],
       },
     });
     if (event.action === BACK_EVENT) return "home";
     if (event.action === "home") return "home";
     if (event.action === "end") {
-      endSession("Session ended after a program exception.");
+      endSession(
+        localizedText(msg("program.session_ended_after_a_program_exception")),
+      );
       return "end";
     }
     if (event.action === "copy") {

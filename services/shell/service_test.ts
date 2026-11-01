@@ -1,9 +1,16 @@
+import { test } from "../../test_localization.ts";
 import { assertEquals, assertMatch } from "@std/assert";
 import service from "./service.ts";
 import { brandingDatabase } from "../../branding_test_support.ts";
 import materialSymbols from "./frontend/assets/material_symbols.json" with {
   type: "json",
 };
+import {
+  defaultConfiguration,
+  Localization,
+  withLocalization,
+} from "/p/the8020/i18n/mod.ts";
+import czech from "../../i18n/locales/cs.json" with { type: "json" };
 
 const context = {
   signal: new AbortController().signal,
@@ -31,7 +38,57 @@ const context = {
   },
 };
 
-Deno.test("shell emits only non-secret boot data and local assets", async () => {
+Deno.test("shell startup text is translated and escaped before browser JavaScript runs", async () => {
+  using _database = await brandingDatabase();
+  for (
+    const [path, opening, expected] of [
+      ["/", czech.texts["shell.openingSession"], "Otevírání vaší relace…"],
+      [
+        "/index.html",
+        '<img src=x onerror="alert(1)"> & text',
+        "&lt;img src=x onerror=&quot;alert(1)&quot;&gt; &amp; text",
+      ],
+    ]
+  ) {
+    await withLocalization(
+      new Localization(
+        "cs",
+        defaultConfiguration,
+        (packageId) =>
+          Promise.resolve({
+            package: packageId,
+            language: "cs",
+            texts: { ...czech.texts, "shell.openingSession": opening! },
+          }),
+      ),
+      async () => {
+        const response = await service.fetch(
+          new Request(`https://service${path}`),
+          context,
+        );
+        const body = await response.text();
+        assertEquals(response.status, 200);
+        assertEquals(response.headers.get("content-language"), "cs");
+        assertEquals(
+          body.includes('<html lang="cs" dir="ltr" data-theme="dark">'),
+          true,
+        );
+        assertEquals(
+          body.includes(`data-i18n="shell.openingSession">${expected}</p>`),
+          true,
+        );
+        assertEquals(
+          body.includes('data-i18n="shell.loading">Načítání…</span>'),
+          true,
+        );
+        assertEquals(body.includes("Opening your session"), false);
+        assertEquals(body.includes("<img src=x"), false);
+      },
+    );
+  }
+});
+
+test("shell emits only non-secret boot data and local assets", async () => {
   using _database = await brandingDatabase();
   const response = await service.fetch(
     new Request("https://service/"),
@@ -53,7 +110,14 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
     body.includes('"logoutUrl":"/the8020/uui/login/logout"'),
     true,
   );
-  assertEquals(body.includes('<html lang="en" data-theme="dark">'), true);
+  assertEquals(
+    body.includes('<html lang="en" dir="ltr" data-theme="dark">'),
+    true,
+  );
+  assertMatch(
+    body,
+    /data-i18n="shell.openingSession">Opening your session…<\/p>/,
+  );
   assertEquals(body.includes("<title>80|20</title>"), true);
   assertEquals(
     body.includes('rel="icon" type="image/png" sizes="64x64"'),
@@ -636,7 +700,7 @@ Deno.test("shell emits only non-secret boot data and local assets", async () => 
   assertEquals(rejectedTraversal.status, 404);
 });
 
-Deno.test("shell serves the complete local icon font with its content hash and immutable caching", async () => {
+test("shell serves the complete local icon font with its content hash and immutable caching", async () => {
   const asset = await service.fetch(
     new Request(`https://service/assets/${materialSymbols.font}`),
     context,

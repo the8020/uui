@@ -1,3 +1,5 @@
+import { text as localizedText } from "/p/the8020/i18n/mod.ts";
+import { msg } from "/p/the8020/uui/i18n/messages.ts";
 import { requirePermission } from "/p/the8020/auth/mod.ts";
 import {
   BACK_EVENT,
@@ -28,16 +30,14 @@ import {
 const schema = z.object({
   title: serverTitle,
   favicon: field(z.string(), {
-    label: "Favicon",
-    description:
-      "Square PNG, cropped and resized to 64×64 pixels. Images up to 10 MiB.",
+    label: msg("program.favicon"),
+    description: msg("program.square_png_cropped_and_resized_to_64"),
     fieldHelp: false,
     rowSpan: 2,
   }),
   social: field(z.string(), {
-    label: "Social preview",
-    description:
-      "Centered crop to 1200×630 pixels, saved as JPEG. Images up to 10 MiB.",
+    label: msg("program.social_preview"),
+    description: msg("program.centered_crop_to_1200_630_pixels_saved"),
     fieldHelp: false,
     rowSpan: 4,
     length: "long",
@@ -97,7 +97,7 @@ export default async function systemCustomization(): Promise<void> {
     });
     const event = await callScreen({
       id: "system-customization",
-      title: "System customization",
+      title: msg("program.system_customization"),
       schema,
       model,
       controls: [
@@ -105,12 +105,15 @@ export default async function systemCustomization(): Promise<void> {
         ...controls.map(({ control }) => control),
       ],
       header: {
-        actions: [{ id: "save", label: "[[icon=save]] Save", kind: "primary" }],
+        actions: [{ id: "save", label: msg("program.save"), kind: "primary" }],
       },
-      actions: [{ id: "default-favicon", label: "Use default favicon" }, {
+      actions: [{
+        id: "default-favicon",
+        label: msg("program.use_default_favicon"),
+      }, {
         id: "default-social",
-        label: "Use default preview",
-      }, { id: "default-title", label: "Use default title" }],
+        label: msg("program.use_default_preview"),
+      }, { id: "default-title", label: msg("program.use_default_title") }],
       layout: {
         schema: 1,
         id: "system-customization",
@@ -119,13 +122,13 @@ export default async function systemCustomization(): Promise<void> {
           children: [
             {
               type: "field-group",
-              title: "Browser",
+              title: msg("program.browser"),
               controls: ["title", "favicon"],
               actions: ["default-title", "default-favicon"],
             },
             {
               type: "field-group",
-              title: "Social preview",
+              title: msg("program.social_preview"),
               controls: ["social"],
               actions: ["default-social"],
             },
@@ -152,7 +155,10 @@ export default async function systemCustomization(): Promise<void> {
         saved = await fetchBranding();
         delete draft.favicon;
         delete draft.social;
-        sendMessage("System customization saved.", "success");
+        sendMessage(
+          localizedText(msg("program.system_customization_saved")),
+          "success",
+        );
       }
     } catch (error) {
       sendMessage(describeError(error), "error");

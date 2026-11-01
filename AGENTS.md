@@ -173,6 +173,7 @@ relevant child AGENTS.md
 This root retains repository-wide contracts and files outside the child scopes
 below.
 
+- [i18n/AGENTS.md](i18n/AGENTS.md): Package-owned UI catalogs.
 - [frontend/AGENTS.md](frontend/AGENTS.md): Provide shared browser Markdown
   rendering outside service-owned source trees.
 - [programs/AGENTS.md](programs/AGENTS.md): Own standard Home, Program
@@ -204,10 +205,22 @@ below.
   protocol/configuration, session metadata and administration, source/build,
   package-local layouts, generic program-supplied custom elements and public
   asset delivery, shared Markdown rendering, and the shell message center.
-- Do not own authentication storage/validation, cookie construction, sandbox
-  placement, physical WebSockets, or kernel routing.
+- Do not own authentication storage/validation, authentication cookie
+  construction, sandbox placement, physical WebSockets, or kernel routing.
 
 # Local Contracts
+
+- `the8020/i18n` owns catalogs and overrides. UUI prepares referenced field,
+  action, layout and list texts once per screen; wire descriptors remain
+  strings. Shared schemas never mutate per language, and validation uses a
+  per-parse map. Literal strings remain supported; they are not automatically
+  translated.
+- Sessions retain the language selected at establishment and each loaded
+  dictionary. Browser cookie selection is persistent and scoped to system ID; an
+  explicit `the8020-language` header takes precedence. Account default is
+  available on login. Reconnection and headless commands retain session
+  language. The shell receives its prepared dictionary in boot and session
+  handshake data.
 
 - List-specific controls and actions belong in that list's `toolbar`, including
   creation, selection operations, refresh, and backend paging. Screen navigation
@@ -684,29 +697,31 @@ below.
   drafts. On every screen, Back (Close, Escape) applies the edits it carries
   when they are valid and otherwise discards them; it is never refused for an
   invalid draft. Empty separated tags send no value rather than `""`. A cleared
-  input (`""`) of an optional field is stored as no value. Validation problems
-  are reported through `describeError(error, schema?, bind?)` (`errors.ts`,
-  exported from `mod.ts`): the field's label and a plain message, with "Enter a
-  value." for empty or missing required values; programs use it instead of
-  showing raw Zod messages. Show Done only in edit mode, followed by Navigate
-  when semantic `open(value)` exists. Navigate opens a related page without
-  committing and restores help on return. Markdown descriptions appear in full.
-  `fieldHelp: false` suppresses help. Field help shows a Value help card below
-  the value when the field has a provider or ordinary control options. Its list
-  opens with search visible and focused (`focusSearch`), and its value's field
-  group is a layout `summary`: once it scrolls away, the dialog shows a compact
-  bar under its toolbar (outside the scrolling body) with the label, the value
-  or tags (removable there, at most three lines, then `+N more`, which scrolls
-  back to the field) and a search mirroring the list's. One value: the current
-  value's row is highlighted, a click selects it into the draft, and a
-  double-click or Enter selects it and finishes like Done. Several values
-  (arrays of scalars, or text declaring `multiple`): rows have checkboxes kept
-  by key across pages and searches; the header selects every match within the
-  on-screen limit (`SELECT_ALL_LIMITS`, default 500, read in pages of 500) or
-  refuses above it; values not offered by help, such as ranges, stay as written;
-  the schema's array maximum refuses more; selection order is kept; there is no
-  double-click finish, only Done. Read-only fields retain lookup and navigation,
-  but choices never edit their bound value.
+  input (`""`) that fails its field schema becomes `null` when nullable,
+  otherwise `undefined` when optional. Valid empty strings stay strings.
+  Validation problems are reported through
+  `describeError(error, schema?, bind?)` (`errors.ts`, exported from `mod.ts`):
+  the field's label and a plain message, with "Enter a value." for empty or
+  missing required values; programs use it instead of showing raw Zod messages.
+  Show Done only in edit mode, followed by Navigate when semantic `open(value)`
+  exists. Navigate opens a related page without committing and restores help on
+  return. Markdown descriptions appear in full. `fieldHelp: false` suppresses
+  help. Field help shows a Value help card below the value when the field has a
+  provider or ordinary control options. Its list opens with search visible and
+  focused (`focusSearch`), and its value's field group is a layout `summary`:
+  once it scrolls away, the dialog shows a compact bar under its toolbar
+  (outside the scrolling body) with the label, the value or tags (removable
+  there, at most three lines, then `+N more`, which scrolls back to the field)
+  and a search mirroring the list's. One value: the current value's row is
+  highlighted, a click selects it into the draft, and a double-click or Enter
+  selects it and finishes like Done. Several values (arrays of scalars, or text
+  declaring `multiple`): rows have checkboxes kept by key across pages and
+  searches; the header selects every match within the on-screen limit
+  (`SELECT_ALL_LIMITS`, default 500, read in pages of 500) or refuses above it;
+  values not offered by help, such as ranges, stay as written; the schema's
+  array maximum refuses more; selection order is kept; there is no double-click
+  finish, only Done. Read-only fields retain lookup and navigation, but choices
+  never edit their bound value.
 - Fields holding several values default to the `tags` control: separated text,
   and arrays whose element has value help or enum options (other scalar arrays
   stay lists unless `control: "tags"`). `FieldDescriptor.multiple` carries the
@@ -1394,3 +1409,11 @@ below.
   separators in desktop/mobile list, program-header, and modal action rows. It
   also verifies fixed toolbar heights, adjacent table alignment with empty
   toolbars, and bound controls inside the shared overflow disclosure.
+
+## Package localization
+
+- Program invocation prepares the owning package dictionary before calling its
+  entrypoint. Shared Zod schemas retain deferred message data across sessions.
+- Separately built browser components share the shell's prepared UUI dictionary
+  through a document-local symbol. Package custom elements pass only their
+  browser text subset through ordinary config; do not add catalog endpoints.

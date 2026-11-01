@@ -37,7 +37,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
   -webkit-tap-highlight-color: transparent;
 }
@@ -159,7 +160,8 @@ form {
   text-transform: uppercase;
 }
 
-.field input {
+.field input,
+.field select {
   width: 100%;
   min-height: 38px;
   border: 0;
@@ -171,11 +173,13 @@ form {
   transition: border-color 140ms ease, box-shadow 140ms ease, color 140ms ease;
 }
 
-.field input:hover {
+.field input:hover,
+.field select:hover {
   border-bottom-color: color-mix(in srgb, var(--primary), var(--border) 62%);
 }
 
-.field input:focus {
+.field input:focus,
+.field select:focus {
   border-bottom-color: var(--primary);
   outline: 0;
   box-shadow: 0 2px 0 color-mix(in srgb, var(--primary), transparent 30%);
@@ -241,4 +245,8 @@ button:focus-visible {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+.field select option {
+  background: var(--surface);
 }

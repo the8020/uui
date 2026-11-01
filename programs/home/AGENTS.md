@@ -34,7 +34,9 @@ Parent DOX: [uui programs DOX](../AGENTS.md).
   with an unreadable widget file, gets no default tile either, so no tile
   becomes public by mistake. Folders appear only with visible tiles. Hiding is
   not enforcement: programs still check their own permissions.
-- Texts are English only until platform localization is designed.
+- Widget titles, descriptions and categories use their declaring package
+  catalogs. TOML text is the English fallback. Browser chrome uses the prepared
+  UUI catalog; live status text belongs to the providing package.
 - Widgets with `[data]` show live status. The data program must be an installed
   non-interactive (`uui = false`) program; otherwise its data is ignored and
   logged. Home creates one Channel per screen. The browser asks with `load`

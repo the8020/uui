@@ -19,6 +19,11 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
 
 # Local Contracts
 
+- `i18n.ts` formats the prepared UUI dictionary with the browser-safe formatter.
+  Boot initializes language/direction; retained-session handshakes restore that
+  session dictionary. Translate authored chrome explicitly; never translate
+  model values or interpret translated HTML.
+
 - Default brand files are `default-favicon.png` (64×64 optimized palette PNG)
   and `default-social.jpg` (1200×630 progressive JPEG). Their generated masters
   use yellow `80` and yellow/white `80|20` on the dark brand background.

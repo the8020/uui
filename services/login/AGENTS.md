@@ -10,6 +10,18 @@ Parent DOX: [uui/services DOX](../AGENTS.md).
 
 # Local Contracts
 
+- Login offers enabled languages and Account default below the password.
+  Selection immediately fetches the localized page and updates its text in
+  place, preserving username/password; there is no Apply button. Explicit
+  selection and successful POST write the system-scoped, HttpOnly presentation
+  cookie with a one-year lifetime. Returning browsers preselect that language
+  before JavaScript runs. Account default clears the cookie. Without a saved
+  choice, login renders `defaultLoginLanguage`, then the system default; Account
+  default still uses the account's language after authentication. Explicit
+  service language headers remain supported. Existing sessions retain their
+  language. Page messages use the UUI catalog and all inserted text is
+  HTML-escaped.
+
 - Page titles use the configured server title plus Sign in. Shared shell
   branding code supplies escaped Open Graph/Twitter metadata and public
   `/branding/favicon.png` and `/branding/social.jpg` responses, including custom
@@ -33,6 +45,8 @@ Parent DOX: [uui/services DOX](../AGENTS.md).
 # Verification
 
 - From the repository root, run `deno task check` and `deno task test`.
+- Login service tests cover the independent login default, saved choices, cookie
+  lifetime/system scope, reset, disabled languages and rejected sign-ins.
 
 # Child DOX Index
 

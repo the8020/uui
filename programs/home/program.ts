@@ -1,3 +1,5 @@
+import { text as localizedText } from "/p/the8020/i18n/mod.ts";
+import { msg } from "/p/the8020/uui/i18n/messages.ts";
 import {
   BACK_EVENT,
   callScreen,
@@ -72,14 +74,14 @@ export async function runHome(programsRoot: string): Promise<void> {
     try {
       event = await callScreen({
         id: "home",
-        title: "Welcome to 80|20",
+        title: msg("program.welcome_to_80_20"),
         schema: HomeScreen,
         model: screenModel,
         layout,
         header: {
           actions: [
-            { id: "refresh", label: "[[icon=refresh color=warning]] Refresh" },
-            { id: "logout", label: "Logout" },
+            { id: "refresh", label: msg("program.refresh") },
+            { id: "logout", label: msg("shell.logout") },
           ],
         },
         customElements: [{
@@ -98,7 +100,10 @@ export async function runHome(programsRoot: string): Promise<void> {
     if (event.action === "refresh") catalog = undefined;
     if (event.action === BACK_EVENT || event.action === "refresh") continue;
     if (event.action === "logout") {
-      endSession("Signing out…", "/the8020/uui/login/logout");
+      endSession(
+        localizedText(msg("program.signing_out")),
+        "/the8020/uui/login/logout",
+      );
       return;
     }
     if (event.action === "select" && typeof event.value === "string") {
@@ -110,7 +115,10 @@ export async function runHome(programsRoot: string): Promise<void> {
         permission !== undefined &&
         !await permitsAny(context.username, permission)
       ) {
-        sendMessage("You no longer have access to this program.", "error");
+        sendMessage(
+          localizedText(msg("program.you_no_longer_have_access_to_this")),
+          "error",
+        );
         continue;
       }
       await invokeProgram(action.program, action.arguments, programsRoot);

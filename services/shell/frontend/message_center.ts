@@ -1,3 +1,4 @@
+import { t } from "./i18n.ts";
 import { type UUIMessageKind } from "/p/the8020/uui/protocol.ts";
 import {
   MAX_RETAINED_MESSAGES,
@@ -322,7 +323,7 @@ export class MessageCenter {
       "aria-label",
       `Dismiss ${messageKindLabel(message.kind).toLowerCase()} message`,
     );
-    close.title = "Dismiss message";
+    close.title = t("message_center.dismiss_message");
     close.append(
       createMaterialIcon("close", undefined, { decorativeIcons: true }),
     );
@@ -345,9 +346,10 @@ export class MessageCenter {
     card.tabIndex = 0;
     card.setAttribute(
       "aria-label",
-      `${messageKindLabel(message.kind)}: ${
-        messagePreview(message.body)
-      }. Open in Messages`,
+      t("message_center.value1_value2_open_in_messages", {
+        value1: messageKindLabel(message.kind),
+        value2: messagePreview(message.body),
+      }),
     );
     card.setAttribute("aria-haspopup", "dialog");
     if (this.#elements.dialog.id !== "") {
@@ -599,7 +601,7 @@ export class MessageCenter {
     if (history.length === 0) {
       const empty = document.createElement("p");
       empty.className = "message-history-empty";
-      empty.textContent = "No messages yet.";
+      empty.textContent = t("message_center.no_messages_yet");
       fragment.append(empty);
     }
     for (const message of history) {
@@ -661,7 +663,9 @@ export class MessageCenter {
 }
 
 function messageKindLabel(kind: UUIMessageKind): string {
-  return kind === "info" ? "Info" : kind[0]!.toUpperCase() + kind.slice(1);
+  return kind === "info"
+    ? t("message_center.info")
+    : kind[0]!.toUpperCase() + kind.slice(1);
 }
 
 function messagePreview(body: string): string {

@@ -1,3 +1,4 @@
+import { t } from "../../i18n.ts";
 import {
   type ListDataPage,
   type ListReadRequest,
@@ -60,13 +61,13 @@ export class ListTools {
     const readable = snapshot.source === undefined || snapshot.readable;
     this.#buttons = [
       iconButton(
-        "Display in table processor",
+        t("tools.display_in_table_processor"),
         "table_view",
         () => this.viewer(),
       ),
-      iconButton("Export", "download", () => this.exportDialog()),
-      iconButton("Copy page", "content_copy", () => this.copy(false)),
-      iconButton("Copy all", "copy_all", () => this.copy(true)),
+      iconButton(t("tools.export"), "download", () => this.exportDialog()),
+      iconButton(t("tools.copy_page"), "content_copy", () => this.copy(false)),
+      iconButton(t("editor.copy_all"), "copy_all", () => this.copy(true)),
     ];
     if (!readable) {
       for (const i of [0, 1, 3]) {
@@ -108,7 +109,7 @@ export class ListTools {
     const heading = document.createElement("h2");
     heading.className = "uui-dialog-title";
     heading.textContent = title;
-    const close = iconButton("Close", "close", () => dialog.close());
+    const close = iconButton(t("shell.close"), "close", () => dialog.close());
     close.classList.add("uui-dialog-close");
     toolbar.append(heading, close);
     const body = document.createElement("div");
@@ -153,7 +154,7 @@ export class ListTools {
       if (!(error instanceof DOMException && error.name === "AbortError")) {
         const text = error instanceof Error
           ? error.message
-          : "Could not complete the list action.";
+          : t("tools.could_not_complete_the_list_action");
         if (status?.isConnected) {
           status.textContent = text;
           status.hidden = false;
@@ -180,7 +181,7 @@ export class ListTools {
       !Number.isSafeInteger(offset + limit)
     ) {
       throw new Error(
-        "Enter a positive whole number of rows within the supported numeric range.",
+        t("tools.positive_rows"),
       );
     }
     const result: ListDataPage = {
@@ -271,7 +272,7 @@ export class ListTools {
         await navigator.clipboard.writeText(delimited(await matrix, "\t"));
       }
       signal.throwIfAborted();
-      this.notify(`Copied ${(await rows).length} rows.`);
+      this.notify(t("tools.copied_rows", { count: (await rows).length }));
     });
   }
 
@@ -279,7 +280,7 @@ export class ListTools {
     if (this.#busy) return;
     const snapshot = this.#snapshot;
     const { dialog, body, toolbar, status, signal } = this.dialog(
-      "Table processor",
+      t("tools.table_processor"),
       "data-list-processor",
     );
     const controls = document.createElement("div");
@@ -289,39 +290,39 @@ export class ListTools {
     size.min = "1";
     size.step = "1";
     size.required = true;
-    size.setAttribute("aria-label", "Rows per page");
+    size.setAttribute("aria-label", t("shell.rowsPerPage"));
     size.value = "1000";
     const sizeLabel = document.createElement("label");
     const totalLabel = document.createElement("span");
     totalLabel.className = "data-list-processor-total";
     totalLabel.setAttribute("role", "status");
-    sizeLabel.append("Rows per page ", size, totalLabel);
+    sizeLabel.append(t("tools.rows_per_page"), size, totalLabel);
     const page = document.createElement("input");
     page.type = "number";
     page.min = "1";
     page.step = "1";
     page.value = "1";
-    page.setAttribute("aria-label", "Page");
+    page.setAttribute("aria-label", t("tools.page"));
     const pages = document.createElement("span");
     const prev = iconButton(
-      "Previous page",
+      t("tools.previous_page"),
       "keyboard_double_arrow_left",
       () => load(current - 1),
     );
     const next = iconButton(
-      "Next page",
+      t("tools.next_page"),
       "keyboard_double_arrow_right",
       () => load(current + 1),
     );
     const navigation = document.createElement("nav");
     navigation.className = "data-list-processor-pages";
-    navigation.setAttribute("aria-label", "Table processor pages");
+    navigation.setAttribute("aria-label", t("tools.table_processor_pages"));
     navigation.append(prev, page, pages, next);
     controls.append(sizeLabel, navigation);
     toolbar.insertBefore(controls, toolbar.lastChild);
     const grid = document.createElement("div");
     grid.className = "data-list-grid";
-    grid.setAttribute("aria-label", "List data, read only");
+    grid.setAttribute("aria-label", t("tools.list_data_read_only"));
     body.append(grid);
     let current = 1;
     let total = snapshot.source
@@ -341,7 +342,7 @@ export class ListTools {
       void this.run(async () => {
         controls.inert = true;
         status.hidden = false;
-        status.textContent = "Loading…";
+        status.textContent = t("tools.loading");
         try {
           const limit = Number(size.value);
           const data = await this.read(
@@ -353,7 +354,7 @@ export class ListTools {
           signal.throwIfAborted();
           if (requested > 1 && data.rows.length === 0) {
             page.value = String(current);
-            throw new Error("This page is unavailable.");
+            throw new Error(t("tools.unavailable"));
           }
           total = data.totalItems ?? total;
           totalLabel.textContent = total === undefined
@@ -434,7 +435,7 @@ export class ListTools {
                 titleFormatter: "plaintext",
                 field: `c${i}`,
               })),
-              placeholder: "No items",
+              placeholder: t("shell.noItems"),
             });
             await new Promise<void>((resolve) =>
               table!.on("tableBuilt", resolve)
@@ -470,7 +471,7 @@ export class ListTools {
     if (this.#busy) return;
     const snapshot = this.#snapshot;
     const { body, status, signal } = this.dialog(
-      "Export list",
+      t("tools.export_list"),
       "data-list-export",
     );
     const form = document.createElement("form");
@@ -492,10 +493,13 @@ export class ListTools {
     first.value = "1";
     first.required = true;
     if (total !== undefined) last.value = String(Math.max(1, total));
-    last.placeholder = "Last row";
+    last.placeholder = t("tools.last_row");
     for (
-      const [text, input] of [["Format", format], ["First row", first], [
-        "Last row",
+      const [text, input] of [[t("tools.format"), format], [
+        t("tools.first_row"),
+        first,
+      ], [
+        t("tools.last_row"),
         last,
       ]] as const
     ) {
@@ -505,7 +509,7 @@ export class ListTools {
     }
     const submit = document.createElement("button");
     submit.type = "submit";
-    submit.textContent = "Export";
+    submit.textContent = t("tools.export");
     submit.className = "button button-primary";
     form.append(submit);
     body.append(form);
@@ -514,13 +518,13 @@ export class ListTools {
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       if (last.value && last.valueAsNumber < first.valueAsNumber) {
-        last.setCustomValidity("Last row must be at or after first row.");
+        last.setCustomValidity(t("tools.last_row_must_be_at_or_after"));
         last.reportValidity();
         return;
       }
       void this.run(async () => {
         submit.disabled = true;
-        status.textContent = "Exporting…";
+        status.textContent = t("tools.exporting");
         status.hidden = false;
         try {
           const selected = format.value as ExportFormat;
@@ -545,7 +549,7 @@ export class ListTools {
                 snapshot.columns.map((column) => column.heading),
                 ...rows,
               ]),
-              "List",
+              t("tools.list"),
             );
             blob = new Blob([
               xlsx.write(workbook, {
@@ -580,7 +584,7 @@ export class ListTools {
           link.click();
           link.remove();
           setTimeout(() => URL.revokeObjectURL(url), 1000);
-          status.textContent = `Exported ${rows.length} rows.`;
+          status.textContent = t("tools.exported", { count: rows.length });
         } finally {
           submit.disabled = false;
         }

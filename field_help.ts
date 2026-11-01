@@ -1,3 +1,5 @@
+import { text as localizedText } from "/p/the8020/i18n/mod.ts";
+import { msg } from "/p/the8020/uui/i18n/messages.ts";
 import {
   escapeMultiple,
   joinMultiple,
@@ -24,10 +26,10 @@ export function valueHelpFor(schema: z.ZodType, control: ControlDescriptor) {
       : (request: ValueHelpRequest) =>
         queryValueHelp(
           z.object({
-            value: field(schema, { label: "Value" }),
+            value: field(schema, { label: msg("field_help.value") }),
             label: field(z.string(), {
-              label: "Label",
-              description: "The displayed name of this choice.",
+              label: msg("field_help.label"),
+              description: msg("field_help.the_displayed_name_of_this_choice"),
             }),
           }),
           control.options!.map(({ value, label }) => ({ value, label })),
@@ -223,8 +225,8 @@ export async function runFieldHelp(
   const limitField = field(
     z.number().int().min(1).max(SELECT_ALL_LIMITS.at(-1)!),
     {
-      label: "Select all up to",
-      description: "How many matching values Select all may load at most.",
+      label: msg("field_help.select_all_up_to"),
+      description: msg("field_help.how_many_matching_values_select_all_may"),
       control: "select",
       options: SELECT_ALL_LIMITS.map((value) => ({
         value,
@@ -265,7 +267,7 @@ export async function runFieldHelp(
             ...(valueHelp === undefined ? [] : [{
               id: "choices",
               type: "list",
-              title: "Value help",
+              title: msg("field_help.value_help"),
               bind: "choices",
               key,
               focusSearch: true,
@@ -278,13 +280,15 @@ export async function runFieldHelp(
       },
       header: {
         actions: [
-          ...(control.readOnly
-            ? []
-            : [{ id: "done", label: "Done", kind: "primary" as const }]),
+          ...(control.readOnly ? [] : [{
+            id: "done",
+            label: msg("field_help.done"),
+            kind: "primary" as const,
+          }]),
           ...(metadata?.open === undefined || model.data.value == null ||
               model.data.value === ""
             ? []
-            : [{ id: "open", label: "Navigate" }]),
+            : [{ id: "open", label: msg("field_help.navigate") }]),
         ],
       },
     });
@@ -303,7 +307,9 @@ export async function runFieldHelp(
         return;
       } catch (error) {
         sendMessage(
-          error instanceof Error ? error.message : "Invalid value.",
+          error instanceof Error
+            ? error.message
+            : localizedText(msg("field_help.invalid_value")),
           "error",
         );
       }
@@ -314,7 +320,9 @@ export async function runFieldHelp(
         await presentPage(() => metadata.open!(value));
       } catch (error) {
         sendMessage(
-          error instanceof Error ? error.message : "Could not navigate.",
+          error instanceof Error
+            ? error.message
+            : localizedText(msg("field_help.could_not_navigate")),
           "error",
         );
       }

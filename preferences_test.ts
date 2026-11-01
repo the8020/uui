@@ -1,3 +1,4 @@
+import { test } from "./test_localization.ts";
 import { assertEquals, assertRejects } from "@std/assert";
 import { DatabaseSync } from "node:sqlite";
 import {
@@ -8,7 +9,7 @@ import { installContextProvider } from "../kernel/defaults/config/runtime/deno/c
 import { createTableSQL } from "/p/the8020/db/internal/ddl.ts";
 import { fetchUserPreferences, saveUserPreferences } from "./preferences.ts";
 
-Deno.test("UUI preferences inherit per field, save only personal overrides, and clean up on user deletion", async () => {
+test("UUI preferences inherit per field, save only personal overrides, and clean up on user deletion", async () => {
   const globals = globalThis as unknown as Record<symbol, unknown>;
   const previousBackend = globals[kernelDatabaseBackendSymbol];
   const previousInvoke = globals[kernelInvokeSymbol];

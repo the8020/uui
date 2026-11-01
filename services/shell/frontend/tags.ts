@@ -1,3 +1,4 @@
+import { t } from "./i18n.ts";
 import type { FieldMultiple } from "/p/the8020/uui/protocol.ts";
 import {
   joinMultiple,
@@ -86,7 +87,9 @@ export function renderTags(
     const full = multiple.maximum !== undefined &&
       entries.length >= multiple.maximum;
     input.disabled = !readOnly && full;
-    input.placeholder = full ? `At most ${multiple.maximum}` : placeholder;
+    input.placeholder = full
+      ? t("tags.at_most_value1", { value1: multiple.maximum! })
+      : placeholder;
   };
   const renderTag = (entry: string, index: number) => {
     const tag = document.createElement("span");

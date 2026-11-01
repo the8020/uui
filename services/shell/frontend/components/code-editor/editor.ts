@@ -1,3 +1,4 @@
+import { t } from "../../i18n.ts";
 import type {
   CustomElementContext,
   CustomElementInstance,
@@ -104,7 +105,7 @@ function syntaxDiagnostics(view: EditorView): Diagnostic[] {
           from: node.from,
           to: node.to,
           severity: "error",
-          message: "Unexpected or incomplete syntax.",
+          message: t("editor.unexpected_or_incomplete_syntax"),
         });
         return false;
       }
@@ -133,7 +134,8 @@ function markerExtensions(
       span.className = `uui-code-marker uui-code-${
         this.marker.kind ?? "label"
       }`;
-      span.title = this.marker.label ?? this.marker.kind ?? "Line marker";
+      span.title = this.marker.label ?? this.marker.kind ??
+        t("editor.line_marker");
       span.setAttribute("aria-label", span.title);
       context.renderText(
         span,
@@ -316,7 +318,9 @@ export default function mount(
   function fullscreen(expanded: boolean): void {
     remember();
     host.classList.toggle("uui-content-fullscreen", expanded);
-    const label = expanded ? "Exit fullscreen" : "Fullscreen";
+    const label = expanded
+      ? t("app_fullscreen.exit_fullscreen")
+      : t("shell.fullscreen");
     expand.title = label;
     expand.setAttribute("aria-label", label);
     expand.setAttribute("aria-pressed", String(expanded));
@@ -338,14 +342,14 @@ export default function mount(
     toolbar.append(result);
     return result;
   };
-  button("Copy all", "content_copy", () => {
+  button(t("editor.copy_all"), "content_copy", () => {
     void writeClipboard(view.state.doc.toString()).then(() => {
-      status.textContent = "Copied";
+      status.textContent = t("editor.copied");
     }, () => {
-      status.textContent = "Copy failed. Select the text and copy it.";
+      status.textContent = t("editor.copy_failed_select_the_text_and_copy");
     });
   });
-  const expand = button("Fullscreen", "fullscreen", () => {
+  const expand = button(t("shell.fullscreen"), "fullscreen", () => {
     fullscreen(!host.classList.contains("uui-content-fullscreen"));
   });
   expand.setAttribute("aria-pressed", "false");
@@ -365,7 +369,7 @@ export default function mount(
   async function configure(options: CodeEditorOptions): Promise<void> {
     const current = ++generation;
     const language = options.language ?? "text";
-    status.textContent = "Loading…";
+    status.textContent = t("shell.loading");
     const languageExtension = await languageMode(language);
     if (signal.aborted || current !== generation) return;
     const check = options.syntaxCheck !== false &&
@@ -412,7 +416,7 @@ export default function mount(
         EditorState.readOnly.of(context.control?.readOnly ?? false),
         EditorView.editable.of(!context.control?.readOnly),
         EditorView.contentAttributes.of({
-          "aria-label": context.control?.label ?? "Code",
+          "aria-label": context.control?.label ?? t("editor.code"),
           "aria-readonly": String(context.control?.readOnly ?? false),
           "aria-multiline": "true",
           "tabindex": "0",
@@ -427,7 +431,7 @@ export default function mount(
     });
     void configure(options).catch((error) => {
       if (!signal.aborted) {
-        status.textContent = "Language could not be loaded.";
+        status.textContent = t("editor.language_could_not_be_loaded");
         console.error(error);
       }
     });

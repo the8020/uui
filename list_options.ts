@@ -1,3 +1,4 @@
+import { isMessage } from "/p/the8020/i18n/messages.ts";
 import { isRecord, type ListOptions } from "./screen_state.ts";
 import { validateComponentStyle } from "./protocol.ts";
 
@@ -21,7 +22,8 @@ export function validateElementDeclarations(value: unknown): void {
     } else if (
       "type" in element ||
       !(typeof element.bind === "string" && element.bind.length > 0 ||
-        typeof element.label === "string" && element.label.length > 0)
+        (typeof element.label === "string" && element.label.length > 0 ||
+          isMessage(element.label)))
     ) {
       throw new TypeError(
         "element requires a control binding, action label, or separator type",
@@ -73,7 +75,7 @@ export function validateListOptions(value: ListOptions): void {
     value.headings !== undefined &&
     (!isRecord(value.headings) ||
       !Object.values(value.headings).every((heading) =>
-        typeof heading === "string" && heading.length > 0
+        typeof heading === "string" && heading.length > 0 || isMessage(heading)
       ))
   ) {
     throw new TypeError("list headings must be nonempty strings");
@@ -91,7 +93,8 @@ export function validateListOptions(value: ListOptions): void {
       ) ||
       ["id", "heading", "shortHeading"].some((key) =>
         option[key] !== undefined &&
-        (typeof option[key] !== "string" || option[key].length === 0)
+        (typeof option[key] !== "string" || option[key].length === 0) &&
+        !(key !== "id" && isMessage(option[key]))
       ) ||
       option.length !== undefined &&
         !["compact", "short", "medium", "long"].includes(

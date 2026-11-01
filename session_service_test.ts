@@ -1,3 +1,4 @@
+import { test } from "./test_localization.ts";
 import { Model } from "./model.ts";
 import { isId } from "@the8020/kernel";
 import { createKernelBridge } from "../kernel/defaults/config/runtime/deno/kernel/bridge.ts";
@@ -43,7 +44,7 @@ import { codeEditor } from "./services/shell/frontend/components/code-editor/mod
 import type { AgentResponse } from "./agent.ts";
 import { encodeStreamChunk } from "./channel_streams.ts";
 
-Deno.test("agent commands share the live screen, reject stale edits, and return control without restarting its program", async () => {
+test("agent commands share the live screen, reject stale edits, and return control without restarting its program", async () => {
   const metadataStore = new MemorySessionMetadataStore();
   const model = new Model({
     name: "Alice",
@@ -332,7 +333,7 @@ const metadata: RequestMetadata = {
   },
 };
 
-Deno.test("browser context is validated, available before the first screen, and refreshed on reattachment", async () => {
+test("browser context is validated, available before the first screen, and refreshed on reattachment", async () => {
   const initial: BrowserContext = {
     origin: "https://dev.example.test:8443",
     language: "en-GB",
@@ -419,7 +420,7 @@ Deno.test("browser context is validated, available before the first screen, and 
   assertThrows(() => currentBrowser(), Error, "not bound");
 });
 
-Deno.test("ordinary persistent UUI service owns metadata and exact Worker administration", async () => {
+test("ordinary persistent UUI service owns metadata and exact Worker administration", async () => {
   let activeSocket: TestSocket | undefined;
   const metadataStore = new MemorySessionMetadataStore(() => {
     assertEquals(activeSocket?.signal.aborted, false);
@@ -521,7 +522,7 @@ Deno.test("ordinary persistent UUI service owns metadata and exact Worker admini
   }
 });
 
-Deno.test("session ID registration failure cannot overwrite metadata or retain a Worker slot", async () => {
+test("session ID registration failure cannot overwrite metadata or retain a Worker slot", async () => {
   let creates = 0, updates = 0, removals = 0, invocations = 0;
   const service = defineSessionService(() => {
     invocations++;
@@ -554,7 +555,7 @@ Deno.test("session ID registration failure cannot overwrite metadata or retain a
   assertEquals([updates, removals, invocations], [0, 0, 0]);
 });
 
-Deno.test("intentional termination does not report the interrupted program as failed", async () => {
+test("intentional termination does not report the interrupted program as failed", async () => {
   const metadataStore = new MemorySessionMetadataStore();
   let sessionId = "";
   let completions = 0;
@@ -614,7 +615,7 @@ Deno.test("intentional termination does not report the interrupted program as fa
   }
 });
 
-Deno.test("initial UUI connection replays its generated screen in sequence", async () => {
+test("initial UUI connection replays its generated screen in sequence", async () => {
   const metadataStore = new MemorySessionMetadataStore();
   const service = defineSessionService(async () => {
     await callScreen({
@@ -671,7 +672,7 @@ Deno.test("initial UUI connection replays its generated screen in sequence", asy
   }
 });
 
-Deno.test("a session streams messages while its screen roundtrip is pending", async () => {
+test("a session streams messages while its screen roundtrip is pending", async () => {
   const metadataStore = new MemorySessionMetadataStore();
   let sessionId = "";
   let releaseMessage!: () => void;
@@ -764,7 +765,7 @@ Deno.test("a session streams messages while its screen roundtrip is pending", as
   }
 });
 
-Deno.test("reload and resync retain a stacked presentation and its hidden continuations", async () => {
+test("reload and resync retain a stacked presentation and its hidden continuations", async () => {
   const metadataStore = new MemorySessionMetadataStore();
   const stackedMetadata = {
     ...metadata,
@@ -902,7 +903,7 @@ Deno.test("reload and resync retain a stacked presentation and its hidden contin
   }
 });
 
-Deno.test("session logout ends the persistent execution and redirects", async () => {
+test("session logout ends the persistent execution and redirects", async () => {
   const metadataStore = new MemorySessionMetadataStore();
   let completions = 0;
   let handlerAborted = false;
@@ -973,7 +974,7 @@ Deno.test("session logout ends the persistent execution and redirects", async ()
   }
 });
 
-Deno.test("session exit ends the persistent execution and redirects", async () => {
+test("session exit ends the persistent execution and redirects", async () => {
   const metadataStore = new MemorySessionMetadataStore();
   let completions = 0;
   let handlerAborted = false;
@@ -1044,7 +1045,7 @@ Deno.test("session exit ends the persistent execution and redirects", async () =
   }
 });
 
-Deno.test("UUI service enforces its one-execution Worker contract", async () => {
+test("UUI service enforces its one-execution Worker contract", async () => {
   const metadataStore = new MemorySessionMetadataStore();
   let finish!: () => void;
   const service = defineSessionService(
@@ -1073,7 +1074,7 @@ Deno.test("UUI service enforces its one-execution Worker contract", async () => 
   }
 });
 
-Deno.test("session heartbeat uses package constants and closes timed-out clients", async () => {
+test("session heartbeat uses package constants and closes timed-out clients", async () => {
   const metadataStore = new MemorySessionMetadataStore();
   const originalSetInterval = globalThis.setInterval;
   const originalClearInterval = globalThis.clearInterval;
@@ -1147,7 +1148,7 @@ Deno.test("session heartbeat uses package constants and closes timed-out clients
   }
 });
 
-Deno.test("closed WebSockets persist disconnection and expire through the session context", async () => {
+test("closed WebSockets persist disconnection and expire through the session context", async () => {
   const channel = new MessageChannel();
   const bridge = createKernelBridge(channel.port1, {
     ...metadata.execution,
@@ -1255,7 +1256,7 @@ Deno.test("closed WebSockets persist disconnection and expire through the sessio
   }
 });
 
-Deno.test("only an active client cancels disconnect grace; waiting-client polls do not retain the execution", async () => {
+test("only an active client cancels disconnect grace; waiting-client polls do not retain the execution", async () => {
   const metadataStore = new MemorySessionMetadataStore();
   const originalTimeout = globalThis.setTimeout;
   globalThis.setTimeout =
@@ -1328,7 +1329,7 @@ Deno.test("only an active client cancels disconnect grace; waiting-client polls 
   }
 });
 
-Deno.test("public downloads use explicit pending screen ownership, cancel on replacement and never replay", async () => {
+test("public downloads use explicit pending screen ownership, cancel on replacement and never replay", async () => {
   const metadataStore = new MemorySessionMetadataStore();
   let handle: DownloadHandle | undefined;
   let cleaned = false;
@@ -1437,7 +1438,7 @@ Deno.test("public downloads use explicit pending screen ownership, cancel on rep
   }
 });
 
-Deno.test("authenticated binary ingress rejects unsafe framing session identity and transport size", async () => {
+test("authenticated binary ingress rejects unsafe framing session identity and transport size", async () => {
   for (const kind of ["framing", "session", "size"]) {
     const store = new MemorySessionMetadataStore();
     const service = defineSessionService(
@@ -1662,7 +1663,7 @@ async function until(
   throw new Error("condition was not reached");
 }
 
-Deno.test("first browser after headless actions resumes the sequence before the current screen", async () => {
+test("first browser after headless actions resumes the sequence before the current screen", async () => {
   const metadataStore = new MemorySessionMetadataStore();
   let advances = 0;
   let finished = false;
@@ -1750,7 +1751,7 @@ Deno.test("first browser after headless actions resumes the sequence before the 
   }
 });
 
-Deno.test("structured list replies stay transient and reload submits the next screen event", async () => {
+test("structured list replies stay transient and reload submits the next screen event", async () => {
   const metadataStore = new MemorySessionMetadataStore();
   let action = "";
   const service = defineSessionService(async () => {
@@ -1886,4 +1887,78 @@ Deno.test("structured list replies stay transient and reload submits the next sc
   } finally {
     await metadataStore.clear();
   }
+});
+
+test("retained sessions keep their language when a later connection requests another", async () => {
+  const { Localization, withLocalization } = await import(
+    "/p/the8020/i18n/mod.ts"
+  );
+  const { context: execution } = await import("@the8020/context");
+  const config = {
+    defaultLanguage: "en",
+    languages: ["en", "sk", "pt"].map((code) => ({ code, name: code })),
+    fallbacks: {},
+  };
+  await withLocalization(
+    new Localization(
+      "sk",
+      config,
+      (packageId, chain) =>
+        Promise.resolve({ package: packageId, language: chain[0]!, texts: {} }),
+    ),
+    async () => {
+      const store = new MemorySessionMetadataStore();
+      const observed: (string | undefined)[] = [];
+      const service = defineSessionService(async () => {
+        observed.push(execution.language);
+        await callScreen({
+          id: "locale",
+          schema: z.object({}),
+          model: new Model({}),
+        });
+        observed.push(execution.language);
+      }, {
+        metadataStore: store,
+        completePersistent: () => Promise.resolve(),
+      });
+      const meta = {
+        ...metadata,
+        persistentExecutionId: "persistent-language",
+      };
+      const established = await service.fetch(
+        new Request("https://test/connect", { method: "POST" }),
+        context(meta),
+      );
+      assertEquals(established.status, 204);
+      const socket = new TestSocket();
+      try {
+        socket.message(connectMessage(0));
+        await service.connectWebSocket(
+          new Request("https://test/connect", {
+            headers: { "the8020-language": "pt" },
+          }),
+          context(meta),
+          socket,
+        );
+        await until(() => serverMessages(socket, "session.ready").length === 1);
+        assertEquals(
+          serverMessages(socket, "session.ready")[0]!.localization?.language,
+          "sk",
+        );
+        const screen = serverMessages(socket, "presentation.show").at(-1)!;
+        socket.message({
+          ...screenEvent(screen, "back", 1),
+          eventType: "back",
+        });
+        await until(() => observed.length === 2);
+        assertEquals(observed, ["sk", "sk"]);
+      } finally {
+        socket.remoteClose();
+        await workerFunctions["uui.session.terminate"]({
+          sessionId: established.headers.get("the8020-session"),
+        }).catch(() => {});
+        await store.clear();
+      }
+    },
+  );
 });

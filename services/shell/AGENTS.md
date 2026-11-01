@@ -20,6 +20,11 @@ Parent DOX: [uui/services DOX](../AGENTS.md).
 
 # Local Contracts
 
+- HTML boot data includes the prepared UUI dictionary for the browser-selected
+  language. Render `data-i18n` text as escaped translations and set language and
+  direction in the HTML response, before browser JavaScript runs. Public source
+  catalogs are not exposed through asset routes.
+
 - Root branding APIs supply the server title in HTML and boot data, plus
   branding metadata on `/preferences`. The frontend reapplies it on presentation
   changes.
@@ -77,7 +82,8 @@ Parent DOX: [uui/services DOX](../AGENTS.md).
 
 # Verification
 
-- Run `deno task check` and `deno task test` from the UUI root.
+- Run `deno task check` and `deno task test` from the UUI root. Shell service
+  tests verify Czech startup HTML and escaping of customer translations.
 - `deno task test:asset-delivery` starts the actual shell Worker and supervisor
   HTTP listener plus a disposable Go relay using the real supervisor client. It
   checks byte-exact gzip/Brotli/identity responses, Brotli-only requests,

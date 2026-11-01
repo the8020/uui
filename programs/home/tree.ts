@@ -1,3 +1,5 @@
+import { text as localizedText } from "/p/the8020/i18n/mod.ts";
+import { msg } from "/p/the8020/uui/i18n/messages.ts";
 /** One Home navigator node: a folder of nodes, or a launchable tile. */
 export interface HomeNode {
   id: string;
@@ -37,7 +39,11 @@ export const ROOT_ID = "";
  * by order, then title. A root with a single folder collapses into it.
  */
 export function homeTree(tiles: readonly HomeTile[]): HomeNode {
-  const root: HomeNode = { id: ROOT_ID, label: "Programs", children: [] };
+  const root: HomeNode = {
+    id: ROOT_ID,
+    label: localizedText(msg("tree.programs")),
+    children: [],
+  };
   const order = new Map<HomeNode, number>();
   for (const tile of tiles) {
     let folder = root;

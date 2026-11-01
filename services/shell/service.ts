@@ -1,3 +1,6 @@
+import { browserLocalization } from "../../localization.ts";
+import { currentLocalization, withLocalization } from "/p/the8020/i18n/mod.ts";
+import { direction, format } from "/p/the8020/i18n/messages.ts";
 import {
   defineService,
   HTTPError,
@@ -7,7 +10,7 @@ import { kernel, WorkerInvokeError } from "@the8020/kernel";
 import { controlRequest } from "../../agent.ts";
 import { AssetServer } from "./assets.ts";
 import { fetchBranding } from "../../branding.ts";
-import { brandingAsset, brandingHead } from "./branding.ts";
+import { brandingAsset, brandingHead, escapeHTML } from "./branding.ts";
 import uiConfig from "../../ui-config.json" with { type: "json" };
 
 const frontend = new URL("./frontend/", import.meta.url);
@@ -96,12 +99,20 @@ service.post("/control", {
 service.get(
   "/",
   { summary: "Render the authenticated UUI shell" },
-  ({ meta }) => shellResponse(meta),
+  async ({ meta, request }) =>
+    withLocalization(
+      await browserLocalization(request),
+      () => shellResponse(meta),
+    ),
 );
 service.get(
   "/index.html",
   { summary: "Render the authenticated UUI shell" },
-  ({ meta }) => shellResponse(meta),
+  async ({ meta, request }) =>
+    withLocalization(
+      await browserLocalization(request),
+      () => shellResponse(meta),
+    ),
 );
 service.get(
   "/*",
@@ -130,6 +141,7 @@ async function shellResponse(meta: RequestMetadata): Promise<Response> {
   const websocketScheme = requestURL.protocol === "https:" ? "wss:" : "ws:";
   const themeNonce = contentSecurityNonce();
   const boot = {
+    localization: await currentLocalization()!.bundle("the8020/uui"),
     serverTitle: branding.title,
     username: meta.user.username,
     entryUrl: uiConfig.postLoginUrl,
@@ -143,13 +155,26 @@ async function shellResponse(meta: RequestMetadata): Promise<Response> {
     reconnectMaximumDelay: uiConfig.reconnectMaximumDelayMilliseconds,
     buildVersion: versions[0],
   };
-  const html = source.replace("__the8020_theme_nonce__", themeNonce).replace(
-    /\{\s*"__the8020_boot_placeholder__"\s*:\s*true\s*\}/,
-    escapeJSON(boot),
-  );
+  const html = source.replace("__the8020_theme_nonce__", themeNonce)
+    .replace(
+      'lang="en"',
+      `lang="${escapeHTML(boot.localization.language)}" dir="${
+        direction(boot.localization.language)
+      }"`,
+    )
+    .replace(
+      /(data-i18n="([^"]+)"[^>]*>)[^<]*/g,
+      (_, opening: string, key: string) =>
+        opening + escapeHTML(format(boot.localization.texts, key)),
+    )
+    .replace(
+      /\{\s*"__the8020_boot_placeholder__"\s*:\s*true\s*\}/,
+      escapeJSON(boot),
+    );
   return new Response(html, {
     headers: {
       "content-type": "text/html; charset=utf-8",
+      "content-language": currentLocalization()!.language,
       "cache-control": "no-store",
       "content-security-policy":
         `default-src 'self'; connect-src 'self' ws: wss:; script-src 'self' 'nonce-${themeNonce}'; style-src 'self' 'nonce-${themeNonce}'; img-src 'self' data: blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`,

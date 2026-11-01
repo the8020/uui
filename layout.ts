@@ -1,3 +1,4 @@
+import { resolveTexts, type Text } from "/p/the8020/i18n/mod.ts";
 import { cloneDeclaration } from "./custom_elements.ts";
 import { resolveElementIDs } from "./identifiers.ts";
 import type { ListOptions } from "./screen_state.ts";
@@ -55,9 +56,11 @@ export interface LayoutDocument {
   root: LayoutNode;
 }
 export type LayoutNodeDeclaration =
-  & Omit<LayoutNode, "id" | "children" | "elements">
+  & Omit<LayoutNode, "id" | "children" | "elements" | "title" | "headings">
   & {
     id?: string;
+    title?: Text;
+    headings?: Record<string, Text>;
     elements?: ScreenElementDeclaration[];
     children?: LayoutNodeDeclaration[];
   };
@@ -153,6 +156,15 @@ export function validateLayout(
     reserved,
   );
   nodes.forEach((node, index) => node.id = resolved[index]!.id);
+  for (const node of nodes) {
+    if (node.title !== undefined) node.title = resolveTexts(node.title);
+    if (node.headings !== undefined) {
+      node.headings = resolveTexts(node.headings);
+    }
+    if (node.columnOptions !== undefined) {
+      node.columnOptions = resolveTexts(node.columnOptions);
+    }
+  }
   const ids = new Set<string>();
   validateNode(normalized.root, ids, controls, actions, customElements);
   return normalized as unknown as LayoutDocument;

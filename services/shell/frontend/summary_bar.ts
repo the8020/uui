@@ -1,3 +1,4 @@
+import { t } from "./i18n.ts";
 /** Lines of values the compact bar shows before it summarizes the rest. */
 export const SUMMARY_LINES = 3;
 
@@ -26,7 +27,7 @@ export class SummaryBar {
     this.#search.type = "search";
     this.#search.className = "uui-summary-search";
     this.#search.placeholder = "Search…";
-    this.#search.setAttribute("aria-label", "Search list");
+    this.#search.setAttribute("aria-label", t("shell.searchList"));
     // The list's own search owns the query; this one only types into it.
     this.#search.addEventListener("input", () => {
       const list = this.listSearch();
@@ -126,7 +127,7 @@ export class SummaryBar {
             button.textContent = "×";
             button.setAttribute(
               "aria-label",
-              remove.getAttribute("aria-label") ?? "Remove",
+              remove.getAttribute("aria-label") ?? t("summary_bar.remove"),
             );
             // The field's own button edits the model and redraws both.
             button.addEventListener("click", () => remove.click());
@@ -165,7 +166,7 @@ export class SummaryBar {
     const more = document.createElement("button");
     more.type = "button";
     more.className = "uui-summary-more";
-    more.title = "Show all values";
+    more.title = t("summary_bar.show_all_values");
     more.addEventListener("click", () => {
       this.body.scrollTo({ top: 0, behavior: "smooth" });
     });

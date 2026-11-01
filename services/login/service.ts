@@ -1,3 +1,11 @@
+import { browserLocalization, languageCookie } from "../../localization.ts";
+import {
+  currentLocalization,
+  direction,
+  Localization,
+  translations,
+  withLocalization,
+} from "/p/the8020/i18n/mod.ts";
 import { defineService } from "/p/the8020/services/http.ts";
 import { login, logout as logoutUser } from "/p/the8020/users/mod.ts";
 import uiConfig from "../../ui-config.json" with { type: "json" };
@@ -6,6 +14,7 @@ import { brandingAsset, brandingHead } from "../shell/branding.ts";
 
 const frontend = new URL("./frontend/", import.meta.url);
 const staticContentTypes = new Map([
+  [".js", "text/javascript; charset=utf-8"],
   [".css", "text/css; charset=utf-8"],
   [".svg", "image/svg+xml"],
 ]);
@@ -14,7 +23,40 @@ const service = defineService();
 service.get(
   "/",
   { summary: "Render the user login" },
-  async ({ meta }) => htmlResponse(await loginPage(meta.originalUrl)),
+  async ({ request, meta }) => {
+    const current = currentLocalization()!;
+    const browser = await browserLocalization(request);
+    const requested = new URL(request.url).searchParams.get("language");
+    const choice = requested ??
+      (browser === current ? "" : browser.language);
+    const selected =
+      current.configuration.languages.some((item) => item.code === choice)
+        ? choice
+        : "";
+    return await withLocalization(
+      new Localization(
+        selected ||
+          (request.headers.has("the8020-language")
+            ? current.language
+            : current.configuration.defaultLoginLanguage ??
+              current.configuration.defaultLanguage),
+        current.configuration,
+        current.loader,
+      ),
+      async () => {
+        const response = htmlResponse(
+          await loginPage(meta.originalUrl, "", selected),
+        );
+        if (requested !== null && requested === selected) {
+          response.headers.append(
+            "set-cookie",
+            await languageCookie(request, selected),
+          );
+        }
+        return response;
+      },
+    );
+  },
 );
 
 service.post(
@@ -24,21 +66,42 @@ service.post(
     const form = await request.formData();
     const username = String(form.get("username") ?? "");
     const password = String(form.get("password") ?? "");
-    const result = await login(request, { username, password });
-    if (!result.authenticated || result.setCookie === undefined) {
-      return htmlResponse(
-        await loginPage(meta.originalUrl, "Invalid username or password."),
-        401,
-      );
+    const selected = String(form.get("language") ?? "");
+    const current = currentLocalization()!;
+    if (
+      selected &&
+      !current.configuration.languages.some((item) => item.code === selected)
+    ) {
+      return new Response("Invalid language", { status: 400 });
     }
-    return new Response(null, {
-      status: 303,
-      headers: {
-        location: uiConfig.postLoginUrl,
-        "set-cookie": result.setCookie,
-        "cache-control": "no-store",
+    return await withLocalization(
+      new Localization(
+        selected ||
+          (request.headers.has("the8020-language")
+            ? current.language
+            : current.configuration.defaultLoginLanguage ??
+              current.configuration.defaultLanguage),
+        current.configuration,
+        current.loader,
+      ),
+      async () => {
+        const t = await translations("the8020/uui");
+        const result = await login(request, { username, password });
+        if (!result.authenticated || result.setCookie === undefined) {
+          return htmlResponse(
+            await loginPage(meta.originalUrl, t("login.invalid"), selected),
+            401,
+          );
+        }
+        const headers = new Headers({
+          location: uiConfig.postLoginUrl,
+          "cache-control": "no-store",
+        });
+        headers.append("set-cookie", result.setCookie);
+        headers.append("set-cookie", await languageCookie(request, selected));
+        return new Response(null, { status: 303, headers });
       },
-    });
+    );
   },
 );
 
@@ -67,15 +130,40 @@ service.get(
       staticResponse(new URL(request.url).pathname),
 );
 
-async function loginPage(originalUrl: string, error = ""): Promise<string> {
+async function loginPage(
+  originalUrl: string,
+  error = "",
+  selected = "",
+): Promise<string> {
+  const t = await translations("the8020/uui");
+  const localization = currentLocalization()!;
   const source = await Deno.readTextFile(new URL("index.html", frontend));
   const errorMarkup = error === ""
     ? ""
     : `<p class="error" role="alert">${escapeHTML(error)}</p>`;
+  const languages =
+    `<option value="" data-i18n="login.accountLanguage">${
+      escapeHTML(t("login.accountLanguage"))
+    }</option>` +
+    localization.configuration.languages.map((item) =>
+      `<option value="${escapeHTML(item.code)}"${
+        item.code === selected ? " selected" : ""
+      }>${escapeHTML(item.name)}</option>`
+    ).join("");
   return source.replace("<!--__the8020_login_error__-->", errorMarkup)
     .replace(
       "<title>80|20 sign in</title>",
-      brandingHead(await fetchBranding(), originalUrl, "Sign in"),
+      brandingHead(await fetchBranding(), originalUrl, t("login.signIn")),
+    ).replace(
+      'lang="en"',
+      `lang="${escapeHTML(localization.language)}" dir="${
+        direction(localization.language)
+      }"`,
+    )
+    .replace("__language_options__", languages)
+    .replace(
+      /\{\{\s*([a-zA-Z.]+)\s*\}\}/g,
+      (_, key: string) => escapeHTML(t(key)),
     );
 }
 
@@ -122,9 +210,10 @@ function htmlResponse(body: string, status = 200): Response {
     status,
     headers: {
       "content-type": "text/html; charset=utf-8",
+      "content-language": currentLocalization()!.language,
       "cache-control": "no-store",
       "content-security-policy":
-        "default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+        "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; form-action 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
       "referrer-policy": "no-referrer",
       "x-content-type-options": "nosniff",
     },

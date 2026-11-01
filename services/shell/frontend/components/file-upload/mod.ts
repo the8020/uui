@@ -1,3 +1,5 @@
+import { msg } from "/p/the8020/uui/i18n/messages.ts";
+import { text as localizedText } from "/p/the8020/i18n/mod.ts";
 import { captureMessages, Channel } from "../../../../../session.ts";
 import type { CustomElementOptions } from "../../../../../protocol.ts";
 
@@ -20,7 +22,9 @@ export function fileUpload(options: { maximumBytes: number; accept?: string }) {
     const reader = source.getReader();
     const cancel = () => void reader.cancel().catch(() => {});
     signal.addEventListener("abort", cancel, { once: true });
-    let failure = "File upload failed. Select the file again.";
+    let failure = localizedText(
+      msg("ui.file_upload_failed_select_the_file_again"),
+    );
     try {
       const chunks: Uint8Array[] = [];
       let size = 0;
@@ -34,7 +38,11 @@ export function fileUpload(options: { maximumBytes: number; accept?: string }) {
         }
         size += value.byteLength;
         if (size > options.maximumBytes) {
-          failure = `File must not exceed ${options.maximumBytes} bytes`;
+          failure = localizedText(
+            msg("ui.file_must_not_exceed_value1_bytes", {
+              value1: options.maximumBytes,
+            }),
+          );
           throw new RangeError(failure);
         }
         chunks.push(value);

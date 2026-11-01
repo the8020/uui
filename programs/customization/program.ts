@@ -1,3 +1,5 @@
+import { text as localizedText } from "/p/the8020/i18n/mod.ts";
+import { msg } from "/p/the8020/uui/i18n/messages.ts";
 import {
   BACK_EVENT,
   callScreen,
@@ -22,14 +24,14 @@ export default async function customization(): Promise<void> {
   while (true) {
     const event = await callScreen({
       id: "customization",
-      title: "Customization",
+      title: msg("shell.customization"),
       schema: Customization,
       model,
       controls: [{ id: "accent-color", bind: "accentColor" }],
       header: {
         actions: [
-          { id: "save", label: "[[icon=save]] Save", kind: "primary" },
-          { id: "use-default", label: "Use system default" },
+          { id: "save", label: msg("program.save"), kind: "primary" },
+          { id: "use-default", label: msg("program.use_system_default") },
         ],
       },
       layout: {
@@ -37,7 +39,7 @@ export default async function customization(): Promise<void> {
         id: "customization",
         root: {
           type: "field-group",
-          title: "Appearance",
+          title: msg("program.appearance"),
           controls: ["accent-color"],
         },
       },
@@ -54,7 +56,7 @@ export default async function customization(): Promise<void> {
       });
       model.data = await fetchUserPreferences();
       defaultColor = undefined;
-      sendMessage("Customization saved.", "success");
+      sendMessage(localizedText(msg("program.customization_saved")), "success");
     }
   }
 }

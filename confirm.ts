@@ -1,3 +1,4 @@
+import type { Text } from "/p/the8020/i18n/messages.ts";
 import { z } from "/p/the8020/db/fields.ts";
 import { Model } from "./model.ts";
 import { callScreen, presentModal } from "./session.ts";
@@ -13,15 +14,15 @@ export interface ConfirmOptions {
   /** Screen ID, for tests and layout overrides. */
   id?: string;
   /** A short name of what happens, such as `Delete role`. */
-  title: string;
+  title: Text;
   /** The consequence, as Markdown body text. */
-  message?: string;
+  message?: Text;
   /** The confirming button; it names the action, never just `OK`. */
-  confirm: string;
+  confirm: Text;
   /** `danger` (default) for destructive actions, `primary` otherwise. */
   kind?: "danger" | "primary";
   /** An explicit cancel button; closing the dialog always cancels. */
-  cancel?: string;
+  cancel?: Text;
 }
 
 /** Ask in a modal dialog; true only when the confirming button is chosen. */

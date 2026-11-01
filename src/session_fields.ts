@@ -1,33 +1,37 @@
+import { msg } from "/p/the8020/uui/i18n/messages.ts";
 import { choiceHelp, field, z } from "/p/the8020/db/fields.ts";
 import { accountInfo } from "/p/the8020/users/types/user.ts";
 import { runtimeInfo } from "/p/the8020/admin-core/types/runtime.ts";
 
 export const sessionInfo = z.object({
   sessionId: field(z.string(), {
-    label: "Session ID",
-    description:
-      "Identifies this UUI session and its interactive work, independently of the account sign-in.",
+    label: msg("session_fields.session_id"),
+    description: msg(
+      "session_fields.identifies_this_uui_session_and_its_interactive",
+    ),
   }),
   state: field(z.string(), {
-    label: "Status",
-    description:
-      "The latest connection or lifecycle status of this UUI session. Unavailable means the live execution could not be reached.",
+    label: msg("session_fields.status"),
+    description: msg(
+      "session_fields.the_latest_connection_or_lifecycle_status_of",
+    ),
     valueHelp: choiceHelp(z.string(), [
       "CONNECTED",
       "DISCONNECTED",
       "ENDED",
       "STALE",
-      "Unavailable",
+      { value: "Unavailable", label: msg("program.unavailable") },
     ]),
   }),
   latestIpAddress: field(z.string(), {
-    label: "Latest IP address",
-    description: "The client address observed at the most recent connection.",
+    label: msg("session_fields.latest_ip_address"),
+    description: msg("session_fields.the_client_address_observed_at_the_most"),
   }),
   latestNetworkScope: field(z.string(), {
-    label: "Network scope",
-    description:
-      "Whether the most recent client address is loopback, private, link-local, public, or special-use.",
+    label: msg("session_fields.network_scope"),
+    description: msg(
+      "session_fields.whether_the_most_recent_client_address_is",
+    ),
     valueHelp: choiceHelp(z.string(), [
       "loopback",
       "private",
@@ -37,40 +41,46 @@ export const sessionInfo = z.object({
     ]),
   }),
   persistentExecutionId: field(z.string(), {
-    label: "Persistent execution",
-    description:
-      "The live execution that owns this session. This identity stays the same when the browser reconnects.",
+    label: msg("session_fields.persistent_execution"),
+    description: msg(
+      "session_fields.the_live_execution_that_owns_this_session",
+    ),
   }),
   currentScreen: field(z.string(), {
-    label: "Current screen",
-    description:
-      "The title of the screen currently open in this session, when its execution is reachable.",
+    label: msg("session_fields.current_screen"),
+    description: msg("session_fields.the_title_of_the_screen_currently_open"),
   }),
   currentScreenId: field(z.string(), {
-    label: "Screen ID",
-    description: "The program-defined identifier of the last reported screen.",
+    label: msg("session_fields.screen_id"),
+    description: msg(
+      "session_fields.the_program_defined_identifier_of_the_last",
+    ),
   }),
   createdAt: field(z.string(), {
-    label: "Started (UTC)",
-    description: "When this UUI session started, in UTC.",
+    label: msg("session_fields.started_utc"),
+    description: msg("session_fields.when_this_uui_session_started_in_utc"),
   }),
   updatedAt: field(z.string(), {
-    label: "Last activity (UTC)",
-    description: "When this session last reported activity, in UTC.",
+    label: msg("session_fields.last_activity_utc"),
+    description: msg(
+      "session_fields.when_this_session_last_reported_activity_in",
+    ),
   }),
   lastConnectionAt: field(z.string(), {
-    label: "Last connection (UTC)",
-    description: "When a browser last connected to this session, in UTC.",
+    label: msg("session_fields.last_connection_utc"),
+    description: msg("session_fields.when_a_browser_last_connected_to_this"),
   }),
   liveState: field(z.string(), {
-    label: "Live validation",
-    description:
-      "Whether the exact session execution can be reached. A stale entry has metadata but no reachable execution.",
+    label: msg("session_fields.live_validation"),
+    description: msg(
+      "session_fields.whether_the_exact_session_execution_can_be",
+    ),
   }),
   messageLog: field(z.string(), {
-    label: "Message log",
-    description:
-      "The bounded recent diagnostic message log for this session. Available only while its execution can be reached.",
+    label: msg("session_fields.message_log"),
+    description: msg(
+      "session_fields.the_bounded_recent_diagnostic_message_log_for",
+    ),
   }),
   authenticatedUserId: accountInfo.shape.userId,
   nodeId: runtimeInfo.shape.nodeId,

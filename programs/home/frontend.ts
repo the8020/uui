@@ -1,3 +1,4 @@
+import { t } from "/p/the8020/uui/services/shell/frontend/i18n.ts";
 import type {
   CustomElementContext,
   CustomElementInstance,
@@ -41,20 +42,20 @@ export default function mount(
 
   const frame = element("div", "home-navigator");
   const treePane = element("nav", "home-navigator-tree");
-  treePane.setAttribute("aria-label", "Programs");
+  treePane.setAttribute("aria-label", t("tree.programs"));
   const tree = element("ul", "home-tree");
   tree.setAttribute("role", "tree");
-  tree.setAttribute("aria-label", "Programs");
+  tree.setAttribute("aria-label", t("tree.programs"));
   treePane.append(tree);
   const divider = element("div", "home-navigator-divider");
   divider.setAttribute("role", "separator");
   divider.setAttribute("aria-orientation", "vertical");
-  divider.setAttribute("aria-label", "Resize program tree");
-  divider.title = "Drag to resize, double-click to reset";
+  divider.setAttribute("aria-label", t("frontend.resize_program_tree"));
+  divider.title = t("frontend.drag_to_resize_double_click_to_reset");
   divider.tabIndex = 0;
   const content = element("section", "home-navigator-content");
   const heading = element("nav", "home-navigator-path");
-  heading.setAttribute("aria-label", "Current folder");
+  heading.setAttribute("aria-label", t("frontend.current_folder"));
   const tiles = element("div", "home-tiles");
   content.append(heading, tiles);
   frame.append(treePane, divider, content);
@@ -224,7 +225,7 @@ export default function mount(
     loadVisible(false);
     if (children.length === 0) {
       const empty = element("p", "home-tiles-empty");
-      empty.textContent = "No programs";
+      empty.textContent = t("frontend.no_programs");
       tiles.append(empty);
     }
   };
@@ -264,7 +265,7 @@ export default function mount(
       : value.error
       ? "—"
       : value.value ?? "";
-    valueText.title = value?.error ? "Data unavailable" : "";
+    valueText.title = value?.error ? t("frontend.data_unavailable") : "";
     detailText.textContent = value?.error ? "" : value?.detail ?? "";
   };
 
@@ -444,7 +445,7 @@ function countLabel(node: HomeNode): string {
     for (const child of item.children ?? []) walk(child);
   };
   walk(node);
-  return count === 1 ? "1 program" : `${count} programs`;
+  return t("frontend.programCount", { count });
 }
 
 function element<K extends keyof HTMLElementTagNameMap>(

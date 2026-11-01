@@ -1,3 +1,4 @@
+import { t } from "./i18n.ts";
 import { type AttachedChannel, ChannelBindings } from "../../../channel.ts";
 import type {
   ControlDescriptor,
@@ -299,7 +300,7 @@ class Entry {
     this.failed = true;
     this.host.removeAttribute("aria-busy");
     this.host.classList.add("custom-element-error");
-    this.host.textContent = "Unable to load this component.";
+    this.host.textContent = t("custom_elements.unable_to_load_this_component");
     console.error("Custom element failed", error);
   }
 }

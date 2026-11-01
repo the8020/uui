@@ -8,7 +8,11 @@
       {
         "id": "summary-section",
         "type": "section",
-        "title": "Summary",
+        "title": {
+          "package": "the8020/uui",
+          "key": "layouts.program-terminated.main.summary-section.title",
+          "fallback": "Summary"
+        },
         "children": [
           {
             "id": "summary",
@@ -19,13 +23,25 @@
               {
                 "id": "exception-summary",
                 "type": "field-group",
-                "title": "Exception",
-                "controls": ["exception-type", "message", "properties"]
+                "title": {
+                  "package": "the8020/uui",
+                  "key": "layouts.program-terminated.main.exception-summary.title",
+                  "fallback": "Exception"
+                },
+                "controls": [
+                  "exception-type",
+                  "message",
+                  "properties"
+                ]
               },
               {
                 "id": "execution-summary",
                 "type": "field-group",
-                "title": "Execution",
+                "title": {
+                  "package": "the8020/uui",
+                  "key": "layouts.program-terminated.main.execution-summary.title",
+                  "fallback": "Execution"
+                },
                 "controls": [
                   "program-id",
                   "entrypoint",
@@ -41,7 +57,11 @@
       {
         "id": "technical-details-section",
         "type": "section",
-        "title": "Technical details",
+        "title": {
+          "package": "the8020/uui",
+          "key": "layouts.program-terminated.main.technical-details-section.title",
+          "fallback": "Technical details"
+        },
         "children": [
           {
             "id": "technical-details",
@@ -51,20 +71,38 @@
               {
                 "id": "call-stack",
                 "type": "field-group",
-                "title": "Call stack",
-                "controls": ["stack"]
+                "title": {
+                  "package": "the8020/uui",
+                  "key": "short_dump.call_stack",
+                  "fallback": "Call stack"
+                },
+                "controls": [
+                  "stack"
+                ]
               },
               {
                 "id": "source-code",
                 "type": "field-group",
-                "title": "Source code",
-                "controls": ["source"]
+                "title": {
+                  "package": "the8020/uui",
+                  "key": "layouts.program-terminated.main.source-code.title",
+                  "fallback": "Source code"
+                },
+                "controls": [
+                  "source"
+                ]
               },
               {
                 "id": "complete-dump",
                 "type": "field-group",
-                "title": "Complete short dump",
-                "controls": ["dump-text"]
+                "title": {
+                  "package": "the8020/uui",
+                  "key": "layouts.program-terminated.main.complete-dump.title",
+                  "fallback": "Complete short dump"
+                },
+                "controls": [
+                  "dump-text"
+                ]
               }
             ]
           }

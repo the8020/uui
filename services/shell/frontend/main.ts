@@ -1,3 +1,4 @@
+import { setLocalization, t } from "./i18n.ts";
 import { DOWNLOAD_POLICY } from "../../../download_metadata.ts";
 import { ListRenderer } from "./components/list/lists.ts";
 import {
@@ -95,6 +96,7 @@ interface PresentationLayer {
 }
 
 interface BootData {
+  localization?: import("/p/the8020/i18n/messages.ts").Bundle;
   serverTitle?: string;
   entryUrl?: string;
   preferencesUrl?: string;
@@ -164,10 +166,11 @@ const programHeader = new ResponsiveProgramHeader(
 const boot = JSON.parse(
   requiredElement<HTMLScriptElement>("the8020-boot").textContent ?? "",
 ) as BootData;
+setLocalization(boot.localization);
 const username =
   typeof boot.username === "string" && boot.username.trim() !== ""
     ? boot.username.trim()
-    : "User";
+    : t("main.user");
 const logoutUrl = typeof boot.logoutUrl === "string" &&
     boot.logoutUrl.startsWith("/") && !boot.logoutUrl.startsWith("//")
   ? boot.logoutUrl
@@ -202,13 +205,13 @@ let suspended = false;
 let connecting = false;
 const controlDialog = document.createElement("dialog");
 controlDialog.className = "uui-dialog uui-control-dialog";
-controlDialog.setAttribute("aria-label", "Session connection");
+controlDialog.setAttribute("aria-label", t("main.session_connection"));
 const controlText = document.createElement("p");
-controlText.textContent = "This session has been taken over by another window.";
+controlText.textContent = t("shell.takenOver");
 const controlButton = document.createElement("button");
 controlButton.type = "button";
 controlButton.className = "btn btn-primary";
-controlButton.textContent = "Take control";
+controlButton.textContent = t("shell.takeControl");
 controlDialog.append(controlText, controlButton);
 document.body.append(controlDialog);
 controlDialog.addEventListener("cancel", (event) => event.preventDefault());
@@ -401,7 +404,7 @@ function listRequest(
   });
 }
 let activeSurfaceID: string | null = null;
-let connectionText = "Connecting…";
+let connectionText = t("shell.connecting");
 let logoutFallback: ReturnType<typeof setTimeout> | undefined;
 let logoutRequested = false;
 let terminalRedirect: string | undefined;
@@ -440,9 +443,13 @@ renderIconText(sessionMenuIcon, "[[icon=menu]]", { decorativeIcons: true });
 renderIconText(messageDialogClose, "[[icon=close]]", {
   decorativeIcons: true,
 });
-renderSessionMenuAction(sessionLogout, "logout", "Logout");
-renderSessionMenuAction(sessionAccount, "person", "My account");
-renderSessionMenuAction(sessionCustomization, "palette", "Customization");
+renderSessionMenuAction(sessionLogout, "logout", t("shell.logout"));
+renderSessionMenuAction(sessionAccount, "person", t("shell.account"));
+renderSessionMenuAction(
+  sessionCustomization,
+  "palette",
+  t("shell.customization"),
+);
 sessionUsername.textContent = username;
 sessionUsername.title = username;
 updateSessionMenuLabel();
@@ -558,7 +565,7 @@ function connect(): void {
 async function connectAttempt(): Promise<void> {
   if (ended || connecting || socket?.readyState === WebSocket.OPEN) return;
   connecting = true;
-  setConnectionState("Connecting…", "connecting");
+  setConnectionState(t("shell.connecting"), "connecting");
   try {
     if (currentSessionID === "" && routeToken === null) {
       await establishRoute(false);
@@ -621,7 +628,7 @@ async function connectAttempt(): Promise<void> {
   socket.addEventListener("open", () => {
     opened = true;
     reconnectAttempt = 0;
-    setConnectionState("Connected", "connected");
+    setConnectionState(t("shell.connected"), "connected");
     send({
       type: "session.connect",
       protocol: boot.protocol,
@@ -654,7 +661,7 @@ async function connectAttempt(): Promise<void> {
       }
       return;
     }
-    setConnectionState("Reconnecting…", "reconnecting");
+    setConnectionState(t("shell.reconnecting"), "reconnecting");
     if (currentSessionID === "" && (!opened || event.code === 1008)) {
       void establishRoute(true).catch(() => {}).finally(scheduleReconnect);
       return;
@@ -712,7 +719,7 @@ function suspendConnection(): void {
   activeSurfaceID = null;
   pending.clear();
   setInteractionPending(undefined);
-  setConnectionState("Connected in another window", "reconnecting");
+  setConnectionState(t("shell.connectedElsewhere"), "reconnecting");
   if (!controlDialog.open) controlDialog.showModal();
 }
 
@@ -727,8 +734,8 @@ function rememberSession(): void {
 
 function showEndedSession(): void {
   ended = true;
-  controlText.textContent = "This session has ended.";
-  controlButton.textContent = "Reload page";
+  controlText.textContent = t("shell.ended");
+  controlButton.textContent = t("shell.reload");
   if (!controlDialog.open) controlDialog.showModal();
 }
 
@@ -817,15 +824,17 @@ function receive(raw: unknown): void {
   lastServerSequence = Math.max(lastServerSequence, message.serverSequence);
   switch (message.type) {
     case "session.ready":
+      setLocalization(message.localization);
       connectChannelRouters(message.connection);
       break;
     case "session.resumed":
+      setLocalization(message.localization);
       connectChannelRouters(message.connection);
       clientSequence = synchronizeClientSequence(
         clientSequence,
         message.lastClientSequence,
       );
-      setConnectionState("Connected", "connected");
+      setConnectionState(t("shell.connected"), "connected");
       break;
     case "session.resync_required":
       closeChannels("UUI resynchronization required");
@@ -853,7 +862,7 @@ function receive(raw: unknown): void {
       break;
     case "clipboard.write":
       void writeClipboard(message.text).catch(() =>
-        console.error("The browser did not allow copying.")
+        console.error(t("ui.the_browser_did_not_allow_copying"))
       );
       break;
     case "session.open": {
@@ -880,7 +889,7 @@ function receive(raw: unknown): void {
         pending.delete(interactionSequence);
       }
       setInteractionPending(undefined);
-      console.error(message.message ?? message.code ?? "Session error");
+      console.error(message.message ?? message.code ?? t("main.session_error"));
       break;
     }
     case "session.end":
@@ -942,7 +951,7 @@ async function refreshPreferences(): Promise<void> {
       console.error(
         error instanceof Error
           ? error.message
-          : "Could not load your UUI preferences.",
+          : t("main.could_not_load_your_uui_preferences"),
       );
     }
   }
@@ -955,12 +964,12 @@ function applyTheme(theme: Theme): void {
   themeToggle.setAttribute("aria-pressed", String(dark));
   themeToggle.setAttribute(
     "aria-label",
-    dark ? "Switch to light mode" : "Switch to dark mode",
+    dark ? t("main.switch_to_light_mode") : t("main.switch_to_dark_mode"),
   );
   renderSessionMenuAction(
     themeToggle,
     dark ? "light_mode" : "dark_mode",
-    dark ? "Light mode" : "Dark mode",
+    dark ? t("main.light_mode") : t("main.dark_mode"),
   );
 }
 
@@ -993,7 +1002,7 @@ function updateSessionMenuLabel(): void {
   sessionMenuToggle.setAttribute(
     "aria-label",
     `${username}, ${connectionText} ${
-      sessionMenu.open ? "Close" : "Open"
+      sessionMenu.open ? t("shell.close") : t("main.open")
     } session menu`,
   );
 }
@@ -1155,8 +1164,8 @@ function createLayer(surface: PresentationSurfaceSnapshot): PresentationLayer {
     close.type = "button";
     close.className =
       "btn btn-ghost btn-sm uui-dialog-close presentation-modal-close";
-    close.setAttribute("aria-label", "Close");
-    close.title = "Close";
+    close.setAttribute("aria-label", t("shell.close"));
+    close.title = t("shell.close");
     renderIconText(close, "[[icon=close]]", { decorativeIcons: true });
     close.addEventListener("click", () => requestLayerBack(surface.surfaceId));
     toolbar.append(headerRoot, close);
@@ -1170,7 +1179,7 @@ function createLayer(surface: PresentationSurfaceSnapshot): PresentationLayer {
     const spinner = document.createElement("span");
     spinner.className = "interaction-spinner";
     const label = document.createElement("span");
-    label.textContent = "Loading…";
+    label.textContent = t("shell.loading");
     indicator.append(spinner, label);
     shield.append(indicator);
     frame.append(toolbar, root, shield);
@@ -1396,7 +1405,7 @@ function disposeLayer(surfaceId: string): void {
 }
 
 function clearPresentation(): void {
-  closeChannels("The screen closed.");
+  closeChannels(t("main.the_screen_closed"));
   localScreenStates.clear();
   presentationHistory.clear();
   for (const surfaceId of [...layers.keys()]) disposeLayer(surfaceId);
@@ -1453,7 +1462,9 @@ function requestLists(
   ).catch((error) => {
     if (error instanceof DOMException && error.name === "AbortError") return;
     console.error(
-      error instanceof Error ? error.message : "Could not update the list",
+      error instanceof Error
+        ? error.message
+        : t("main.could_not_update_the_list"),
     );
   });
   return true;

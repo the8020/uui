@@ -2265,6 +2265,27 @@ Deno.test("clearing an optional input sends no value instead of an invalid empty
   }
 });
 
+Deno.test("clearing an optional nullable input sends null to reset the value", async () => {
+  const test = new TestChannel();
+  const unbind = bindSession(test);
+  const model = new Model<{ language?: string | null }>({ language: "sk" });
+  try {
+    const pending = callScreen({
+      id: "nullable-owner",
+      schema: z.object({ language: z.string().min(2).nullable().optional() }),
+      model,
+    });
+    test.push({
+      ...eventFor(lastPresentation(test), "save", 1),
+      changes: [{ bind: "language", value: "" }],
+    });
+    assertEquals((await pending).action, "save");
+    assertEquals(model.data.language, null);
+  } finally {
+    unbind();
+  }
+});
+
 Deno.test("back always leaves a screen and discards invalid drafts", async () => {
   const test = new TestChannel();
   const unbind = bindSession(test);

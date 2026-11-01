@@ -1,3 +1,4 @@
+import type { Text } from "/p/the8020/i18n/messages.ts";
 import {
   type ListChange,
   type ListOptions,
@@ -171,6 +172,7 @@ export interface SessionReadyMessage extends ServerMessageBase {
   type: "session.ready";
   sessionId: string;
   resumeToken: string;
+  localization?: import("/p/the8020/i18n/messages.ts").Bundle;
   resumed: false;
   connection: string;
 }
@@ -178,6 +180,7 @@ export interface SessionReadyMessage extends ServerMessageBase {
 export interface SessionResumedMessage extends ServerMessageBase {
   type: "session.resumed";
   sessionId: string;
+  localization?: import("/p/the8020/i18n/messages.ts").Bundle;
   resumed: true;
   connection: string;
   lastClientSequence: number;
@@ -357,9 +360,18 @@ export interface ControlDescriptor extends Partial<FieldDescriptor> {
   bind: string;
 }
 
-export type ControlDeclaration = Omit<ControlDescriptor, "id"> & {
-  id?: string;
-};
+export type ControlDeclaration =
+  & Omit<
+    ControlDescriptor,
+    "id" | "label" | "description" | "placeholder" | "options"
+  >
+  & {
+    label?: Text;
+    description?: Text;
+    placeholder?: Text;
+    options?: (Omit<FieldOption, "label"> & { label: Text })[];
+    id?: string;
+  };
 
 export interface ScreenAction extends ComponentStyle {
   shortcut?: KeyboardShortcut;
@@ -367,7 +379,8 @@ export interface ScreenAction extends ComponentStyle {
   label: string;
   kind?: "primary" | "secondary" | "danger";
 }
-export type ScreenActionDeclaration = Omit<ScreenAction, "id"> & {
+export type ScreenActionDeclaration = Omit<ScreenAction, "id" | "label"> & {
+  label: Text;
   id?: string;
 };
 

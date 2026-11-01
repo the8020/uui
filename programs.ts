@@ -1,3 +1,5 @@
+import { metadataText } from "/p/the8020/packages/localization.ts";
+import { currentLocalization } from "/p/the8020/i18n/mod.ts";
 import {
   type ProgramManifest,
   readProgramManifest,
@@ -71,7 +73,11 @@ export async function discoverPrograms(
           if (!manifest.discoverable || !manifest.uui) continue;
           result.push({
             id: `${namespace.name}/${repository.name}/${program.name}`,
-            description: manifest.description,
+            description: await metadataText(
+              `${namespace.name}/${repository.name}`,
+              `programs.${program.name}.description`,
+              manifest.description,
+            ),
           });
         }
       } catch (error) {
@@ -119,6 +125,7 @@ export async function invokeProgram(
     if (typeof module.default !== "function") {
       throw new TypeError(`program ${id} must default-export a function`);
     }
+    await currentLocalization()?.bundle(`${namespace}/${repository}`);
     return await module.default(...inputs);
   } catch (error) {
     if (error instanceof ProgramExecutionError) throw error;

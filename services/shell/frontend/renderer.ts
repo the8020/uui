@@ -1,3 +1,4 @@
+import { t } from "./i18n.ts";
 import { bindEnterEvent, bindShortcut } from "./keyboard.ts";
 import { applyComponentStyle } from "./component_style.ts";
 import type {
@@ -347,7 +348,7 @@ function renderActions(
   callbacks: RenderCallbacks,
 ): HTMLElement {
   const container = element("nav", "screen-actions");
-  container.setAttribute("aria-label", "Screen actions");
+  container.setAttribute("aria-label", t("shell.screenActions"));
   for (const action of actions) {
     container.append(renderAction(action, callbacks));
   }
@@ -696,10 +697,10 @@ function addFieldHelp(
   button.className = "field-help-button";
   button.tabIndex = -1;
   button.id = `field-help-${control.id}`;
-  const label = `${control.readOnly ? "View" : "Edit"} ${
-    control.label ?? control.bind
-  }`;
-  button.setAttribute("aria-label", `${label}: field help`);
+  const label = `${
+    control.readOnly ? t("renderer.view") : t("renderer.edit")
+  } ${control.label ?? control.bind}`;
+  button.setAttribute("aria-label", `${label} (F1 / F4)`);
   button.setAttribute("aria-keyshortcuts", "F1 F4");
   button.title = `${label} (F1 / F4)`;
   const icon = createMaterialIcon(
@@ -739,7 +740,9 @@ function renderFieldMessage(
   }
 
   const overflow = createOverflowText(message.text, {
-    label: `Show full message for ${fieldLabel}`,
+    label: t("renderer.show_full_message_for_fieldlabel", {
+      fieldLabel: fieldLabel,
+    }),
     preview: "markdown",
   });
   overflow.querySelector(".overflow-text-content")!.classList.add(

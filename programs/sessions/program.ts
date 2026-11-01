@@ -1,3 +1,5 @@
+import { text as localizedText } from "/p/the8020/i18n/mod.ts";
+import { msg } from "/p/the8020/uui/i18n/messages.ts";
 import { isId, kernel, WorkerInvokeError } from "@the8020/kernel";
 import {
   BACK_EVENT,
@@ -103,8 +105,10 @@ export default async function sessionsProgram(
     const event = await callScreen({
       id: "uui-sessions",
       title: username === undefined
-        ? "UUI sessions"
-        : `Sessions for ${username}`,
+        ? localizedText(msg("program.uui_sessions"))
+        : localizedText(
+          msg("program.sessions_for_username", { username: username }),
+        ),
       schema: ListScreen,
       model: screenModel,
       layout: {
@@ -112,10 +116,12 @@ export default async function sessionsProgram(
         root: {
           ...listLayout.root,
           toolbar: [
-            { id: "refresh", label: "[[icon=refresh]] Refresh" },
-            ...(offset > 0 ? [{ id: "newer", label: "Newer sessions" }] : []),
+            { id: "refresh", label: msg("program.refresh_2") },
+            ...(offset > 0
+              ? [{ id: "newer", label: msg("program.newer_sessions") }]
+              : []),
             ...(page.length > maximumSessions
-              ? [{ id: "older", label: "Older sessions" }]
+              ? [{ id: "older", label: msg("program.older_sessions") }]
               : []),
           ],
         },
@@ -156,7 +162,9 @@ async function sessionDetail(
       : undefined;
     const screenModel1Data = {
       sessionId: metadata.sessionId,
-      state: live.ok ? status?.state ?? metadata.state : "Unavailable",
+      state: live.ok
+        ? status?.state ?? metadata.state
+        : localizedText(msg("program.unavailable")),
       authenticatedUser: metadata.authenticatedUser,
       authenticatedUserId: metadata.authenticatedUserId,
       latestIpAddress: metadata.latestIpAddress,
@@ -175,15 +183,21 @@ async function sessionDetail(
       liveState: live.ok ? "LIVE" : `STALE: ${live.message}`,
       messageLog: messages?.ok
         ? JSON.stringify(messages.output, null, 2)
-        : "Unavailable",
+        : localizedText(msg("program.unavailable")),
     };
     screenModel1 ??= new Model(screenModel1Data);
     screenModel1.data = screenModel1Data;
     const event = await callScreen({
       id: advanced ? "uui-session-advanced" : "uui-session-detail",
       title: advanced
-        ? `Advanced · ${metadata.sessionId}`
-        : `Session for ${metadata.authenticatedUser}`,
+        ? localizedText(
+          msg("program.advanced_session", { id: metadata.sessionId }),
+        )
+        : localizedText(
+          msg("program.session_for_value1", {
+            value1: metadata.authenticatedUser,
+          }),
+        ),
       schema: DetailScreen,
       model: screenModel1,
       controls: (advanced
@@ -204,23 +218,25 @@ async function sessionDetail(
       layout: advanced ? undefined : detailLayout,
       header: {
         actions: [
-          { id: "refresh", label: "[[icon=refresh]] Refresh" },
-          ...(!advanced ? [{ id: "advanced", label: "Advanced" }] : []),
+          { id: "refresh", label: msg("program.refresh_2") },
+          ...(!advanced
+            ? [{ id: "advanced", label: msg("program.advanced") }]
+            : []),
           ...(live.ok && !advanced &&
               currentUser()?.id === metadata.authenticatedUserId
-            ? [{ id: "connect", label: "Connect" }]
+            ? [{ id: "connect", label: msg("program.connect") }]
             : []),
           ...(live.ok && !advanced
             ? [{
               id: "terminate",
-              label: "End session",
+              label: msg("program.end_session"),
               kind: "danger" as const,
             }]
             : []),
           ...(!live.ok && !advanced
             ? [{
               id: "clean",
-              label: "Remove stale session",
+              label: msg("program.remove_stale_session"),
               kind: "danger" as const,
             }]
             : []),
@@ -238,16 +254,23 @@ async function sessionDetail(
     if (event.action === "clean") {
       await requireSession(EDIT, metadata);
       await removeMetadata(metadata.sessionId);
-      sendMessage("Stale session metadata removed", "success");
+      sendMessage(
+        localizedText(msg("program.stale_session_metadata_removed")),
+        "success",
+      );
       return;
     }
     if (event.action === "terminate") {
       const confirmed = await confirmAction({
         id: "uui-session-end",
-        title: `End ${metadata.authenticatedUser}'s session?`,
-        message: "Any interactive work in this session will stop.",
-        confirm: "End session",
-        cancel: "Keep session",
+        title: msg("program.end_value1_s_session", {
+          value1: metadata.authenticatedUser,
+        }),
+        message: localizedText(
+          msg("program.any_interactive_work_in_this_session_will"),
+        ),
+        confirm: msg("program.end_session"),
+        cancel: msg("program.keep_session"),
       });
       if (!confirmed) continue;
       await requireSession(EDIT, metadata);
@@ -255,7 +278,9 @@ async function sessionDetail(
         sessionId: metadata.sessionId,
       });
       sendMessage(
-        result.ok ? "Session terminated" : result.message,
+        result.ok
+          ? localizedText(msg("program.session_terminated"))
+          : result.message,
         result.ok ? "success" : "error",
       );
       if (result.ok) return;
@@ -289,7 +314,7 @@ async function invoke(
         ? `${error.code}: ${error.message}`
         : error instanceof Error
         ? error.message
-        : "Worker invocation failed",
+        : localizedText(msg("program.worker_invocation_failed")),
     };
   }
 }

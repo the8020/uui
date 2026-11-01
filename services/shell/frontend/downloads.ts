@@ -1,3 +1,4 @@
+import { t } from "./i18n.ts";
 import {
   DOWNLOAD_MAX_TRANSFERS,
   DOWNLOAD_START_TIMEOUT,
@@ -67,7 +68,7 @@ export async function openBrowserDownload(
       }
     };
     const aborted = () =>
-      finish(new DOMException("Download cancelled", "AbortError"));
+      finish(new DOMException(t("downloads.download_cancelled"), "AbortError"));
     const finish = (error?: Error) => {
       worker.removeEventListener("statechange", changed);
       signal.removeEventListener("abort", aborted);
@@ -94,7 +95,9 @@ export async function openBrowserDownload(
   let cleaned = false;
   const cleanup = () => {
     if (signal.aborted && !completed) {
-      handoff.reject(new DOMException("Download cancelled", "AbortError"));
+      handoff.reject(
+        new DOMException(t("downloads.download_cancelled"), "AbortError"),
+      );
     }
     cleanupRequested = true;
     if (cleaned || !completed && !signal.aborted) return;
@@ -112,7 +115,9 @@ export async function openBrowserDownload(
   try {
     await new Promise<void>((resolve, reject) => {
       const abort = () =>
-        finish(new DOMException("Download cancelled", "AbortError"));
+        finish(
+          new DOMException(t("downloads.download_cancelled"), "AbortError"),
+        );
       const finish = (error?: Error) => {
         clearTimeout(timer);
         signal.removeEventListener("abort", abort);
@@ -138,7 +143,7 @@ export async function openBrowserDownload(
           if (event.data.error) handoff.reject(new Error(event.data.error));
           else if (event.data.cancelled) {
             handoff.reject(
-              new DOMException("Download cancelled", "AbortError"),
+              new DOMException(t("downloads.download_cancelled"), "AbortError"),
             );
           } else handoff.resolve();
           if (cleanupRequested) cleanup();

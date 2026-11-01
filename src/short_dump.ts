@@ -1,3 +1,5 @@
+import { text as localizedText } from "/p/the8020/i18n/mod.ts";
+import { msg } from "/p/the8020/uui/i18n/messages.ts";
 import { field, z } from "/p/the8020/db/fields.ts";
 import { programId } from "/p/the8020/packages/types/program.ts";
 import { sourceInfo } from "/p/the8020/packages/types/source.ts";
@@ -5,41 +7,42 @@ import type { TerminatedProgramInput } from "/p/the8020/uui/mod.ts";
 
 export const shortDumpFields = z.object({
   exceptionType: field(z.string(), {
-    label: "Type",
-    description: "The type of the exception that stopped this program.",
+    label: msg("short_dump.type"),
+    description: msg("short_dump.the_type_of_the_exception_that_stopped"),
   }),
   message: field(z.string(), {
-    label: "Message",
-    description: "The message reported by the exception.",
+    label: msg("short_dump.message"),
+    description: msg("short_dump.the_message_reported_by_the_exception"),
   }),
   properties: field(z.string(), {
-    label: "Properties",
-    description:
-      "Additional details attached to the exception, shortened when necessary.",
+    label: msg("short_dump.properties"),
+    description: msg(
+      "short_dump.additional_details_attached_to_the_exception_shortened",
+    ),
   }),
   location: field(z.string(), {
-    label: "Raised at",
-    description:
-      "The source file, line, and column associated with the exception, when available.",
+    label: msg("short_dump.raised_at"),
+    description: msg("short_dump.the_source_file_line_and_column_associated"),
   }),
   occurredAt: field(z.string(), {
-    label: "Time",
-    description: "When the uncaught exception stopped the program.",
+    label: msg("short_dump.time"),
+    description: msg(
+      "short_dump.when_the_uncaught_exception_stopped_the_program",
+    ),
   }),
   stack: field(z.string(), {
-    label: "Call stack",
-    description:
-      "The chain of calls reported by the exception. Use it to locate the failing code.",
+    label: msg("short_dump.call_stack"),
+    description: msg("short_dump.the_chain_of_calls_reported_by_the"),
   }),
   source: field(z.string(), {
-    label: "Source context",
-    description:
-      "Lines around the reported failure location, when the source is available.",
+    label: msg("short_dump.source_context"),
+    description: msg(
+      "short_dump.lines_around_the_reported_failure_location_when",
+    ),
   }),
   dumpText: field(z.string(), {
-    label: "Short dump",
-    description:
-      "The combined exception, call stack, and source context. Copy short dump copies this report.",
+    label: msg("short_dump.short_dump"),
+    description: msg("short_dump.the_combined_exception_call_stack_and_source"),
   }),
   programId,
   entrypoint: sourceInfo.shape.entrypoint,
@@ -55,8 +58,8 @@ export type ShortDump = z.infer<typeof shortDumpFields> & {
 };
 
 export const copyStatus = field(z.string(), {
-  label: "Copy status",
-  description: "The time at which Copy short dump was last requested.",
+  label: msg("short_dump.copy_status"),
+  description: msg("short_dump.the_time_at_which_copy_short_dump"),
 });
 
 interface SourceLocation {
@@ -73,7 +76,8 @@ export async function buildShortDump(
   const exceptionType = exceptionName(input.exception);
   const message = exceptionMessage(input.exception);
   const stack = bounded(
-    exceptionStack(input.exception) || "No call stack was provided.",
+    exceptionStack(input.exception) ||
+      localizedText(msg("short_dump.no_call_stack_was_provided")),
   );
   const sourceLocation = locationFromStack(stack) ??
     locationFromEntrypoint(input.entrypoint);
@@ -83,19 +87,26 @@ export async function buildShortDump(
       displayPath(sourceLocation.path)
     }:${sourceLocation.line}:${sourceLocation.column}`;
   const context = sourceLocation === undefined
-    ? "Source location is unavailable."
+    ? localizedText(msg("short_dump.source_location_is_unavailable"))
     : await sourceContext(sourceLocation);
   const source = typeof context === "string" ? context : context.formatted;
   const properties = bounded(inspectException(input.exception));
-  const entrypoint = displayPath(input.entrypoint) || "Unavailable";
+  const entrypoint = displayPath(input.entrypoint) ||
+    localizedText(msg("program.unavailable"));
   const dumpText = bounded([
     "PROGRAM TERMINATED",
-    `Exception type: ${exceptionType}`,
+    localizedText(
+      msg("short_dump.exception_type_exceptiontype", {
+        exceptionType: exceptionType,
+      }),
+    ),
     `Message: ${message}`,
     `Program: ${input.programId}`,
     `Entrypoint: ${entrypoint}`,
-    `Raised at: ${location}`,
-    `Occurred at: ${input.occurredAt}`,
+    localizedText(msg("short_dump.raised_at_location", { location: location })),
+    localizedText(
+      msg("short_dump.occurred_at_value1", { value1: input.occurredAt }),
+    ),
     "",
     "EXCEPTION PROPERTIES",
     properties,
@@ -148,9 +159,17 @@ function exceptionStack(value: unknown): string {
 
 function inspectException(value: unknown): string {
   if (value === null || typeof value !== "object") {
-    return `Thrown value: ${formatValue(value, 0, new WeakSet())}`;
+    return localizedText(
+      msg("short_dump.thrown_value_value1", {
+        value1: formatValue(value, 0, new WeakSet()),
+      }),
+    );
   }
-  const lines = [`Runtime type: ${exceptionName(value)}`];
+  const lines = [
+    localizedText(
+      msg("short_dump.runtime_type_value1", { value1: exceptionName(value) }),
+    ),
+  ];
   for (const key of Reflect.ownKeys(value)) {
     if (key === "stack" || key === "message" || key === "name") continue;
     const label = typeof key === "symbol" ? key.toString() : key;
@@ -244,7 +263,11 @@ async function sourceContext(location: SourceLocation): Promise<
     const lines = source.split("\n");
     const first = Math.max(1, location.line - 5);
     const last = Math.min(lines.length, location.line + 5);
-    if (first > last) return "Source location is outside the file.";
+    if (first > last) {
+      return localizedText(
+        msg("short_dump.source_location_is_outside_the_file"),
+      );
+    }
     const width = String(last).length;
     const excerpt = lines.slice(first - 1, last).map((line) =>
       line.slice(0, 1_000) + (line.length > 1_000 ? " … truncated …" : "")
@@ -265,7 +288,11 @@ async function sourceContext(location: SourceLocation): Promise<
       },
     };
   } catch (error) {
-    return `Source could not be read: ${exceptionMessage(error)}`;
+    return localizedText(
+      msg("short_dump.source_could_not_be_read_value1", {
+        value1: exceptionMessage(error),
+      }),
+    );
   }
 }
 

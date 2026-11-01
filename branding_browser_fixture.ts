@@ -1,3 +1,4 @@
+import { withTestLocalization } from "./test_localization.ts";
 import { assertEquals } from "@std/assert";
 import { brandingDatabase } from "./branding_test_support.ts";
 import { fetchBranding, fetchBrandingImage } from "./branding.ts";
@@ -44,22 +45,28 @@ export default async function fixture() {
       url.pathname = url.pathname.slice(
         url.pathname.startsWith(base) ? base.length : 0,
       );
-      const response = await (publicPage ? login : shell).fetch(
-        new Request(url, request),
-        {
-          signal: request.signal,
-          meta: {
-            contextId: "test",
-            serviceId: `the8020/uui/${publicPage ? "login" : "shell"}`,
-            serviceGeneration: 1,
-            canonicalBasePath: base,
-            originalUrl,
-            client: { ipAddress: "127.0.0.1", networkScope: "loopback" },
-            execution: { nodeId: "test", sandboxId: "test", workerId: "test" },
-            user: { userId: "user:system", username: "system" },
-            auth: { authenticated: !publicPage },
+      const response = await withTestLocalization(() =>
+        (publicPage ? login : shell).fetch(
+          new Request(url, request),
+          {
+            signal: request.signal,
+            meta: {
+              contextId: "test",
+              serviceId: `the8020/uui/${publicPage ? "login" : "shell"}`,
+              serviceGeneration: 1,
+              canonicalBasePath: base,
+              originalUrl,
+              client: { ipAddress: "127.0.0.1", networkScope: "loopback" },
+              execution: {
+                nodeId: "test",
+                sandboxId: "test",
+                workerId: "test",
+              },
+              user: { userId: "user:system", username: "system" },
+              auth: { authenticated: !publicPage },
+            },
           },
-        },
+        )
       );
       if (!publicPage && url.pathname === "/") {
         const body = (await response.text()).replace(

@@ -1,3 +1,4 @@
+import { resolveTexts } from "/p/the8020/i18n/mod.ts";
 import type { Model } from "./model.ts";
 import { setPath } from "./bindings.ts";
 import { fieldSchemas, z } from "/p/the8020/db/fields.ts";
@@ -875,7 +876,7 @@ function buildColumns(
   const keys = (options.display ??
     (unwrapped instanceof z.ZodObject ? Object.keys(unwrapped.shape) : [""]))
     .filter((key) => key !== options.selection);
-  return resolveElementIDs(
+  return resolveTexts(resolveElementIDs(
     keys.map((key) => {
       const declared = key === ""
         ? row
@@ -927,7 +928,7 @@ function buildColumns(
       semanticType: column.semanticType,
     }),
     "column",
-  );
+  ));
 }
 
 function columnValue(row: unknown, key: string): unknown {

@@ -1,3 +1,5 @@
+import { text as localizedText } from "/p/the8020/i18n/mod.ts";
+import { msg } from "/p/the8020/uui/i18n/messages.ts";
 import type { AttachedChannel } from "./channel.ts";
 import type { ByteSource, StreamHandle } from "./channel_streams.ts";
 import {
@@ -41,9 +43,12 @@ export function startDownload(
     if (error instanceof Error && error.name === "AbortError") return;
     try {
       report(
-        `Could not download ${metadata.filename}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        localizedText(
+          msg("downloads.could_not_download_value1_value2", {
+            value1: metadata.filename,
+            value2: error instanceof Error ? error.message : String(error),
+          }),
+        ),
       );
     } catch { /* ended session */ }
   });

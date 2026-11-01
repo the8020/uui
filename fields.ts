@@ -1,3 +1,4 @@
+import { prepareTexts, resolveTexts, type Text } from "/p/the8020/i18n/mod.ts";
 import { resolveElementIDs } from "./identifiers.ts";
 import { validateListOptions } from "./list_options.ts";
 import { cloneDeclaration, validateCustomElements } from "./custom_elements.ts";
@@ -44,7 +45,7 @@ export interface FieldMetadata<Value = unknown>
   readOnly?: boolean;
   hidden?: boolean;
   required?: boolean;
-  placeholder?: string;
+  placeholder?: Text;
   reactive?: boolean;
   enterEvent?: string;
   shortcut?: KeyboardShortcut;
@@ -52,7 +53,7 @@ export interface FieldMetadata<Value = unknown>
   maximum?: number;
   step?: number;
   valueSuffix?: string;
-  options?: FieldOption[];
+  options?: (Omit<FieldOption, "label"> & { label: Text })[];
   fieldHelp?: boolean;
   semanticType?: "long-string" | "date" | "datetime" | "email" | string;
 }
@@ -159,17 +160,20 @@ export function buildControls(
         bind: item.bind,
       };
     });
-  const controls = resolveElementIDs(
+  const labels = new Map(
+    declarations.map((item, index) => [item, overrides[index]?.label]),
+  );
+  const controls = resolveTexts(resolveElementIDs(
     declarations,
     (item) => ({
       bind: item.bind,
       control: item.control,
-      label: item.label,
+      label: labels.get(item),
       group: item.group,
     }),
     "control",
     reserved,
-  );
+  ));
   const ids = new Set<string>();
   for (const control of controls) {
     validateComponentStyle(control);
@@ -233,7 +237,7 @@ function visitShape(
       continue;
     }
     const multiple = multipleDescriptor(declaredSchema);
-    output.push({
+    output.push(resolveTexts({
       bind,
       ...(multiple === undefined ? {} : { multiple }),
       ...(configured.class === undefined ? {} : { class: configured.class }),
@@ -278,7 +282,7 @@ function visitShape(
           configured.custom,
         ),
       }),
-    });
+    }));
   }
 }
 
@@ -413,4 +417,24 @@ function validateKeyboardMetadata(
       "enterEvent must be a non-empty, non-reserved event name",
     );
   }
+}
+
+/** Visit schema meaning once during screen preparation, including list row fields. */
+export function prepareSchemaTexts(
+  schema: z.ZodType,
+): Promise<void> | undefined {
+  const metadata: unknown[] = [];
+  const seen = new Set<z.ZodType>();
+  const visit = (declared: z.ZodType): void => {
+    if (seen.has(declared)) return;
+    seen.add(declared);
+    metadata.push(fieldMetadata(declared));
+    const inner = unwrap(declared).schema;
+    if (inner instanceof z.ZodObject) {
+      Object.values(inner.shape).forEach((value) => visit(value as z.ZodType));
+    }
+    if (inner instanceof z.ZodArray) visit(inner.element as z.ZodType);
+  };
+  visit(schema);
+  return prepareTexts(...metadata);
 }
