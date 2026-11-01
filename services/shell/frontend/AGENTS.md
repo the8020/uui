@@ -162,9 +162,11 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
 - `app_fullscreen.ts` owns the shell bar's Fullscreen toggle (after New): the
   `uui-app-fullscreen` root class widens the navbar and program container to the
   window and widens dialogs except confirmations and compact/control dialogs.
-  The choice is kept in `localStorage` (`the8020.app-fullscreen`) until turned
-  off; it never enters the browser's own fullscreen, and component-level
-  `uui-content-fullscreen` keeps working independently.
+  Show the toggle only above 1212px (the 1180px container plus 32px gutters); at
+  smaller widths New ends the segmented navigation group. The choice is kept in
+  `localStorage` (`the8020.app-fullscreen`) until turned off; it never enters
+  the browser's own fullscreen, and component-level `uui-content-fullscreen`
+  keeps working independently.
 - The generic custom-element context exposes `renderText` for shared text and
   icons. `uui-content-fullscreen` fills only the content viewport, using the
   measured global-bar height in `--uui-content-top`, and locks background
