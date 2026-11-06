@@ -273,6 +273,7 @@
     "program.uui_sessions": "Mga UUI session",
     "program.advanced_session": "Advanced · {id}",
     "shell.openingSession": "Binubuksan ang session mo…",
-    "summary_bar.more_values": "+{count} pa"
+    "summary_bar.more_values": "+{count} pa",
+    "login.technical": "Teknikal na account ito. Hindi ito makakapag-sign in sa user interface."
   }
 }

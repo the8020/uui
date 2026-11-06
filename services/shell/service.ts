@@ -8,6 +8,7 @@ import {
 } from "/p/the8020/services/http.ts";
 import { kernel, WorkerInvokeError } from "@the8020/kernel";
 import { controlRequest } from "../../agent.ts";
+import { technicalGuard } from "../../technical_guard.ts";
 import { AssetServer } from "./assets.ts";
 import { fetchBranding } from "../../branding.ts";
 import { brandingAsset, brandingHead, escapeHTML } from "./branding.ts";
@@ -19,6 +20,7 @@ const generated = new URL("./.generated/", import.meta.url);
 const staticRoots = [generated, frontend, sharedFrontend] as const;
 const assets = new AssetServer();
 const service = defineService();
+service.use(technicalGuard());
 
 service.get(
   "/preferences",

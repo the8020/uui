@@ -273,6 +273,7 @@
     "program.uui_sessions": "UUI-sessioner",
     "program.advanced_session": "Avanceret · {id}",
     "shell.openingSession": "Åbner din session…",
-    "summary_bar.more_values": "+{count} flere"
+    "summary_bar.more_values": "+{count} flere",
+    "login.technical": "Dette er en teknisk konto. Den kan ikke logge ind i brugergrænsefladen."
   }
 }

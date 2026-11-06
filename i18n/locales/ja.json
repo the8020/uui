@@ -273,6 +273,7 @@
     "program.uui_sessions": "UUI セッション",
     "program.advanced_session": "詳細設定 · {id}",
     "shell.openingSession": "セッションを開いています…",
-    "summary_bar.more_values": "他 {count} 件"
+    "summary_bar.more_values": "他 {count} 件",
+    "login.technical": "これは技術アカウントです。ユーザーインターフェースにはサインインできません。"
   }
 }

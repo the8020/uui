@@ -273,6 +273,7 @@
     "program.uui_sessions": "UUI-sessies",
     "program.advanced_session": "Geavanceerd · {id}",
     "shell.openingSession": "Je sessie openen…",
-    "summary_bar.more_values": "+{count} meer"
+    "summary_bar.more_values": "+{count} meer",
+    "login.technical": "Dit is een technisch account. Het kan niet aanmelden bij de gebruikersinterface."
   }
 }

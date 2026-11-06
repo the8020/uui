@@ -273,6 +273,7 @@
     "program.uui_sessions": "Sesije UUI",
     "program.advanced_session": "Napredno · {id}",
     "shell.openingSession": "Otvaranje tvoje sesije…",
-    "summary_bar.more_values": "Još +{count}"
+    "summary_bar.more_values": "Još +{count}",
+    "login.technical": "Ovo je tehnički nalog. Ne može da se prijavi na korisnički interfejs."
   }
 }

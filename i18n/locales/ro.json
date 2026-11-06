@@ -273,6 +273,7 @@
     "program.uui_sessions": "Sesiuni UUI",
     "program.advanced_session": "Avansat · {id}",
     "shell.openingSession": "Se deschide sesiunea…",
-    "summary_bar.more_values": "+{count} în plus"
+    "summary_bar.more_values": "+{count} în plus",
+    "login.technical": "Acesta este un cont tehnic. Nu se poate autentifica în interfața utilizator."
   }
 }

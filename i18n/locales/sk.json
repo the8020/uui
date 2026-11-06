@@ -273,6 +273,7 @@
     "program.uui_sessions": "Relácie UUI",
     "program.advanced_session": "Pokročilé · {id}",
     "shell.openingSession": "Otváranie vašej relácie…",
-    "summary_bar.more_values": "+{count} ďalších"
+    "summary_bar.more_values": "+{count} ďalších",
+    "login.technical": "Toto je technický účet. Nemôže sa prihlásiť do používateľského rozhrania."
   }
 }

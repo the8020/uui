@@ -273,6 +273,7 @@
     "program.uui_sessions": "Συνεδρίες UUI",
     "program.advanced_session": "Για προχωρημένους · {id}",
     "shell.openingSession": "Άνοιγμα συνεδρίας…",
-    "summary_bar.more_values": "+{count} ακόμη"
+    "summary_bar.more_values": "+{count} ακόμη",
+    "login.technical": "Αυτός είναι τεχνικός λογαριασμός. Δεν μπορεί να συνδεθεί στη διεπαφή χρήστη."
   }
 }

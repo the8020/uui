@@ -273,6 +273,7 @@
     "program.uui_sessions": "UUI sesije",
     "program.advanced_session": "Napredno · {id}",
     "shell.openingSession": "Otvaranje vaše sesije…",
-    "summary_bar.more_values": "+ još {count}"
+    "summary_bar.more_values": "+ još {count}",
+    "login.technical": "Ovo je tehnički račun. Ne može se prijaviti u korisničko sučelje."
   }
 }

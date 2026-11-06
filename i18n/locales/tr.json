@@ -273,6 +273,7 @@
     "program.uui_sessions": "UUI oturumları",
     "program.advanced_session": "Gelişmiş · {id}",
     "shell.openingSession": "Oturumunuz açılıyor…",
-    "summary_bar.more_values": "+{count} daha"
+    "summary_bar.more_values": "+{count} daha",
+    "login.technical": "Bu bir teknik hesaptır. Kullanıcı arayüzünde oturum açamaz."
   }
 }

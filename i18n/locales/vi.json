@@ -273,6 +273,7 @@
     "program.uui_sessions": "Phiên UUI",
     "program.advanced_session": "Nâng cao · {id}",
     "shell.openingSession": "Đang mở phiên của bạn…",
-    "summary_bar.more_values": "+{count} nữa"
+    "summary_bar.more_values": "+{count} nữa",
+    "login.technical": "Đây là tài khoản kỹ thuật. Tài khoản này không thể đăng nhập vào giao diện người dùng."
   }
 }

@@ -273,6 +273,7 @@
     "program.uui_sessions": "UUI 工作階段",
     "program.advanced_session": "進階 · {id}",
     "shell.openingSession": "正在開啟您的工作階段…",
-    "summary_bar.more_values": "另有 {count} 項"
+    "summary_bar.more_values": "另有 {count} 項",
+    "login.technical": "這是技術帳戶，無法登入使用者介面。"
   }
 }

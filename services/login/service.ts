@@ -89,8 +89,12 @@ service.post(
         const result = await login(request, { username, password });
         if (!result.authenticated || result.setCookie === undefined) {
           return htmlResponse(
-            await loginPage(meta.originalUrl, t("login.invalid"), selected),
-            401,
+            await loginPage(
+              meta.originalUrl,
+              t(result.technical ? "login.technical" : "login.invalid"),
+              selected,
+            ),
+            result.technical ? 403 : 401,
           );
         }
         const headers = new Headers({

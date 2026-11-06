@@ -273,6 +273,7 @@
     "program.uui_sessions": "Relace UUI",
     "program.advanced_session": "Pokročilé · {id}",
     "shell.openingSession": "Otevírání vaší relace…",
-    "summary_bar.more_values": "+{count} dalších"
+    "summary_bar.more_values": "+{count} dalších",
+    "login.technical": "Toto je technický účet. Nemůže se přihlásit do uživatelského rozhraní."
   }
 }

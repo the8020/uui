@@ -279,6 +279,12 @@ below.
   Browser requests never choose redirects.
 - Login/logout explicitly call `/p/the8020/users/mod.ts`; passwords and
   authentication cookies never enter UUI messages or browser boot data.
+- Technical accounts never use the UI. Login shows `login.technical` for them,
+  and `technical_guard.ts` is middleware on the shell and session services that
+  answers 403 for any authenticated account failing users' `interfaceUser`,
+  whether it arrived by cookie, certificate or HTTP Basic. Answers are cached
+  per Worker for 30 seconds. Tests without a users database replace the check
+  through `setInterfaceUserCheck`.
 - The shell reads the canonical effective user from generic request metadata.
   Generic `@the8020/context` identifies the outer UUI service; UUI session IDs
   and session metadata remain package-owned.

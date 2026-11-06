@@ -273,6 +273,7 @@
     "program.uui_sessions": "UUI 세션",
     "program.advanced_session": "고급 · {id}",
     "shell.openingSession": "세션을 여는 중…",
-    "summary_bar.more_values": "{count}개 더 있음"
+    "summary_bar.more_values": "{count}개 더 있음",
+    "login.technical": "기술 계정입니다. 사용자 인터페이스에 로그인할 수 없습니다."
   }
 }

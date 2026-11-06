@@ -273,6 +273,7 @@
     "program.uui_sessions": "เซสชัน UUI",
     "program.advanced_session": "ขั้นสูง · {id}",
     "shell.openingSession": "กำลังเปิดเซสชันของคุณ…",
-    "summary_bar.more_values": "อีก +{count}"
+    "summary_bar.more_values": "อีก +{count}",
+    "login.technical": "นี่คือบัญชีทางเทคนิค เข้าสู่ระบบส่วนติดต่อผู้ใช้ไม่ได้"
   }
 }

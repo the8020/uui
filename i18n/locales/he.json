@@ -273,6 +273,7 @@
     "program.uui_sessions": "הפעלות UUI",
     "program.advanced_session": "מתקדם · {id}",
     "shell.openingSession": "פותח את ההפעלה שלך…",
-    "summary_bar.more_values": "+{count} נוספים"
+    "summary_bar.more_values": "+{count} נוספים",
+    "login.technical": "זהו חשבון טכני. הוא אינו יכול להיכנס לממשק המשתמש."
   }
 }

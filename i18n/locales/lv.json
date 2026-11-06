@@ -273,6 +273,7 @@
     "program.uui_sessions": "UUI sesijas",
     "program.advanced_session": "Papildu · {id}",
     "shell.openingSession": "Jūsu sesijas atvēršana…",
-    "summary_bar.more_values": "vēl +{count}"
+    "summary_bar.more_values": "vēl +{count}",
+    "login.technical": "Šis ir tehniskais konts. Tas nevar pieteikties lietotāja saskarnē."
   }
 }

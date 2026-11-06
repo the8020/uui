@@ -273,6 +273,7 @@
     "program.uui_sessions": "UUI-Sitzungen",
     "program.advanced_session": "Erweitert · {id}",
     "shell.openingSession": "Ihre Sitzung wird geöffnet…",
-    "summary_bar.more_values": "+{count} weitere"
+    "summary_bar.more_values": "+{count} weitere",
+    "login.technical": "Dies ist ein technisches Konto. Es kann sich nicht an der Benutzeroberfläche anmelden."
   }
 }

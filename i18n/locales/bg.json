@@ -273,6 +273,7 @@
     "program.uui_sessions": "UUI сесии",
     "program.advanced_session": "Разширени · {id}",
     "shell.openingSession": "Отваряне на сесията ви…",
-    "summary_bar.more_values": "+ още {count}"
+    "summary_bar.more_values": "+ още {count}",
+    "login.technical": "Това е технически акаунт. Той не може да влиза в потребителския интерфейс."
   }
 }

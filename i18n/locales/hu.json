@@ -273,6 +273,7 @@
     "program.uui_sessions": "UUI-munkamenetek",
     "program.advanced_session": "Haladó · {id}",
     "shell.openingSession": "Munkamenet megnyitása…",
-    "summary_bar.more_values": "+{count} további"
+    "summary_bar.more_values": "+{count} további",
+    "login.technical": "Ez egy technikai fiók. Nem jelentkezhet be a felhasználói felületre."
   }
 }

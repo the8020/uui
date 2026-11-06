@@ -273,6 +273,7 @@
     "program.uui_sessions": "UUI-seansid",
     "program.advanced_session": "Täpsemad seaded · {id}",
     "shell.openingSession": "Sinu seansi avamine…",
-    "summary_bar.more_values": "veel +{count}"
+    "summary_bar.more_values": "veel +{count}",
+    "login.technical": "See on tehniline konto. See ei saa kasutajaliidesesse sisse logida."
   }
 }

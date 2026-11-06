@@ -273,6 +273,7 @@
     "program.uui_sessions": "Sessions UUI",
     "program.advanced_session": "Avançat · {id}",
     "shell.openingSession": "Obrint la sessió…",
-    "summary_bar.more_values": "+{count} més"
+    "summary_bar.more_values": "+{count} més",
+    "login.technical": "Aquest és un compte tècnic. No pot iniciar sessió a la interfície d'usuari."
   }
 }

@@ -273,6 +273,7 @@
     "program.uui_sessions": "Sessions UUI",
     "program.advanced_session": "Avancé · {id}",
     "shell.openingSession": "Ouverture de votre session…",
-    "summary_bar.more_values": "+{count} de plus"
+    "summary_bar.more_values": "+{count} de plus",
+    "login.technical": "Ceci est un compte technique. Il ne peut pas se connecter à l’interface utilisateur."
   }
 }

@@ -273,6 +273,7 @@
     "program.uui_sessions": "UUI-istunnot",
     "program.advanced_session": "Lisäasetukset · {id}",
     "shell.openingSession": "Avataan istuntoasi…",
-    "summary_bar.more_values": "+{count} lisää"
+    "summary_bar.more_values": "+{count} lisää",
+    "login.technical": "Tämä on tekninen tili. Se ei voi kirjautua käyttöliittymään."
   }
 }

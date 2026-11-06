@@ -273,6 +273,7 @@
     "program.uui_sessions": "جلسات UUI",
     "program.advanced_session": "متقدم · {id}",
     "shell.openingSession": "جارٍ فتح جلستك…",
-    "summary_bar.more_values": "+{count} أخرى"
+    "summary_bar.more_values": "+{count} أخرى",
+    "login.technical": "هذا حساب تقني. لا يمكنه تسجيل الدخول إلى واجهة المستخدم."
   }
 }

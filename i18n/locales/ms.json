@@ -273,6 +273,7 @@
     "program.uui_sessions": "Sesi UUI",
     "program.advanced_session": "Lanjutan · {id}",
     "shell.openingSession": "Membuka sesi anda…",
-    "summary_bar.more_values": "+{count} lagi"
+    "summary_bar.more_values": "+{count} lagi",
+    "login.technical": "Ini akaun teknikal. Ia tidak boleh log masuk ke antara muka pengguna."
   }
 }

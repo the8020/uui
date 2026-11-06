@@ -230,7 +230,8 @@ export async function runProgramsBrowser(root: string): Promise<void> {
     CREATE TABLE the8020__users__users (
       username TEXT PRIMARY KEY, passwordHash TEXT NOT NULL, enabled INTEGER NOT NULL,
       authVersion INTEGER NOT NULL, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL,
-      fullName TEXT NOT NULL DEFAULT '');
+      fullName TEXT NOT NULL DEFAULT '', language TEXT,
+      technical INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE the8020__users__sessions (
       sessionId TEXT PRIMARY KEY, username TEXT NOT NULL, authVersion INTEGER NOT NULL,
       type TEXT NOT NULL DEFAULT 'username', transport TEXT NOT NULL DEFAULT 'remote',

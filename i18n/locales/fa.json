@@ -273,6 +273,7 @@
     "program.uui_sessions": "نشست‌های UUI",
     "program.advanced_session": "پیشرفته · {id}",
     "shell.openingSession": "در حال باز کردن نشست شما…",
-    "summary_bar.more_values": "+{count} مورد دیگر"
+    "summary_bar.more_values": "+{count} مورد دیگر",
+    "login.technical": "این یک حساب فنی است و نمی‌تواند به رابط کاربری وارد شود."
   }
 }

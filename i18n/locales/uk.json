@@ -273,6 +273,7 @@
     "program.uui_sessions": "Сеанси UUI",
     "program.advanced_session": "Додатково · {id}",
     "shell.openingSession": "Відкриття сеансу…",
-    "summary_bar.more_values": "ще +{count}"
+    "summary_bar.more_values": "ще +{count}",
+    "login.technical": "Це технічний обліковий запис. Він не може входити в інтерфейс користувача."
   }
 }

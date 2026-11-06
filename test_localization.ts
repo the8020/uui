@@ -7,6 +7,10 @@ import validation from "/p/the8020/i18n/i18n/locales/en.json" with {
   type: "json",
 };
 import ui from "./i18n/locales/en.json" with { type: "json" };
+import { setInterfaceUserCheck } from "./technical_guard.ts";
+
+// UUI tests run without the users database; every test user may use the UI.
+setInterfaceUserCheck(() => Promise.resolve(true));
 
 export function withTestLocalization<T>(run: () => T): T {
   return withLocalization(

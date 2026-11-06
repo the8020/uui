@@ -273,6 +273,7 @@
     "program.uui_sessions": "UUI 会话",
     "program.advanced_session": "高级 · {id}",
     "shell.openingSession": "正在打开您的会话…",
-    "summary_bar.more_values": "另有 {count} 项"
+    "summary_bar.more_values": "另有 {count} 项",
+    "login.technical": "这是技术账户，无法登录用户界面。"
   }
 }

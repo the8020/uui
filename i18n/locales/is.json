@@ -273,6 +273,7 @@
     "program.uui_sessions": "UUI-lotur",
     "program.advanced_session": "Ítarlegt · {id}",
     "shell.openingSession": "Opna lotuna þína…",
-    "summary_bar.more_values": "+{count} í viðbót"
+    "summary_bar.more_values": "+{count} í viðbót",
+    "login.technical": "Þetta er tæknireikningur. Hann getur ekki skráð sig inn í notendaviðmótið."
   }
 }

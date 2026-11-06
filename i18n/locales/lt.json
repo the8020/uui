@@ -273,6 +273,7 @@
     "program.uui_sessions": "UUI seansai",
     "program.advanced_session": "Išplėstinė informacija · {id}",
     "shell.openingSession": "Atveriamas jūsų seansas…",
-    "summary_bar.more_values": "Dar +{count}"
+    "summary_bar.more_values": "Dar +{count}",
+    "login.technical": "Tai techninė paskyra. Ji negali prisijungti prie naudotojo sąsajos."
   }
 }

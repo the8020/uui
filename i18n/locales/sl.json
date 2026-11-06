@@ -273,6 +273,7 @@
     "program.uui_sessions": "Seje UUI",
     "program.advanced_session": "Napredno · {id}",
     "shell.openingSession": "Odpiranje tvoje seje…",
-    "summary_bar.more_values": "Še +{count}"
+    "summary_bar.more_values": "Še +{count}",
+    "login.technical": "To je tehnični račun. V uporabniški vmesnik se ne more prijaviti."
   }
 }

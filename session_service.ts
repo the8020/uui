@@ -1,3 +1,4 @@
+import { technicalGuard } from "./technical_guard.ts";
 import { browserLocalization } from "./localization.ts";
 import {
   currentLocalization,
@@ -156,6 +157,7 @@ export function defineSessionService(
     throw new TypeError("session handler must be a function");
   }
   const service = defineService();
+  service.use(technicalGuard());
   service.post(
     "/connect",
     { summary: "Establish a persistent UUI execution" },
