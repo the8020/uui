@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Pamahalaan ang mga nakabahaging ayos; ang halaga ay pagkakakilanlan ng listahan.",
     "widgets.list-layouts.title": "Mga ayos ng listahan",
     "widgets.list-layouts.description": "Mga ayos ng listahan",
-    "programs.list-layouts-demo.description": "Mga ayos ng listahan"
+    "programs.list-layouts-demo.description": "Mga ayos ng listahan",
+    "selection.title": "Mga pagpili",
+    "selection.criteria": "Mga pamantayan",
+    "selection.sign": "Tanda",
+    "selection.operator": "Operator",
+    "selection.low": "Mula",
+    "selection.high": "Hanggang",
+    "selection.include": "Isama",
+    "selection.exclude": "Ibukod",
+    "selection.add": "Magdagdag",
+    "selection.execute": "Patakbuhin",
+    "selection.examples": "Mga halimbawa",
+    "selection.large": "5,000 halaga",
+    "selection.clear": "I-clear",
+    "widgets.selection-demo.title": "Mga pagpili",
+    "widgets.selection-demo.description": "Mga pagpili",
+    "programs.selection-demo.description": "Mga pagpili"
   }
 }

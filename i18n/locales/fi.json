@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Hallitse jaettuja asetteluja; arvo on luettelon tunniste.",
     "widgets.list-layouts.title": "Luetteloasettelut",
     "widgets.list-layouts.description": "Luetteloasettelut",
-    "programs.list-layouts-demo.description": "Luetteloasettelut"
+    "programs.list-layouts-demo.description": "Luetteloasettelut",
+    "selection.title": "Valinnat",
+    "selection.criteria": "Ehdot",
+    "selection.sign": "Etumerkki",
+    "selection.operator": "Operaattori",
+    "selection.low": "Alkaen",
+    "selection.high": "Päättyen",
+    "selection.include": "Sisällytä",
+    "selection.exclude": "Sulje pois",
+    "selection.add": "Lisää",
+    "selection.execute": "Suorita",
+    "selection.examples": "Esimerkit",
+    "selection.large": "5 000 arvoa",
+    "selection.clear": "Tyhjennä",
+    "widgets.selection-demo.title": "Valinnat",
+    "widgets.selection-demo.description": "Valinnat",
+    "programs.selection-demo.description": "Valinnat"
   }
 }

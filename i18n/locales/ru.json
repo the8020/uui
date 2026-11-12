@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Управлять общими макетами; значение определяет список.",
     "widgets.list-layouts.title": "Макеты списка",
     "widgets.list-layouts.description": "Макеты списка",
-    "programs.list-layouts-demo.description": "Макеты списка"
+    "programs.list-layouts-demo.description": "Макеты списка",
+    "selection.title": "Выборки",
+    "selection.criteria": "Критерии",
+    "selection.sign": "Знак",
+    "selection.operator": "Оператор",
+    "selection.low": "От",
+    "selection.high": "До",
+    "selection.include": "Включить",
+    "selection.exclude": "Исключить",
+    "selection.add": "Добавить",
+    "selection.execute": "Выполнить",
+    "selection.examples": "Примеры",
+    "selection.large": "5 000 значений",
+    "selection.clear": "Очистить",
+    "widgets.selection-demo.title": "Выборки",
+    "widgets.selection-demo.description": "Выборки",
+    "programs.selection-demo.description": "Выборки"
   }
 }

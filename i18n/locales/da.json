@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Administrer fælles listelayouts; værdien identificerer listen.",
     "widgets.list-layouts.title": "Listelayouts",
     "widgets.list-layouts.description": "Listelayouts",
-    "programs.list-layouts-demo.description": "Listelayouts"
+    "programs.list-layouts-demo.description": "Listelayouts",
+    "selection.title": "Udvalg",
+    "selection.criteria": "Kriterier",
+    "selection.sign": "Fortegn",
+    "selection.operator": "Operator",
+    "selection.low": "Fra",
+    "selection.high": "Til",
+    "selection.include": "Medtag",
+    "selection.exclude": "Udelad",
+    "selection.add": "Tilføj",
+    "selection.execute": "Kør",
+    "selection.examples": "Eksempler",
+    "selection.large": "5.000 værdier",
+    "selection.clear": "Ryd",
+    "widgets.selection-demo.title": "Udvalg",
+    "widgets.selection-demo.description": "Udvalg",
+    "programs.selection-demo.description": "Udvalg"
   }
 }

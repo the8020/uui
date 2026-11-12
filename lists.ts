@@ -523,11 +523,23 @@ export class ScreenLists {
       const source = this.source(request.id);
       if (source?.selection === undefined) continue;
       const view = this.view(request.id);
+      const offset = (view.snapshot.state.page - 1) *
+        view.snapshot.state.pageSize;
+      const start = request.range === undefined
+        ? 0
+        : Math.min(request.range.from, request.range.to);
+      const end = request.range === undefined
+        ? 0
+        : Math.max(request.range.from, request.range.to);
       const rows = request.range !== undefined
-        ? view.allIndices.slice(
-          Math.min(request.range.from, request.range.to),
-          Math.max(request.range.from, request.range.to) + 1,
-        ).map((index) => view.source[index])
+        ? start >= offset && end < offset + view.source.length
+          ? view.source.slice(start - offset, end - offset + 1)
+          // shortcut: cross-page Shift uses the ordinary 1,000-row read bound; use select-all for larger spans.
+          : (await this.read({
+            id: request.id,
+            offset: start,
+            limit: end - start + 1,
+          }, signal)).rows
         : source.selection.matching === undefined
         ? view.source
         : await source.selection.matching(
@@ -741,7 +753,8 @@ export class ScreenLists {
           request.range !== undefined &&
             [request.range.from, request.range.to].some((index) =>
               !Number.isSafeInteger(index) || index < 0 ||
-              index >= view.allIndices.length
+              index >=
+                (keyed ? view.snapshot.totalItems : view.allIndices.length)
             )
         ) {
           throw new TypeError("invalid list selection range or binding");

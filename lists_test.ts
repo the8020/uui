@@ -21,6 +21,91 @@ const schema = z.object({
   ),
 });
 
+Deno.test("keyed provider selection maps absolute page-two ranges and retains keys across pages", async () => {
+  const model = new Model({
+    rows: [] as { id: number; name: string; enabled: boolean }[],
+  });
+  const selected = new Set<number>();
+  const source = Array.from(
+    { length: 8 },
+    (_, id) => ({ id, name: String(id), enabled: true }),
+  );
+  setListSource(
+    model,
+    "rows",
+    ({ offset, limit }) => ({
+      rows: source.slice(offset, offset + limit),
+      more: offset + limit < source.length,
+      totalItems: source.length,
+    }),
+    {
+      selection: {
+        mode: "multiple",
+        isSelected: (row) => selected.has((row as { id: number }).id),
+        count: () => selected.size,
+        set: (rows, checked) => {
+          for (const row of rows) {
+            const id = (row as { id: number }).id;
+            if (checked) selected.add(id);
+            else selected.delete(id);
+          }
+        },
+      },
+    },
+  );
+  const lists = new ScreenLists(
+    schema,
+    buildControls(buildFieldCatalog(schema), [{ id: "rows", bind: "rows" }]),
+    undefined,
+    model.screen,
+    [],
+    model,
+  );
+  lists.present(model.data);
+  const signal = new AbortController().signal;
+  (await lists.prepareUpdates([{
+    id: "rows",
+    operation: "capacity",
+    pageSize: 2,
+  }], signal)).commit();
+  lists.present(model.data);
+  (await lists.prepareUpdates([{
+    id: "rows",
+    operation: "selection",
+    selected: true,
+    range: { from: 0, to: 0 },
+  }], signal)).commit();
+  (await lists.prepareUpdates(
+    [{ id: "rows", operation: "page", page: 2 }],
+    signal,
+  )).commit();
+  lists.present(model.data);
+  (await lists.prepareUpdates([{
+    id: "rows",
+    operation: "selection",
+    selected: true,
+    range: { from: 2, to: 2 },
+  }], signal)).commit();
+  assertEquals([...selected], [0, 2]);
+  lists.present(model.data);
+  (await lists.prepareUpdates([{
+    id: "rows",
+    operation: "selection",
+    selected: true,
+    range: { from: 1, to: 3 },
+  }], signal)).commit();
+  assertEquals([...selected].sort(), [0, 1, 2, 3]);
+  lists.present(model.data);
+  await assertRejects(() =>
+    lists.prepareUpdates([{
+      id: "rows",
+      operation: "selection",
+      selected: true,
+      range: { from: 8, to: 8 },
+    }], signal)
+  );
+});
+
 Deno.test("lists use shared structure field names and Zod value types", () => {
   const summary = z.object({
     owner: sharedField(z.string(), {

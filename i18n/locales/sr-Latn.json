@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Upravljanje zajedničkim rasporedima; vrednost označava listu.",
     "widgets.list-layouts.title": "Rasporedi liste",
     "widgets.list-layouts.description": "Rasporedi liste",
-    "programs.list-layouts-demo.description": "Rasporedi liste"
+    "programs.list-layouts-demo.description": "Rasporedi liste",
+    "selection.title": "Izbori",
+    "selection.criteria": "Kriterijumi",
+    "selection.sign": "Predznak",
+    "selection.operator": "Operator",
+    "selection.low": "Od",
+    "selection.high": "Do",
+    "selection.include": "Uključi",
+    "selection.exclude": "Isključi",
+    "selection.add": "Dodaj",
+    "selection.execute": "Pokreni",
+    "selection.examples": "Primeri",
+    "selection.large": "5.000 vrednosti",
+    "selection.clear": "Obriši",
+    "widgets.selection-demo.title": "Izbori",
+    "widgets.selection-demo.description": "Izbori",
+    "programs.selection-demo.description": "Izbori"
   }
 }

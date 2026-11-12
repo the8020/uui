@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Zarządzaj wspólnymi układami; wartość identyfikuje listę.",
     "widgets.list-layouts.title": "Układy listy",
     "widgets.list-layouts.description": "Układy listy",
-    "programs.list-layouts-demo.description": "Układy listy"
+    "programs.list-layouts-demo.description": "Układy listy",
+    "selection.title": "Wybory",
+    "selection.criteria": "Kryteria",
+    "selection.sign": "Znak",
+    "selection.operator": "Operator",
+    "selection.low": "Od",
+    "selection.high": "Do",
+    "selection.include": "Uwzględnij",
+    "selection.exclude": "Wyklucz",
+    "selection.add": "Dodaj",
+    "selection.execute": "Uruchom",
+    "selection.examples": "Przykłady",
+    "selection.large": "5 000 wartości",
+    "selection.clear": "Wyczyść",
+    "widgets.selection-demo.title": "Wybory",
+    "widgets.selection-demo.description": "Wybory",
+    "programs.selection-demo.description": "Wybory"
   }
 }

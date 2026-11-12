@@ -1292,6 +1292,28 @@ body:has(.uui-content-fullscreen) {
   box-shadow: 0 2px 0 color-mix(in srgb, var(--primary), transparent 30%);
 }
 
+.field-selection {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.field-selection .field-tag {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: 0;
+  cursor: pointer;
+}
+
+.field-selection .selection-more {
+  flex-shrink: 0;
+}
+
+.field .field-selection input.field-tags-input {
+  min-width: 0;
+  width: 0;
+}
+
 .field-tag {
   display: inline-flex;
   min-width: 0;

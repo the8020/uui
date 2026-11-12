@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "مدیریت چیدمان‌های مشترک؛ مقدار، شناسه فهرست است.",
     "widgets.list-layouts.title": "چیدمان‌های فهرست",
     "widgets.list-layouts.description": "چیدمان‌های فهرست",
-    "programs.list-layouts-demo.description": "چیدمان‌های فهرست"
+    "programs.list-layouts-demo.description": "چیدمان‌های فهرست",
+    "selection.title": "انتخاب‌ها",
+    "selection.criteria": "معیارها",
+    "selection.sign": "علامت",
+    "selection.operator": "عملگر",
+    "selection.low": "از",
+    "selection.high": "تا",
+    "selection.include": "شامل",
+    "selection.exclude": "حذف",
+    "selection.add": "افزودن",
+    "selection.execute": "اجرا",
+    "selection.examples": "نمونه‌ها",
+    "selection.large": "۵٬۰۰۰ مقدار",
+    "selection.clear": "پاک کردن",
+    "widgets.selection-demo.title": "انتخاب‌ها",
+    "widgets.selection-demo.description": "انتخاب‌ها",
+    "programs.selection-demo.description": "انتخاب‌ها"
   }
 }

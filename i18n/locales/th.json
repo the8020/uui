@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "จัดการเค้าโครงรายการที่ใช้ร่วมกัน ค่าคือรหัสรายการ",
     "widgets.list-layouts.title": "เค้าโครงรายการ",
     "widgets.list-layouts.description": "เค้าโครงรายการ",
-    "programs.list-layouts-demo.description": "เค้าโครงรายการ"
+    "programs.list-layouts-demo.description": "เค้าโครงรายการ",
+    "selection.title": "การเลือก",
+    "selection.criteria": "เงื่อนไข",
+    "selection.sign": "เครื่องหมาย",
+    "selection.operator": "ตัวดำเนินการ",
+    "selection.low": "จาก",
+    "selection.high": "ถึง",
+    "selection.include": "รวม",
+    "selection.exclude": "ยกเว้น",
+    "selection.add": "เพิ่ม",
+    "selection.execute": "เรียกใช้",
+    "selection.examples": "ตัวอย่าง",
+    "selection.large": "5,000 ค่า",
+    "selection.clear": "ล้าง",
+    "widgets.selection-demo.title": "การเลือก",
+    "widgets.selection-demo.description": "การเลือก",
+    "programs.selection-demo.description": "การเลือก"
   }
 }

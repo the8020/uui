@@ -9,16 +9,26 @@ import {
   splitMultiple,
   z,
 } from "/p/the8020/db/fields.ts";
-import { field, fieldMetadata } from "./fields.ts";
+import { buildFieldCatalog, field, fieldMetadata } from "./fields.ts";
 import { queryValueHelp, setListSource } from "./lists.ts";
 import { Model } from "./model.ts";
 import { BACK_EVENT, type ControlDescriptor } from "./protocol.ts";
 import { callScreen, presentPage, sendMessage } from "./session.ts";
 import type { ValueHelpPage, ValueHelpRequest } from "/p/the8020/db/fields.ts";
 import { emptyListQuery } from "./screen_state.ts";
+import { selectionElement } from "/p/the8020/db/selection.ts";
+import { runSelectionHelp } from "./selection_help.ts";
 
 /** Shared provider selection for field help and direct agent value-help queries. */
 export function valueHelpFor(schema: z.ZodType, control: ControlDescriptor) {
+  const element = selectionElement(schema);
+  if (element) {
+    return valueHelpFor(element, {
+      ...control,
+      options: control.options ??
+        buildFieldCatalog(z.object({ value: element }))[0]?.options,
+    });
+  }
   const metadata = fieldMetadata(schema);
   return metadata?.valueHelp ??
     (control.options === undefined
@@ -130,6 +140,10 @@ export async function runFieldHelp(
   binding: { get(): unknown; set(value: unknown): void },
   layoutKey?: string,
 ): Promise<void> {
+  const element = selectionElement(schema);
+  if (element) {
+    return runSelectionHelp(schema, element, control, binding, layoutKey);
+  }
   const metadata = fieldMetadata(schema);
   const multiple = multipleValues(schema);
   // An array's values come from its element's help.
@@ -264,7 +278,11 @@ export async function runFieldHelp(
         root: {
           type: "stack",
           children: [
-            { type: "field-group", controls: ["value"], summary: true },
+            ...(control.hidden ? [] : [{
+              type: "field-group" as const,
+              controls: ["value"],
+              summary: true,
+            }]),
             ...(valueHelp === undefined ? [] : [{
               id: "choices",
               layoutKey,

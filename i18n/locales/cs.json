@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Spravovat sdílená rozložení seznamů; hodnotou je identita seznamu.",
     "widgets.list-layouts.title": "Rozložení seznamu",
     "widgets.list-layouts.description": "Rozložení seznamu",
-    "programs.list-layouts-demo.description": "Rozložení seznamu"
+    "programs.list-layouts-demo.description": "Rozložení seznamu",
+    "selection.title": "Výběry",
+    "selection.criteria": "Kritéria",
+    "selection.sign": "Znaménko",
+    "selection.operator": "Operátor",
+    "selection.low": "Od",
+    "selection.high": "Do",
+    "selection.include": "Zahrnout",
+    "selection.exclude": "Vyloučit",
+    "selection.add": "Přidat",
+    "selection.execute": "Spustit",
+    "selection.examples": "Příklady",
+    "selection.large": "5 000 hodnot",
+    "selection.clear": "Vymazat",
+    "widgets.selection-demo.title": "Výběry",
+    "widgets.selection-demo.description": "Výběry",
+    "programs.selection-demo.description": "Výběry"
   }
 }

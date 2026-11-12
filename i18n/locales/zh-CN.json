@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "管理共享列表布局；值为列表标识。",
     "widgets.list-layouts.title": "列表布局",
     "widgets.list-layouts.description": "列表布局",
-    "programs.list-layouts-demo.description": "列表布局"
+    "programs.list-layouts-demo.description": "列表布局",
+    "selection.title": "选择条件",
+    "selection.criteria": "条件",
+    "selection.sign": "符号",
+    "selection.operator": "运算符",
+    "selection.low": "起始值",
+    "selection.high": "结束值",
+    "selection.include": "包含",
+    "selection.exclude": "排除",
+    "selection.add": "添加",
+    "selection.execute": "运行",
+    "selection.examples": "示例",
+    "selection.large": "5,000 个值",
+    "selection.clear": "清空",
+    "widgets.selection-demo.title": "选择条件",
+    "widgets.selection-demo.description": "选择条件",
+    "programs.selection-demo.description": "选择条件"
   }
 }

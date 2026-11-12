@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Gedeelde lijstindelingen beheren; de waarde identificeert de lijst.",
     "widgets.list-layouts.title": "Lijstindelingen",
     "widgets.list-layouts.description": "Lijstindelingen",
-    "programs.list-layouts-demo.description": "Lijstindelingen"
+    "programs.list-layouts-demo.description": "Lijstindelingen",
+    "selection.title": "Selecties",
+    "selection.criteria": "Criteria",
+    "selection.sign": "Teken",
+    "selection.operator": "Operator",
+    "selection.low": "Van",
+    "selection.high": "Tot",
+    "selection.include": "Opnemen",
+    "selection.exclude": "Uitsluiten",
+    "selection.add": "Toevoegen",
+    "selection.execute": "Uitvoeren",
+    "selection.examples": "Voorbeelden",
+    "selection.large": "5.000 waarden",
+    "selection.clear": "Wissen",
+    "widgets.selection-demo.title": "Selecties",
+    "widgets.selection-demo.description": "Selecties",
+    "programs.selection-demo.description": "Selecties"
   }
 }

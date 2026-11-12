@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Gerenciar layouts compartilhados; o valor identifica a lista.",
     "widgets.list-layouts.title": "Layouts da lista",
     "widgets.list-layouts.description": "Layouts da lista",
-    "programs.list-layouts-demo.description": "Layouts da lista"
+    "programs.list-layouts-demo.description": "Layouts da lista",
+    "selection.title": "Seleções",
+    "selection.criteria": "Critérios",
+    "selection.sign": "Sinal",
+    "selection.operator": "Operador",
+    "selection.low": "De",
+    "selection.high": "Até",
+    "selection.include": "Incluir",
+    "selection.exclude": "Excluir",
+    "selection.add": "Adicionar",
+    "selection.execute": "Executar",
+    "selection.examples": "Exemplos",
+    "selection.large": "5.000 valores",
+    "selection.clear": "Limpar",
+    "widgets.selection-demo.title": "Seleções",
+    "widgets.selection-demo.description": "Seleções",
+    "programs.selection-demo.description": "Seleções"
   }
 }

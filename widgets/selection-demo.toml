@@ -1,0 +1,12 @@
+schema = 1
+title = "Selections"
+description = "Selections"
+icon = "filter_alt"
+category = "operations"
+order = 61
+
+[open]
+program = "the8020/uui/selection-demo"
+
+[visible]
+public = true

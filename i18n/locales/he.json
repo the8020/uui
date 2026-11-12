@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "ניהול פריסות משותפות; הערך הוא מזהה הרשימה.",
     "widgets.list-layouts.title": "פריסות רשימה",
     "widgets.list-layouts.description": "פריסות רשימה",
-    "programs.list-layouts-demo.description": "פריסות רשימה"
+    "programs.list-layouts-demo.description": "פריסות רשימה",
+    "selection.title": "בחירות",
+    "selection.criteria": "קריטריונים",
+    "selection.sign": "סימן",
+    "selection.operator": "אופרטור",
+    "selection.low": "מ־",
+    "selection.high": "עד",
+    "selection.include": "כלול",
+    "selection.exclude": "החרג",
+    "selection.add": "הוסף",
+    "selection.execute": "הפעל",
+    "selection.examples": "דוגמאות",
+    "selection.large": "5,000 ערכים",
+    "selection.clear": "נקה",
+    "widgets.selection-demo.title": "בחירות",
+    "widgets.selection-demo.description": "בחירות",
+    "programs.selection-demo.description": "בחירות"
   }
 }

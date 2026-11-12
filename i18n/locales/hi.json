@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "साझा सूची लेआउट प्रबंधित करें; मान सूची की पहचान है।",
     "widgets.list-layouts.title": "सूची लेआउट",
     "widgets.list-layouts.description": "सूची लेआउट",
-    "programs.list-layouts-demo.description": "सूची लेआउट"
+    "programs.list-layouts-demo.description": "सूची लेआउट",
+    "selection.title": "चयन",
+    "selection.criteria": "मानदंड",
+    "selection.sign": "चिह्न",
+    "selection.operator": "ऑपरेटर",
+    "selection.low": "से",
+    "selection.high": "तक",
+    "selection.include": "शामिल करें",
+    "selection.exclude": "बाहर रखें",
+    "selection.add": "जोड़ें",
+    "selection.execute": "चलाएँ",
+    "selection.examples": "उदाहरण",
+    "selection.large": "5,000 मान",
+    "selection.clear": "साफ़ करें",
+    "widgets.selection-demo.title": "चयन",
+    "widgets.selection-demo.description": "चयन",
+    "programs.selection-demo.description": "चयन"
   }
 }

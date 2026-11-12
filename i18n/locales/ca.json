@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Gestiona dissenys compartits; el valor identifica la llista.",
     "widgets.list-layouts.title": "Dissenys de llista",
     "widgets.list-layouts.description": "Dissenys de llista",
-    "programs.list-layouts-demo.description": "Dissenys de llista"
+    "programs.list-layouts-demo.description": "Dissenys de llista",
+    "selection.title": "Seleccions",
+    "selection.criteria": "Criteris",
+    "selection.sign": "Signe",
+    "selection.operator": "Operador",
+    "selection.low": "Des de",
+    "selection.high": "Fins a",
+    "selection.include": "Inclou",
+    "selection.exclude": "Exclou",
+    "selection.add": "Afegeix",
+    "selection.execute": "Executa",
+    "selection.examples": "Exemples",
+    "selection.large": "5.000 valors",
+    "selection.clear": "Neteja",
+    "widgets.selection-demo.title": "Seleccions",
+    "widgets.selection-demo.description": "Seleccions",
+    "programs.selection-demo.description": "Seleccions"
   }
 }

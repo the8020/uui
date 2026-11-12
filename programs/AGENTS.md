@@ -27,6 +27,9 @@ Parent DOX: [uui DOX](../AGENTS.md).
 
 # Child DOX Index
 
+- [selection-demo/AGENTS.md](selection-demo/AGENTS.md): Demonstrate typed
+  selection fields, database results and standard list variants.
+
 - [list-layouts-demo/AGENTS.md](list-layouts-demo/AGENTS.md): Exercise shared
   layouts on distinct orders and deliveries lists.
 

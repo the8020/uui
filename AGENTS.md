@@ -747,6 +747,17 @@ below.
   array maximum refuses more; selection order is kept; there is no double-click
   finish, only Done. Read-only fields retain lookup and navigation, but choices
   never edit their bound value.
+- `field(scalar, { selection: true })` returns a criteria-array schema while
+  retaining the scalar's semantic meaning, validation and value help. Scalars
+  without this property keep their behavior. `selection_help.ts` owns an
+  isolated draft, an ordinary paged criteria list with source-index keys, typed
+  entry editing, and nested multi-row value help. Done validates the full
+  caller; Close/Back/Escape discard the draft. Nested lookup Done changes only
+  that draft. The browser's `selection.ts` creates at most four criterion tokens
+  and one accurate overflow button; both overflow and ordinary help open the
+  complete editor. The lookup hides its full draft value to avoid materializing
+  thousands of tags. Query semantics and validation belong to
+  `the8020/db/selection.ts` and `selection_query.ts`, not UUI.
 - Fields holding several values default to the `tags` control: separated text,
   and arrays whose element has value help or enum options (other scalar arrays
   stay lists unless `control: "tags"`). `FieldDescriptor.multiple` carries the
@@ -1407,6 +1418,13 @@ below.
   edits/query events, notification errors, and page-five retention across
   selection and data refresh. Row clicks survive capacity updates and
   replacement of business arrays within the pending call.
+- `selection_test.ts` covers the ordinary field/schema/help contract;
+  `deno task test:selection-browser` checks database-backed criteria editing,
+  nested value-help selection, cancellation, paging, bounded tokens/rows,
+  5,000-entry roundtrips and mobile overflow. Provider checkbox ranges use
+  absolute query positions, mapped to retained page rows or ordinary bounded
+  reads across pages; Shift spans above the 1,000-row read bound reject
+  explicitly.
 - `deno task test:lists-browser` exercises real Chromium search/filter/sort,
   toolbar copy/export and spreadsheet selection/paging, real downloaded files,
   shared semantic field headings, focus/caret, empty counts, local/synchronized

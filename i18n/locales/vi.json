@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Quản lý bố cục dùng chung; giá trị là mã danh sách.",
     "widgets.list-layouts.title": "Bố cục danh sách",
     "widgets.list-layouts.description": "Bố cục danh sách",
-    "programs.list-layouts-demo.description": "Bố cục danh sách"
+    "programs.list-layouts-demo.description": "Bố cục danh sách",
+    "selection.title": "Lựa chọn",
+    "selection.criteria": "Tiêu chí",
+    "selection.sign": "Dấu",
+    "selection.operator": "Toán tử",
+    "selection.low": "Từ",
+    "selection.high": "Đến",
+    "selection.include": "Bao gồm",
+    "selection.exclude": "Loại trừ",
+    "selection.add": "Thêm",
+    "selection.execute": "Chạy",
+    "selection.examples": "Ví dụ",
+    "selection.large": "5.000 giá trị",
+    "selection.clear": "Xóa",
+    "widgets.selection-demo.title": "Lựa chọn",
+    "widgets.selection-demo.description": "Lựa chọn",
+    "programs.selection-demo.description": "Lựa chọn"
   }
 }

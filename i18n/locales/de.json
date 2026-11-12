@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Gemeinsame Listenlayouts verwalten; Wert ist die Listenkennung.",
     "widgets.list-layouts.title": "Listenlayouts",
     "widgets.list-layouts.description": "Listenlayouts",
-    "programs.list-layouts-demo.description": "Listenlayouts"
+    "programs.list-layouts-demo.description": "Listenlayouts",
+    "selection.title": "Auswahl",
+    "selection.criteria": "Kriterien",
+    "selection.sign": "Vorzeichen",
+    "selection.operator": "Operator",
+    "selection.low": "Von",
+    "selection.high": "Bis",
+    "selection.include": "Einschließen",
+    "selection.exclude": "Ausschließen",
+    "selection.add": "Hinzufügen",
+    "selection.execute": "Ausführen",
+    "selection.examples": "Beispiele",
+    "selection.large": "5.000 Werte",
+    "selection.clear": "Leeren",
+    "widgets.selection-demo.title": "Auswahl",
+    "widgets.selection-demo.description": "Auswahl",
+    "programs.selection-demo.description": "Auswahl"
   }
 }

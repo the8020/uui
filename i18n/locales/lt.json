@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Tvarkyti bendrus maketus; reikšmė identifikuoja sąrašą.",
     "widgets.list-layouts.title": "Sąrašo maketai",
     "widgets.list-layouts.description": "Sąrašo maketai",
-    "programs.list-layouts-demo.description": "Sąrašo maketai"
+    "programs.list-layouts-demo.description": "Sąrašo maketai",
+    "selection.title": "Atrankos",
+    "selection.criteria": "Kriterijai",
+    "selection.sign": "Ženklas",
+    "selection.operator": "Operatorius",
+    "selection.low": "Nuo",
+    "selection.high": "Iki",
+    "selection.include": "Įtraukti",
+    "selection.exclude": "Neįtraukti",
+    "selection.add": "Pridėti",
+    "selection.execute": "Vykdyti",
+    "selection.examples": "Pavyzdžiai",
+    "selection.large": "5 000 reikšmių",
+    "selection.clear": "Išvalyti",
+    "widgets.selection-demo.title": "Atrankos",
+    "widgets.selection-demo.description": "Atrankos",
+    "programs.selection-demo.description": "Atrankos"
   }
 }

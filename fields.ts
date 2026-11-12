@@ -4,6 +4,11 @@ import { validateListOptions } from "./list_options.ts";
 import { cloneDeclaration, validateCustomElements } from "./custom_elements.ts";
 import { z } from "/p/the8020/db/fields.ts";
 import {
+  type Selection,
+  selectionElement,
+  selectionSchema,
+} from "/p/the8020/db/selection.ts";
+import {
   field as defineField,
   type FieldMetadata as SharedFieldMetadata,
   fieldMetadata as sharedFieldMetadata,
@@ -55,6 +60,7 @@ export interface FieldMetadata<Value = unknown>
   valueSuffix?: string;
   options?: (Omit<FieldOption, "label"> & { label: Text })[];
   fieldHelp?: boolean;
+  selection?: boolean;
   semanticType?: "long-string" | "date" | "datetime" | "email" | string;
 }
 
@@ -73,8 +79,16 @@ const customChannels = new WeakMap<z.ZodType, import("./session.ts").Channel>();
 
 export function field<T extends z.ZodType>(
   schema: T,
+  options: FieldMetadata<z.output<T>> & { selection: true },
+): z.ZodType<Selection<z.output<T>>[]>;
+export function field<T extends z.ZodType>(
+  schema: T,
   options: FieldMetadata<z.output<T>>,
-): T {
+): T;
+export function field<T extends z.ZodType>(
+  schema: T,
+  options: FieldMetadata<z.output<T>>,
+): z.ZodType {
   validateComponentStyle(options);
   normalizeRowSpan(options.rowSpan);
   validateKeyboardMetadata(options);
@@ -89,13 +103,29 @@ export function field<T extends z.ZodType>(
       ? custom as Omit<CustomElementOptions, "channel">
       : undefined,
   });
+  if (
+    options.selection === true &&
+    fieldSchemas(schema).some((item) => item instanceof z.ZodReadonly)
+  ) configured.readOnly ??= true;
+  if (options.selection === true || selectionElement(schema)) {
+    configured.control = "selection";
+    delete configured.custom;
+    delete configured.minimum;
+    delete configured.maximum;
+    delete configured.step;
+    delete configured.valueSuffix;
+  }
   if (configured.list !== undefined) validateListOptions(configured.list);
   normalizeRangeMetadata(
     configured,
     unwrap(schema).schema.type === "number",
   );
-  const result = defineField(schema, {
-    storage,
+  const resultSchema: z.ZodType =
+    options.selection === true && !selectionElement(schema)
+      ? selectionSchema(schema)
+      : schema;
+  const result = defineField(resultSchema, {
+    storage: selectionElement(resultSchema) ? undefined : storage,
     label: configured.label,
     description: configured.description,
     valueHelp,
@@ -245,7 +275,9 @@ function visitShape(
       label: configured.label ?? humanize(name),
       description: configured.description,
       control: configured.control ??
-        (choosesSeveral(declaredSchema)
+        (selectionElement(declaredSchema)
+          ? "selection"
+          : choosesSeveral(declaredSchema)
           ? "tags"
           : inferControl(unwrapped.schema, configured)),
       group: configured.group,

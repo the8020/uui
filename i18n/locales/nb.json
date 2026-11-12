@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Administrer delte listeoppsett; verdien identifiserer listen.",
     "widgets.list-layouts.title": "Listeoppsett",
     "widgets.list-layouts.description": "Listeoppsett",
-    "programs.list-layouts-demo.description": "Listeoppsett"
+    "programs.list-layouts-demo.description": "Listeoppsett",
+    "selection.title": "Utvalg",
+    "selection.criteria": "Kriterier",
+    "selection.sign": "Fortegn",
+    "selection.operator": "Operator",
+    "selection.low": "Fra",
+    "selection.high": "Til",
+    "selection.include": "Inkluder",
+    "selection.exclude": "Utelat",
+    "selection.add": "Legg til",
+    "selection.execute": "Kjør",
+    "selection.examples": "Eksempler",
+    "selection.large": "5 000 verdier",
+    "selection.clear": "Tøm",
+    "widgets.selection-demo.title": "Utvalg",
+    "widgets.selection-demo.description": "Utvalg",
+    "programs.selection-demo.description": "Utvalg"
   }
 }

@@ -24,6 +24,7 @@ import {
 } from "./model.ts";
 import { renderMarkdown } from "../../../frontend/mod.ts";
 import { renderTags } from "./tags.ts";
+import { renderSelection } from "./selection.ts";
 
 export interface RenderCallbacks {
   changed(bind: string, value: unknown, control: ControlDescriptor): void;
@@ -504,7 +505,7 @@ function renderControlBody(
     return wrapper;
   }
   const value = getPath(model, control.bind);
-  if (control.control === "tags") {
+  if (control.control === "tags" || control.control === "selection") {
     const input = document.createElement("input");
     input.type = "text";
     input.id = `control-${control.id}`;
@@ -515,16 +516,18 @@ function renderControlBody(
     input.setAttribute("aria-label", control.label ?? control.bind);
     const inputShell = element("div", "field-input-shell");
     inputShell.append(
-      renderTags(
-        input,
-        value,
-        control.multiple ?? {},
-        control.readOnly ?? false,
-        (next) => {
-          setPath(model, control.bind, next);
-          callbacks.changed(control.bind, next, control);
-        },
-      ),
+      control.control === "selection"
+        ? renderSelection(input, value, () => callbacks.help(control))
+        : renderTags(
+          input,
+          value,
+          control.multiple ?? {},
+          control.readOnly ?? false,
+          (next) => {
+            setPath(model, control.bind, next);
+            callbacks.changed(control.bind, next, control);
+          },
+        ),
     );
     addFieldHelp(wrapper, inputShell, control, callbacks, false);
     wrapper.append(

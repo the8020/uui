@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Διαχείριση κοινών διατάξεων· η τιμή προσδιορίζει τη λίστα.",
     "widgets.list-layouts.title": "Διατάξεις λίστας",
     "widgets.list-layouts.description": "Διατάξεις λίστας",
-    "programs.list-layouts-demo.description": "Διατάξεις λίστας"
+    "programs.list-layouts-demo.description": "Διατάξεις λίστας",
+    "selection.title": "Επιλογές",
+    "selection.criteria": "Κριτήρια",
+    "selection.sign": "Πρόσημο",
+    "selection.operator": "Τελεστής",
+    "selection.low": "Από",
+    "selection.high": "Έως",
+    "selection.include": "Συμπερίληψη",
+    "selection.exclude": "Εξαίρεση",
+    "selection.add": "Προσθήκη",
+    "selection.execute": "Εκτέλεση",
+    "selection.examples": "Παραδείγματα",
+    "selection.large": "5.000 τιμές",
+    "selection.clear": "Εκκαθάριση",
+    "widgets.selection-demo.title": "Επιλογές",
+    "widgets.selection-demo.description": "Επιλογές",
+    "programs.selection-demo.description": "Επιλογές"
   }
 }

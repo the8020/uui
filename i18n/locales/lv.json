@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Pārvaldīt kopīgos izkārtojumus; vērtība identificē sarakstu.",
     "widgets.list-layouts.title": "Saraksta izkārtojumi",
     "widgets.list-layouts.description": "Saraksta izkārtojumi",
-    "programs.list-layouts-demo.description": "Saraksta izkārtojumi"
+    "programs.list-layouts-demo.description": "Saraksta izkārtojumi",
+    "selection.title": "Atlases",
+    "selection.criteria": "Kritēriji",
+    "selection.sign": "Zīme",
+    "selection.operator": "Operators",
+    "selection.low": "No",
+    "selection.high": "Līdz",
+    "selection.include": "Iekļaut",
+    "selection.exclude": "Izslēgt",
+    "selection.add": "Pievienot",
+    "selection.execute": "Izpildīt",
+    "selection.examples": "Piemēri",
+    "selection.large": "5 000 vērtību",
+    "selection.clear": "Notīrīt",
+    "widgets.selection-demo.title": "Atlases",
+    "widgets.selection-demo.description": "Atlases",
+    "programs.selection-demo.description": "Atlases"
   }
 }

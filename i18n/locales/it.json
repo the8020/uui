@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Gestisci layout condivisi; il valore identifica l’elenco.",
     "widgets.list-layouts.title": "Layout elenco",
     "widgets.list-layouts.description": "Layout elenco",
-    "programs.list-layouts-demo.description": "Layout elenco"
+    "programs.list-layouts-demo.description": "Layout elenco",
+    "selection.title": "Selezioni",
+    "selection.criteria": "Criteri",
+    "selection.sign": "Segno",
+    "selection.operator": "Operatore",
+    "selection.low": "Da",
+    "selection.high": "A",
+    "selection.include": "Includi",
+    "selection.exclude": "Escludi",
+    "selection.add": "Aggiungi",
+    "selection.execute": "Esegui",
+    "selection.examples": "Esempi",
+    "selection.large": "5.000 valori",
+    "selection.clear": "Cancella",
+    "widgets.selection-demo.title": "Selezioni",
+    "widgets.selection-demo.description": "Selezioni",
+    "programs.selection-demo.description": "Selezioni"
   }
 }

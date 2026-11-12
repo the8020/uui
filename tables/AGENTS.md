@@ -13,6 +13,11 @@ Parent DOX: [uui DOX](../AGENTS.md).
 
 # Local Contracts
 
+- `selection_demo.ts` owns the dedicated report sample table and reusable scalar
+  row schema. The report initializes 6,000 deterministic rows only when empty;
+  it never changes existing layout or user data. Name help pages at the database
+  through `lookupPage`; UUI owns the editor and report presentation.
+
 - `list_layouts.ts` stores one row per stable list identity and owner (empty
   owner means shared). Its primary key encodes the pair; the owner index
   supports account cleanup. JSON holds at most 50 named layouts of at most 8,192

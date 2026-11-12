@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Gestionează aspecte comune; valoarea identifică lista.",
     "widgets.list-layouts.title": "Aspecte de listă",
     "widgets.list-layouts.description": "Aspecte de listă",
-    "programs.list-layouts-demo.description": "Aspecte de listă"
+    "programs.list-layouts-demo.description": "Aspecte de listă",
+    "selection.title": "Selecții",
+    "selection.criteria": "Criterii",
+    "selection.sign": "Semn",
+    "selection.operator": "Operator",
+    "selection.low": "De la",
+    "selection.high": "Până la",
+    "selection.include": "Include",
+    "selection.exclude": "Exclude",
+    "selection.add": "Adaugă",
+    "selection.execute": "Execută",
+    "selection.examples": "Exemple",
+    "selection.large": "5.000 de valori",
+    "selection.clear": "Golește",
+    "widgets.selection-demo.title": "Selecții",
+    "widgets.selection-demo.description": "Selecții",
+    "programs.selection-demo.description": "Selecții"
   }
 }

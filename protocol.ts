@@ -255,7 +255,8 @@ export type ControlKind =
   | "file"
   | "custom"
   | "list"
-  | "tags";
+  | "tags"
+  | "selection";
 
 export type FieldLength = "short" | "medium" | "long" | "full";
 

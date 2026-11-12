@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "管理共用清單版面配置；值為清單識別碼。",
     "widgets.list-layouts.title": "清單版面配置",
     "widgets.list-layouts.description": "清單版面配置",
-    "programs.list-layouts-demo.description": "清單版面配置"
+    "programs.list-layouts-demo.description": "清單版面配置",
+    "selection.title": "選取條件",
+    "selection.criteria": "條件",
+    "selection.sign": "符號",
+    "selection.operator": "運算子",
+    "selection.low": "起始值",
+    "selection.high": "結束值",
+    "selection.include": "包含",
+    "selection.exclude": "排除",
+    "selection.add": "新增",
+    "selection.execute": "執行",
+    "selection.examples": "範例",
+    "selection.large": "5,000 個值",
+    "selection.clear": "清除",
+    "widgets.selection-demo.title": "選取條件",
+    "widgets.selection-demo.description": "選取條件",
+    "programs.selection-demo.description": "選取條件"
   }
 }

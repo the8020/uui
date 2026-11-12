@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Gérer les dispositions partagées ; la valeur est l’identité de la liste.",
     "widgets.list-layouts.title": "Dispositions de liste",
     "widgets.list-layouts.description": "Dispositions de liste",
-    "programs.list-layouts-demo.description": "Dispositions de liste"
+    "programs.list-layouts-demo.description": "Dispositions de liste",
+    "selection.title": "Sélections",
+    "selection.criteria": "Critères",
+    "selection.sign": "Signe",
+    "selection.operator": "Opérateur",
+    "selection.low": "De",
+    "selection.high": "À",
+    "selection.include": "Inclure",
+    "selection.exclude": "Exclure",
+    "selection.add": "Ajouter",
+    "selection.execute": "Exécuter",
+    "selection.examples": "Exemples",
+    "selection.large": "5 000 valeurs",
+    "selection.clear": "Effacer",
+    "widgets.selection-demo.title": "Sélections",
+    "widgets.selection-demo.description": "Sélections",
+    "programs.selection-demo.description": "Sélections"
   }
 }

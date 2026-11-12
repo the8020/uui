@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Megosztott elrendezések kezelése; az érték a lista azonosítója.",
     "widgets.list-layouts.title": "Listaelrendezések",
     "widgets.list-layouts.description": "Listaelrendezések",
-    "programs.list-layouts-demo.description": "Listaelrendezések"
+    "programs.list-layouts-demo.description": "Listaelrendezések",
+    "selection.title": "Kiválasztások",
+    "selection.criteria": "Feltételek",
+    "selection.sign": "Előjel",
+    "selection.operator": "Operátor",
+    "selection.low": "Ettől",
+    "selection.high": "Eddig",
+    "selection.include": "Bevonás",
+    "selection.exclude": "Kizárás",
+    "selection.add": "Hozzáadás",
+    "selection.execute": "Futtatás",
+    "selection.examples": "Példák",
+    "selection.large": "5 000 érték",
+    "selection.clear": "Törlés",
+    "widgets.selection-demo.title": "Kiválasztások",
+    "widgets.selection-demo.description": "Kiválasztások",
+    "programs.selection-demo.description": "Kiválasztások"
   }
 }

@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Hantera delade listlayouter; värdet identifierar listan.",
     "widgets.list-layouts.title": "Listlayouter",
     "widgets.list-layouts.description": "Listlayouter",
-    "programs.list-layouts-demo.description": "Listlayouter"
+    "programs.list-layouts-demo.description": "Listlayouter",
+    "selection.title": "Urval",
+    "selection.criteria": "Villkor",
+    "selection.sign": "Tecken",
+    "selection.operator": "Operator",
+    "selection.low": "Från",
+    "selection.high": "Till",
+    "selection.include": "Inkludera",
+    "selection.exclude": "Uteslut",
+    "selection.add": "Lägg till",
+    "selection.execute": "Kör",
+    "selection.examples": "Exempel",
+    "selection.large": "5 000 värden",
+    "selection.clear": "Rensa",
+    "widgets.selection-demo.title": "Urval",
+    "widgets.selection-demo.description": "Urval",
+    "programs.selection-demo.description": "Urval"
   }
 }

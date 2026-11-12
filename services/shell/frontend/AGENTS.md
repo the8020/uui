@@ -251,6 +251,10 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
   value into it.
 - The shell gives a new modal's first focus to `[data-autofocus]` before its
   first focusable control.
+- `selection.ts` renders structured criteria with at most four tokens and one
+  clickable localized overflow count. Never create hidden tokens for the rest.
+  Enter, token/overflow clicks and the ordinary field-help affordance open the
+  paged backend editor; the display input is not a scalar editing surface.
 - `summary_bar.ts` owns a modal's compact bar for its `summary` field group
   (`data-summary`): placed between the dialog toolbar and body, shown by an
   IntersectionObserver once the group's input leaves the body's view, rebuilt

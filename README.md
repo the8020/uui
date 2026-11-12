@@ -2,6 +2,51 @@
 
 Programs import the standard UUI functions from `/p/the8020/uui/mod.ts`.
 
+## Selection fields
+
+Reuse a scalar semantic field with `field(orderId, { selection: true })` in any
+ordinary screen schema. Its bound value is a JSON array, for example:
+
+```ts
+[{ sign: "I", option: "BT", low: 10, high: 30 }, {
+  sign: "E",
+  option: "EQ",
+  low: 15,
+}];
+```
+
+`I` includes and `E` excludes. Operators are EQ, NE, GT, GE, LT, LE, BT
+(inclusive), and CP (text pattern). Empty means unrestricted; includes are ORed,
+then exclusions remove matches. With no includes, only exclusions restrict the
+result. EQ/NE accept null only for nullable fields; NE includes null when its
+operand is non-null. Ordered operators never match null. CP uses `*`/`?` as
+wildcards and backslash to quote a character; SQL `%`/`_` are literal, a
+trailing backslash rejects, and case folding/collation follows the database.
+
+Keep the original scalar for database validation and compose ordinary builders:
+
+```ts
+import { whereSelection } from "/p/the8020/db/mod.ts";
+const selected = whereSelection(
+  db.selectFrom("orders as o").selectAll(),
+  "o.id",
+  orderId,
+  model.data.ids,
+);
+const rows = await selected.orderBy("o.id").execute();
+```
+
+Use trusted, qualified column references from program code. Repeated calls AND
+multiple fields. Bound JSON sets handle thousands of equality values without
+thousands of SQL parameters. The field shows four tokens plus an exact overflow
+count; its pencil, F1/F4, tokens and overflow open the ordinary paged editor.
+Done commits; Close/Escape cancel. Value help supports multiple rows across
+pages and commits only to the editor's draft until its outer Done.
+
+Open **Operations → Selections** for a database-backed report with examples,
+5,000 values and standard personal/shared list layouts. See
+`programs/selection-demo/program.ts` for the complete integration.
+
 ## System branding
 
 Open **Administration → System customization** to set the server title, favicon,

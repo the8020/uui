@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Gestionar diseños compartidos; el valor identifica la lista.",
     "widgets.list-layouts.title": "Diseños de lista",
     "widgets.list-layouts.description": "Diseños de lista",
-    "programs.list-layouts-demo.description": "Diseños de lista"
+    "programs.list-layouts-demo.description": "Diseños de lista",
+    "selection.title": "Selecciones",
+    "selection.criteria": "Criterios",
+    "selection.sign": "Signo",
+    "selection.operator": "Operador",
+    "selection.low": "Desde",
+    "selection.high": "Hasta",
+    "selection.include": "Incluir",
+    "selection.exclude": "Excluir",
+    "selection.add": "Añadir",
+    "selection.execute": "Ejecutar",
+    "selection.examples": "Ejemplos",
+    "selection.large": "5.000 valores",
+    "selection.clear": "Limpiar",
+    "widgets.selection-demo.title": "Selecciones",
+    "widgets.selection-demo.description": "Selecciones",
+    "programs.selection-demo.description": "Selecciones"
   }
 }

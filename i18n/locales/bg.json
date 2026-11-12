@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Управление на споделени оформления; стойността определя списъка.",
     "widgets.list-layouts.title": "Оформления на списък",
     "widgets.list-layouts.description": "Оформления на списък",
-    "programs.list-layouts-demo.description": "Оформления на списък"
+    "programs.list-layouts-demo.description": "Оформления на списък",
+    "selection.title": "Избори",
+    "selection.criteria": "Критерии",
+    "selection.sign": "Знак",
+    "selection.operator": "Оператор",
+    "selection.low": "От",
+    "selection.high": "До",
+    "selection.include": "Включване",
+    "selection.exclude": "Изключване",
+    "selection.add": "Добавяне",
+    "selection.execute": "Изпълнение",
+    "selection.examples": "Примери",
+    "selection.large": "5 000 стойности",
+    "selection.clear": "Изчистване",
+    "widgets.selection-demo.title": "Избори",
+    "widgets.selection-demo.description": "Избори",
+    "programs.selection-demo.description": "Избори"
   }
 }

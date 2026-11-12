@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Manage shared list layouts; value is the list identity.",
     "widgets.list-layouts.title": "List layouts",
     "widgets.list-layouts.description": "List layouts",
-    "programs.list-layouts-demo.description": "List layouts"
+    "programs.list-layouts-demo.description": "List layouts",
+    "selection.title": "Selections",
+    "selection.criteria": "Criteria",
+    "selection.sign": "Sign",
+    "selection.operator": "Operator",
+    "selection.low": "From",
+    "selection.high": "To",
+    "selection.include": "Include",
+    "selection.exclude": "Exclude",
+    "selection.add": "Add",
+    "selection.execute": "Run",
+    "selection.examples": "Examples",
+    "selection.large": "5,000 values",
+    "selection.clear": "Clear",
+    "widgets.selection-demo.title": "Selections",
+    "widgets.selection-demo.description": "Selections",
+    "programs.selection-demo.description": "Selections"
   }
 }

@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Upravljanje skupnih postavitev; vrednost določa seznam.",
     "widgets.list-layouts.title": "Postavitve seznama",
     "widgets.list-layouts.description": "Postavitve seznama",
-    "programs.list-layouts-demo.description": "Postavitve seznama"
+    "programs.list-layouts-demo.description": "Postavitve seznama",
+    "selection.title": "Izbire",
+    "selection.criteria": "Merila",
+    "selection.sign": "Predznak",
+    "selection.operator": "Operator",
+    "selection.low": "Od",
+    "selection.high": "Do",
+    "selection.include": "Vključi",
+    "selection.exclude": "Izključi",
+    "selection.add": "Dodaj",
+    "selection.execute": "Zaženi",
+    "selection.examples": "Primeri",
+    "selection.large": "5.000 vrednosti",
+    "selection.clear": "Počisti",
+    "widgets.selection-demo.title": "Izbire",
+    "widgets.selection-demo.description": "Izbire",
+    "programs.selection-demo.description": "Izbire"
   }
 }

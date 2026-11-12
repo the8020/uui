@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "공유 레이아웃을 관리합니다. 값은 목록 식별자입니다.",
     "widgets.list-layouts.title": "목록 레이아웃",
     "widgets.list-layouts.description": "목록 레이아웃",
-    "programs.list-layouts-demo.description": "목록 레이아웃"
+    "programs.list-layouts-demo.description": "목록 레이아웃",
+    "selection.title": "선택 조건",
+    "selection.criteria": "조건",
+    "selection.sign": "부호",
+    "selection.operator": "연산자",
+    "selection.low": "시작값",
+    "selection.high": "종료값",
+    "selection.include": "포함",
+    "selection.exclude": "제외",
+    "selection.add": "추가",
+    "selection.execute": "실행",
+    "selection.examples": "예시",
+    "selection.large": "값 5,000개",
+    "selection.clear": "지우기",
+    "widgets.selection-demo.title": "선택 조건",
+    "widgets.selection-demo.description": "선택 조건",
+    "programs.selection-demo.description": "선택 조건"
   }
 }

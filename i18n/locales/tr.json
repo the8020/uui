@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Ortak liste düzenlerini yönet; değer liste kimliğidir.",
     "widgets.list-layouts.title": "Liste düzenleri",
     "widgets.list-layouts.description": "Liste düzenleri",
-    "programs.list-layouts-demo.description": "Liste düzenleri"
+    "programs.list-layouts-demo.description": "Liste düzenleri",
+    "selection.title": "Seçimler",
+    "selection.criteria": "Ölçütler",
+    "selection.sign": "İşaret",
+    "selection.operator": "İşleç",
+    "selection.low": "Başlangıç",
+    "selection.high": "Bitiş",
+    "selection.include": "Dahil et",
+    "selection.exclude": "Hariç tut",
+    "selection.add": "Ekle",
+    "selection.execute": "Çalıştır",
+    "selection.examples": "Örnekler",
+    "selection.large": "5.000 değer",
+    "selection.clear": "Temizle",
+    "widgets.selection-demo.title": "Seçimler",
+    "widgets.selection-demo.description": "Seçimler",
+    "programs.selection-demo.description": "Seçimler"
   }
 }

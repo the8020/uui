@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Kelola tata letak bersama; nilai adalah identitas daftar.",
     "widgets.list-layouts.title": "Tata letak daftar",
     "widgets.list-layouts.description": "Tata letak daftar",
-    "programs.list-layouts-demo.description": "Tata letak daftar"
+    "programs.list-layouts-demo.description": "Tata letak daftar",
+    "selection.title": "Pilihan",
+    "selection.criteria": "Kriteria",
+    "selection.sign": "Tanda",
+    "selection.operator": "Operator",
+    "selection.low": "Dari",
+    "selection.high": "Hingga",
+    "selection.include": "Sertakan",
+    "selection.exclude": "Kecualikan",
+    "selection.add": "Tambah",
+    "selection.execute": "Jalankan",
+    "selection.examples": "Contoh",
+    "selection.large": "5.000 nilai",
+    "selection.clear": "Bersihkan",
+    "widgets.selection-demo.title": "Pilihan",
+    "widgets.selection-demo.description": "Pilihan",
+    "programs.selection-demo.description": "Pilihan"
   }
 }

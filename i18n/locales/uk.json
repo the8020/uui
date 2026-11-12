@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Керувати спільними макетами; значення визначає список.",
     "widgets.list-layouts.title": "Макети списку",
     "widgets.list-layouts.description": "Макети списку",
-    "programs.list-layouts-demo.description": "Макети списку"
+    "programs.list-layouts-demo.description": "Макети списку",
+    "selection.title": "Вибірки",
+    "selection.criteria": "Критерії",
+    "selection.sign": "Знак",
+    "selection.operator": "Оператор",
+    "selection.low": "Від",
+    "selection.high": "До",
+    "selection.include": "Включити",
+    "selection.exclude": "Виключити",
+    "selection.add": "Додати",
+    "selection.execute": "Виконати",
+    "selection.examples": "Приклади",
+    "selection.large": "5 000 значень",
+    "selection.clear": "Очистити",
+    "widgets.selection-demo.title": "Вибірки",
+    "widgets.selection-demo.description": "Вибірки",
+    "programs.selection-demo.description": "Вибірки"
   }
 }

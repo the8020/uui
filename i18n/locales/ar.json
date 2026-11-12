@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "إدارة تخطيطات القوائم المشتركة؛ القيمة هي معرّف القائمة.",
     "widgets.list-layouts.title": "تخطيطات القائمة",
     "widgets.list-layouts.description": "تخطيطات القائمة",
-    "programs.list-layouts-demo.description": "تخطيطات القائمة"
+    "programs.list-layouts-demo.description": "تخطيطات القائمة",
+    "selection.title": "التحديدات",
+    "selection.criteria": "المعايير",
+    "selection.sign": "الإشارة",
+    "selection.operator": "عامل المقارنة",
+    "selection.low": "من",
+    "selection.high": "إلى",
+    "selection.include": "تضمين",
+    "selection.exclude": "استبعاد",
+    "selection.add": "إضافة",
+    "selection.execute": "تشغيل",
+    "selection.examples": "أمثلة",
+    "selection.large": "٥٬٠٠٠ قيمة",
+    "selection.clear": "مسح",
+    "widgets.selection-demo.title": "التحديدات",
+    "widgets.selection-demo.description": "التحديدات",
+    "programs.selection-demo.description": "التحديدات"
   }
 }

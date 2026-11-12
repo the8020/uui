@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Urus susun atur dikongsi; nilai ialah identiti senarai.",
     "widgets.list-layouts.title": "Susun atur senarai",
     "widgets.list-layouts.description": "Susun atur senarai",
-    "programs.list-layouts-demo.description": "Susun atur senarai"
+    "programs.list-layouts-demo.description": "Susun atur senarai",
+    "selection.title": "Pilihan",
+    "selection.criteria": "Kriteria",
+    "selection.sign": "Tanda",
+    "selection.operator": "Operator",
+    "selection.low": "Dari",
+    "selection.high": "Hingga",
+    "selection.include": "Sertakan",
+    "selection.exclude": "Kecualikan",
+    "selection.add": "Tambah",
+    "selection.execute": "Jalankan",
+    "selection.examples": "Contoh",
+    "selection.large": "5,000 nilai",
+    "selection.clear": "Kosongkan",
+    "widgets.selection-demo.title": "Pilihan",
+    "widgets.selection-demo.description": "Pilihan",
+    "programs.selection-demo.description": "Pilihan"
   }
 }

@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Stjórna sameiginlegum uppsetningum; gildið auðkennir listann.",
     "widgets.list-layouts.title": "Listauppsetningar",
     "widgets.list-layouts.description": "Listauppsetningar",
-    "programs.list-layouts-demo.description": "Listauppsetningar"
+    "programs.list-layouts-demo.description": "Listauppsetningar",
+    "selection.title": "Val",
+    "selection.criteria": "Skilyrði",
+    "selection.sign": "Formerki",
+    "selection.operator": "Virkir",
+    "selection.low": "Frá",
+    "selection.high": "Til",
+    "selection.include": "Taka með",
+    "selection.exclude": "Útiloka",
+    "selection.add": "Bæta við",
+    "selection.execute": "Keyra",
+    "selection.examples": "Dæmi",
+    "selection.large": "5.000 gildi",
+    "selection.clear": "Hreinsa",
+    "widgets.selection-demo.title": "Val",
+    "widgets.selection-demo.description": "Val",
+    "programs.selection-demo.description": "Val"
   }
 }

@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "共有レイアウトを管理します。値は一覧の識別子です。",
     "widgets.list-layouts.title": "一覧レイアウト",
     "widgets.list-layouts.description": "一覧レイアウト",
-    "programs.list-layouts-demo.description": "一覧レイアウト"
+    "programs.list-layouts-demo.description": "一覧レイアウト",
+    "selection.title": "選択条件",
+    "selection.criteria": "条件",
+    "selection.sign": "符号",
+    "selection.operator": "演算子",
+    "selection.low": "開始値",
+    "selection.high": "終了値",
+    "selection.include": "含める",
+    "selection.exclude": "除外",
+    "selection.add": "追加",
+    "selection.execute": "実行",
+    "selection.examples": "例",
+    "selection.large": "5,000 件の値",
+    "selection.clear": "クリア",
+    "widgets.selection-demo.title": "選択条件",
+    "widgets.selection-demo.description": "選択条件",
+    "programs.selection-demo.description": "選択条件"
   }
 }

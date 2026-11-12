@@ -1,0 +1,73 @@
+import { assertEquals, assertThrows } from "@std/assert";
+import { field as semanticField, z } from "/p/the8020/db/fields.ts";
+import { type Selection, selectionElement } from "/p/the8020/db/selection.ts";
+import { buildControls, buildFieldCatalog, field } from "./fields.ts";
+import { valueHelpFor } from "./field_help.ts";
+
+Deno.test("opt-in selections retain scalar meaning/help and validate binding without changing scalar callers", async () => {
+  const source = semanticField(z.number().int().min(1), {
+    label: "Order",
+    description: "An order number",
+    valueHelp: () => ({
+      schema: z.object({ id: z.number() }),
+      rows: [{ id: 2 }],
+      more: false,
+    }),
+  });
+  const selected = field(source, { selection: true });
+  const value: Selection<number>[] = selected.parse([{
+    sign: "I",
+    option: "BT",
+    low: 1,
+    high: 3,
+  }]);
+  assertEquals(value[0]!.high, 3);
+  assertThrows(() => selected.parse([{ sign: "I", option: "EQ", low: 0 }]));
+  const controls = buildControls(
+    buildFieldCatalog(
+      z.object({
+        scalar: field(source, { readOnly: true }),
+        selections: selected,
+      }),
+    ),
+  );
+  assertEquals(
+    controls.map((control) => [control.bind, control.control, control.label]),
+    [["scalar", "number", "Order"], ["selections", "selection", "Order"]],
+  );
+  assertEquals(selectionElement(selected.optional()), source);
+  assertEquals(source.parse(2), 2);
+  assertThrows(() => source.parse(value));
+  const help = valueHelpFor(selected, controls[1]!)!;
+  assertEquals(
+    (await help({
+      query: { search: "", filters: {}, sort: null },
+      offset: 0,
+      limit: 1,
+    })).rows,
+    [{ id: 2 }],
+  );
+  assertEquals(
+    buildFieldCatalog(
+      z.object({ value: field(source.readonly(), { selection: true }) }),
+    )[0]!.readOnly,
+    true,
+  );
+  const slider = field(z.number(), {
+    control: "range",
+    minimum: 0,
+    maximum: 100,
+  });
+  assertEquals(
+    buildControls(
+      buildFieldCatalog(
+        z.object({ values: field(slider, { selection: true }) }),
+      ),
+    )[0]!.control,
+    "selection",
+  );
+  assertEquals(
+    buildFieldCatalog(z.object({ scalar: slider }))[0]!.control,
+    "range",
+  );
+});

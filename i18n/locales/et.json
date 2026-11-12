@@ -305,6 +305,22 @@
     "declarations.auth.the8020.uui.layouts.global.edit": "Halda jagatud paigutusi; väärtus on loendi tunnus.",
     "widgets.list-layouts.title": "Loendi paigutused",
     "widgets.list-layouts.description": "Loendi paigutused",
-    "programs.list-layouts-demo.description": "Loendi paigutused"
+    "programs.list-layouts-demo.description": "Loendi paigutused",
+    "selection.title": "Valikud",
+    "selection.criteria": "Kriteeriumid",
+    "selection.sign": "Märk",
+    "selection.operator": "Operaator",
+    "selection.low": "Alates",
+    "selection.high": "Kuni",
+    "selection.include": "Kaasa",
+    "selection.exclude": "Välista",
+    "selection.add": "Lisa",
+    "selection.execute": "Käivita",
+    "selection.examples": "Näited",
+    "selection.large": "5000 väärtust",
+    "selection.clear": "Tühjenda",
+    "widgets.selection-demo.title": "Valikud",
+    "widgets.selection-demo.description": "Valikud",
+    "programs.selection-demo.description": "Valikud"
   }
 }
