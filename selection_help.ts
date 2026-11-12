@@ -189,6 +189,12 @@ export async function runSelectionHelp(
           bind: "rows",
           key: "index",
           display: ["sign", "option", "low", "high"],
+          columnOptions: {
+            sign: { length: "compact" },
+            option: { length: "short" },
+            low: { length: "short" },
+            high: { length: "compact" },
+          },
           title: msg("selection.criteria"),
           layoutKey,
           selection: editable ? "selected" : undefined,

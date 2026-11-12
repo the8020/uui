@@ -38,6 +38,18 @@ export async function verifyLayouts(page: Browser) {
     await page.evaluate(
       "new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))",
     );
+    if (
+      await page.evaluate(
+        `!(${expression}).matches('summary') && !!(${expression}).closest('details') && !(${expression}).closest('details').open`,
+      )
+    ) {
+      await click(
+        `(${expression}).closest('details').querySelector('summary')`,
+      );
+    }
+    await page.evaluate(
+      "new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))",
+    );
     const point = await page.evaluate<{ x: number; y: number }>(
       `(()=>{const e=${expression};e.scrollIntoView({block:'nearest'});const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};})()`,
     );
@@ -96,18 +108,24 @@ export async function verifyLayouts(page: Browser) {
   await click(button("up:4")); // Amount moves before Region in the built-in order.
   await set("Filter Amount", ">3000");
   await set("Sort: Amount", "desc");
-  await set("Name", "UX Mine");
+  await set("Name", "UX Mine with a long saved layout name");
   await click(field("Use this layout by default for me"));
   await click(button("save"));
   await wait(
-    `!!${row("UX Mine")}&&!${dialog}.querySelector('.uui-dialog-body').inert`,
+    `!!${
+      row("UX Mine with a long saved layout name")
+    }&&!${dialog}.querySelector('.uui-dialog-body').inert`,
   );
   assert(
-    (await page.evaluate<string>(`${row("UX Mine")}.textContent`)).includes(
+    (await page.evaluate<string>(
+      `${row("UX Mine with a long saved layout name")}.textContent`,
+    )).includes(
       "For me",
     ),
   );
-  await click(`${row("UX Mine")}.querySelector('button')`);
+  await click(
+    `${row("UX Mine with a long saved layout name")}.querySelector('button')`,
+  );
   await click(button("apply"));
   await wait(
     `!${dialog}&&${list}.querySelector('tbody tr')?.textContent.includes('7500')&&!document.querySelector('#screen-back').disabled`,
@@ -140,7 +158,9 @@ export async function verifyLayouts(page: Browser) {
     `!${dialog}&&${list}.querySelectorAll('thead th').length===6&&!document.querySelector('#screen-back').disabled`,
   );
   await open();
-  await click(`${row("UX Mine")}.querySelector('button')`);
+  await click(
+    `${row("UX Mine with a long saved layout name")}.querySelector('button')`,
+  );
   assertEquals(
     await page.evaluate(
       `${field("Use this layout by default for me")}.checked`,
@@ -150,10 +170,14 @@ export async function verifyLayouts(page: Browser) {
   await click(field("Use this layout by default for me"));
   await click(button("save"));
   await wait(
-    `!!${row("UX Mine")}&&!${dialog}.querySelector('.uui-dialog-body').inert`,
+    `!!${
+      row("UX Mine with a long saved layout name")
+    }&&!${dialog}.querySelector('.uui-dialog-body').inert`,
   );
   assertEquals(
-    (await page.evaluate<string>(`${row("UX Mine")}.textContent`)).includes(
+    (await page.evaluate<string>(
+      `${row("UX Mine with a long saved layout name")}.textContent`,
+    )).includes(
       "For me",
     ),
     false,
@@ -167,7 +191,19 @@ export async function verifyLayouts(page: Browser) {
   await wait(
     `${dialog}.getBoundingClientRect().width<=390 && ${dialog}.scrollWidth<=${dialog}.clientWidth+1`,
   );
-  await click(`${row("UX Mine")}.querySelector('button')`);
+  await click(
+    `${row("UX Mine with a long saved layout name")}.querySelector('button')`,
+  );
+  const more = `${dialog}.querySelector('.program-header-overflow > summary')`;
+  await wait(
+    `${more}.getBoundingClientRect().width > 0 && !${more}.parentElement.hidden`,
+  );
+  assert(
+    await page.evaluate(
+      `(()=>{const e=${more},r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));})()`,
+    ),
+    "Long mobile titles retain a reachable action overflow",
+  );
   await page.command("Input.dispatchKeyEvent", {
     type: "keyDown",
     key: "F3",
@@ -182,9 +218,11 @@ export async function verifyLayouts(page: Browser) {
   });
   await wait(`!!${dialog}.querySelector('table')`);
   await click(
-    `${row("UX Mine")}.querySelector('[aria-label="Delete: UX Mine"]')`,
+    `${
+      row("UX Mine with a long saved layout name")
+    }.querySelector('[aria-label="Delete: UX Mine with a long saved layout name"]')`,
   );
-  await wait(`!${row("UX Mine")}`);
+  await wait(`!${row("UX Mine with a long saved layout name")}`);
   await click(`${dialog}.querySelector('[aria-label="Close"]')`);
   await wait(`!${dialog}`);
   console.log(

@@ -10,9 +10,9 @@ export const SELECTION_TOKEN_LIMIT = 4;
 
 export function selectionLabel(item: Selection): string {
   const value = item.low === null ? "∅" : String(item.low);
-  return `${t(selectionSigns[item.sign].key)} · ${
+  return `${item.option === "BT" ? `${value} … ${item.high}` : value} · ${
     t(selectionOperators[item.option].key)
-  } ${item.option === "BT" ? `${value} … ${item.high}` : value}`;
+  }${item.sign === "E" ? ` · ${t(selectionSigns.E.key)}` : ""}`;
 }
 
 /** Same primitive values as ordinary inputs; the original schema validates them. */

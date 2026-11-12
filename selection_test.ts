@@ -116,14 +116,14 @@ Deno.test("inline selection entry retains semantic primitives and invalid drafts
 Deno.test("selection tokens describe operators and signs without backend codes", () => {
   assertEquals(
     selectionLabel({ sign: "I", option: "EQ", low: 10 }),
-    "Include · Equals 10",
+    "10 · Equals",
   );
   assertEquals(
     selectionLabel({ sign: "E", option: "NE", low: 20 }),
-    "Exclude · Does not equal 20",
+    "20 · Does not equal · Exclude",
   );
   assertEquals(
     selectionLabel({ sign: "I", option: "BT", low: 10, high: 30 }),
-    "Include · Between 10 … 30",
+    "10 … 30 · Between",
   );
 });

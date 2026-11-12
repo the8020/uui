@@ -167,7 +167,7 @@ export async function verifySelection(page: Browser) {
   );
   assert(
     (await page.evaluate<string>(`${field("names")}.textContent`)).includes(
-      "Matches pattern Order 00*",
+      "Order 00* · Matches pattern",
     ),
   );
   await help("ids");

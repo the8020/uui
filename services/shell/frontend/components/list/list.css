@@ -606,6 +606,7 @@
 
 .data-list-layout-dialog .program-header {
   flex: 1;
+  min-width: 34px;
 }
 
 .data-list-layout-dialog .data-list {
