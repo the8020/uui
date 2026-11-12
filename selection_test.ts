@@ -4,6 +4,21 @@ import { type Selection, selectionElement } from "/p/the8020/db/selection.ts";
 import { buildControls, buildFieldCatalog, field } from "./fields.ts";
 import { valueHelpFor } from "./field_help.ts";
 
+Deno.test("selection opt-in preserves a provider declared on the same field", () => {
+  const provider = () => ({
+    schema: z.object({ value: z.string() }),
+    rows: [{ value: "one" }],
+    more: false,
+  });
+  for (const selection of [false, true]) {
+    const schema = field(z.string(), { selection, valueHelp: provider });
+    const control = buildControls(
+      buildFieldCatalog(z.object({ value: schema })),
+    )[0]!;
+    assertEquals(valueHelpFor(schema.optional(), control), provider);
+  }
+});
+
 Deno.test("opt-in selections retain scalar meaning/help and validate binding without changing scalar callers", async () => {
   const source = semanticField(z.number().int().min(1), {
     label: "Order",

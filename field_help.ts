@@ -21,6 +21,8 @@ import { runSelectionHelp } from "./selection_help.ts";
 
 /** Shared provider selection for field help and direct agent value-help queries. */
 export function valueHelpFor(schema: z.ZodType, control: ControlDescriptor) {
+  const metadata = fieldMetadata(schema);
+  if (metadata?.valueHelp) return metadata.valueHelp;
   const element = selectionElement(schema);
   if (element) {
     return valueHelpFor(element, {
@@ -29,22 +31,20 @@ export function valueHelpFor(schema: z.ZodType, control: ControlDescriptor) {
         buildFieldCatalog(z.object({ value: element }))[0]?.options,
     });
   }
-  const metadata = fieldMetadata(schema);
-  return metadata?.valueHelp ??
-    (control.options === undefined
-      ? undefined
-      : (request: ValueHelpRequest) =>
-        queryValueHelp(
-          z.object({
-            value: field(schema, { label: msg("field_help.value") }),
-            label: field(z.string(), {
-              label: msg("field_help.label"),
-              description: msg("field_help.the_displayed_name_of_this_choice"),
-            }),
+  return control.options === undefined
+    ? undefined
+    : (request: ValueHelpRequest) =>
+      queryValueHelp(
+        z.object({
+          value: field(schema, { label: msg("field_help.value") }),
+          label: field(z.string(), {
+            label: msg("field_help.label"),
+            description: msg("field_help.the_displayed_name_of_this_choice"),
           }),
-          control.options!.map(({ value, label }) => ({ value, label })),
-          request,
-        ));
+        }),
+        control.options!.map(({ value, label }) => ({ value, label })),
+        request,
+      );
 }
 
 export async function readValueHelp(

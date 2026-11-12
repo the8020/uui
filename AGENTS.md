@@ -753,11 +753,13 @@ below.
   isolated draft, an ordinary paged criteria list with source-index keys, typed
   entry editing, and nested multi-row value help. Done validates the full
   caller; Close/Back/Escape discard the draft. Nested lookup Done changes only
-  that draft. The browser's `selection.ts` creates at most four criterion tokens
-  and one accurate overflow button; both overflow and ordinary help open the
-  complete editor. The lookup hides its full draft value to avoid materializing
-  thousands of tags. Query semantics and validation belong to
-  `the8020/db/selection.ts` and `selection_query.ts`, not UUI.
+  that draft. Field-level providers/options also reach the scalar lookup; an
+  absent optional selection opens an empty draft, Cancel preserves absence and
+  Done commits the validated array. The browser's `selection.ts` creates at most
+  four criterion tokens and one accurate overflow button; both overflow and
+  ordinary help open the complete editor. The lookup hides its full draft value
+  to avoid materializing thousands of tags. Query semantics and validation
+  belong to `the8020/db/selection.ts` and `selection_query.ts`, not UUI.
 - Fields holding several values default to the `tags` control: separated text,
   and arrays whose element has value help or enum options (other scalar arrays
   stay lists unless `control: "tags"`). `FieldDescriptor.multiple` carries the

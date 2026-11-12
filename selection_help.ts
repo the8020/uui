@@ -19,12 +19,16 @@ export async function runSelectionHelp(
   binding: { get(): unknown; set(value: unknown): void },
   layoutKey?: string,
 ): Promise<void> {
-  let criteria = structuredClone(binding.get()) as Selection[];
+  let criteria = structuredClone(binding.get() ?? []) as Selection[];
   const editable = !control.readOnly;
+  const valueSchema = field(element, {
+    valueHelp: valueHelpFor(schema, control),
+  });
   const valueControl: ControlDescriptor = {
-    ...buildFieldCatalog(z.object({ value: element }))[0]!,
+    ...buildFieldCatalog(z.object({ value: valueSchema }))[0]!,
     id: "value",
   };
+  valueControl.options = control.options ?? valueControl.options;
   const row = z.object({
     index: field(z.number(), { hidden: true }),
     sign: field(z.enum(["I", "E"]), { label: msg("selection.sign") }),
@@ -165,7 +169,7 @@ export async function runSelectionHelp(
                   id: "delete",
                   label: msg("layouts.delete"),
                 }]),
-              ...(valueHelpFor(element, valueControl)
+              ...(valueHelpFor(valueSchema, valueControl)
                 ? [{ id: "values", label: msg("field_help.value_help") }]
                 : []),
             ]
@@ -197,7 +201,7 @@ export async function runSelectionHelp(
         item.sign === "I" && item.option === "EQ"
       ).map((item) => item.low);
       await presentModal(() =>
-        runFieldHelp(element.array(), {
+        runFieldHelp(valueSchema.array(), {
           ...valueControl,
           id: "values",
           bind: "value",

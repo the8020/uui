@@ -130,6 +130,7 @@ export async function verifySelection(page: Browser) {
   );
   await close();
   await help("ids");
+  await wait(`${list("criteria")}.querySelectorAll('tbody tr').length===3`);
   assertEquals(
     await page.evaluate(
       `${list("criteria")}.querySelectorAll('tbody tr').length`,
@@ -147,6 +148,7 @@ export async function verifySelection(page: Browser) {
     }.querySelectorAll('.field-tag').length===2`,
   );
   await help("ids");
+  await wait(`${list("criteria")}.querySelectorAll('tbody tr').length===2`);
   assertEquals(
     await page.evaluate(
       `${list("criteria")}.querySelectorAll('tbody tr').length`,

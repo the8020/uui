@@ -2413,6 +2413,137 @@ Deno.test("enum field help exposes searchable options and commits only on Done",
   }
 });
 
+Deno.test("selection editor retains field-level providers and options in its nested lookup", async () => {
+  for (const optionsOnly of [false, true]) {
+    const test = new TestChannel();
+    const unbind = bindSession(test);
+    const value = field(z.number().int().min(1), {
+      selection: true,
+      ...(optionsOnly ? { options: [{ value: 2, label: "Two" }] } : {
+        valueHelp: () => ({
+          schema: z.object({ key: z.number() }),
+          rows: [{ key: 2 }],
+          more: false,
+        }),
+      }),
+    });
+    const model = new Model({ value: value.parse([]) });
+    let sequence = 0;
+    const action = async (id: string) => {
+      test.push(eventFor(lastPresentation(test), id, ++sequence));
+      await flushMicrotasks();
+    };
+    try {
+      const pending = callScreen({
+        id: "selection-owner",
+        schema: z.object({ value }),
+        model,
+      });
+      void pending.catch(() => {});
+      for (const commit of [false, true]) {
+        const shown = lastPresentation(test);
+        test.push({
+          ...eventFor(shown, "field-help", ++sequence, "field-help"),
+          controlId: topScreen(shown).controls[0]!.id,
+          bind: "value",
+        });
+        await flushMicrotasks();
+        assertEquals(
+          topScreen(lastPresentation(test)).id,
+          "uui-selection-help",
+        );
+        assertEquals(
+          JSON.stringify(topScreen(lastPresentation(test)).layout).includes(
+            '"id":"values"',
+          ),
+          true,
+        );
+        await action("values");
+        const lookup = topScreen(lastPresentation(test));
+        assertEquals(lookup.id, "uui-field-help");
+        const list = lookup.lists[0]!;
+        assertEquals(list.selection?.mode, "multiple");
+        assertEquals(list.rows, [{
+          ...(optionsOnly ? { value: 2, label: "Two" } : { key: 2 }),
+          __uuiSelected: false,
+        }]);
+        test.push(listInput({
+          ...eventFor(lastPresentation(test), "", ++sequence),
+          updates: [{
+            id: list.id,
+            operation: "selection",
+            selected: true,
+            range: { from: 0, to: 0 },
+          }],
+        }));
+        await flushMicrotasks();
+        await action("done");
+        assertEquals(
+          topScreen(lastPresentation(test)).id,
+          "uui-selection-help",
+        );
+        assertEquals(
+          model.data.value,
+          [],
+          "nested Done changes only the draft",
+        );
+        await action(commit ? "done" : BACK_EVENT);
+        assertEquals(topScreen(lastPresentation(test)).id, "selection-owner");
+        assertEquals(
+          model.data.value,
+          commit ? [{ sign: "I", option: "EQ", low: 2 }] : [],
+        );
+      }
+      await action("save");
+      await pending;
+    } finally {
+      unbind();
+    }
+  }
+});
+
+Deno.test("unset optional selection opens empty, Cancel preserves absence and Done commits empty", async () => {
+  const test = new TestChannel();
+  const unbind = bindSession(test);
+  const schema = z.object({
+    value: field(z.string(), { selection: true }).optional(),
+  });
+  const model = new Model<z.output<typeof schema>>({ value: undefined });
+  let sequence = 0;
+  try {
+    const pending = callScreen({
+      id: "optional-selection-owner",
+      schema,
+      model,
+    });
+    void pending.catch(() => {});
+    for (const action of [BACK_EVENT, "done"]) {
+      const shown = lastPresentation(test);
+      test.push({
+        ...eventFor(shown, "field-help", ++sequence, "field-help"),
+        controlId: topScreen(shown).controls[0]!.id,
+        bind: "value",
+      });
+      await flushMicrotasks();
+      const help = topScreen(lastPresentation(test));
+      assertEquals(help.id, "uui-selection-help");
+      assertEquals(help.lists[0]!.rows, []);
+      assertEquals(model.data.value, undefined);
+      test.push(eventFor(lastPresentation(test), action, ++sequence));
+      await flushMicrotasks();
+      assertEquals(
+        topScreen(lastPresentation(test)).id,
+        "optional-selection-owner",
+      );
+      assertEquals(model.data.value, action === "done" ? [] : undefined);
+    }
+    test.push(eventFor(lastPresentation(test), "save", ++sequence));
+    await pending;
+  } finally {
+    unbind();
+  }
+});
+
 Deno.test("field help retains background redraws and defers channel completion until return", async () => {
   for (const fail of [false, true]) {
     const test = new TestChannel();
