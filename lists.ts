@@ -1,3 +1,5 @@
+import { context } from "@the8020/context";
+import { type ListLayout, parseLayoutCommand } from "./list_layout.ts";
 import { resolveTexts } from "/p/the8020/i18n/mod.ts";
 import type { Model } from "./model.ts";
 import { setPath } from "./bindings.ts";
@@ -141,6 +143,7 @@ export class ScreenLists {
   readonly #definitions = new Map<string, ListDefinition>();
   readonly #views = new Map<string, ListView>();
   readonly #screen: ScreenState;
+  #layoutScope?: string;
 
   constructor(
     schema: z.ZodObject<z.ZodRawShape>,
@@ -221,9 +224,95 @@ export class ScreenLists {
         element.toolbarOpen = true;
       }
       element.list ??= initialListState();
+      element.list.builtInQuery ??= structuredClone(element.list.query);
       // Dynamic schemas can remove columns; retire their filters and sort.
       element.list.query = normalizeQuery(element.list.query, columns, false);
+      element.list.builtInQuery = normalizeQuery(
+        element.list.builtInQuery,
+        columns,
+        false,
+      );
     }
+  }
+
+  initializeLayouts(
+    scope: string,
+    signal?: AbortSignal,
+  ): Promise<void> | undefined {
+    // Standalone framework clients may have no authenticated execution identity.
+    try {
+      if (!context.authenticated) return;
+    } catch {
+      return;
+    }
+    this.#layoutScope = scope;
+    const pending = [...this.#definitions.values()].filter((definition) =>
+      this.state(definition.id).columns === undefined
+    );
+    if (!pending.length) return;
+    return (async () => {
+      for (const definition of pending) {
+        const catalog = await this.layoutCommand(definition.id, {
+          operation: "list",
+        });
+        signal?.throwIfAborted();
+        const personal = catalog.personal.defaultName;
+        const global = catalog.global.defaultName;
+        const layout = personal
+          ? catalog.personal.variants[personal]
+          : global
+          ? catalog.global.variants[global]
+          : undefined;
+        const state = this.state(definition.id);
+        if (layout) {
+          Object.assign(state, this.reconcileLayout(definition.id, layout));
+        } else state.columns = definition.columns.map((column) => column.key);
+      }
+    })();
+  }
+
+  private layoutKey(id: string): string {
+    if (!this.#layoutScope) throw new Error("Saved layouts are unavailable");
+    const definition = this.#definitions.get(id)!;
+    return JSON.stringify([
+      this.#layoutScope,
+      definition.layoutKey ?? id,
+      definition.bind,
+    ]);
+  }
+
+  private reconcileLayout(id: string, layout: ListLayout): ListLayout {
+    const columns = this.#definitions.get(id)!.columns;
+    const visible = layout.columns.filter((key) =>
+      columns.some((column) => column.key === key)
+    );
+    const query = normalizeQuery(layout.query, columns, false);
+    if (this.source(id)?.searchOnly) {
+      query.filters = {};
+      query.sort = null;
+    }
+    return {
+      columns: visible.length ? visible : columns.map((column) => column.key),
+      query,
+    };
+  }
+
+  async layoutCommand(id: string, input: unknown) {
+    const command = parseLayoutCommand(input);
+    if (command.operation === "save") {
+      command.layout = this.reconcileLayout(id, command.layout);
+    }
+    const { listLayoutCommand } = await import("./list_layouts.ts");
+    const catalog = await listLayoutCommand(this.layoutKey(id), command);
+    for (const collection of [catalog.personal, catalog.global]) {
+      for (const name of Object.keys(collection.variants)) {
+        collection.variants[name] = this.reconcileLayout(
+          id,
+          collection.variants[name]!,
+        );
+      }
+    }
+    return catalog;
   }
 
   ids(): string[] {
@@ -288,7 +377,16 @@ export class ScreenLists {
           : { toolbar: definition.toolbar as ScreenElement[] }),
         id: definition.id,
         bind: definition.bind,
-        columns: definition.columns,
+        columns: state.columns === undefined
+          ? definition.columns
+          : this.reconcileLayout(definition.id, {
+            columns: state.columns,
+            query: state.query,
+          }).columns.map((key) =>
+            definition.columns.find((column) => column.key === key)!
+          ),
+        availableColumns: definition.columns,
+        ...(this.#layoutScope ? { layouts: true } : {}),
         rows: structuredClone(
           indices.map((index) =>
             provider?.selection === undefined ? source[index] : {
@@ -635,8 +733,19 @@ export class ScreenLists {
         ) {
           throw new TypeError("invalid list selection range or binding");
         }
-      } else if (request.operation === "query") {
-        normalizeQuery(request.query, view.snapshot.columns);
+      } else if (
+        request.operation === "query" || request.operation === "layout"
+      ) {
+        const columns = this.#definitions.get(request.id)!.columns;
+        if (
+          request.operation === "layout" &&
+          request.columns.some((key) =>
+            !columns.some((column) => column.key === key)
+          )
+        ) {
+          throw new TypeError("Unknown layout column");
+        }
+        normalizeQuery(request.query, columns);
         if (
           view.snapshot.source?.searchOnly &&
           (request.query.sort !== null ||
@@ -668,6 +777,7 @@ export class ScreenLists {
       state.page = Math.floor(offset / state.pageSize) + 1;
       state.measured = true;
     } else {
+      if (request.operation === "layout") state.columns = [...request.columns];
       const query = normalizeQuery(request.query, definition.columns);
       if (JSON.stringify(query) === JSON.stringify(state.query)) {
         return undefined;

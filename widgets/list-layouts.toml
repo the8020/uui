@@ -1,0 +1,12 @@
+schema = 1
+title = "List layouts"
+description = "List layouts"
+icon = "view_column"
+category = "operations"
+order = 60
+
+[open]
+program = "the8020/uui/list-layouts-demo"
+
+[visible]
+public = true

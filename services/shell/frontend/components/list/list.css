@@ -530,6 +530,15 @@
 }
 
 @media (max-width: 680px) {
+  .data-list-tools-actions {
+    gap: 0;
+  }
+
+  .data-list-tools-actions button {
+    width: 28px;
+    padding-inline: 2px;
+  }
+
   .data-list-processor .uui-dialog-title {
     flex: 1;
   }
@@ -577,4 +586,52 @@
   vertical-align: middle;
   accent-color: var(--primary);
   cursor: pointer;
+}
+
+.data-list-layout-dialog {
+  width: min(52rem, calc(100vw - 24px));
+}
+.data-list-layout-dialog .uui-dialog-body {
+  display: grid;
+  gap: 1rem;
+}
+.data-list-layout-dialog .uui-dialog-body > div:first-child {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  align-items: center;
+}
+.data-list-layout-dialog input:not([type=checkbox]),
+.data-list-layout-dialog select {
+  max-width: 100%;
+  padding: .35rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.data-list-layout-columns {
+  display: grid;
+  gap: .5rem;
+  margin-top: .75rem;
+}
+.data-list-layout-column {
+  display: grid;
+  grid-template-columns: minmax(6rem, 1fr) auto auto minmax(6rem, 1fr);
+  align-items: center;
+  gap: .35rem;
+}
+.data-list-layout-column label {
+  overflow-wrap: anywhere;
+}
+.data-list-layout-actions {
+  display: flex;
+  gap: .5rem;
+}
+@media (max-width: 540px) {
+  .data-list-layout-column {
+    grid-template-columns: minmax(6rem, 1fr) auto auto;
+  }
+  .data-list-layout-column > input {
+    grid-column: 1 / -1;
+  }
 }

@@ -13,6 +13,9 @@ Parent DOX: [shell frontend](../../AGENTS.md).
   its search `data-autofocus` for the modal's first focus).
 - `list_geometry.ts` owns measured UUI capacity and column widths.
 - `page_size.ts` owns the browser-only rows-per-page choice.
+- `layouts.ts` owns the native layout editor: visibility and order, ordinary
+  typed queries, private/shared save/load/delete and independent defaults. It
+  consumes only the columns offered by the list; backend checks own authority.
 - `tools.ts` owns the expanded toolbar, native dialogs, spreadsheet lifecycle,
   export options, and clipboard writes. `data.ts` owns list result validation
   and displayed-column serializers; token/result/cancel correlation belongs to
@@ -25,6 +28,12 @@ Parent DOX: [shell frontend](../../AGENTS.md).
   and notices.
 
 # Local Contracts
+
+- List tools stays collapsed initially. Its layout button sits beside export.
+  Column menus offer Hide column (retain at least one) and Show all columns; the
+  editor restores individual hidden columns and moves them with accessible
+  up/down buttons. Applying uses the ordinary atomic list update. Displayed
+  columns also govern copy/export and the spreadsheet viewer.
 
 - List chrome uses the shell formatter. Server-provided headings/help are
   already resolved; list values remain application data.
@@ -131,8 +140,8 @@ Parent DOX: [shell frontend](../../AGENTS.md).
   Search Enter also confirms immediately. Blur keeps the debounce pending so
   clear buttons can commit one complete query without an intervening request.
 - The expanded list toolbar matches the column-header height, with zero search
-  input block padding. Its left side starts with icon-only, tooltip-labeled
-  Table processor, Export, Copy page, and Copy all actions, followed by
+  input block padding. Its left side starts with icon-only, tooltip-labeled List
+  layouts, Table processor, Export, Copy page, and Copy all actions, followed by
   clear-all actions only for applied sorts or filters. `filter_list_off` clears
   sort; `filter_alt_off` clears column filters and quick search together.
   Clearing one query category preserves the other and affects only that list.
@@ -152,6 +161,9 @@ Parent DOX: [shell frontend](../../AGENTS.md).
 
 # Verification
 
+- `deno task test:list-layouts-browser` exercises actual menus, hide/restore,
+  order, filter/sort, personal persistence/defaults, refresh, reload, new Model
+  and mobile layout geometry through the existing presentation harness.
 - Run UUI `deno task check`, `deno task test`, and `services/shell/build.sh`.
 - `deno task test:list-selection-browser` covers native/Shift/drag/keyboard
   selection, all pages and filters, reload, selected totals, toolbar controls,

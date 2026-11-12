@@ -105,6 +105,9 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
   history entries and ten toasts, existing Markdown/dialog/badge/focus/dismissal
   behavior, and roundtrip collection clearing. Live output retains the captured
   screen/connection; stale frames cannot mutate the message collection.
+- The list-owned `layouts` message reads/mutates named variants through the same
+  token/result gate as updates and independent reads; it never supplies the
+  owner or list business identity.
 - Ordinary list updates and independent reads use the list namespace's update
   and read messages on this same core. Updates carry captured dirty bindings and
   screen state; only matching results acknowledge those drafts. Capacity batches

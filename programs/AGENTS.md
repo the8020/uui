@@ -27,13 +27,16 @@ Parent DOX: [uui DOX](../AGENTS.md).
 
 # Child DOX Index
 
+- [list-layouts-demo/AGENTS.md](list-layouts-demo/AGENTS.md): Exercise shared
+  layouts on distinct orders and deliveries lists.
+
 - [system-customization/AGENTS.md](system-customization/AGENTS.md): Edit the
   system server title, favicon, and social preview through Administration.
 
 - [customization/AGENTS.md](customization/AGENTS.md): Edit authenticated UUI
   preferences with save, default inheritance, and cancel behavior.
 - [user-deleted/AGENTS.md](user-deleted/AGENTS.md): Remove UUI-owned preference
-  overrides after account deletion.
+  overrides and list layouts after account deletion.
 
 - [home/AGENTS.md](home/AGENTS.md): Launch discoverable UUI programs from the
   mounted package catalog.

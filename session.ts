@@ -1153,6 +1153,11 @@ async function showScreen<T extends z.ZodRawShape>(
                     setPath(options.model.data, control.bind, next);
                   },
                 },
+                JSON.stringify([
+                  screenCall?.replace(/:\d+$/, ""),
+                  options.id,
+                  control.bind,
+                ]),
               )
             ),
       );
@@ -1239,7 +1244,9 @@ async function showScreen<T extends z.ZodRawShape>(
           if (typeof data === "string") running.get(data)?.abort();
           return;
         }
-        if (message !== "read" && message !== "update") return;
+        if (
+          message !== "read" && message !== "update" && message !== "layouts"
+        ) return;
         if (
           !data || typeof data !== "object" || !("token" in data) ||
           typeof data.token !== "string" || data.token.length > 128 ||
@@ -1253,7 +1260,9 @@ async function showScreen<T extends z.ZodRawShape>(
         const output = captureCallMessages(state, call);
         let complete: (() => void) | undefined;
         try {
-          const value = message === "read"
+          const value = message === "layouts"
+            ? await lists.layoutCommand(id, request)
+            : message === "read"
             ? await lists.readMessage(
               id,
               request,
@@ -1439,6 +1448,11 @@ async function showScreen<T extends z.ZodRawShape>(
       },
       fail: (error) => settleCall(state, call, { error }),
     });
+    const layouts = lists.initializeLayouts(
+      JSON.stringify([screenCall?.replace(/:\d+$/, ""), options.id]),
+      AbortSignal.any([screenChannel.signal, options.model.resetSignal]),
+    );
+    if (layouts) await layouts;
     surface.snapshot = snapshot();
     if (lists.providerIDs().length) await call.refresh();
     if (!call.settled) {

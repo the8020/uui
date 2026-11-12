@@ -1,3 +1,4 @@
+import { type LayoutCallbacks, layoutEditor } from "./layouts.ts";
 import { t } from "../../i18n.ts";
 import {
   type ListDataPage,
@@ -16,7 +17,7 @@ import {
   textExport,
 } from "./data.ts";
 
-export interface ListToolCallbacks {
+export interface ListToolCallbacks extends LayoutCallbacks {
   read(request: ListReadRequest, signal?: AbortSignal): Promise<ListDataPage>;
 }
 
@@ -60,6 +61,7 @@ export class ListTools {
     this.#callbacks = callbacks;
     const readable = snapshot.source === undefined || snapshot.readable;
     this.#buttons = [
+      iconButton(t("layouts.title"), "view_column", () => this.layouts()),
       iconButton(
         t("tools.display_in_table_processor"),
         "table_view",
@@ -70,13 +72,24 @@ export class ListTools {
       iconButton(t("editor.copy_all"), "copy_all", () => this.copy(true)),
     ];
     if (!readable) {
-      for (const i of [0, 1, 3]) {
+      for (const i of [1, 2, 4]) {
         this.#buttons[i]!.disabled = true;
         this.#buttons[i]!.title +=
           ": this source only supplies its current page";
       }
     }
     return [...this.#buttons, this.#feedback];
+  }
+
+  private layouts(): void {
+    const { body, dialog, status, signal } = this.dialog(
+      t("layouts.title"),
+      "data-list-layout-dialog",
+    );
+    void this.run(
+      () => layoutEditor(this.#snapshot, this.#callbacks, body, dialog, signal),
+      status,
+    );
   }
 
   close(): boolean {

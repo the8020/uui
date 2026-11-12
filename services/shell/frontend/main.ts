@@ -352,7 +352,7 @@ function endpointFor(
 /** List-owned request/reply correlation; ordinary channels have no RPC layer. */
 function listRequest(
   layer: PresentationLayer,
-  operation: "read" | "update",
+  operation: "read" | "update" | "layouts",
   request: unknown,
   listId: string,
   signal?: AbortSignal,
@@ -1310,6 +1310,12 @@ function renderLayer(layer: PresentationLayer): void {
       request: (updates) => requestLists(layer, updates),
       select: (selection, activate) =>
         selectListRow(layer, selection, activate),
+      layout: (id, layout) =>
+        requestLists(layer, [{ id, operation: "layout", ...layout }]),
+      layouts: (id, command, signal) =>
+        listRequest(layer, "layouts", command, id, signal) as Promise<
+          import("../../../list_layout.ts").LayoutCatalog
+        >,
       read: (read, signal) => {
         return listRequest(layer, "read", read, read.id, signal).then((value) =>
           validListDataPage(value, read)

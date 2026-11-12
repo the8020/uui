@@ -2,7 +2,7 @@ Parent DOX: [uui/programs DOX](../AGENTS.md).
 
 # Purpose
 
-- Remove UUI-owned preferences after account deletion.
+- Remove UUI-owned preferences and list layouts after account deletion.
 
 # Ownership
 
@@ -11,8 +11,8 @@ Parent DOX: [uui/programs DOX](../AGENTS.md).
 # Local Contracts
 
 - Validate the ordinary `users.deleted` envelope with a nonempty username.
-- Delete only that username's preference row. Preserve the empty-username
-  default and other users; repeated delivery is harmless.
+- Delete only that username's preference and list-layout rows. Preserve shared
+  rows and other users; repeated delivery is harmless.
 
 # Work Guidance
 

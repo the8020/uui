@@ -33,6 +33,11 @@ export function validateElementDeclarations(value: unknown): void {
 }
 
 export function validateListOptions(value: ListOptions): void {
+  if (
+    value.layoutKey !== undefined &&
+    (typeof value.layoutKey !== "string" || !value.layoutKey.length ||
+      value.layoutKey.length > 512)
+  ) throw new TypeError("Invalid list layout key");
   if (value.toolbar !== undefined) validateElementDeclarations(value.toolbar);
   if (value.selection !== undefined) {
     if (

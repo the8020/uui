@@ -7,11 +7,18 @@ Parent DOX: [uui DOX](../AGENTS.md).
 
 # Ownership
 
-- Own `sessions.ts`, `user_preferences.ts`, and descriptor tests; schema
-  synchronization belongs to the db package and native database authority to the
-  kernel.
+- Own `sessions.ts`, `user_preferences.ts`, `list_layouts.ts`, and descriptor
+  tests; schema synchronization belongs to the db package and native database
+  authority to the kernel.
 
 # Local Contracts
+
+- `list_layouts.ts` stores one row per stable list identity and owner (empty
+  owner means shared). Its primary key encodes the pair; the owner index
+  supports account cleanup. JSON holds at most 50 named layouts of at most 8,192
+  serialized characters each and an optional default name. Owner/list mutations
+  lock the row before read-modify-write; shared and personal defaults remain
+  independent.
 
 - `branding.ts` holds one row (`id = 1`) with server title, image revision, and
   nullable binary favicon/social overrides. Missing rows use built-ins; null

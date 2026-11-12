@@ -1207,13 +1207,29 @@ async function toolbarGeometry(
   page: BrowserDriver,
   selector: string,
 ): Promise<void> {
+  const geometry = await page.evaluate<{
+    toolbar: number;
+    header: number;
+    width: number;
+    scroll: number;
+    paddingTop: string;
+    paddingBottom: string;
+    actions: number;
+    search: number;
+  }>(`(() => { const h=document.querySelector(${JSON.stringify(selector)});
+    const t=h.querySelector('.data-list-toolbar'); const input=t.querySelector('input');
+    return {toolbar:t.getBoundingClientRect().height,header:h.querySelector('thead').getBoundingClientRect().height,
+      width:t.clientWidth,scroll:t.scrollWidth,paddingTop:getComputedStyle(input).paddingTop,
+      paddingBottom:getComputedStyle(input).paddingBottom,
+      actions:t.querySelector('.data-list-tools-actions').getBoundingClientRect().width,
+      search:input.getBoundingClientRect().width}; })()`);
   assert(
-    await page.evaluate<boolean>(
-      `(() => { const h=document.querySelector(${
-        JSON.stringify(selector)
-      }); const t=h.querySelector('.data-list-toolbar'); const input=t.querySelector('input'); return Math.abs(t.getBoundingClientRect().height-h.querySelector('thead').getBoundingClientRect().height)<1 && getComputedStyle(input).paddingTop==='0px' && getComputedStyle(input).paddingBottom==='0px' && t.scrollWidth<=t.clientWidth; })()`,
-    ),
-    "toolbar matches column header height without search padding or overflow",
+    Math.abs(geometry.toolbar - geometry.header) < 1 &&
+      geometry.paddingTop === "0px" && geometry.paddingBottom === "0px" &&
+      geometry.scroll <= geometry.width,
+    `toolbar matches column header height without search padding or overflow: ${
+      JSON.stringify(geometry)
+    }`,
   );
 }
 async function toolActions(
@@ -1228,9 +1244,9 @@ async function toolActions(
     JSON.stringify(selector)
   }); return [...h.querySelectorAll('.data-list-tools-actions button')].map(b=>({label:b.getAttribute('aria-label'),title:b.title,icon:b.querySelector('.material-icon')?.dataset.materialIcon,text:b.textContent})); })()`);
   assert(
-    actions.length === 4 + Number(sorts) + Number(filters) &&
-      actions.slice(0, 4).map((action) => action.label).join(",") ===
-        "Display in table processor,Export,Copy page,Copy all" &&
+    actions.length === 5 + Number(sorts) + Number(filters) &&
+      actions.slice(0, 5).map((action) => action.label).join(",") ===
+        "List layouts,Display in table processor,Export,Copy page,Copy all" &&
       actions.every((action) =>
         action.text === "" && action.title === action.label
       ) &&

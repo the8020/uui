@@ -28,6 +28,8 @@ export interface ListColumnOptions {
 }
 
 export interface ListOptions {
+  /** Stable business identity when one screen displays different logical lists. */
+  layoutKey?: string;
   /** Ordinary UUI elements displayed above the list, independent of List tools. */
   toolbar?: ScreenElementDeclaration[];
   key?: string;
@@ -56,6 +58,9 @@ export interface ListState {
   pageSize: number;
   measured: boolean;
   query: ListQuery;
+  builtInQuery?: ListQuery;
+  /** Stable field paths of visible columns, in display order. */
+  columns?: string[];
   /** Server-owned unfiltered size (or observed lower bound) for page-source geometry. */
   sourceItems?: number;
 }
@@ -93,6 +98,8 @@ export interface ScreenListSnapshot {
   id: string;
   bind: string;
   columns: ListColumn[];
+  availableColumns?: ListColumn[];
+  layouts?: boolean;
   rows: unknown[];
   state: ListState;
   totalItems: number;
@@ -146,6 +153,7 @@ export type ListRequest =
   | { id: string; operation: "page"; page: number }
   | { id: string; operation: "capacity"; pageSize: number }
   | { id: string; operation: "query"; query: ListQuery }
+  | { id: string; operation: "layout"; columns: string[]; query: ListQuery }
   | { id: string; operation: "refresh" }
   | {
     id: string;
@@ -174,6 +182,14 @@ export function validListRequests(value: unknown): value is ListRequest[] {
       } else if (item.operation === "query") {
         keys.push("query");
         valid = validListQuery(item.query);
+      } else if (item.operation === "layout") {
+        keys.push("columns", "query");
+        valid = Array.isArray(item.columns) && item.columns.length > 0 &&
+          item.columns.length <= 200 && item.columns.every((key) =>
+            typeof key === "string"
+          ) &&
+          new Set(item.columns).size === item.columns.length &&
+          validListQuery(item.query);
       } else if (item.operation === "refresh") valid = true;
       else if (item.operation === "selection") {
         keys.push("selected", "range");

@@ -18,7 +18,8 @@ Parent DOX: [uui DOX](../AGENTS.md).
 
 # Verification
 
-- Run UUI `deno task test`; `preferences_test.ts` covers the event program.
+- Run UUI `deno task test`; `preferences_test.ts` and `list_layouts_test.ts`
+  cover the event program.
 
 # Child DOX Index
 

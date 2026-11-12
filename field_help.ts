@@ -128,6 +128,7 @@ export async function runFieldHelp(
   schema: z.ZodType,
   control: ControlDescriptor,
   binding: { get(): unknown; set(value: unknown): void },
+  layoutKey?: string,
 ): Promise<void> {
   const metadata = fieldMetadata(schema);
   const multiple = multipleValues(schema);
@@ -266,6 +267,7 @@ export async function runFieldHelp(
             { type: "field-group", controls: ["value"], summary: true },
             ...(valueHelp === undefined ? [] : [{
               id: "choices",
+              layoutKey,
               type: "list",
               title: msg("field_help.value_help"),
               bind: "choices",

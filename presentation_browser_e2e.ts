@@ -1623,7 +1623,7 @@ async function verifyFieldHelp(page: BrowserPage): Promise<void> {
   );
   assert(
     await page.evaluate<boolean>(`(() => {
-    const button = document.querySelector('[aria-label="View Recorded user: field help"]');
+    const button = document.querySelector('[aria-label="View Recorded user (F1 / F4)"]');
     const icon = button.querySelector('[data-material-icon="chevron_right"]');
     if (!icon) return false;
     const rect = icon.getBoundingClientRect(), bounds = button.getBoundingClientRect();
@@ -2048,7 +2048,7 @@ async function verifyFieldHelp(page: BrowserPage): Promise<void> {
     "identical snapshot keeps the input DOM",
   );
   await setValue(page, '[data-bind="note"]', "After identical snapshot");
-  await click(page, '[aria-label="Edit Note: field help"]');
+  await click(page, '[aria-label="Edit Note (F1 / F4)"]');
   await waitForPage(
     page,
     `document.querySelector('${modal} [data-bind="value"]')?.value === 'After identical snapshot'`,
@@ -2063,7 +2063,7 @@ async function verifyFieldHelp(page: BrowserPage): Promise<void> {
   );
 
   // Close and Escape discard invalid as well as valid drafts.
-  await click(page, '[aria-label="Edit Amount: field help"]');
+  await click(page, '[aria-label="Edit Amount (F1 / F4)"]');
   await setValue(page, `${modal} [data-bind="value"]`, "invalid");
   await pressKey(page, "F3");
   await waitForPage(
@@ -2072,7 +2072,7 @@ async function verifyFieldHelp(page: BrowserPage): Promise<void> {
     "F3 discards invalid amount",
   );
   assertEquals(fieldHelpModel.data.amount, "90071992547409.92");
-  await click(page, '[aria-label="Edit Note: field help"]');
+  await click(page, '[aria-label="Edit Note (F1 / F4)"]');
   await setValue(page, `${modal} [data-bind="value"]`, "discard this");
   await pressEscape(page);
   await waitForPage(

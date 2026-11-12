@@ -885,7 +885,36 @@ class ListController {
         className: "data-list-column-description",
       }));
     }
+    const hide = document.createElement("button");
+    hide.type = "button";
+    hide.textContent = t("layouts.hide");
+    hide.disabled = this.#snapshot.columns.length <= 1;
+    hide.addEventListener("click", () => {
+      this.closePopover();
+      this.#callbacks.request([{
+        id: this.#snapshot.id,
+        operation: "layout",
+        columns: this.#snapshot.columns.filter((item) =>
+          item.key !== column.key
+        ).map((item) => item.key),
+        query: structuredClone(this.#draft),
+      }]);
+    });
+    const showAll = document.createElement("button");
+    showAll.type = "button";
+    showAll.textContent = t("layouts.showAll");
+    showAll.addEventListener("click", () => {
+      this.closePopover();
+      this.#callbacks.request([{
+        id: this.#snapshot.id,
+        operation: "layout",
+        columns: (this.#snapshot.availableColumns ?? this.#snapshot.columns)
+          .map((item) => item.key),
+        query: structuredClone(this.#draft),
+      }]);
+    });
     if (this.#snapshot.source?.searchOnly) {
+      popover.append(hide, showAll);
       this.showPopover();
       return;
     }
@@ -958,7 +987,7 @@ class ListController {
     });
     clear.hidden = input.value.trim() === "";
     field.append(input, clear);
-    popover.append(sorts, field);
+    popover.append(sorts, field, hide, showAll);
     this.showPopover();
     if (focus) input.focus({ preventScroll: true });
   }

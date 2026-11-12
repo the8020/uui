@@ -22,6 +22,8 @@ export async function brandingDatabase() {
   for (
     const path of [
       "./tables/branding.ts",
+      "./tables/list_layouts.ts",
+      "../users/tables/users.ts",
       "./tables/user_preferences.ts",
       "../auth/tables/roles.ts",
       "../auth/tables/user_roles.ts",

@@ -21,6 +21,8 @@ test("UUI preferences inherit per field, save only personal overrides, and clean
   );
   const database = new DatabaseSync(":memory:");
   database.exec(createTableSQL("sqlite", descriptorOf(table)));
+  const { default: ListLayouts } = await import("./tables/list_layouts.ts");
+  database.exec(createTableSQL("sqlite", descriptorOf(ListLayouts)));
   const { default: Branding } = await import("./tables/branding.ts");
   database.exec(createTableSQL("sqlite", descriptorOf(Branding)));
   let authenticated = true;

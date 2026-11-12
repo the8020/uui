@@ -103,6 +103,7 @@ const nodeKeys = new Set([
   "display",
   "headings",
   "columnOptions",
+  "layoutKey",
   "triggerFilterEvents",
   "focusSearch",
   "toolbar",

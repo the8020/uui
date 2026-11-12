@@ -179,7 +179,7 @@ below.
 - [programs/AGENTS.md](programs/AGENTS.md): Own standard Home, Program
   terminated, customization, user cleanup, and session administration programs.
 - [events/AGENTS.md](events/AGENTS.md): Subscribe to account deletion for UUI
-  preference cleanup.
+  preference and list-layout cleanup.
 - [jobs/AGENTS.md](jobs/AGENTS.md): Schedule hourly obsolete-session cleanup.
 - [services/AGENTS.md](services/AGENTS.md): Declare and expose the login, shell,
   and persistent session services.
@@ -241,7 +241,7 @@ below.
   only that identity's overrides; null or matching the current default removes
   the override. With only accent color, an all-default personal row is deleted.
   `tables/user_preferences.ts` owns storage; `users.deleted` asynchronously
-  deletes only the named user's row and preserves the system default.
+  deletes only the named user's rows and preserves shared defaults.
 - The shell reads effective preferences through authenticated, uncached
   `GET /preferences` on each presentation update. The most recent bounded
   request owns application; no polling or browser preference persistence is
@@ -576,8 +576,24 @@ below.
 - `deno.json` owns package dependencies, compiler settings, and tasks. The
   shared 80|20 Deno workspace supplies platform imports for checks and browser
   builds.
-- Layouts and future overrides are serializable data without executable code;
-  user-specific layout variants are not persisted in this phase.
+- Layouts are serializable data without executable code. Shared list variants
+  store displayed column paths/order and the ordinary search/filter/sort query
+  in UUI-owned storage. Defaults resolve personal, shared, then built-in;
+  existing Models retain their applied layout through refresh and navigation.
+- List identity combines the caller source path (without line), screen ID, list
+  ID and binding. A dynamic list supplies `layoutKey` for its business identity;
+  field-help choices include their caller and field binding. Columns use stable
+  field paths, never translated headings or row identities.
+- `list_layouts.ts` checks the current authenticated user, never a client owner.
+  Shared writes require `the8020.uui.layouts.global.edit` for the list identity;
+  all users may read shared layouts and only their own personal layouts. Stored
+  data is validated and unavailable columns/query keys are retired. Layouts
+  never add columns beyond the program's displayed column contract.
+- `list_layouts_test.ts` covers real SQLite storage/auth, ownership, defaults,
+  list isolation, invalid data, unavailable columns and account cleanup.
+  `deno task test:list-layouts-browser` drives the actual column menu, editor,
+  query, private save/load/default, refresh, reload, new Model and mobile
+  dialog.
 - Every component descriptor accepts optional string `class` and `style`:
   controls (including inferred lists and custom fields), actions, separators,
   layout regions (including explicit lists and field groups), and custom hosts.
