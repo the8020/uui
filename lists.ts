@@ -91,6 +91,7 @@ interface SourceEntry {
   result: ListSourcePage;
 }
 const listSources = new WeakMap<Model<object>, Map<string, SourceEntry>>();
+const listLayoutKeys = new WeakMap<ListState, string>();
 
 /** Replace/dispose a retained provider, cancelling its outstanding work. */
 export function setListSource(
@@ -246,9 +247,21 @@ export class ScreenLists {
       return;
     }
     this.#layoutScope = scope;
-    const pending = [...this.#definitions.values()].filter((definition) =>
-      this.state(definition.id).columns === undefined
-    );
+    const pending: ListDefinition[] = [];
+    for (const definition of this.#definitions.values()) {
+      let state = this.state(definition.id);
+      const key = this.layoutKey(definition.id);
+      if (listLayoutKeys.has(state) && listLayoutKeys.get(state) !== key) {
+        state = initialListState();
+        state.builtInQuery = structuredClone(state.query);
+        screenElement(this.#screen, definition.id).list = state;
+      }
+      listLayoutKeys.set(state, key);
+      // Dynamic lists may not know their column contract until their first result.
+      if (definition.columns.length && state.columns === undefined) {
+        pending.push(definition);
+      }
+    }
     if (!pending.length) return;
     return (async () => {
       for (const definition of pending) {

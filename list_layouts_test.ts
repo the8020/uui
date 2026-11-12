@@ -326,3 +326,117 @@ Deno.test("built-in reset retires query columns removed by a dynamic schema", ()
     sort: null,
   });
 });
+
+Deno.test("retained layouts follow the effective list identity while same-list refresh keeps edits", async () => {
+  using _fixture = await brandingDatabase();
+  const model = new Model({ rows: [{ id: 1, name: "One" }] });
+  const schema = z.object({
+    rows: z.array(z.object({ id: z.number(), name: z.string() })),
+  });
+  const create = async (layoutKey: string, scope = "screen") => {
+    const lists = new ScreenLists(
+      schema,
+      [{
+        id: "rows",
+        bind: "rows",
+        control: "list",
+        list: { layoutKey },
+      }],
+      undefined,
+      model.screen,
+      [],
+      model,
+    );
+    await lists.initializeLayouts(scope);
+    lists.present(model.data);
+    return lists;
+  };
+  const first = await create("orders");
+  await first.layoutCommand("rows", {
+    operation: "save",
+    global: false,
+    name: "Mine",
+    layout,
+  });
+  await first.layoutCommand("rows", {
+    operation: "default",
+    global: false,
+    name: "Mine",
+  });
+  const applied = { ...layout, columns: ["name"] };
+  const tx = await first.prepareUpdates([{
+    id: "rows",
+    operation: "layout",
+    ...applied,
+  }], new AbortController().signal);
+  tx.commit();
+  const snapshot = (lists: ScreenLists) => lists.present(model.data)[0]!;
+  const same = snapshot(await create("orders"));
+  assertEquals(same.columns.map((column) => column.key), applied.columns);
+  assertEquals(same.state.query, applied.query);
+  for (
+    const [key, scope] of [["deliveries", "screen"], [
+      "orders",
+      "other",
+    ]] as const
+  ) {
+    const different = snapshot(await create(key, scope));
+    assertEquals(different.columns.map((column) => column.key), ["id", "name"]);
+    assertEquals(different.state.query, {
+      search: "",
+      filters: {},
+      sort: null,
+    });
+  }
+  const restored = snapshot(await create("orders"));
+  assertEquals(restored.columns.map((column) => column.key), layout.columns);
+  assertEquals(restored.state.query, layout.query);
+});
+
+Deno.test("a dynamic list loads its saved default after an initially empty column contract", async () => {
+  using _fixture = await brandingDatabase();
+  const model = new Model({ rows: [{ id: 1, name: "One" }] });
+  const create = async (columns: string[]) => {
+    const schema = z.object({
+      rows: z.array(z.object(Object.fromEntries(columns.map((key) => [
+        key,
+        key === "id" ? z.number() : z.string(),
+      ])))),
+    });
+    const lists = new ScreenLists(
+      schema,
+      [{
+        id: "rows",
+        bind: "rows",
+        control: "list",
+        list: { display: columns },
+      }],
+      undefined,
+      model.screen,
+      [],
+      model,
+    );
+    await lists.initializeLayouts("dynamic");
+    return lists;
+  };
+  const first = await create(["id", "name"]);
+  const saved = { ...layout, columns: ["name"] };
+  await first.layoutCommand("rows", {
+    operation: "save",
+    global: false,
+    name: "Saved",
+    layout: saved,
+  });
+  await first.layoutCommand("rows", {
+    operation: "default",
+    global: false,
+    name: "Saved",
+  });
+  model.resetScreen();
+  const empty = (await create([])).present(model.data)[0]!;
+  assertEquals(empty.columns, []);
+  assertEquals(empty.state.columns, undefined);
+  const populated = (await create(["id", "name"])).present(model.data)[0]!;
+  assertEquals(populated.columns.map((column) => column.key), saved.columns);
+  assertEquals(populated.state.query, saved.query);
+});

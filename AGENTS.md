@@ -580,6 +580,9 @@ below.
   store displayed column paths/order and the ordinary search/filter/sort query
   in UUI-owned storage. Defaults resolve personal, shared, then built-in;
   existing Models retain their applied layout through refresh and navigation.
+  Empty dynamic column contracts defer default initialization. Changing a
+  retained list's effective identity resets its list state before loading that
+  identity's default; same-identity calls preserve the applied layout.
 - List identity combines the caller source path (without line), screen ID, list
   ID and binding. A dynamic list supplies `layoutKey` for its business identity;
   field-help choices include their caller and field binding. Columns use stable
