@@ -1,6 +1,6 @@
 import { assert, assertEquals } from "@std/assert";
 import { brandingDatabase } from "./branding_test_support.ts";
-import { callScreen, Model, z } from "./mod.ts";
+import { callScreen, field, Model, z } from "./mod.ts";
 import demo from "./programs/list-layouts-demo/program.ts";
 
 interface Browser {
@@ -97,13 +97,58 @@ export async function verifyLayouts(page: Browser) {
   await click(button("cancel"));
   assertEquals(await page.evaluate(`!!${row("Cancelled")}`), false);
   await click(button("new"));
-  // Shared field geometry, not raw browser controls; sort only at its column.
+  // Shared controls in compact rows; sort only at its column.
   assertEquals(
     await page.evaluate(
       `${dialog}.querySelector('select[aria-label="Sort"]')===null`,
     ),
     true,
   );
+  const fields = `${dialog}.querySelector('.layout-fields-table')`;
+  const keys = () =>
+    page.evaluate<string[]>(
+      `Array.from(${fields}.tBodies[0].rows,r=>r.dataset.columnKey)`,
+    );
+  const initial = await keys();
+  const bindings = await page.evaluate(
+    `Array.from(${fields}.querySelectorAll('input,select'),e=>e.dataset.bind)`,
+  );
+  const move = async (index: number, direction: "up" | "down") => {
+    const before = await keys();
+    const next = index + (direction === "up" ? -1 : 1);
+    await click(button(`${direction}:${index}`));
+    [before[index], before[next]] = [before[next]!, before[index]!];
+    assertEquals(await keys(), before);
+  };
+  assertEquals(await page.evaluate(`${button("up:0")}.disabled`), true);
+  assertEquals(
+    await page.evaluate(`${button(`down:${initial.length - 1}`)}.disabled`),
+    true,
+  );
+  await move(0, "down");
+  await move(1, "up");
+  const middle = Math.floor(initial.length / 2);
+  await move(middle, "up");
+  await move(middle - 1, "down");
+  await move(initial.length - 1, "up");
+  await move(initial.length - 2, "down");
+  assertEquals(await keys(), initial);
+  assertEquals(
+    await page.evaluate(
+      `Array.from(${fields}.querySelectorAll('input,select'),e=>e.dataset.bind)`,
+    ),
+    bindings,
+  );
+  // A moved field keeps its filter, visibility and sort bindings.
+  await set("Filter Amount", ">3000");
+  const amountPosition = initial.indexOf("amount");
+  await move(amountPosition, "up");
+  assertEquals(await page.evaluate(`${field("Filter Amount")}.value`), ">3000");
+  await set("Filter Amount", ">4000");
+  await set("Sort: Amount", "asc");
+  assertEquals(await page.evaluate(`${field("Sort: Amount")}.value`), "asc");
+  await move(amountPosition - 1, "down");
+  assertEquals(await page.evaluate(`${field("Filter Amount")}.value`), ">4000");
   await click(field("Visible: Region"));
   await click(button("up:4")); // Amount moves before Region in the built-in order.
   await set("Filter Amount", ">3000");
@@ -194,6 +239,18 @@ export async function verifyLayouts(page: Browser) {
   await click(
     `${row("UX Mine with a long saved layout name")}.querySelector('button')`,
   );
+  assert(
+    await page.evaluate(
+      `Array.from(${fields}.tBodies[0].rows).every(r=>r.getBoundingClientRect().height<=40&&Array.from(r.cells).every(c=>getComputedStyle(c).display!=='none'))`,
+    ),
+    "Mobile retains compact complete rows, not field cards",
+  );
+  assert(
+    await page.evaluate(
+      `${fields}.closest('.data-list-scroll').scrollWidth>${fields}.closest('.data-list-scroll').clientWidth`,
+    ),
+    "Narrow fields table uses ordinary horizontal scrolling",
+  );
   const more = `${dialog}.querySelector('.program-header-overflow > summary')`;
   await wait(
     `${more}.getBoundingClientRect().width > 0 && !${more}.parentElement.hidden`,
@@ -246,12 +303,78 @@ export default async function fixture() {
         await callScreen({
           id: "returned",
           title: "Returned",
-          schema: z.object({}),
-          model: new Model({}),
+          schema: z.object({
+            rows: z.object({
+              id: z.number(),
+              label: field(z.string(), {
+                label:
+                  "A very long field label that must remain available in full through ordinary list overflow help without squeezing visibility, order, filter or sorting controls",
+              }),
+              amount: z.number(),
+              active: z.boolean(),
+            }).array(),
+          }),
+          model: new Model({
+            rows: [{ id: 1, label: "Example", amount: 12, active: true }],
+          }),
+          controls: [{ id: "long-labels", bind: "rows", readOnly: true }],
           actions: [{ id: "open", label: "Open" }],
         });
       }
     },
-    verify: verifyLayouts,
+    async verify(page: Browser) {
+      await verifyLayouts(page);
+      await page.evaluate(`document.querySelector('#screen-back').click()`);
+      const wait = async (expression: string) => {
+        const until = Date.now() + 20_000;
+        while (!await page.evaluate(expression)) {
+          if (Date.now() > until) throw new Error(`Timed out: ${expression}`);
+          await new Promise((resolve) => setTimeout(resolve, 40));
+        }
+      };
+      await wait(
+        `!!document.querySelector('[data-list-id="long-labels"]')&&!document.querySelector('#screen-back').disabled`,
+      );
+      await page.evaluate(
+        `document.querySelector('.data-list-tools-toggle').click()`,
+      );
+      await page.evaluate(
+        "new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))",
+      );
+      await wait(`!document.querySelector('#screen-back').disabled`);
+      await page.evaluate(
+        `document.querySelector('[aria-label="List layouts"]').click()`,
+      );
+      await wait(`!!document.querySelector('[data-element-id="new"]')`);
+      await page.evaluate(
+        `document.querySelector('[data-element-id="new"]').click()`,
+      );
+      const table = `document.querySelector('.layout-fields-table')`;
+      const help =
+        `${table}.querySelector('[data-column-key="label"] .overflow-reveal')`;
+      await wait(`!!${help}&&!${help}.hidden`);
+      await page.evaluate(`${help}.click()`);
+      await wait(`!!document.querySelector('.overflow-popover:popover-open')`);
+      assert(
+        (await page.evaluate<string>(
+          `document.querySelector('.overflow-popover:popover-open').textContent`,
+        )).includes("without squeezing"),
+      );
+      const shot = await page.command("Page.captureScreenshot", {
+        format: "png",
+      }) as { data: string };
+      await Deno.writeFile(
+        "/tmp/uui-layout-fields-long-mobile.png",
+        Uint8Array.from(atob(shot.data), (c) => c.charCodeAt(0)),
+      );
+      assert(
+        await page.evaluate(
+          `Array.from(${table}.tBodies[0].rows).every(r=>r.getBoundingClientRect().height<=40)`,
+        ),
+      );
+      console.log(
+        "Compact fields: first/middle/last moves, stable edits and mobile long-label overflow help passed.",
+      );
+    },
   };
 }

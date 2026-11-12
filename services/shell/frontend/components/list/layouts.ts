@@ -16,11 +16,12 @@ import type {
   ScreenAction,
 } from "../../../../../protocol.ts";
 import {
-  disposeFieldMessages,
   type RenderCallbacks,
+  renderControl,
   renderElements,
   renderScreen,
 } from "../../renderer.ts";
+import { createOverflowText, disposeOverflowText } from "../../overflow.ts";
 import { ResponsiveProgramHeader } from "../../responsive_header.ts";
 import { renderIconText } from "../../icon_text.ts";
 import { iconButton } from "./tools.ts";
@@ -101,7 +102,7 @@ export async function layoutEditor(
         draft.query.search = String(value);
       } else {
         const [, position, property] = bind.split(".");
-        const key = order[Number(position)]!;
+        const key = available[Number(position)]!.key;
         if (property === "visible") {
           draft.columns = order.filter((column) =>
             column === key ? value : draft.columns.includes(column)
@@ -291,8 +292,9 @@ export async function layoutEditor(
     ];
     const columns = order.map((key, index) => {
       const column = available.find((column) => column.key === key)!;
-      const bind = `columns.${index}`;
-      (model.columns as Record<string, unknown>)[index] = {
+      const identity = available.indexOf(column);
+      const bind = `columns.${identity}`;
+      (model.columns as Record<string, unknown>)[identity] = {
         visible: draft.columns.includes(key),
         filter: draft.query.filters[key] ?? "",
         sort: draft.query.sort?.column === key
@@ -317,6 +319,15 @@ export async function layoutEditor(
               label: t("lists.filter_column", { column: column.heading }),
               length: "full" as const,
               fieldHelp: false,
+              placeholder: column.semanticType === "number" ||
+                  column.semanticType === "decimal"
+                ? t("lists.filter_number")
+                : column.semanticType === "boolean"
+                ? t("lists.filter_boolean")
+                : column.semanticType === "date" ||
+                    column.semanticType === "datetime"
+                ? t("lists.filter_date")
+                : t("lists.filter_text"),
             },
             {
               id: `${bind}.sort`,
@@ -333,12 +344,10 @@ export async function layoutEditor(
           ]
           : []),
       ];
-      controls.push(...fields);
       return {
-        id: `column-${index}`,
-        type: "field-group" as const,
-        title: column.heading,
-        controls: fields.map((field) => field.id),
+        key,
+        heading: column.heading,
+        fields,
         elements: [
           {
             id: `up:${index}`,
@@ -357,6 +366,7 @@ export async function layoutEditor(
         ],
       };
     });
+    disposeOverflowText(body);
     renderScreen(
       body,
       {
@@ -381,7 +391,6 @@ export async function layoutEditor(
                   "search",
                 ],
               },
-              { id: "columns", type: "grid", columns: 2, children: columns },
             ],
           },
         },
@@ -390,6 +399,55 @@ export async function layoutEditor(
       renderCallbacks,
       { render: () => document.createElement("div") },
     );
+    const card = document.createElement("div");
+    card.className = "layout-list layout-fields";
+    const container = document.createElement("div");
+    container.className = "data-list-container";
+    const scroll = document.createElement("div");
+    scroll.className = "data-list-scroll";
+    const table = document.createElement("table");
+    table.className = "data-list layout-fields-table";
+    table.setAttribute("aria-label", t("field_help.label"));
+    const head = table.createTHead().insertRow();
+    const labels = [
+      t("field_help.label"),
+      t("layouts.visible"),
+      "",
+      ...(!snapshot.source?.searchOnly
+        ? [t("lists.filter_column", { column: "" }), t("lists.sort")]
+        : []),
+    ];
+    for (const label of labels) {
+      const th = document.createElement("th");
+      th.scope = "col";
+      th.textContent = label;
+      head.append(th);
+    }
+    head.cells[2]!.setAttribute("aria-label", t("shell.screenActions"));
+    const rows = table.createTBody();
+    for (const column of columns) {
+      const row = rows.insertRow();
+      row.dataset.columnKey = column.key;
+      row.insertCell().append(createOverflowText(column.heading, {
+        label: t("shell.completeValue"),
+        className: "data-list-cell-value",
+      }));
+      for (const [index, field] of column.fields.entries()) {
+        const rendered = renderControl(field, model, renderCallbacks)!;
+        rendered.querySelector("label")?.classList.add("visually-hidden");
+        rendered.querySelector(".field-message")?.remove();
+        row.insertCell().append(rendered);
+        if (index === 0) {
+          row.insertCell().append(
+            ...renderElements(column.elements, {}, renderCallbacks),
+          );
+        }
+      }
+    }
+    scroll.append(table);
+    container.append(scroll);
+    card.append(container);
+    body.querySelector('[data-layout-id="layout-editor"]')!.append(card);
     body.querySelector(".screen-title")?.remove();
     for (
       const button of body.querySelectorAll<HTMLButtonElement>(
@@ -434,7 +492,7 @@ export async function layoutEditor(
   const drawList = () => {
     detail = false;
     heading.textContent = t("layouts.title");
-    disposeFieldMessages(body);
+    disposeOverflowText(body);
     body.replaceChildren();
     status.hidden = true;
     actions([{
@@ -564,7 +622,7 @@ export async function layoutEditor(
   }, { signal });
   signal.addEventListener("abort", () => {
     responsive.dispose();
-    disposeFieldMessages(body);
+    disposeOverflowText(body);
   }, { once: true });
   if (snapshot.layouts) await command({ operation: "list" });
   drawList();

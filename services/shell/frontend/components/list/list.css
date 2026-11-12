@@ -613,11 +613,11 @@
   min-width: 0;
 }
 
-.data-list-layout-dialog td:last-child {
+.data-list-layout-dialog .data-list:not(.layout-fields-table) td:last-child {
   white-space: nowrap;
 }
 
-.data-list-layout-dialog th:last-child {
+.data-list-layout-dialog .data-list:not(.layout-fields-table) th:last-child {
   width: 6rem;
   font-size: 0;
 }
@@ -631,8 +631,8 @@
     padding: 24px 12px 16px;
   }
 
-  .data-list-layout-dialog :is(th, td):nth-child(2),
-  .data-list-layout-dialog :is(th, td):nth-child(3) {
+  .data-list-layout-dialog .data-list:not(.layout-fields-table) :is(th, td):nth-child(2),
+  .data-list-layout-dialog .data-list:not(.layout-fields-table) :is(th, td):nth-child(3) {
     display: none;
   }
 
@@ -642,4 +642,43 @@
     color: var(--muted);
     font-size: 0.75rem;
   }
+}
+
+.data-list-layout-dialog .layout-fields-table {
+  min-width: 42rem;
+}
+
+.layout-fields-table :is(th, td) {
+  padding-inline: 7px;
+}
+
+.layout-fields-table :is(th, td):nth-child(1) {
+  width: 22%;
+}
+
+.layout-fields-table :is(th, td):nth-child(2) {
+  width: 4.5rem;
+}
+
+.layout-fields-table :is(th, td):nth-child(3) {
+  width: 5rem;
+  white-space: nowrap;
+}
+
+.layout-fields-table :is(th, td):nth-child(5) {
+  width: 10rem;
+}
+
+.layout-fields-table .field {
+  display: block;
+}
+
+.layout-fields-table .field :is(input:not([type="checkbox"]), select),
+.layout-fields-table .field-input-shell {
+  height: var(--list-row-height);
+  min-height: var(--list-row-height);
+}
+
+.layout-fields-table .data-list-cell-value {
+  padding: 0;
 }

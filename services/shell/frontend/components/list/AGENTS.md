@@ -33,8 +33,11 @@ Parent DOX: [shell frontend](../../AGENTS.md).
 
 - List tools stays collapsed initially. Its layout button sits beside export.
   Column menus offer Hide column (retain at least one) and Show all columns; the
-  editor reuses the shared UUI renderer, cards, fields, actions and responsive
-  header overflow; its list reuses ordinary table geometry. It restores
+  editor reuses the shared UUI renderer, fields, actions and responsive header
+  overflow. Its fields form one compact row per column with label, visibility,
+  up/down, typed filter and per-column sort; narrow screens retain the table
+  with ordinary horizontal scrolling and full-label overflow help. Bind edits to
+  stable available-column identities while reordering rows. It restores
   individual hidden columns and moves them with accessible up/down buttons.
   Sorting is column-only, with no all-columns selector. Defaults are described
   as for me/ everyone; unchecking and saving clears a default without deleting
