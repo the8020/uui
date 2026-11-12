@@ -316,6 +316,14 @@ export async function verifySelection(page: Browser) {
     }.querySelector('.selection-more').getBoundingClientRect();return b.right<=innerWidth && b.width>0;})()`,
   );
   assert(fits, "overflow remains clickable on mobile");
+  assert(
+    await page.evaluate<boolean>(
+      `Array.from(${
+        field("ids")
+      }.querySelectorAll('.field-tag:not(.selection-more)')).every(token=>token.scrollWidth<=token.clientWidth+1)`,
+    ),
+    "short value tokens stay readable on mobile",
+  );
   await page.command("Emulation.setDeviceMetricsOverride", {
     width: 1280,
     height: 1000,

@@ -16,7 +16,9 @@ export function selectionLabel(item: Selection): string {
   };
   const value = item.low === null ? "∅" : String(item.low);
   return `${item.sign === "E" ? "− " : ""}${
-    item.option === "BT"
+    item.option === "EQ"
+      ? value
+      : item.option === "BT"
       ? `${value} … ${item.high}`
       : `${operators[item.option]} ${value}`
   }`;
