@@ -39,12 +39,13 @@ const rows = await selected.orderBy("o.id").execute();
 Use trusted, qualified column references from program code. Repeated calls AND
 multiple fields. Bound JSON sets handle thousands of equality values without
 thousands of SQL parameters. The field shows four tokens plus an exact overflow
-count; its pencil, F1/F4, tokens and overflow open the ordinary paged editor.
-Done commits; Close/Escape cancel. Value help supports multiple rows across
-pages and commits only to the editor's draft until its outer Done.
+count. Type simple values directly and use Enter or blur to commit them; tokens
+can be removed directly. Its pencil, F1/F4 and overflow open the ordinary paged
+editor. Done commits; Close/Escape cancel. Value help supports multiple rows
+across pages and commits only to the editor's draft until its outer Done.
 
-Open **Operations → Selections** for a database-backed report with examples,
-5,000 values and standard personal/shared list layouts. See
+Open **Demos → Selections** for a database-backed report with examples, 5,000
+values and standard personal/shared list layouts. See
 `programs/selection-demo/program.ts` for the complete integration.
 
 ## System branding
