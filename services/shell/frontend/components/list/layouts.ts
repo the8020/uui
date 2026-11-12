@@ -1,15 +1,28 @@
 import { t } from "../../i18n.ts";
 import {
   emptyListQuery,
+  initialElementState,
   MAX_LIST_QUERY_LENGTH,
   type ScreenListSnapshot,
 } from "../../../../../screen_state.ts";
 import {
+  emptyLayouts,
   type LayoutCatalog,
   type LayoutCommand,
   type ListLayout,
 } from "../../../../../list_layout.ts";
-import { iconButton } from "./tools.ts";
+import type {
+  ControlDescriptor,
+  ScreenAction,
+} from "../../../../../protocol.ts";
+import {
+  disposeFieldMessages,
+  type RenderCallbacks,
+  renderElements,
+  renderScreen,
+} from "../../renderer.ts";
+import { ResponsiveProgramHeader } from "../../responsive_header.ts";
+import { renderIconText } from "../../icon_text.ts";
 
 export interface LayoutCallbacks {
   layout(id: string, layout: ListLayout): boolean;
@@ -20,7 +33,7 @@ export interface LayoutCallbacks {
   ): Promise<LayoutCatalog>;
 }
 
-/** Edits only the columns offered by this list; query syntax stays list-owned. */
+/** A catalog first, then an isolated draft using the ordinary UUI renderer. */
 export async function layoutEditor(
   snapshot: ScreenListSnapshot,
   callbacks: LayoutCallbacks,
@@ -29,300 +42,495 @@ export async function layoutEditor(
   signal: AbortSignal,
 ): Promise<void> {
   const available = snapshot.availableColumns ?? snapshot.columns;
-  let draft: ListLayout = {
+  const current = {
     columns: snapshot.columns.map((column) => column.key),
     query: structuredClone(snapshot.state.query),
   };
-  let order = [
-    ...draft.columns,
-    ...available.map((column) => column.key).filter((key) =>
-      !draft.columns.includes(key)
-    ),
-  ];
-  let catalog: LayoutCatalog | undefined;
-  const saved = document.createElement("select");
-  saved.setAttribute("aria-label", t("layouts.saved"));
-  const name = document.createElement("input");
-  name.maxLength = 80;
-  name.setAttribute("aria-label", t("layouts.name"));
-  name.placeholder = t("layouts.name");
-  const shared = document.createElement("input");
-  shared.type = "checkbox";
-  shared.setAttribute("aria-label", t("layouts.shared"));
-  const stored = document.createElement("div");
-  const editor = document.createElement("div");
-  const actions = document.createElement("div");
-  actions.className = "data-list-layout-actions";
-  const status = document.createElement("output");
-  status.setAttribute("role", "status");
-  body.append(stored, editor, actions, status);
-  const button = (label: string, run: () => void) => {
-    const control = document.createElement("button");
-    control.type = "button";
-    control.className = "btn btn-sm";
-    control.textContent = label;
-    control.addEventListener("click", run);
-    return control;
+  const builtin = {
+    columns: available.map((column) => column.key),
+    query: structuredClone(snapshot.state.builtInQuery ?? emptyListQuery()),
   };
-  const apply = button(t("layouts.apply"), () => {
-    if (callbacks.layout(snapshot.id, draft)) dialog.close();
-  });
-  const draw = () => {
-    editor.replaceChildren();
-    apply.disabled = draft.columns.length === 0;
-    const search = document.createElement("input");
-    search.type = "search";
-    search.maxLength = MAX_LIST_QUERY_LENGTH;
-    search.setAttribute("aria-label", t("shell.searchList"));
-    search.placeholder = t("lists.search");
-    search.value = draft.query.search;
-    search.addEventListener("input", () => draft.query.search = search.value);
-    const sort = document.createElement("select");
-    sort.setAttribute("aria-label", t("lists.sort"));
-    sort.append(new Option(t("layouts.noSort"), ""));
-    const sorts = available.flatMap((column) =>
-      ["asc", "desc"].map((direction) => ({
-        column,
-        direction: direction as "asc" | "desc",
-      }))
-    );
-    sorts.forEach(({ column, direction }, i) => {
-      sort.append(
-        new Option(
-          `${column.heading} · ${
-            t(direction === "asc" ? "lists.ascending" : "lists.descending")
-          }`,
-          String(i),
-        ),
-      );
-      if (
-        draft.query.sort?.column === column.key &&
-        draft.query.sort.direction === direction
-      ) sort.value = String(i);
-    });
-    sort.addEventListener("change", () => {
-      const selected = sort.value === ""
-        ? undefined
-        : sorts[Number(sort.value)];
-      draft.query.sort = selected
-        ? { column: selected.column.key, direction: selected.direction }
-        : null;
-    });
-    editor.append(search);
-    if (!snapshot.source?.searchOnly) editor.append(sort);
-    const columns = document.createElement("div");
-    columns.className = "data-list-layout-columns";
-    order.forEach((key, index) => {
-      const column = available.find((column) => column.key === key)!;
-      const row = document.createElement("div");
-      row.className = "data-list-layout-column";
-      const label = document.createElement("label");
-      const visible = document.createElement("input");
-      visible.type = "checkbox";
-      visible.checked = draft.columns.includes(key);
-      visible.setAttribute(
-        "aria-label",
-        `${t("layouts.visible")}: ${column.heading}`,
-      );
-      visible.addEventListener("change", () => {
-        draft.columns = order.filter((key) =>
-          key === column.key ? visible.checked : draft.columns.includes(key)
-        );
-        apply.disabled = draft.columns.length === 0;
-      });
-      label.append(visible, document.createTextNode(column.heading));
-      row.append(label);
-      for (
-        const [delta, icon, key] of [[-1, "arrow_upward", "layouts.up"], [
-          1,
-          "arrow_downward",
-          "layouts.down",
-        ]] as const
-      ) {
-        const move = iconButton(`${t(key)}: ${column.heading}`, icon, () => {
-          [order[index], order[index + delta]] = [
-            order[index + delta]!,
-            order[index]!,
-          ];
-          draft.columns = order.filter((key) => draft.columns.includes(key));
-          draw();
-          columns.querySelector<HTMLElement>(
-            `[data-position="${index + delta}"] button`,
-          )?.focus();
-        });
-        move.disabled = index + delta < 0 || index + delta >= order.length;
-        row.append(move);
+  let catalog: LayoutCatalog = {
+    personal: emptyLayouts(),
+    global: emptyLayouts(),
+    canManageGlobal: false,
+  };
+  let detail = false;
+  let draft: ListLayout;
+  let order: string[];
+  let name = "";
+  let shared = false;
+  let isDefault = false;
+  let original: { name: string; global: boolean } | undefined;
+  const toolbar = dialog.querySelector<HTMLElement>(".uui-dialog-toolbar")!;
+  const heading = toolbar.querySelector<HTMLElement>(".uui-dialog-title")!;
+  const header = document.createElement("div");
+  header.className = "program-header";
+  const visible = document.createElement("div");
+  visible.className = "program-header-visible";
+  const overflow = document.createElement("details");
+  overflow.className = "program-header-overflow";
+  const toggle = document.createElement("summary");
+  toggle.className = "btn btn-ghost btn-sm program-header-overflow-toggle";
+  toggle.setAttribute("aria-label", t("shell.moreListControls"));
+  renderIconText(toggle, "[[icon=more_vert]]");
+  const items = document.createElement("div");
+  items.className = "program-header-overflow-items";
+  overflow.append(toggle, items);
+  header.append(visible, overflow);
+  toolbar.insertBefore(header, toolbar.lastElementChild);
+  const responsive = new ResponsiveProgramHeader(
+    header,
+    visible,
+    overflow,
+    items,
+  );
+  const status = dialog.querySelector<HTMLElement>(".data-list-status")!;
+  const renderCallbacks: RenderCallbacks = {
+    changed(bind, value) {
+      if (bind === "name") name = String(value);
+      else if (bind === "shared") {
+        shared = Boolean(value);
+        isDefault =
+          catalog[shared ? "global" : "personal"].defaultName === name;
+        drawDetail();
+        body.querySelector<HTMLInputElement>('[data-bind="shared"]')?.focus();
+      } else if (bind === "default") isDefault = Boolean(value);
+      else if (bind === "search") {
+        draft.query.search = String(value);
+      } else {
+        const [, position, property] = bind.split(".");
+        const key = order[Number(position)]!;
+        if (property === "visible") {
+          draft.columns = order.filter((column) =>
+            column === key ? value : draft.columns.includes(column)
+          );
+          updateApply();
+        } else if (property === "filter") {
+          if (value) {
+            draft.query.filters[key] = String(value).slice(
+              0,
+              MAX_LIST_QUERY_LENGTH,
+            );
+          } else delete draft.query.filters[key];
+        } else if (property === "sort") {
+          if (value === "") {
+            if (draft.query.sort?.column === key) draft.query.sort = null;
+          } else {draft.query.sort = {
+              column: key,
+              direction: value as "asc" | "desc",
+            };}
+          drawDetail();
+          Array.from(body.querySelectorAll<HTMLElement>("[data-bind]")).find((
+            field,
+          ) => field.dataset.bind === bind)?.focus();
+        }
       }
-      row.dataset.position = String(index);
-      if (!snapshot.source?.searchOnly) {
-        const filter = document.createElement("input");
-        filter.maxLength = MAX_LIST_QUERY_LENGTH;
-        filter.setAttribute(
-          "aria-label",
-          t("lists.filter_column", { column: column.heading }),
-        );
-        filter.placeholder = t("lists.filter_column", {
-          column: column.heading,
-        });
-        filter.value = draft.query.filters[key] ?? "";
-        filter.addEventListener("input", () => {
-          if (filter.value) draft.query.filters[key] = filter.value;
-          else delete draft.query.filters[key];
-        });
-        row.append(filter);
+    },
+    help() {},
+    action(id) {
+      if (id === "back" || id === "cancel") drawList();
+      else if (id === "new") open(current);
+      else if (id === "apply") apply(draft);
+      else if (id === "save") execute(save);
+      else {
+        const [direction, position] = id.split(":");
+        const index = Number(position);
+        const next = index + (direction === "up" ? -1 : 1);
+        if (next < 0 || next >= order.length) return;
+        [order[index], order[next]] = [order[next]!, order[index]!];
+        draft.columns = order.filter((key) => draft.columns.includes(key));
+        drawDetail();
+        body.querySelector<HTMLElement>(
+          `[data-element-id="${direction}:${next}"]`,
+        )?.focus();
       }
-      columns.append(row);
-    });
-    editor.append(columns);
+    },
+    list: () => document.createElement("div"),
+    custom: () => document.createElement("div"),
+    elementState: initialElementState,
   };
-  const selected = () => {
-    if (!catalog || !saved.value) return undefined;
-    const [scope, ...rest] = JSON.parse(saved.value) as [
-      "personal" | "global",
-      string,
-    ];
-    const name = rest[0]!;
-    return {
-      global: scope === "global",
-      name,
-      layout: catalog[scope].variants[name]!,
-    };
-  };
-  let updatePermissions = () => {};
-  const refresh = (value: LayoutCatalog) => {
-    catalog = value;
-    const previous = saved.value;
-    saved.replaceChildren(new Option(t("layouts.saved"), ""));
-    for (const scope of ["personal", "global"] as const) {
-      for (const name of Object.keys(value[scope].variants).sort()) {
-        const suffix = value[scope].defaultName === name
-          ? ` · ${t("layouts.default")}`
-          : "";
-        saved.append(
-          new Option(
-            `${name} · ${
-              t(scope === "global" ? "layouts.shared" : "layouts.personal")
-            }${suffix}`,
-            JSON.stringify([scope, name]),
-          ),
-        );
-      }
-    }
-    saved.value = previous;
-    shared.disabled = !value.canManageGlobal;
-    updatePermissions();
-  };
-  const command = async (value: LayoutCommand) => {
-    stored.inert = true;
-    try {
-      refresh(await callbacks.layouts(snapshot.id, value, signal));
-    } finally {
-      stored.inert = false;
-    }
+  const actions = (values: ScreenAction[]) => {
+    const controls = renderElements(values, {}, renderCallbacks);
+    controls.forEach((control) => control.classList.add("program-header-item"));
+    responsive.render(controls);
   };
   const execute = (run: () => Promise<void>) => {
+    if (body.inert) return;
+    body.inert = header.inert = true;
+    status.hidden = true;
     void run().catch((error) => {
       if (!signal.aborted) {
         status.textContent = error instanceof Error
           ? error.message
           : String(error);
+        status.hidden = false;
       }
+    }).finally(() => body.inert = header.inert = false);
+  };
+  const command = async (value: LayoutCommand) => {
+    catalog = await callbacks.layouts(snapshot.id, value, signal);
+  };
+  const apply = (layout: ListLayout) => {
+    if (callbacks.layout(snapshot.id, layout)) dialog.close();
+  };
+  const updateApply = () => {
+    header.querySelectorAll<HTMLButtonElement>(
+      '[data-element-id="apply"], [data-element-id="save"]',
+    ).forEach((button) => button.disabled = draft.columns.length === 0);
+  };
+  const save = async () => {
+    const trimmed = name.trim();
+    await command({
+      operation: "save",
+      name: trimmed,
+      global: shared,
+      layout: draft,
+    });
+    const scope = shared ? "global" : "personal";
+    if (isDefault || catalog[scope].defaultName === trimmed) {
+      await command({
+        operation: "default",
+        global: shared,
+        name: isDefault ? trimmed : null,
+      });
+    }
+    drawList();
+    Array.from(body.querySelectorAll<HTMLElement>("[data-layout-name]")).find((
+      row,
+    ) =>
+      row.dataset.layoutName === trimmed &&
+      row.dataset.global === String(shared)
+    )?.querySelector<HTMLElement>("button")?.focus();
+  };
+  const open = (
+    layout: ListLayout,
+    item?: { name: string; global: boolean },
+  ) => {
+    detail = true;
+    original = item;
+    draft = structuredClone(layout);
+    order = [
+      ...draft.columns,
+      ...available.map((column) => column.key).filter((key) =>
+        !draft.columns.includes(key)
+      ),
+    ];
+    name = item?.name ?? "";
+    shared = !!item?.global && catalog.canManageGlobal;
+    isDefault = !!item && item.global === shared &&
+      catalog[shared ? "global" : "personal"].defaultName === name;
+    drawDetail();
+    body.scrollTop = 0;
+    body.querySelector<HTMLInputElement>('input[data-bind="name"]')?.focus({
+      preventScroll: true,
     });
   };
-  actions.append(
-    apply,
-    button(t("layouts.builtin"), () => {
-      draft = {
-        columns: available.map((column) => column.key),
-        query: structuredClone(snapshot.state.builtInQuery ?? emptyListQuery()),
+  const drawDetail = () => {
+    detail = true;
+    heading.textContent = original
+      ? `${original.name} · ${
+        t(original.global ? "layouts.shared" : "layouts.personal")
+      }`
+      : t("shell.new");
+    actions([
+      { id: "back", label: `[[icon=arrow_back]] ${t("shell.back")}` },
+      ...(snapshot.layouts
+        ? [{ id: "save", label: t("layouts.save"), kind: "primary" as const }]
+        : []),
+      {
+        id: "apply",
+        label: t("layouts.apply"),
+        kind: snapshot.layouts ? "secondary" : "primary",
+      },
+      { id: "cancel", label: t("layouts.cancel") },
+    ]);
+    const model: Record<string, unknown> = {
+      name,
+      shared,
+      default: isDefault,
+      search: draft.query.search,
+      columns: {},
+    };
+    const controls: ControlDescriptor[] = [
+      {
+        id: "name",
+        bind: "name",
+        label: t("layouts.name"),
+        control: "text",
+        length: "long",
+        fieldHelp: false,
+        required: true,
+      },
+      {
+        id: "shared",
+        bind: "shared",
+        label: t("layouts.shared"),
+        control: "checkbox",
+        length: "short",
+        fieldHelp: false,
+        readOnly: !catalog.canManageGlobal,
+      },
+      {
+        id: "default",
+        bind: "default",
+        label: t(shared ? "layouts.defaultEveryone" : "layouts.defaultMe"),
+        control: "checkbox",
+        length: "full",
+        fieldHelp: false,
+      },
+      {
+        id: "search",
+        bind: "search",
+        label: t("shell.searchList"),
+        control: "text",
+        length: "full",
+        fieldHelp: false,
+      },
+    ];
+    const columns = order.map((key, index) => {
+      const column = available.find((column) => column.key === key)!;
+      const bind = `columns.${index}`;
+      (model.columns as Record<string, unknown>)[index] = {
+        visible: draft.columns.includes(key),
+        filter: draft.query.filters[key] ?? "",
+        sort: draft.query.sort?.column === key
+          ? draft.query.sort.direction
+          : "",
       };
-      order = [...draft.columns];
-      draw();
-    }),
-  );
-  draw();
-  if (snapshot.layouts) {
-    const sharedLabel = document.createElement("label");
-    sharedLabel.append(shared, document.createTextNode(t("layouts.shared")));
-    saved.addEventListener("change", () => {
-      const item = selected();
-      if (!item) return;
-      draft = structuredClone(item.layout);
-      order = [
-        ...draft.columns,
-        ...available.map((column) => column.key).filter((key) =>
-          !draft.columns.includes(key)
-        ),
+      const fields: ControlDescriptor[] = [
+        {
+          id: `${bind}.visible`,
+          bind: `${bind}.visible`,
+          control: "checkbox",
+          label: `${t("layouts.visible")}: ${column.heading}`,
+          length: "full",
+          fieldHelp: false,
+        },
+        ...(!snapshot.source?.searchOnly
+          ? [
+            {
+              id: `${bind}.filter`,
+              bind: `${bind}.filter`,
+              control: "text" as const,
+              label: t("lists.filter_column", { column: column.heading }),
+              length: "full" as const,
+              fieldHelp: false,
+            },
+            {
+              id: `${bind}.sort`,
+              bind: `${bind}.sort`,
+              control: "select" as const,
+              label: `${t("lists.sort")}: ${column.heading}`,
+              length: "full" as const,
+              fieldHelp: false,
+              options: [{ value: "", label: t("layouts.noSort") }, {
+                value: "asc",
+                label: t("lists.ascending"),
+              }, { value: "desc", label: t("lists.descending") }],
+            },
+          ]
+          : []),
       ];
-      name.value = item.name;
-      shared.checked = item.global && !!catalog?.canManageGlobal;
-      draw();
+      controls.push(...fields);
+      return {
+        id: `column-${index}`,
+        type: "field-group" as const,
+        title: column.heading,
+        controls: fields.map((field) => field.id),
+        elements: [
+          {
+            id: `up:${index}`,
+            label: `[[icon=arrow_upward]] ${
+              t("layouts.up")
+            }: ${column.heading}`,
+            class: index === 0 ? "is-unavailable" : undefined,
+          },
+          {
+            id: `down:${index}`,
+            label: `[[icon=arrow_downward]] ${
+              t("layouts.down")
+            }: ${column.heading}`,
+            class: index === order.length - 1 ? "is-unavailable" : undefined,
+          },
+        ],
+      };
     });
-    const save = button(t("layouts.save"), () =>
-      execute(async () => {
-        await command({
-          operation: "save",
-          global: shared.checked,
-          name: name.value.trim(),
-          layout: draft,
-        });
-        saved.value = JSON.stringify([
-          shared.checked ? "global" : "personal",
-          name.value.trim(),
-        ]);
-        updatePermissions();
-      }));
-    const defaultButton = button(
-      t("layouts.setDefault"),
-      () =>
-        execute(async () => {
-          const item = selected();
-          if (item) {
+    renderScreen(
+      body,
+      {
+        id: "layout-detail",
+        title: "",
+        controls,
+        actions: [],
+        customElements: [],
+        layout: {
+          schema: 1,
+          id: "layout-detail",
+          root: {
+            id: "layout-editor",
+            type: "stack",
+            children: [
+              {
+                id: "settings",
+                type: "field-group",
+                title: t("layouts.title"),
+                controls: [
+                  ...(snapshot.layouts ? ["name", "shared", "default"] : []),
+                  "search",
+                ],
+              },
+              { id: "columns", type: "grid", columns: 2, children: columns },
+            ],
+          },
+        },
+      },
+      model,
+      renderCallbacks,
+      { render: () => document.createElement("div") },
+    );
+    body.querySelector(".screen-title")?.remove();
+    body.querySelector<HTMLInputElement>('[data-bind="name"]')?.setAttribute(
+      "maxlength",
+      "80",
+    );
+    body.querySelectorAll<HTMLButtonElement>(".is-unavailable").forEach((
+      button,
+    ) => button.disabled = true);
+    for (const input of body.querySelectorAll<HTMLInputElement>("input")) {
+      if (input.type !== "checkbox") {
+        input.maxLength = input.dataset.bind === "name"
+          ? 80
+          : MAX_LIST_QUERY_LENGTH;
+      }
+      input.id = `layout-${snapshot.id}-${input.id}`;
+      const label = input.closest(".field")?.querySelector("label");
+      if (label) label.htmlFor = input.id;
+    }
+    for (const input of body.querySelectorAll<HTMLSelectElement>("select")) {
+      input.id = `layout-${snapshot.id}-${input.id}`;
+      const label = input.closest(".field")?.querySelector("label");
+      if (label) label.htmlFor = input.id;
+    }
+    updateApply();
+  };
+  const drawList = () => {
+    detail = false;
+    heading.textContent = t("layouts.title");
+    disposeFieldMessages(body);
+    body.replaceChildren();
+    status.hidden = true;
+    actions([{
+      id: "new",
+      label: `[[icon=add]] ${t("shell.new")}`,
+      kind: "primary",
+    }]);
+    const card = document.createElement("div");
+    card.className = "layout-list has-group-title";
+    const title = document.createElement("h2");
+    title.className = "group-title";
+    title.textContent = t("layouts.saved");
+    const container = document.createElement("div");
+    container.className = "data-list-container";
+    const scroll = document.createElement("div");
+    scroll.className = "data-list-scroll";
+    const table = document.createElement("table");
+    table.className = "data-list";
+    table.setAttribute("aria-label", t("layouts.saved"));
+    const head = table.createTHead().insertRow();
+    for (
+      const label of [
+        "layouts.name",
+        "layouts.scope",
+        "layouts.default",
+        "shell.screenActions",
+      ]
+    ) {
+      const th = document.createElement("th");
+      th.scope = "col";
+      th.textContent = t(label);
+      head.append(th);
+    }
+    const rows = table.createTBody();
+    const row = (
+      label: string,
+      layout: ListLayout,
+      item?: { name: string; global: boolean },
+    ) => {
+      const tr = rows.insertRow();
+      tr.dataset.layoutName = label;
+      tr.dataset.global = String(item?.global ?? false);
+      const cell = (text: string) => {
+        const td = tr.insertCell();
+        const value = document.createElement("div");
+        value.className = "data-list-cell-value";
+        value.textContent = text;
+        td.append(value);
+        return td;
+      };
+      const first = cell("");
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "data-list-column-button";
+      edit.textContent = label;
+      edit.addEventListener("click", () => open(layout, item));
+      first.replaceChildren(edit);
+      cell(item ? t(item.global ? "layouts.shared" : "layouts.personal") : "");
+      cell(
+        item &&
+          catalog[item.global ? "global" : "personal"].defaultName === label
+          ? t(item.global ? "layouts.forEveryone" : "layouts.forMe")
+          : "",
+      );
+      const buttons = tr.insertCell();
+      const applyButton = document.createElement("button");
+      applyButton.type = "button";
+      applyButton.className = "button button-secondary";
+      applyButton.textContent = t("layouts.apply");
+      applyButton.addEventListener("click", () => apply(layout));
+      buttons.append(applyButton);
+      if (item && (!item.global || catalog.canManageGlobal)) {
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "button button-danger";
+        remove.textContent = t("layouts.delete");
+        remove.addEventListener("click", () =>
+          execute(async () => {
             await command({
-              operation: "default",
+              operation: "delete",
               global: item.global,
               name: item.name,
             });
-          }
-        }),
-    );
-    const remove = button(t("layouts.delete"), () =>
-      execute(async () => {
-        const item = selected();
-        if (item) {
-          await command({
-            operation: "delete",
-            global: item.global,
-            name: item.name,
-          });
-        }
-      }));
-    updatePermissions = () => {
-      const item = selected();
-      const allowed = !!item && (!item.global || !!catalog?.canManageGlobal);
-      defaultButton.disabled = remove.disabled = !allowed;
+            drawList();
+          }));
+        buttons.append(remove);
+      }
     };
-    saved.addEventListener("change", updatePermissions);
-    const clear = button(
-      t("layouts.clearPersonalDefault"),
-      () =>
-        execute(() =>
-          command({ operation: "default", global: false, name: null })
-        ),
-    );
-    stored.append(saved, defaultButton, remove, name, sharedLabel, save, clear);
-    await command({ operation: "list" });
-    updatePermissions();
-    if (catalog?.canManageGlobal) {
-      stored.append(
-        button(
-          t("layouts.clearGlobalDefault"),
-          () =>
-            execute(() =>
-              command({ operation: "default", global: true, name: null })
-            ),
-        ),
-      );
+    row(t("layouts.builtin"), builtin);
+    for (const scope of ["personal", "global"] as const) {
+      for (const name of Object.keys(catalog[scope].variants).sort()) {
+        row(name, catalog[scope].variants[name]!, {
+          name,
+          global: scope === "global",
+        });
+      }
     }
-  }
+    scroll.append(table);
+    container.append(scroll);
+    card.append(title, container);
+    body.append(card);
+    body.scrollTop = 0;
+    body.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
+  };
+  dialog.addEventListener("cancel", (event) => {
+    if (!detail || body.inert) return;
+    event.preventDefault();
+    drawList();
+  }, { signal });
+  signal.addEventListener("abort", () => {
+    responsive.dispose();
+    disposeFieldMessages(body);
+  }, { once: true });
+  if (snapshot.layouts) await command({ operation: "list" });
+  drawList();
 }

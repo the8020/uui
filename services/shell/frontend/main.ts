@@ -74,6 +74,7 @@ interface FocusState {
   bind?: string;
   selectionStart?: number | null;
   selectionEnd?: number | null;
+  draft?: string;
 }
 
 interface PresentationLayer {
@@ -1804,6 +1805,9 @@ function rememberLayerFocus(
     bind: candidate.dataset.bind,
     selectionStart: selectable ? candidate.selectionStart : undefined,
     selectionEnd: selectable ? candidate.selectionEnd : undefined,
+    draft: selectable && candidate.dataset.tagsInput === "true"
+      ? candidate.value
+      : undefined,
   };
 }
 
@@ -1826,6 +1830,9 @@ function restoreFocus(layer: PresentationLayer): void {
       layer.root.querySelector<HTMLElement>(".screen-title") ?? undefined;
   }
   if (target === undefined) return;
+  if (saved?.draft !== undefined && target instanceof HTMLInputElement) {
+    target.value = saved.draft;
+  }
   target.focus({ preventScroll: true });
   if (
     saved !== undefined &&

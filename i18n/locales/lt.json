@@ -321,6 +321,13 @@
     "selection.clear": "Išvalyti",
     "widgets.selection-demo.title": "Atrankos",
     "widgets.selection-demo.description": "Atrankos",
-    "programs.selection-demo.description": "Atrankos"
+    "programs.selection-demo.description": "Atrankos",
+    "layouts.scope": "Aprėptis",
+    "layouts.cancel": "Atšaukti",
+    "layouts.defaultMe": "Naudoti šį išdėstymą kaip numatytąjį man",
+    "layouts.defaultEveryone": "Naudoti šį išdėstymą kaip numatytąjį visiems",
+    "layouts.forMe": "Man",
+    "layouts.forEveryone": "Visiems",
+    "selection.removeValue": "Pašalinti {value}"
   }
 }

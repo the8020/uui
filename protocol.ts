@@ -332,6 +332,8 @@ export interface FieldDescriptor extends ComponentStyle {
   description?: string;
   control: ControlKind;
   multiple?: FieldMultiple;
+  /** Inline equality entry uses the original scalar type; validation stays server-side. */
+  selectionType?: "number" | "boolean";
   group?: string;
   length: FieldLength;
   rowSpan: number;

@@ -321,6 +321,13 @@
     "selection.clear": "پاک کردن",
     "widgets.selection-demo.title": "انتخاب‌ها",
     "widgets.selection-demo.description": "انتخاب‌ها",
-    "programs.selection-demo.description": "انتخاب‌ها"
+    "programs.selection-demo.description": "انتخاب‌ها",
+    "layouts.scope": "دامنه",
+    "layouts.cancel": "لغو",
+    "layouts.defaultMe": "استفاده از این چیدمان به‌عنوان پیش‌فرض من",
+    "layouts.defaultEveryone": "استفاده از این چیدمان به‌عنوان پیش‌فرض همه",
+    "layouts.forMe": "برای من",
+    "layouts.forEveryone": "برای همه",
+    "selection.removeValue": "حذف {value}"
   }
 }

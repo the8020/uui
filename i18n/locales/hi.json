@@ -321,6 +321,13 @@
     "selection.clear": "साफ़ करें",
     "widgets.selection-demo.title": "चयन",
     "widgets.selection-demo.description": "चयन",
-    "programs.selection-demo.description": "चयन"
+    "programs.selection-demo.description": "चयन",
+    "layouts.scope": "दायरा",
+    "layouts.cancel": "रद्द करें",
+    "layouts.defaultMe": "मेरे लिए इस लेआउट को डिफ़ॉल्ट बनाएं",
+    "layouts.defaultEveryone": "सभी के लिए इस लेआउट को डिफ़ॉल्ट बनाएं",
+    "layouts.forMe": "मेरे लिए",
+    "layouts.forEveryone": "सभी के लिए",
+    "selection.removeValue": "{value} हटाएं"
   }
 }

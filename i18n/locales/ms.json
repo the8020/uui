@@ -321,6 +321,13 @@
     "selection.clear": "Kosongkan",
     "widgets.selection-demo.title": "Pilihan",
     "widgets.selection-demo.description": "Pilihan",
-    "programs.selection-demo.description": "Pilihan"
+    "programs.selection-demo.description": "Pilihan",
+    "layouts.scope": "Skop",
+    "layouts.cancel": "Batal",
+    "layouts.defaultMe": "Gunakan susun atur ini sebagai lalai saya",
+    "layouts.defaultEveryone": "Gunakan susun atur ini sebagai lalai semua orang",
+    "layouts.forMe": "Untuk saya",
+    "layouts.forEveryone": "Untuk semua orang",
+    "selection.removeValue": "Alih keluar {value}"
   }
 }

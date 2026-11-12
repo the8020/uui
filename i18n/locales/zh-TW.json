@@ -321,6 +321,13 @@
     "selection.clear": "清除",
     "widgets.selection-demo.title": "選取條件",
     "widgets.selection-demo.description": "選取條件",
-    "programs.selection-demo.description": "選取條件"
+    "programs.selection-demo.description": "選取條件",
+    "layouts.scope": "範圍",
+    "layouts.cancel": "取消",
+    "layouts.defaultMe": "將此版面配置用作我的預設",
+    "layouts.defaultEveryone": "將此版面配置用作所有人的預設",
+    "layouts.forMe": "為我",
+    "layouts.forEveryone": "為所有人",
+    "selection.removeValue": "移除{value}"
   }
 }

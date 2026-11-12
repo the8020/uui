@@ -321,6 +321,13 @@
     "selection.clear": "Törlés",
     "widgets.selection-demo.title": "Kiválasztások",
     "widgets.selection-demo.description": "Kiválasztások",
-    "programs.selection-demo.description": "Kiválasztások"
+    "programs.selection-demo.description": "Kiválasztások",
+    "layouts.scope": "Hatókör",
+    "layouts.cancel": "Mégse",
+    "layouts.defaultMe": "Ez az elrendezés legyen az alapértelmezett számomra",
+    "layouts.defaultEveryone": "Ez az elrendezés legyen az alapértelmezett mindenkinek",
+    "layouts.forMe": "Számomra",
+    "layouts.forEveryone": "Mindenkinek",
+    "selection.removeValue": "{value} eltávolítása"
   }
 }

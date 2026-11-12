@@ -13,8 +13,10 @@ Parent DOX: [shell frontend](../../AGENTS.md).
   its search `data-autofocus` for the modal's first focus).
 - `list_geometry.ts` owns measured UUI capacity and column widths.
 - `page_size.ts` owns the browser-only rows-per-page choice.
-- `layouts.ts` owns the native layout editor: visibility and order, ordinary
-  typed queries, private/shared save/load/delete and independent defaults. It
+- `layouts.ts` owns a saved-layout list followed by an isolated detail/editor:
+  visibility/order, per-column typed filters/sort, private/shared
+  save/load/delete and contextual default checkboxes committed with Save.
+  Back/Cancel discard the detail draft; Apply uses its ordinary list query. It
   consumes only the columns offered by the list; backend checks own authority.
 - `tools.ts` owns the expanded toolbar, native dialogs, spreadsheet lifecycle,
   export options, and clipboard writes. `data.ts` owns list result validation
@@ -31,9 +33,13 @@ Parent DOX: [shell frontend](../../AGENTS.md).
 
 - List tools stays collapsed initially. Its layout button sits beside export.
   Column menus offer Hide column (retain at least one) and Show all columns; the
-  editor restores individual hidden columns and moves them with accessible
-  up/down buttons. Applying uses the ordinary atomic list update. Displayed
-  columns also govern copy/export and the spreadsheet viewer.
+  editor reuses the shared UUI renderer, cards, fields, actions and responsive
+  header overflow; its list reuses ordinary table geometry. It restores
+  individual hidden columns and moves them with accessible up/down buttons.
+  Sorting is column-only, with no all-columns selector. Defaults are described
+  as for me/ everyone; unchecking and saving clears a default without deleting
+  the variant. Applying uses the ordinary atomic list update. Displayed columns
+  also govern copy/export and the spreadsheet viewer.
 
 - List chrome uses the shell formatter. Server-provided headings/help are
   already resolved; list values remain application data.

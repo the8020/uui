@@ -197,6 +197,9 @@ below.
 
 # Ownership
 
+- The List layouts and Selections examples belong to the established `demos`
+  Home category. Keep their program, screen and list identities stable so saved
+  variants/defaults survive navigation changes.
 - `widgets/` declares this package's Home tiles and categories through the
   `the8020/packages/widgets.ts` format; the Sessions tile is visible with
   `the8020.uui.session.view`.
@@ -577,12 +580,15 @@ below.
   shared 80|20 Deno workspace supplies platform imports for checks and browser
   builds.
 - Layouts are serializable data without executable code. Shared list variants
-  store displayed column paths/order and the ordinary search/filter/sort query
-  in UUI-owned storage. Defaults resolve personal, shared, then built-in;
-  existing Models retain their applied layout through refresh and navigation.
-  Empty dynamic column contracts defer default initialization. Changing a
-  retained list's effective identity resets its list state before loading that
-  identity's default; same-identity calls preserve the applied layout.
+  use a saved-layout list followed by an isolated detail/editor with ordinary
+  UUI styling and contextual default settings. Sorting is edited only at each
+  column. Variants store displayed column paths/order and the ordinary
+  search/filter/sort query in UUI-owned storage. Defaults resolve personal,
+  shared, then built-in; existing Models retain their applied layout through
+  refresh and navigation. Empty dynamic column contracts defer default
+  initialization. Changing a retained list's effective identity resets its list
+  state before loading that identity's default; same-identity calls preserve the
+  applied layout.
 - List identity combines the caller source path (without line), screen ID, list
   ID and binding. A dynamic list supplies `layoutKey` for its business identity;
   field-help choices include their caller and field binding. Columns use stable
@@ -756,10 +762,13 @@ below.
   that draft. Field-level providers/options also reach the scalar lookup; an
   absent optional selection opens an empty draft, Cancel preserves absence and
   Done commits the validated array. The browser's `selection.ts` creates at most
-  four criterion tokens and one accurate overflow button; both overflow and
-  ordinary help open the complete editor. The lookup hides its full draft value
-  to avoid materializing thousands of tags. Query semantics and validation
-  belong to `the8020/db/selection.ts` and `selection_query.ts`, not UUI.
+  four removable criterion tokens and one accurate overflow button. Editable
+  fields accept repeated typed inclusion/equality values on Enter or blur, using
+  the original scalar type and ordinary validation; clicking the body focuses
+  typing. Explicit overflow and ordinary help open the complete editor. The
+  lookup hides its full draft value to avoid materializing thousands of tags.
+  Query semantics and validation belong to `the8020/db/selection.ts` and
+  `selection_query.ts`, not UUI.
 - Fields holding several values default to the `tags` control: separated text,
   and arrays whose element has value help or enum options (other scalar arrays
   stay lists unless `control: "tags"`). `FieldDescriptor.multiple` carries the

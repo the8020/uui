@@ -3,6 +3,7 @@ import { field as semanticField, z } from "/p/the8020/db/fields.ts";
 import { type Selection, selectionElement } from "/p/the8020/db/selection.ts";
 import { buildControls, buildFieldCatalog, field } from "./fields.ts";
 import { valueHelpFor } from "./field_help.ts";
+import { selectionInputValue } from "./services/shell/frontend/selection.ts";
 
 Deno.test("selection opt-in preserves a provider declared on the same field", () => {
   const provider = () => ({
@@ -84,5 +85,27 @@ Deno.test("opt-in selections retain scalar meaning/help and validate binding wit
   assertEquals(
     buildFieldCatalog(z.object({ scalar: slider }))[0]!.control,
     "range",
+  );
+});
+
+Deno.test("inline selection entry retains semantic primitives and invalid drafts for server validation", () => {
+  assertEquals(selectionInputValue("42", "number"), 42);
+  assertEquals(selectionInputValue("invalid", "number"), "invalid");
+  assertEquals(selectionInputValue("Infinity", "number"), "Infinity");
+  assertEquals(selectionInputValue("true", "boolean"), true);
+  assertEquals(selectionInputValue("FALSE", "boolean"), false);
+  assertEquals(selectionInputValue("invalid", "boolean"), "invalid");
+  assertEquals(selectionInputValue("0001.20", undefined), "0001.20");
+  assertEquals(selectionInputValue("  a,b  ", undefined), "  a,b  ");
+  const controls = buildFieldCatalog(z.object({
+    number: field(z.number(), { selection: true }),
+    boolean: field(z.boolean(), { selection: true }).optional(),
+    text: field(z.string(), { selection: true }),
+  }));
+  assertEquals(
+    Object.fromEntries(
+      controls.map((control) => [control.bind, control.selectionType]),
+    ),
+    { number: "number", boolean: "boolean", text: undefined },
   );
 });

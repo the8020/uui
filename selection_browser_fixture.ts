@@ -79,6 +79,73 @@ export async function verifySelection(page: Browser) {
     await ready();
   };
   await wait(`!!${list("results")}?.querySelector('tbody tr')`);
+  // Click/type/Enter and blur/Run use the ordinary field commit, without help.
+  const inline = `${field("ids")}.querySelector('input')`;
+  await click(inline);
+  assertEquals(
+    await page.evaluate("document.querySelectorAll('dialog[open]').length"),
+    0,
+  );
+  for (const value of ["5", "10"]) {
+    await page.command("Input.insertText", { text: value });
+    await page.command("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      key: "Enter",
+      code: "Enter",
+      windowsVirtualKeyCode: 13,
+    });
+    await page.command("Input.dispatchKeyEvent", {
+      type: "keyUp",
+      key: "Enter",
+      code: "Enter",
+      windowsVirtualKeyCode: 13,
+    });
+  }
+  assertEquals(
+    await page.evaluate(
+      `${field("ids")}.querySelectorAll('.field-tag').length`,
+    ),
+    2,
+  );
+  assertEquals(
+    await page.evaluate("document.querySelectorAll('dialog[open]').length"),
+    0,
+  );
+  await click(button("execute"));
+  await wait(
+    `${
+      list("results")
+    }.querySelectorAll('tbody tr').length===2 && !document.querySelector('#screen-back').disabled`,
+  );
+  assertEquals(
+    await page.evaluate(
+      `Array.from(${
+        list("results")
+      }.querySelectorAll('tbody tr td:first-child .overflow-text-content')).map(e=>e.textContent)`,
+    ),
+    ["5", "10"],
+  );
+  await click(`${field("ids")}.querySelector('.field-tag-remove')`);
+  await click(inline);
+  await page.command("Input.insertText", { text: "20" });
+  await click(button("execute"));
+  await wait(
+    `${
+      list("results")
+    }.querySelector('tbody tr')?.textContent.includes('0010') && !document.querySelector('#screen-back').disabled`,
+  );
+  assertEquals(
+    await page.evaluate(
+      `${field("ids")}.querySelectorAll('.field-tag').length`,
+    ),
+    2,
+  );
+  assertEquals(
+    await page.evaluate("document.querySelectorAll('dialog[open]').length"),
+    0,
+  );
+  await click(button("clear"));
+  await ready();
   await click(button("examples"));
   await wait(
     `${

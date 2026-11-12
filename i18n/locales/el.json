@@ -321,6 +321,13 @@
     "selection.clear": "Εκκαθάριση",
     "widgets.selection-demo.title": "Επιλογές",
     "widgets.selection-demo.description": "Επιλογές",
-    "programs.selection-demo.description": "Επιλογές"
+    "programs.selection-demo.description": "Επιλογές",
+    "layouts.scope": "Εμβέλεια",
+    "layouts.cancel": "Ακύρωση",
+    "layouts.defaultMe": "Χρήση αυτής της διάταξης ως προεπιλογής για μένα",
+    "layouts.defaultEveryone": "Χρήση αυτής της διάταξης ως προεπιλογής για όλους",
+    "layouts.forMe": "Για μένα",
+    "layouts.forEveryone": "Για όλους",
+    "selection.removeValue": "Αφαίρεση {value}"
   }
 }

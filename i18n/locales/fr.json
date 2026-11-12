@@ -321,6 +321,13 @@
     "selection.clear": "Effacer",
     "widgets.selection-demo.title": "Sélections",
     "widgets.selection-demo.description": "Sélections",
-    "programs.selection-demo.description": "Sélections"
+    "programs.selection-demo.description": "Sélections",
+    "layouts.scope": "Portée",
+    "layouts.cancel": "Annuler",
+    "layouts.defaultMe": "Utiliser cette disposition par défaut pour moi",
+    "layouts.defaultEveryone": "Utiliser cette disposition par défaut pour tous",
+    "layouts.forMe": "Pour moi",
+    "layouts.forEveryone": "Pour tous",
+    "selection.removeValue": "Retirer {value}"
   }
 }

@@ -321,6 +321,13 @@
     "selection.clear": "Изчистване",
     "widgets.selection-demo.title": "Избори",
     "widgets.selection-demo.description": "Избори",
-    "programs.selection-demo.description": "Избори"
+    "programs.selection-demo.description": "Избори",
+    "layouts.scope": "Обхват",
+    "layouts.cancel": "Отказ",
+    "layouts.defaultMe": "Използвай това оформление по подразбиране за мен",
+    "layouts.defaultEveryone": "Използвай това оформление по подразбиране за всички",
+    "layouts.forMe": "За мен",
+    "layouts.forEveryone": "За всички",
+    "selection.removeValue": "Премахване на {value}"
   }
 }

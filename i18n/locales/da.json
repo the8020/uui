@@ -321,6 +321,13 @@
     "selection.clear": "Ryd",
     "widgets.selection-demo.title": "Udvalg",
     "widgets.selection-demo.description": "Udvalg",
-    "programs.selection-demo.description": "Udvalg"
+    "programs.selection-demo.description": "Udvalg",
+    "layouts.scope": "Omfang",
+    "layouts.cancel": "Annuller",
+    "layouts.defaultMe": "Brug dette layout som standard for mig",
+    "layouts.defaultEveryone": "Brug dette layout som standard for alle",
+    "layouts.forMe": "For mig",
+    "layouts.forEveryone": "For alle",
+    "selection.removeValue": "Fjern {value}"
   }
 }

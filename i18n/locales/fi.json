@@ -321,6 +321,13 @@
     "selection.clear": "Tyhjennä",
     "widgets.selection-demo.title": "Valinnat",
     "widgets.selection-demo.description": "Valinnat",
-    "programs.selection-demo.description": "Valinnat"
+    "programs.selection-demo.description": "Valinnat",
+    "layouts.scope": "Laajuus",
+    "layouts.cancel": "Peruuta",
+    "layouts.defaultMe": "Käytä tätä asettelua oletuksena minulle",
+    "layouts.defaultEveryone": "Käytä tätä asettelua oletuksena kaikille",
+    "layouts.forMe": "Minulle",
+    "layouts.forEveryone": "Kaikille",
+    "selection.removeValue": "Poista {value}"
   }
 }

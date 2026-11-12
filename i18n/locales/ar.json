@@ -321,6 +321,13 @@
     "selection.clear": "مسح",
     "widgets.selection-demo.title": "التحديدات",
     "widgets.selection-demo.description": "التحديدات",
-    "programs.selection-demo.description": "التحديدات"
+    "programs.selection-demo.description": "التحديدات",
+    "layouts.scope": "النطاق",
+    "layouts.cancel": "إلغاء",
+    "layouts.defaultMe": "استخدام هذا التخطيط افتراضيًا لي",
+    "layouts.defaultEveryone": "استخدام هذا التخطيط افتراضيًا للجميع",
+    "layouts.forMe": "لي",
+    "layouts.forEveryone": "للجميع",
+    "selection.removeValue": "إزالة {value}"
   }
 }

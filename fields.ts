@@ -267,9 +267,14 @@ function visitShape(
       continue;
     }
     const multiple = multipleDescriptor(declaredSchema);
+    const selection = selectionElement(declaredSchema);
+    const selectionType = selection && unwrap(selection).schema.type;
     output.push(resolveTexts({
       bind,
       ...(multiple === undefined ? {} : { multiple }),
+      ...(selectionType === "number" || selectionType === "boolean"
+        ? { selectionType }
+        : {}),
       ...(configured.class === undefined ? {} : { class: configured.class }),
       ...(configured.style === undefined ? {} : { style: configured.style }),
       label: configured.label ?? humanize(name),

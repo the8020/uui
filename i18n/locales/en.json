@@ -321,6 +321,13 @@
     "selection.clear": "Clear",
     "widgets.selection-demo.title": "Selections",
     "widgets.selection-demo.description": "Selections",
-    "programs.selection-demo.description": "Selections"
+    "programs.selection-demo.description": "Selections",
+    "layouts.scope": "Scope",
+    "layouts.cancel": "Cancel",
+    "layouts.defaultMe": "Use this layout by default for me",
+    "layouts.defaultEveryone": "Use this layout by default for everyone",
+    "layouts.forMe": "For me",
+    "layouts.forEveryone": "For everyone",
+    "selection.removeValue": "Remove {value}"
   }
 }

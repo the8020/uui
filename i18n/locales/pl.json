@@ -321,6 +321,13 @@
     "selection.clear": "Wyczyść",
     "widgets.selection-demo.title": "Wybory",
     "widgets.selection-demo.description": "Wybory",
-    "programs.selection-demo.description": "Wybory"
+    "programs.selection-demo.description": "Wybory",
+    "layouts.scope": "Zakres",
+    "layouts.cancel": "Anuluj",
+    "layouts.defaultMe": "Używaj tego układu domyślnie dla mnie",
+    "layouts.defaultEveryone": "Używaj tego układu domyślnie dla wszystkich",
+    "layouts.forMe": "Dla mnie",
+    "layouts.forEveryone": "Dla wszystkich",
+    "selection.removeValue": "Usuń {value}"
   }
 }

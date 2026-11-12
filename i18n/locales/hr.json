@@ -321,6 +321,13 @@
     "selection.clear": "Očisti",
     "widgets.selection-demo.title": "Odabiri",
     "widgets.selection-demo.description": "Odabiri",
-    "programs.selection-demo.description": "Odabiri"
+    "programs.selection-demo.description": "Odabiri",
+    "layouts.scope": "Opseg",
+    "layouts.cancel": "Odustani",
+    "layouts.defaultMe": "Koristi ovaj raspored kao zadani za mene",
+    "layouts.defaultEveryone": "Koristi ovaj raspored kao zadani za sve",
+    "layouts.forMe": "Za mene",
+    "layouts.forEveryone": "Za sve",
+    "selection.removeValue": "Ukloni {value}"
   }
 }

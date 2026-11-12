@@ -321,6 +321,13 @@
     "selection.clear": "Очистить",
     "widgets.selection-demo.title": "Выборки",
     "widgets.selection-demo.description": "Выборки",
-    "programs.selection-demo.description": "Выборки"
+    "programs.selection-demo.description": "Выборки",
+    "layouts.scope": "Область",
+    "layouts.cancel": "Отмена",
+    "layouts.defaultMe": "Использовать этот макет по умолчанию для меня",
+    "layouts.defaultEveryone": "Использовать этот макет по умолчанию для всех",
+    "layouts.forMe": "Для меня",
+    "layouts.forEveryone": "Для всех",
+    "selection.removeValue": "Удалить {value}"
   }
 }

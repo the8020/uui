@@ -253,8 +253,13 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
   first focusable control.
 - `selection.ts` renders structured criteria with at most four tokens and one
   clickable localized overflow count. Never create hidden tokens for the rest.
-  Enter, token/overflow clicks and the ordinary field-help affordance open the
-  paged backend editor; the display input is not a scalar editing surface.
+  Editable bodies focus a real text input. Enter or blur appends an inclusion/
+  equality criterion using the original scalar type and ordinary server
+  validation; repeats preserve existing criteria. Tokens have removal buttons;
+  Backspace on an empty input removes the last criterion. Only explicit help,
+  F1/F4 or overflow opens the paged editor. Read-only controls never edit. Focus
+  restoration retains an uncommitted tags/selection draft and caret across
+  redraws.
 - `summary_bar.ts` owns a modal's compact bar for its `summary` field group
   (`data-summary`): placed between the dialog toolbar and body, shown by an
   IntersectionObserver once the group's input leaves the body's view, rebuilt

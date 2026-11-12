@@ -321,6 +321,13 @@
     "selection.clear": "Notīrīt",
     "widgets.selection-demo.title": "Atlases",
     "widgets.selection-demo.description": "Atlases",
-    "programs.selection-demo.description": "Atlases"
+    "programs.selection-demo.description": "Atlases",
+    "layouts.scope": "Tvērums",
+    "layouts.cancel": "Atcelt",
+    "layouts.defaultMe": "Izmantot šo izkārtojumu kā noklusējumu man",
+    "layouts.defaultEveryone": "Izmantot šo izkārtojumu kā noklusējumu visiem",
+    "layouts.forMe": "Man",
+    "layouts.forEveryone": "Visiem",
+    "selection.removeValue": "Noņemt {value}"
   }
 }

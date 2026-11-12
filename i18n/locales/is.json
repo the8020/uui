@@ -321,6 +321,13 @@
     "selection.clear": "Hreinsa",
     "widgets.selection-demo.title": "Val",
     "widgets.selection-demo.description": "Val",
-    "programs.selection-demo.description": "Val"
+    "programs.selection-demo.description": "Val",
+    "layouts.scope": "Umfang",
+    "layouts.cancel": "Hætta við",
+    "layouts.defaultMe": "Nota þetta útlit sjálfgefið fyrir mig",
+    "layouts.defaultEveryone": "Nota þetta útlit sjálfgefið fyrir alla",
+    "layouts.forMe": "Fyrir mig",
+    "layouts.forEveryone": "Fyrir alla",
+    "selection.removeValue": "Fjarlægja {value}"
   }
 }

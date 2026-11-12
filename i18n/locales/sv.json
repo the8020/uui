@@ -321,6 +321,13 @@
     "selection.clear": "Rensa",
     "widgets.selection-demo.title": "Urval",
     "widgets.selection-demo.description": "Urval",
-    "programs.selection-demo.description": "Urval"
+    "programs.selection-demo.description": "Urval",
+    "layouts.scope": "Omfattning",
+    "layouts.cancel": "Avbryt",
+    "layouts.defaultMe": "Använd denna layout som standard för mig",
+    "layouts.defaultEveryone": "Använd denna layout som standard för alla",
+    "layouts.forMe": "För mig",
+    "layouts.forEveryone": "För alla",
+    "selection.removeValue": "Ta bort {value}"
   }
 }

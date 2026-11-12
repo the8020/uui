@@ -321,6 +321,13 @@
     "selection.clear": "Tühjenda",
     "widgets.selection-demo.title": "Valikud",
     "widgets.selection-demo.description": "Valikud",
-    "programs.selection-demo.description": "Valikud"
+    "programs.selection-demo.description": "Valikud",
+    "layouts.scope": "Ulatus",
+    "layouts.cancel": "Loobu",
+    "layouts.defaultMe": "Kasuta seda paigutust minu vaikevalikuna",
+    "layouts.defaultEveryone": "Kasuta seda paigutust kõigi vaikevalikuna",
+    "layouts.forMe": "Minule",
+    "layouts.forEveryone": "Kõigile",
+    "selection.removeValue": "Eemalda {value}"
   }
 }

@@ -321,6 +321,13 @@
     "selection.clear": "נקה",
     "widgets.selection-demo.title": "בחירות",
     "widgets.selection-demo.description": "בחירות",
-    "programs.selection-demo.description": "בחירות"
+    "programs.selection-demo.description": "בחירות",
+    "layouts.scope": "תחום",
+    "layouts.cancel": "ביטול",
+    "layouts.defaultMe": "שימוש בפריסה זו כברירת מחדל עבורי",
+    "layouts.defaultEveryone": "שימוש בפריסה זו כברירת מחדל לכולם",
+    "layouts.forMe": "עבורי",
+    "layouts.forEveryone": "לכולם",
+    "selection.removeValue": "הסרת {value}"
   }
 }

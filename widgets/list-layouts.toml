@@ -2,7 +2,7 @@ schema = 1
 title = "List layouts"
 description = "List layouts"
 icon = "view_column"
-category = "operations"
+category = "demos"
 order = 60
 
 [open]

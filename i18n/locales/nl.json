@@ -321,6 +321,13 @@
     "selection.clear": "Wissen",
     "widgets.selection-demo.title": "Selecties",
     "widgets.selection-demo.description": "Selecties",
-    "programs.selection-demo.description": "Selecties"
+    "programs.selection-demo.description": "Selecties",
+    "layouts.scope": "Bereik",
+    "layouts.cancel": "Annuleren",
+    "layouts.defaultMe": "Deze indeling standaard voor mij gebruiken",
+    "layouts.defaultEveryone": "Deze indeling standaard voor iedereen gebruiken",
+    "layouts.forMe": "Voor mij",
+    "layouts.forEveryone": "Voor iedereen",
+    "selection.removeValue": "{value} verwijderen"
   }
 }

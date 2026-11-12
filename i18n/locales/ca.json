@@ -321,6 +321,13 @@
     "selection.clear": "Neteja",
     "widgets.selection-demo.title": "Seleccions",
     "widgets.selection-demo.description": "Seleccions",
-    "programs.selection-demo.description": "Seleccions"
+    "programs.selection-demo.description": "Seleccions",
+    "layouts.scope": "Àmbit",
+    "layouts.cancel": "Cancel·la",
+    "layouts.defaultMe": "Utilitza aquesta disposició per defecte per a mi",
+    "layouts.defaultEveryone": "Utilitza aquesta disposició per defecte per a tothom",
+    "layouts.forMe": "Per a mi",
+    "layouts.forEveryone": "Per a tothom",
+    "selection.removeValue": "Elimina {value}"
   }
 }

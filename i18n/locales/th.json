@@ -321,6 +321,13 @@
     "selection.clear": "ล้าง",
     "widgets.selection-demo.title": "การเลือก",
     "widgets.selection-demo.description": "การเลือก",
-    "programs.selection-demo.description": "การเลือก"
+    "programs.selection-demo.description": "การเลือก",
+    "layouts.scope": "ขอบเขต",
+    "layouts.cancel": "ยกเลิก",
+    "layouts.defaultMe": "ใช้เค้าโครงนี้เป็นค่าเริ่มต้นสำหรับฉัน",
+    "layouts.defaultEveryone": "ใช้เค้าโครงนี้เป็นค่าเริ่มต้นสำหรับทุกคน",
+    "layouts.forMe": "สำหรับฉัน",
+    "layouts.forEveryone": "สำหรับทุกคน",
+    "selection.removeValue": "นำ {value} ออก"
   }
 }

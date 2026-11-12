@@ -321,6 +321,13 @@
     "selection.clear": "Temizle",
     "widgets.selection-demo.title": "Seçimler",
     "widgets.selection-demo.description": "Seçimler",
-    "programs.selection-demo.description": "Seçimler"
+    "programs.selection-demo.description": "Seçimler",
+    "layouts.scope": "Kapsam",
+    "layouts.cancel": "İptal",
+    "layouts.defaultMe": "Bu düzeni benim için varsayılan olarak kullan",
+    "layouts.defaultEveryone": "Bu düzeni herkes için varsayılan olarak kullan",
+    "layouts.forMe": "Benim için",
+    "layouts.forEveryone": "Herkes için",
+    "selection.removeValue": "{value} değerini kaldır"
   }
 }

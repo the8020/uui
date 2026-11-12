@@ -321,6 +321,13 @@
     "selection.clear": "Vymazat",
     "widgets.selection-demo.title": "Výběry",
     "widgets.selection-demo.description": "Výběry",
-    "programs.selection-demo.description": "Výběry"
+    "programs.selection-demo.description": "Výběry",
+    "layouts.scope": "Rozsah",
+    "layouts.cancel": "Zrušit",
+    "layouts.defaultMe": "Používat toto rozložení jako výchozí pro mě",
+    "layouts.defaultEveryone": "Používat toto rozložení jako výchozí pro všechny",
+    "layouts.forMe": "Pro mě",
+    "layouts.forEveryone": "Pro všechny",
+    "selection.removeValue": "Odebrat {value}"
   }
 }

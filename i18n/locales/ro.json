@@ -321,6 +321,13 @@
     "selection.clear": "Golește",
     "widgets.selection-demo.title": "Selecții",
     "widgets.selection-demo.description": "Selecții",
-    "programs.selection-demo.description": "Selecții"
+    "programs.selection-demo.description": "Selecții",
+    "layouts.scope": "Domeniu",
+    "layouts.cancel": "Anulează",
+    "layouts.defaultMe": "Folosește acest aranjament implicit pentru mine",
+    "layouts.defaultEveryone": "Folosește acest aranjament implicit pentru toți",
+    "layouts.forMe": "Pentru mine",
+    "layouts.forEveryone": "Pentru toți",
+    "selection.removeValue": "Elimină {value}"
   }
 }

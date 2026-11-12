@@ -1302,18 +1302,32 @@ body:has(.uui-content-fullscreen) {
   overflow: hidden;
   text-overflow: ellipsis;
   border: 0;
-  cursor: pointer;
+  cursor: default;
+}
+
+.selection-tokens {
+  display: flex;
+  min-width: 0;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.selection-tokens .field-tag {
+  flex: 0 0 auto;
+  max-width: 12rem;
 }
 
 .field-selection .selection-more {
   flex-shrink: 0;
+  cursor: pointer;
 }
 
 .field .field-tags.field-selection input.field-tags-input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
 .field .field-tags.field-selection input.field-tags-input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus {
-  min-width: 0;
-  width: 0;
-  flex: 1 1 0;
+  min-width: 4rem;
+  width: 4rem;
+  flex: 1 0 4rem;
 }
 
 .field-tag {

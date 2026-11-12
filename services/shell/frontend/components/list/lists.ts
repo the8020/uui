@@ -1074,7 +1074,7 @@ class ListController {
   dispose(): void {
     this.#drag?.abort();
     this.#toolbar?.dispose();
-    this.tools.close();
+    this.tools.close(true);
     if (this.#timer !== undefined) clearTimeout(this.#timer);
     this.#resize.disconnect();
     this.closePopover();

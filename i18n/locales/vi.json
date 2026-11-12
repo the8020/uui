@@ -321,6 +321,13 @@
     "selection.clear": "Xóa",
     "widgets.selection-demo.title": "Lựa chọn",
     "widgets.selection-demo.description": "Lựa chọn",
-    "programs.selection-demo.description": "Lựa chọn"
+    "programs.selection-demo.description": "Lựa chọn",
+    "layouts.scope": "Phạm vi",
+    "layouts.cancel": "Hủy",
+    "layouts.defaultMe": "Dùng bố cục này làm mặc định cho tôi",
+    "layouts.defaultEveryone": "Dùng bố cục này làm mặc định cho mọi người",
+    "layouts.forMe": "Cho tôi",
+    "layouts.forEveryone": "Cho mọi người",
+    "selection.removeValue": "Xóa {value}"
   }
 }

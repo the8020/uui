@@ -321,6 +321,13 @@
     "selection.clear": "清空",
     "widgets.selection-demo.title": "选择条件",
     "widgets.selection-demo.description": "选择条件",
-    "programs.selection-demo.description": "选择条件"
+    "programs.selection-demo.description": "选择条件",
+    "layouts.scope": "范围",
+    "layouts.cancel": "取消",
+    "layouts.defaultMe": "将此布局用作我的默认布局",
+    "layouts.defaultEveryone": "将此布局用作所有人的默认布局",
+    "layouts.forMe": "为我",
+    "layouts.forEveryone": "为所有人",
+    "selection.removeValue": "移除{value}"
   }
 }

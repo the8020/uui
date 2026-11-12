@@ -321,6 +321,13 @@
     "selection.clear": "Tøm",
     "widgets.selection-demo.title": "Utvalg",
     "widgets.selection-demo.description": "Utvalg",
-    "programs.selection-demo.description": "Utvalg"
+    "programs.selection-demo.description": "Utvalg",
+    "layouts.scope": "Omfang",
+    "layouts.cancel": "Avbryt",
+    "layouts.defaultMe": "Bruk dette oppsettet som standard for meg",
+    "layouts.defaultEveryone": "Bruk dette oppsettet som standard for alle",
+    "layouts.forMe": "For meg",
+    "layouts.forEveryone": "For alle",
+    "selection.removeValue": "Fjern {value}"
   }
 }

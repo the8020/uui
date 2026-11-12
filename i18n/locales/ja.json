@@ -321,6 +321,13 @@
     "selection.clear": "クリア",
     "widgets.selection-demo.title": "選択条件",
     "widgets.selection-demo.description": "選択条件",
-    "programs.selection-demo.description": "選択条件"
+    "programs.selection-demo.description": "選択条件",
+    "layouts.scope": "範囲",
+    "layouts.cancel": "キャンセル",
+    "layouts.defaultMe": "このレイアウトを自分の既定にする",
+    "layouts.defaultEveryone": "このレイアウトを全員の既定にする",
+    "layouts.forMe": "自分用",
+    "layouts.forEveryone": "全員用",
+    "selection.removeValue": "{value}を削除"
   }
 }

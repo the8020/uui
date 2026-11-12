@@ -321,6 +321,13 @@
     "selection.clear": "Leeren",
     "widgets.selection-demo.title": "Auswahl",
     "widgets.selection-demo.description": "Auswahl",
-    "programs.selection-demo.description": "Auswahl"
+    "programs.selection-demo.description": "Auswahl",
+    "layouts.scope": "Geltungsbereich",
+    "layouts.cancel": "Abbrechen",
+    "layouts.defaultMe": "Dieses Layout für mich als Standard verwenden",
+    "layouts.defaultEveryone": "Dieses Layout für alle als Standard verwenden",
+    "layouts.forMe": "Für mich",
+    "layouts.forEveryone": "Für alle",
+    "selection.removeValue": "{value} entfernen"
   }
 }

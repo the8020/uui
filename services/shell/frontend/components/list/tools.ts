@@ -92,12 +92,15 @@ export class ListTools {
     );
   }
 
-  close(): boolean {
+  close(force = false): boolean {
     clearTimeout(this.#feedbackTimer);
     this.#feedback.hidden = true;
-    this.#lifetime?.abort();
     const dialog = this.#dialog;
     if (!dialog) return false;
+    if (
+      !force && !dialog.dispatchEvent(new Event("cancel", { cancelable: true }))
+    ) return true;
+    this.#lifetime?.abort();
     dialog.close();
     return true;
   }
@@ -110,7 +113,7 @@ export class ListTools {
   }
 
   private dialog(title: string, className: string) {
-    this.close();
+    this.close(true);
     const lifetime = this.#lifetime = new AbortController();
     const dialog = this.#dialog = document.createElement("dialog");
     dialog.className = `uui-dialog data-list-dialog ${className}`;

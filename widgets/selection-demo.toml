@@ -2,7 +2,7 @@ schema = 1
 title = "Selections"
 description = "Selections"
 icon = "filter_alt"
-category = "operations"
+category = "demos"
 order = 61
 
 [open]

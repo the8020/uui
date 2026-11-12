@@ -321,6 +321,13 @@
     "selection.clear": "Počisti",
     "widgets.selection-demo.title": "Izbire",
     "widgets.selection-demo.description": "Izbire",
-    "programs.selection-demo.description": "Izbire"
+    "programs.selection-demo.description": "Izbire",
+    "layouts.scope": "Obseg",
+    "layouts.cancel": "Prekliči",
+    "layouts.defaultMe": "Uporabi to postavitev kot privzeto zame",
+    "layouts.defaultEveryone": "Uporabi to postavitev kot privzeto za vse",
+    "layouts.forMe": "Zame",
+    "layouts.forEveryone": "Za vse",
+    "selection.removeValue": "Odstrani {value}"
   }
 }

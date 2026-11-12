@@ -321,6 +321,13 @@
     "selection.clear": "I-clear",
     "widgets.selection-demo.title": "Mga pagpili",
     "widgets.selection-demo.description": "Mga pagpili",
-    "programs.selection-demo.description": "Mga pagpili"
+    "programs.selection-demo.description": "Mga pagpili",
+    "layouts.scope": "Saklaw",
+    "layouts.cancel": "Kanselahin",
+    "layouts.defaultMe": "Gamitin ang layout na ito bilang default para sa akin",
+    "layouts.defaultEveryone": "Gamitin ang layout na ito bilang default para sa lahat",
+    "layouts.forMe": "Para sa akin",
+    "layouts.forEveryone": "Para sa lahat",
+    "selection.removeValue": "Alisin ang {value}"
   }
 }

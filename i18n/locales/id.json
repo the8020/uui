@@ -321,6 +321,13 @@
     "selection.clear": "Bersihkan",
     "widgets.selection-demo.title": "Pilihan",
     "widgets.selection-demo.description": "Pilihan",
-    "programs.selection-demo.description": "Pilihan"
+    "programs.selection-demo.description": "Pilihan",
+    "layouts.scope": "Cakupan",
+    "layouts.cancel": "Batal",
+    "layouts.defaultMe": "Gunakan tata letak ini sebagai default saya",
+    "layouts.defaultEveryone": "Gunakan tata letak ini sebagai default semua orang",
+    "layouts.forMe": "Untuk saya",
+    "layouts.forEveryone": "Untuk semua orang",
+    "selection.removeValue": "Hapus {value}"
   }
 }

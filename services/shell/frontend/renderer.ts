@@ -77,7 +77,18 @@ interface FieldMessage {
 
 export function renderScreen(
   root: HTMLElement,
-  snapshot: ScreenSnapshot,
+  snapshot: Pick<
+    ScreenSnapshot,
+    | "id"
+    | "title"
+    | "description"
+    | "controls"
+    | "actions"
+    | "layout"
+    | "customElements"
+    | "class"
+    | "style"
+  >,
   model: Record<string, unknown>,
   callbacks: RenderCallbacks,
   custom: CustomElementCallbacks,
@@ -517,7 +528,10 @@ function renderControlBody(
     const inputShell = element("div", "field-input-shell");
     inputShell.append(
       control.control === "selection"
-        ? renderSelection(input, value, () => callbacks.help(control))
+        ? renderSelection(input, value, control, (next) => {
+          setPath(model, control.bind, next);
+          callbacks.changed(control.bind, next, control);
+        }, () => callbacks.help(control))
         : renderTags(
           input,
           value,
