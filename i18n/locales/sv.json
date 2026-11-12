@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "Använd denna layout som standard för alla",
     "layouts.forMe": "För mig",
     "layouts.forEveryone": "För alla",
-    "selection.removeValue": "Ta bort {value}"
+    "selection.removeValue": "Ta bort {value}",
+    "selection.equals": "Lika med",
+    "selection.notEqual": "Inte lika med",
+    "selection.greater": "Större än",
+    "selection.greaterEqual": "Större än eller lika med",
+    "selection.less": "Mindre än",
+    "selection.lessEqual": "Mindre än eller lika med",
+    "selection.between": "Mellan",
+    "selection.pattern": "Matchar mönster",
+    "selection.value": "Värde",
+    "selection.deleteCriteria": "Ta bort valda villkor ({count})"
   }
 }

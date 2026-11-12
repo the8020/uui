@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "Käytä tätä asettelua oletuksena kaikille",
     "layouts.forMe": "Minulle",
     "layouts.forEveryone": "Kaikille",
-    "selection.removeValue": "Poista {value}"
+    "selection.removeValue": "Poista {value}",
+    "selection.equals": "Yhtä suuri kuin",
+    "selection.notEqual": "Eri suuri kuin",
+    "selection.greater": "Suurempi kuin",
+    "selection.greaterEqual": "Suurempi tai yhtä suuri kuin",
+    "selection.less": "Pienempi kuin",
+    "selection.lessEqual": "Pienempi tai yhtä suuri kuin",
+    "selection.between": "Välillä",
+    "selection.pattern": "Vastaa kuviota",
+    "selection.value": "Arvo",
+    "selection.deleteCriteria": "Poista valitut ehdot ({count})"
   }
 }

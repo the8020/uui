@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "Kasuta seda paigutust kõigi vaikevalikuna",
     "layouts.forMe": "Minule",
     "layouts.forEveryone": "Kõigile",
-    "selection.removeValue": "Eemalda {value}"
+    "selection.removeValue": "Eemalda {value}",
+    "selection.equals": "Võrdub",
+    "selection.notEqual": "Ei võrdu",
+    "selection.greater": "Suurem kui",
+    "selection.greaterEqual": "Suurem või võrdne",
+    "selection.less": "Väiksem kui",
+    "selection.lessEqual": "Väiksem või võrdne",
+    "selection.between": "Vahemikus",
+    "selection.pattern": "Vastab mustrile",
+    "selection.value": "Väärtus",
+    "selection.deleteCriteria": "Kustuta valitud tingimused ({count})"
   }
 }

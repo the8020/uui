@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "सभी के लिए इस लेआउट को डिफ़ॉल्ट बनाएं",
     "layouts.forMe": "मेरे लिए",
     "layouts.forEveryone": "सभी के लिए",
-    "selection.removeValue": "{value} हटाएं"
+    "selection.removeValue": "{value} हटाएं",
+    "selection.equals": "बराबर है",
+    "selection.notEqual": "बराबर नहीं है",
+    "selection.greater": "से बड़ा",
+    "selection.greaterEqual": "से बड़ा या बराबर",
+    "selection.less": "से छोटा",
+    "selection.lessEqual": "से छोटा या बराबर",
+    "selection.between": "के बीच",
+    "selection.pattern": "पैटर्न से मेल खाता है",
+    "selection.value": "मान",
+    "selection.deleteCriteria": "चुनी गई शर्तें हटाएँ ({count})"
   }
 }

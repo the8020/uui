@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "Χρήση αυτής της διάταξης ως προεπιλογής για όλους",
     "layouts.forMe": "Για μένα",
     "layouts.forEveryone": "Για όλους",
-    "selection.removeValue": "Αφαίρεση {value}"
+    "selection.removeValue": "Αφαίρεση {value}",
+    "selection.equals": "Ίσο με",
+    "selection.notEqual": "Διαφορετικό από",
+    "selection.greater": "Μεγαλύτερο από",
+    "selection.greaterEqual": "Μεγαλύτερο ή ίσο με",
+    "selection.less": "Μικρότερο από",
+    "selection.lessEqual": "Μικρότερο ή ίσο με",
+    "selection.between": "Μεταξύ",
+    "selection.pattern": "Ταιριάζει με μοτίβο",
+    "selection.value": "Τιμή",
+    "selection.deleteCriteria": "Διαγραφή επιλεγμένων κριτηρίων ({count})"
   }
 }

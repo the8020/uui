@@ -262,7 +262,18 @@ class ListController {
       overflowItems,
     );
     const items = callbacks.elements(snapshot.toolbar ?? []);
-    for (const item of items) item.classList.add("program-header-item");
+    for (const item of items) {
+      item.classList.add("program-header-item");
+      const descriptor = snapshot.toolbar?.find((value) =>
+        value.id === item.dataset.elementId
+      );
+      if (
+        descriptor && "requiresSelection" in descriptor &&
+        descriptor.requiresSelection && item instanceof HTMLButtonElement
+      ) {
+        item.disabled = !snapshot.selection?.selectedItems;
+      }
+    }
     this.#toolbar.render(items);
     const toolbar = document.createElement("div");
     toolbar.className = "data-list-toolbar";
@@ -452,8 +463,8 @@ class ListController {
         }]);
       const toggles = snapshot.selection?.mode === "multiple";
       if (
-        this.#highlight !== undefined &&
-        getPath(item, this.#highlight) === true
+        getPath(item, this.#highlight ?? snapshot.selection?.bind ?? "") ===
+          true
       ) {
         row.classList.add("is-selected");
         row.setAttribute("aria-selected", "true");
@@ -825,6 +836,8 @@ class ListController {
               ? selected
               : getPath(snapshot.rows[rowIndex], snapshot.selection!.bind) ===
                 true;
+          visible.classList.toggle("is-selected", input.checked);
+          visible.setAttribute("aria-selected", String(input.checked));
         }
       };
       paint();
@@ -851,6 +864,8 @@ class ListController {
               snapshot.rows[Number(visible.dataset.rowIndex)],
               snapshot.selection!.bind,
             ) === true;
+            visible.classList.toggle("is-selected", input.checked);
+            visible.setAttribute("aria-selected", String(input.checked));
           }
         }
       };

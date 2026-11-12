@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "استفاده از این چیدمان به‌عنوان پیش‌فرض همه",
     "layouts.forMe": "برای من",
     "layouts.forEveryone": "برای همه",
-    "selection.removeValue": "حذف {value}"
+    "selection.removeValue": "حذف {value}",
+    "selection.equals": "برابر با",
+    "selection.notEqual": "نابرابر با",
+    "selection.greater": "بزرگ‌تر از",
+    "selection.greaterEqual": "بزرگ‌تر یا مساوی",
+    "selection.less": "کوچک‌تر از",
+    "selection.lessEqual": "کوچک‌تر یا مساوی",
+    "selection.between": "بین",
+    "selection.pattern": "مطابق الگو",
+    "selection.value": "مقدار",
+    "selection.deleteCriteria": "حذف معیارهای انتخاب‌شده ({count})"
   }
 }

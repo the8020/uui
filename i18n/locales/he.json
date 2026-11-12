@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "שימוש בפריסה זו כברירת מחדל לכולם",
     "layouts.forMe": "עבורי",
     "layouts.forEveryone": "לכולם",
-    "selection.removeValue": "הסרת {value}"
+    "selection.removeValue": "הסרת {value}",
+    "selection.equals": "שווה ל־",
+    "selection.notEqual": "לא שווה ל־",
+    "selection.greater": "גדול מ־",
+    "selection.greaterEqual": "גדול או שווה ל־",
+    "selection.less": "קטן מ־",
+    "selection.lessEqual": "קטן או שווה ל־",
+    "selection.between": "בין",
+    "selection.pattern": "תואם לתבנית",
+    "selection.value": "ערך",
+    "selection.deleteCriteria": "מחיקת תנאים נבחרים ({count})"
   }
 }

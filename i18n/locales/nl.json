@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "Deze indeling standaard voor iedereen gebruiken",
     "layouts.forMe": "Voor mij",
     "layouts.forEveryone": "Voor iedereen",
-    "selection.removeValue": "{value} verwijderen"
+    "selection.removeValue": "{value} verwijderen",
+    "selection.equals": "Gelijk aan",
+    "selection.notEqual": "Niet gelijk aan",
+    "selection.greater": "Groter dan",
+    "selection.greaterEqual": "Groter dan of gelijk aan",
+    "selection.less": "Kleiner dan",
+    "selection.lessEqual": "Kleiner dan of gelijk aan",
+    "selection.between": "Tussen",
+    "selection.pattern": "Komt overeen met patroon",
+    "selection.value": "Waarde",
+    "selection.deleteCriteria": "Geselecteerde criteria verwijderen ({count})"
   }
 }

@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "Používat toto rozložení jako výchozí pro všechny",
     "layouts.forMe": "Pro mě",
     "layouts.forEveryone": "Pro všechny",
-    "selection.removeValue": "Odebrat {value}"
+    "selection.removeValue": "Odebrat {value}",
+    "selection.equals": "Rovná se",
+    "selection.notEqual": "Nerovná se",
+    "selection.greater": "Větší než",
+    "selection.greaterEqual": "Větší nebo rovno",
+    "selection.less": "Menší než",
+    "selection.lessEqual": "Menší nebo rovno",
+    "selection.between": "Mezi",
+    "selection.pattern": "Odpovídá vzoru",
+    "selection.value": "Hodnota",
+    "selection.deleteCriteria": "Smazat vybrané podmínky ({count})"
   }
 }

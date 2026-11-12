@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "Usar este diseño de forma predeterminada para todos",
     "layouts.forMe": "Para mí",
     "layouts.forEveryone": "Para todos",
-    "selection.removeValue": "Quitar {value}"
+    "selection.removeValue": "Quitar {value}",
+    "selection.equals": "Igual a",
+    "selection.notEqual": "Distinto de",
+    "selection.greater": "Mayor que",
+    "selection.greaterEqual": "Mayor o igual que",
+    "selection.less": "Menor que",
+    "selection.lessEqual": "Menor o igual que",
+    "selection.between": "Entre",
+    "selection.pattern": "Coincide con el patrón",
+    "selection.value": "Valor",
+    "selection.deleteCriteria": "Eliminar criterios seleccionados ({count})"
   }
 }

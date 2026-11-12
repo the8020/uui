@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "Utilitza aquesta disposició per defecte per a tothom",
     "layouts.forMe": "Per a mi",
     "layouts.forEveryone": "Per a tothom",
-    "selection.removeValue": "Elimina {value}"
+    "selection.removeValue": "Elimina {value}",
+    "selection.equals": "Igual a",
+    "selection.notEqual": "Diferent de",
+    "selection.greater": "Més gran que",
+    "selection.greaterEqual": "Més gran o igual que",
+    "selection.less": "Més petit que",
+    "selection.lessEqual": "Més petit o igual que",
+    "selection.between": "Entre",
+    "selection.pattern": "Coincideix amb el patró",
+    "selection.value": "Valor",
+    "selection.deleteCriteria": "Suprimeix els criteris seleccionats ({count})"
   }
 }

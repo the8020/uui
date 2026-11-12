@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "Nota þetta útlit sjálfgefið fyrir alla",
     "layouts.forMe": "Fyrir mig",
     "layouts.forEveryone": "Fyrir alla",
-    "selection.removeValue": "Fjarlægja {value}"
+    "selection.removeValue": "Fjarlægja {value}",
+    "selection.equals": "Jafnt og",
+    "selection.notEqual": "Ekki jafnt og",
+    "selection.greater": "Stærra en",
+    "selection.greaterEqual": "Stærra en eða jafnt og",
+    "selection.less": "Minna en",
+    "selection.lessEqual": "Minna en eða jafnt og",
+    "selection.between": "Á milli",
+    "selection.pattern": "Samsvarar mynstri",
+    "selection.value": "Gildi",
+    "selection.deleteCriteria": "Eyða völdum skilyrðum ({count})"
   }
 }

@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "将此布局用作所有人的默认布局",
     "layouts.forMe": "为我",
     "layouts.forEveryone": "为所有人",
-    "selection.removeValue": "移除{value}"
+    "selection.removeValue": "移除{value}",
+    "selection.equals": "等于",
+    "selection.notEqual": "不等于",
+    "selection.greater": "大于",
+    "selection.greaterEqual": "大于或等于",
+    "selection.less": "小于",
+    "selection.lessEqual": "小于或等于",
+    "selection.between": "介于",
+    "selection.pattern": "匹配模式",
+    "selection.value": "值",
+    "selection.deleteCriteria": "删除所选条件（{count}）"
   }
 }

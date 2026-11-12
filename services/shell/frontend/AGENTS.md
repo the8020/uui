@@ -152,7 +152,9 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
   list-toolbar overflow hide their separators; other element rows wrap at narrow
   widths. The navbar and every list toolbar share `--uui-bar-height`.
 - Use the shared responsive geometry, accessible dialogs, complete local
-  Material Symbols catalogue, and browser-only theme state.
+  Material Symbols catalogue, and browser-only theme state. Mobile native
+  dialogs fit below the navbar so session controls cannot cover their header
+  actions or overflow toggle.
 - Dialogs grow with their content up to 90% of the dynamic viewport height;
   mobile dialogs leave a 12px outer height gutter. Keep tall-window list pages
   governed by the viewport instead of a fixed maximum height.

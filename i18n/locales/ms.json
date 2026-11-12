@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "Gunakan susun atur ini sebagai lalai semua orang",
     "layouts.forMe": "Untuk saya",
     "layouts.forEveryone": "Untuk semua orang",
-    "selection.removeValue": "Alih keluar {value}"
+    "selection.removeValue": "Alih keluar {value}",
+    "selection.equals": "Sama dengan",
+    "selection.notEqual": "Tidak sama dengan",
+    "selection.greater": "Lebih besar daripada",
+    "selection.greaterEqual": "Lebih besar atau sama dengan",
+    "selection.less": "Lebih kecil daripada",
+    "selection.lessEqual": "Lebih kecil atau sama dengan",
+    "selection.between": "Antara",
+    "selection.pattern": "Sepadan dengan corak",
+    "selection.value": "Nilai",
+    "selection.deleteCriteria": "Padam kriteria dipilih ({count})"
   }
 }

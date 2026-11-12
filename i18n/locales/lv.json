@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "Izmantot šo izkārtojumu kā noklusējumu visiem",
     "layouts.forMe": "Man",
     "layouts.forEveryone": "Visiem",
-    "selection.removeValue": "Noņemt {value}"
+    "selection.removeValue": "Noņemt {value}",
+    "selection.equals": "Vienāds ar",
+    "selection.notEqual": "Nav vienāds ar",
+    "selection.greater": "Lielāks par",
+    "selection.greaterEqual": "Lielāks vai vienāds ar",
+    "selection.less": "Mazāks par",
+    "selection.lessEqual": "Mazāks vai vienāds ar",
+    "selection.between": "Starp",
+    "selection.pattern": "Atbilst paraugam",
+    "selection.value": "Vērtība",
+    "selection.deleteCriteria": "Dzēst atlasītos kritērijus ({count})"
   }
 }

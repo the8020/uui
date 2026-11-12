@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "Използвай това оформление по подразбиране за всички",
     "layouts.forMe": "За мен",
     "layouts.forEveryone": "За всички",
-    "selection.removeValue": "Премахване на {value}"
+    "selection.removeValue": "Премахване на {value}",
+    "selection.equals": "Равно на",
+    "selection.notEqual": "Различно от",
+    "selection.greater": "По-голямо от",
+    "selection.greaterEqual": "По-голямо или равно на",
+    "selection.less": "По-малко от",
+    "selection.lessEqual": "По-малко или равно на",
+    "selection.between": "Между",
+    "selection.pattern": "Съответства на шаблон",
+    "selection.value": "Стойност",
+    "selection.deleteCriteria": "Изтриване на избраните критерии ({count})"
   }
 }

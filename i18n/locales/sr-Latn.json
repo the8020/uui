@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "Koristi ovaj raspored kao podrazumevani za sve",
     "layouts.forMe": "Za mene",
     "layouts.forEveryone": "Za sve",
-    "selection.removeValue": "Ukloni {value}"
+    "selection.removeValue": "Ukloni {value}",
+    "selection.equals": "Jednako",
+    "selection.notEqual": "Nije jednako",
+    "selection.greater": "Veće od",
+    "selection.greaterEqual": "Veće ili jednako",
+    "selection.less": "Manje od",
+    "selection.lessEqual": "Manje ili jednako",
+    "selection.between": "Između",
+    "selection.pattern": "Odgovara obrascu",
+    "selection.value": "Vrednost",
+    "selection.deleteCriteria": "Izbriši izabrane kriterijume ({count})"
   }
 }

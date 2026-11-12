@@ -2226,12 +2226,13 @@ body:has(.uui-content-fullscreen) {
 
   .uui-dialog {
     width: calc(100vw - 12px);
-    max-height: calc(100dvh - 12px);
+    inset-block-start: var(--uui-bar-height);
+    max-height: calc(100dvh - var(--uui-bar-height) - 12px);
     border-radius: 12px;
   }
 
   .uui-dialog-frame {
-    max-height: calc(100dvh - 12px);
+    max-height: calc(100dvh - var(--uui-bar-height) - 12px);
   }
 
   .presentation-modal-body {

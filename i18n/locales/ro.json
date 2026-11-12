@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "Folosește acest aranjament implicit pentru toți",
     "layouts.forMe": "Pentru mine",
     "layouts.forEveryone": "Pentru toți",
-    "selection.removeValue": "Elimină {value}"
+    "selection.removeValue": "Elimină {value}",
+    "selection.equals": "Egal cu",
+    "selection.notEqual": "Diferit de",
+    "selection.greater": "Mai mare decât",
+    "selection.greaterEqual": "Mai mare sau egal cu",
+    "selection.less": "Mai mic decât",
+    "selection.lessEqual": "Mai mic sau egal cu",
+    "selection.between": "Între",
+    "selection.pattern": "Corespunde modelului",
+    "selection.value": "Valoare",
+    "selection.deleteCriteria": "Șterge criteriile selectate ({count})"
   }
 }

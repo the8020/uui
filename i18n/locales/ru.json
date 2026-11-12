@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "Использовать этот макет по умолчанию для всех",
     "layouts.forMe": "Для меня",
     "layouts.forEveryone": "Для всех",
-    "selection.removeValue": "Удалить {value}"
+    "selection.removeValue": "Удалить {value}",
+    "selection.equals": "Равно",
+    "selection.notEqual": "Не равно",
+    "selection.greater": "Больше",
+    "selection.greaterEqual": "Больше или равно",
+    "selection.less": "Меньше",
+    "selection.lessEqual": "Меньше или равно",
+    "selection.between": "Между",
+    "selection.pattern": "Соответствует шаблону",
+    "selection.value": "Значение",
+    "selection.deleteCriteria": "Удалить выбранные условия ({count})"
   }
 }

@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "Naudoti šį išdėstymą kaip numatytąjį visiems",
     "layouts.forMe": "Man",
     "layouts.forEveryone": "Visiems",
-    "selection.removeValue": "Pašalinti {value}"
+    "selection.removeValue": "Pašalinti {value}",
+    "selection.equals": "Lygu",
+    "selection.notEqual": "Nelygu",
+    "selection.greater": "Daugiau nei",
+    "selection.greaterEqual": "Daugiau arba lygu",
+    "selection.less": "Mažiau nei",
+    "selection.lessEqual": "Mažiau arba lygu",
+    "selection.between": "Tarp",
+    "selection.pattern": "Atitinka šabloną",
+    "selection.value": "Reikšmė",
+    "selection.deleteCriteria": "Ištrinti pasirinktus kriterijus ({count})"
   }
 }

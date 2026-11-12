@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "Používať toto rozloženie ako predvolené pre všetkých",
     "layouts.forMe": "Pre mňa",
     "layouts.forEveryone": "Pre všetkých",
-    "selection.removeValue": "Odobrať {value}"
+    "selection.removeValue": "Odobrať {value}",
+    "selection.equals": "Rovná sa",
+    "selection.notEqual": "Nerovná sa",
+    "selection.greater": "Väčšie ako",
+    "selection.greaterEqual": "Väčšie alebo rovné",
+    "selection.less": "Menšie ako",
+    "selection.lessEqual": "Menšie alebo rovné",
+    "selection.between": "Medzi",
+    "selection.pattern": "Zodpovedá vzoru",
+    "selection.value": "Hodnota",
+    "selection.deleteCriteria": "Odstrániť vybrané podmienky ({count})"
   }
 }

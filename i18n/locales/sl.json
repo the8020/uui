@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "Uporabi to postavitev kot privzeto za vse",
     "layouts.forMe": "Zame",
     "layouts.forEveryone": "Za vse",
-    "selection.removeValue": "Odstrani {value}"
+    "selection.removeValue": "Odstrani {value}",
+    "selection.equals": "Enako",
+    "selection.notEqual": "Ni enako",
+    "selection.greater": "Večje od",
+    "selection.greaterEqual": "Večje ali enako",
+    "selection.less": "Manjše od",
+    "selection.lessEqual": "Manjše ali enako",
+    "selection.between": "Med",
+    "selection.pattern": "Ustreza vzorcu",
+    "selection.value": "Vrednost",
+    "selection.deleteCriteria": "Izbriši izbrane pogoje ({count})"
   }
 }

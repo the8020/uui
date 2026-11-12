@@ -167,10 +167,82 @@ export async function verifySelection(page: Browser) {
   );
   assert(
     (await page.evaluate<string>(`${field("names")}.textContent`)).includes(
-      "~ Order 00*",
+      "Matches pattern Order 00*",
     ),
   );
   await help("ids");
+  assertEquals(
+    await page.evaluate(`${button("delete", active)}.disabled`),
+    true,
+  );
+  assertEquals(
+    await page.evaluate(
+      `${
+        list("criteria")
+      }.querySelector('tbody tr').textContent.includes('Include') && ${
+        list("criteria")
+      }.querySelector('tbody tr').textContent.includes('Equals')`,
+    ),
+    true,
+  );
+  // Row navigation opens its entry immediately and never creates a deletion target.
+  await click(
+    `${
+      list("criteria")
+    }.querySelector('tbody tr td:not(.data-list-selection)')`,
+  );
+  await wait(`!!${active}.querySelector('[data-bind="low"]')`);
+  const lowLabel =
+    `${active}.querySelector('[data-bind="low"]').closest('.field').querySelector('label').textContent`;
+  assertEquals(await page.evaluate(lowLabel), "Value");
+  assertEquals(
+    await page.evaluate(
+      `${active}.querySelector('[data-bind="high"]')===null`,
+    ),
+    true,
+  );
+  assertEquals(
+    await page.evaluate(
+      `Array.from(${active}.querySelector('[data-bind="option"]').options).map(o=>o.textContent)`,
+    ),
+    [
+      "Equals",
+      "Does not equal",
+      "Greater than",
+      "Greater than or equal to",
+      "Less than",
+      "Less than or equal to",
+      "Between",
+    ],
+  );
+  await set("option", "NE");
+  await ready();
+  assertEquals(await page.evaluate(lowLabel), "Value");
+  await set("option", "BT");
+  await wait(`${lowLabel}==='From'`);
+  assertEquals(
+    await page.evaluate(
+      `${active}.querySelector('[data-bind="high"]')===null`,
+    ),
+    false,
+  );
+  await set("option", "EQ");
+  await wait(`${lowLabel}==='Value'`);
+  await set("low", "999");
+  await click(button("cancel", active));
+  await wait(
+    `!!${active}?.querySelector('[data-list-id="criteria"]') && !document.querySelector('#screen-back').disabled`,
+  );
+  assertEquals(
+    await page.evaluate(`${button("delete", active)}.disabled`),
+    true,
+  );
+  assertEquals(
+    await page.evaluate(
+      `${list("criteria")}.querySelector('tbody').textContent.includes('999')`,
+    ),
+    false,
+  );
   await click(button("add", active));
   await wait(`!!${active}?.querySelector('[data-bind="option"]')`);
   await set("option", "BT");
@@ -185,9 +257,11 @@ export async function verifySelection(page: Browser) {
       list("criteria")
     }.querySelectorAll('tbody tr').length===4 && !document.querySelector('#screen-back').disabled`,
   );
-  await click(`${list("criteria")}.querySelector('tbody tr:last-child td')`);
-  await wait(`!!${button("edit", active)}`);
-  await click(button("edit", active));
+  await click(
+    `${
+      list("criteria")
+    }.querySelector('tbody tr:last-child td:not(.data-list-selection)')`,
+  );
   await wait(`!!${active}.querySelector('[data-bind="low"]')`);
   await set("sign", "E");
   await set("low", "41");
@@ -204,10 +278,97 @@ export async function verifySelection(page: Browser) {
     ),
     3,
   );
-  await click(`${list("criteria")}.querySelector('tbody tr:first-child td')`);
-  await wait(`!!${button("delete", active)}`);
+  const firstCheck = `${
+    list("criteria")
+  }.querySelector('tbody tr:first-child input[type="checkbox"]')`;
+  const secondCheck = `${
+    list("criteria")
+  }.querySelector('tbody tr:nth-child(2) input[type="checkbox"]')`;
+  await click(firstCheck);
+  await ready();
+  assertEquals(await page.evaluate(`${firstCheck}.checked`), true);
+  assertEquals(
+    await page.evaluate(
+      `${firstCheck}.closest('tr').classList.contains('is-selected')`,
+    ),
+    true,
+  );
+  assertEquals(
+    await page.evaluate(`${active}.querySelector('[data-bind="low"]')===null`),
+    true,
+  );
+  await click(
+    `${
+      list("criteria")
+    }.querySelector('tbody tr:nth-child(2) td:not(.data-list-selection)')`,
+  );
+  await wait(`!!${active}.querySelector('[data-bind="low"]')`);
+  assertEquals(
+    await page.evaluate(`${active}.querySelector('[data-bind="low"]').value`),
+    "10",
+  );
+  await click(button("cancel", active));
+  await wait(
+    `!!${active}?.querySelector('[data-list-id="criteria"]') && !document.querySelector('#screen-back').disabled`,
+  );
+  assertEquals(
+    await page.evaluate(`${firstCheck}.checked && !${secondCheck}.checked`),
+    true,
+  );
+  await click(secondCheck);
+  await ready();
+  await click(firstCheck);
+  await ready();
+  assertEquals(
+    await page.evaluate(`${secondCheck}.checked && !${firstCheck}.checked`),
+    true,
+  );
+  await page.command("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: " ",
+    code: "Space",
+    windowsVirtualKeyCode: 32,
+  });
+  await page.command("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: " ",
+    code: "Space",
+    windowsVirtualKeyCode: 32,
+  });
+  // Focus is on the first checkbox after the previous click, so it toggles back on.
+  await ready();
+  assertEquals(await page.evaluate(`${firstCheck}.checked`), true);
+  await click(secondCheck);
+  await ready();
+  assertEquals(
+    await page.evaluate(`${firstCheck}.checked && !${secondCheck}.checked`),
+    true,
+  );
   await click(button("delete", active));
+  await wait(`!!${button("confirm", active)}`);
+  await click(button("cancel", active));
+  await wait(
+    `!!${active}?.querySelector('[data-list-id="criteria"]') && !document.querySelector('#screen-back').disabled`,
+  );
+  assertEquals(await page.evaluate(`${firstCheck}.checked`), true);
+  await click(button("delete", active));
+  await wait(`!!${button("confirm", active)}`);
+  await click(button("confirm", active));
   await wait(`${list("criteria")}.querySelectorAll('tbody tr').length===2`);
+  assertEquals(
+    await page.evaluate(`${button("delete", active)}.disabled`),
+    true,
+  );
+  assertEquals(
+    await page.evaluate(
+      `${
+        list("criteria")
+      }.querySelector('tbody').textContent.includes('Between') && ${
+        list("criteria")
+      }.querySelector('tbody').textContent.includes('Exclude')`,
+    ),
+    true,
+  );
   await click(button("done", active));
   await wait(
     `!document.querySelector('dialog.presentation-modal[open]') && ${
@@ -334,11 +495,13 @@ export async function verifySelection(page: Browser) {
   const low = await page.evaluate<string>(
     `${
       list("criteria")
-    }.querySelector('tbody tr td:nth-child(3) .overflow-text-content').textContent`,
+    }.querySelector('tbody tr td:nth-child(4) .overflow-text-content').textContent`,
   );
-  await click(`${list("criteria")}.querySelector('tbody tr td')`);
-  await wait(`!!${button("edit", active)}`);
-  await click(button("edit", active));
+  await click(
+    `${
+      list("criteria")
+    }.querySelector('tbody tr td:not(.data-list-selection)')`,
+  );
   await wait(`!!${active}.querySelector('[data-bind="low"]')`);
   assertEquals(
     await page.evaluate(`${active}.querySelector('[data-bind="low"]').value`),
@@ -349,7 +512,39 @@ export async function verifySelection(page: Browser) {
   await wait(
     `!!${list("criteria")} && !document.querySelector('#screen-back').disabled`,
   );
+  assertEquals(
+    await page.evaluate(`${button("delete", active)}.disabled`),
+    true,
+  );
+  await click(
+    `${list("criteria")}.querySelector('tbody tr input[type="checkbox"]')`,
+  );
+  await ready();
+  await click(
+    `${
+      list("criteria")
+    }.querySelector('.data-list-page-numbers [aria-label="Page 1"]')`,
+  );
+  await wait(
+    `${
+      list("criteria")
+    }.querySelector('[aria-current="page"]').textContent==='1'`,
+  );
+  assertEquals(
+    await page.evaluate(
+      `${
+        list("criteria")
+      }.querySelector('tbody input[type="checkbox"]').checked`,
+    ),
+    false,
+  );
+  assertEquals(
+    await page.evaluate(`${button("delete", active)}.disabled`),
+    false,
+  );
   await click(button("delete", active));
+  await wait(`!!${button("confirm", active)}`);
+  await click(button("confirm", active));
   await wait(
     `${
       list("criteria")

@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "Bruk dette oppsettet som standard for alle",
     "layouts.forMe": "For meg",
     "layouts.forEveryone": "For alle",
-    "selection.removeValue": "Fjern {value}"
+    "selection.removeValue": "Fjern {value}",
+    "selection.equals": "Lik",
+    "selection.notEqual": "Ikke lik",
+    "selection.greater": "Større enn",
+    "selection.greaterEqual": "Større enn eller lik",
+    "selection.less": "Mindre enn",
+    "selection.lessEqual": "Mindre enn eller lik",
+    "selection.between": "Mellom",
+    "selection.pattern": "Samsvarer med mønster",
+    "selection.value": "Verdi",
+    "selection.deleteCriteria": "Slett valgte kriterier ({count})"
   }
 }

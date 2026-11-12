@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "استخدام هذا التخطيط افتراضيًا للجميع",
     "layouts.forMe": "لي",
     "layouts.forEveryone": "للجميع",
-    "selection.removeValue": "إزالة {value}"
+    "selection.removeValue": "إزالة {value}",
+    "selection.equals": "يساوي",
+    "selection.notEqual": "لا يساوي",
+    "selection.greater": "أكبر من",
+    "selection.greaterEqual": "أكبر من أو يساوي",
+    "selection.less": "أقل من",
+    "selection.lessEqual": "أقل من أو يساوي",
+    "selection.between": "بين",
+    "selection.pattern": "يطابق النمط",
+    "selection.value": "القيمة",
+    "selection.deleteCriteria": "حذف المعايير المحددة ({count})"
   }
 }

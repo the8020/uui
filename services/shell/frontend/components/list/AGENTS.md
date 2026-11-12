@@ -60,7 +60,10 @@ Parent DOX: [shell frontend](../../AGENTS.md).
   an indeterminate state across the complete source. Selection-cell click or
   Space toggles its row; Shift ranges follow displayed order across pages.
   Pointer drag previews a range and commits once on release; cancellation
-  restores the published state. Row-value clicks retain navigation.
+  restores the published state. Row-value clicks retain navigation. Checked rows
+  reuse the theme's `is-selected` styling and `aria-selected`. Toolbar actions
+  with `requiresSelection` disable when the checked count is zero, including
+  inside the responsive overflow menu.
 - Selection footers remain visible on single/empty pages, display
   selected/source counts, and reserve their chrome during capacity measurement.
   Lists without selection keep the existing hidden-footer behavior.

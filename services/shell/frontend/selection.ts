@@ -1,28 +1,18 @@
 import { t } from "./i18n.ts";
 import type { Selection } from "/p/the8020/db/selection.ts";
 import type { ControlDescriptor } from "/p/the8020/uui/protocol.ts";
+import {
+  selectionOperators,
+  selectionSigns,
+} from "../../../selection_labels.ts";
 
 export const SELECTION_TOKEN_LIMIT = 4;
 
 export function selectionLabel(item: Selection): string {
-  const operators = {
-    EQ: "=",
-    NE: "≠",
-    GT: ">",
-    GE: "≥",
-    LT: "<",
-    LE: "≤",
-    BT: "",
-    CP: "~",
-  };
   const value = item.low === null ? "∅" : String(item.low);
-  return `${item.sign === "E" ? "− " : ""}${
-    item.option === "EQ"
-      ? value
-      : item.option === "BT"
-      ? `${value} … ${item.high}`
-      : `${operators[item.option]} ${value}`
-  }`;
+  return `${t(selectionSigns[item.sign].key)} · ${
+    t(selectionOperators[item.option].key)
+  } ${item.option === "BT" ? `${value} … ${item.high}` : value}`;
 }
 
 /** Same primitive values as ordinary inputs; the original schema validates them. */

@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "Bu düzeni herkes için varsayılan olarak kullan",
     "layouts.forMe": "Benim için",
     "layouts.forEveryone": "Herkes için",
-    "selection.removeValue": "{value} değerini kaldır"
+    "selection.removeValue": "{value} değerini kaldır",
+    "selection.equals": "Eşittir",
+    "selection.notEqual": "Eşit değildir",
+    "selection.greater": "Büyüktür",
+    "selection.greaterEqual": "Büyük veya eşittir",
+    "selection.less": "Küçüktür",
+    "selection.lessEqual": "Küçük veya eşittir",
+    "selection.between": "Arasında",
+    "selection.pattern": "Desenle eşleşir",
+    "selection.value": "Değer",
+    "selection.deleteCriteria": "Seçili ölçütleri sil ({count})"
   }
 }

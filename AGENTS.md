@@ -229,7 +229,9 @@ below.
   creation, selection operations, refresh, and backend paging. Screen navigation
   and form-wide Save/Cancel stay in the page header. Every list reserves the
   shared navbar-height toolbar row, even when empty; controls keep one line and
-  overflow into the same ordered three-dot disclosure as page headers.
+  overflow into the same ordered three-dot disclosure as page headers. Toolbar
+  actions may declare `requiresSelection: true` to disable them while their list
+  has no checked rows; action handlers still validate their targets.
 
 - UUI `0.8.2` and demo `0.8.0` are the paired managed-channel releases for the
   kernel `0.8` line. Package tags use bare semantic versions; package manifests
@@ -768,7 +770,13 @@ below.
   typing. Explicit overflow and ordinary help open the complete editor. The
   lookup hides its full draft value to avoid materializing thousands of tags.
   Query semantics and validation belong to `the8020/db/selection.ts` and
-  `selection_query.ts`, not UUI.
+  `selection_query.ts`, not UUI. Row activation opens that criterion directly;
+  ordinary checkbox selection is separate and Delete confirms only checked
+  criteria. Cancel preserves the isolated draft, and deletion clears checked
+  identities. `selection_labels.ts` owns localized operator/sign presentation
+  for fields, list cells and tokens. Single operands use Value; Between uses
+  From/To. Offer only operators valid for the scalar type; preserve the existing
+  DB operator set and sign semantics.
 - Fields holding several values default to the `tags` control: separated text,
   and arrays whose element has value help or enum options (other scalar arrays
   stay lists unless `control: "tags"`). `FieldDescriptor.multiple` carries the

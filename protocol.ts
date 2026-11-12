@@ -377,6 +377,8 @@ export type ControlDeclaration =
   };
 
 export interface ScreenAction extends ComponentStyle {
+  /** List toolbar action is unavailable while that list has no checked rows. */
+  requiresSelection?: boolean;
   shortcut?: KeyboardShortcut;
   id: string;
   label: string;

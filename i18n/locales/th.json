@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "ใช้เค้าโครงนี้เป็นค่าเริ่มต้นสำหรับทุกคน",
     "layouts.forMe": "สำหรับฉัน",
     "layouts.forEveryone": "สำหรับทุกคน",
-    "selection.removeValue": "นำ {value} ออก"
+    "selection.removeValue": "นำ {value} ออก",
+    "selection.equals": "เท่ากับ",
+    "selection.notEqual": "ไม่เท่ากับ",
+    "selection.greater": "มากกว่า",
+    "selection.greaterEqual": "มากกว่าหรือเท่ากับ",
+    "selection.less": "น้อยกว่า",
+    "selection.lessEqual": "น้อยกว่าหรือเท่ากับ",
+    "selection.between": "ระหว่าง",
+    "selection.pattern": "ตรงกับรูปแบบ",
+    "selection.value": "ค่า",
+    "selection.deleteCriteria": "ลบเงื่อนไขที่เลือก ({count})"
   }
 }

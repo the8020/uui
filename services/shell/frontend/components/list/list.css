@@ -403,7 +403,7 @@
   color: var(--primary);
 }
 
-/* The chosen row of a single-value selection. */
+/* Share the selected state between checkbox and single-value selections. */
 .data-list tbody tr.is-selected {
   background: var(--primary-soft);
   color: var(--primary-dark);

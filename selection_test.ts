@@ -3,7 +3,10 @@ import { field as semanticField, z } from "/p/the8020/db/fields.ts";
 import { type Selection, selectionElement } from "/p/the8020/db/selection.ts";
 import { buildControls, buildFieldCatalog, field } from "./fields.ts";
 import { valueHelpFor } from "./field_help.ts";
-import { selectionInputValue } from "./services/shell/frontend/selection.ts";
+import {
+  selectionInputValue,
+  selectionLabel,
+} from "./services/shell/frontend/selection.ts";
 
 Deno.test("selection opt-in preserves a provider declared on the same field", () => {
   const provider = () => ({
@@ -107,5 +110,20 @@ Deno.test("inline selection entry retains semantic primitives and invalid drafts
       controls.map((control) => [control.bind, control.selectionType]),
     ),
     { number: "number", boolean: "boolean", text: undefined },
+  );
+});
+
+Deno.test("selection tokens describe operators and signs without backend codes", () => {
+  assertEquals(
+    selectionLabel({ sign: "I", option: "EQ", low: 10 }),
+    "Include · Equals 10",
+  );
+  assertEquals(
+    selectionLabel({ sign: "E", option: "NE", low: 20 }),
+    "Exclude · Does not equal 20",
+  );
+  assertEquals(
+    selectionLabel({ sign: "I", option: "BT", low: 10, high: 30 }),
+    "Include · Between 10 … 30",
   );
 });

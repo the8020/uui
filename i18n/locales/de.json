@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "Dieses Layout für alle als Standard verwenden",
     "layouts.forMe": "Für mich",
     "layouts.forEveryone": "Für alle",
-    "selection.removeValue": "{value} entfernen"
+    "selection.removeValue": "{value} entfernen",
+    "selection.equals": "Gleich",
+    "selection.notEqual": "Ungleich",
+    "selection.greater": "Größer als",
+    "selection.greaterEqual": "Größer oder gleich",
+    "selection.less": "Kleiner als",
+    "selection.lessEqual": "Kleiner oder gleich",
+    "selection.between": "Zwischen",
+    "selection.pattern": "Entspricht Muster",
+    "selection.value": "Wert",
+    "selection.deleteCriteria": "Ausgewählte Kriterien löschen ({count})"
   }
 }

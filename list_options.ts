@@ -11,6 +11,12 @@ export function validateElementDeclarations(value: unknown): void {
   for (const element of value) {
     if (!isRecord(element)) throw new TypeError("invalid UUI element");
     validateComponentStyle(element);
+    if (
+      element.requiresSelection !== undefined &&
+      typeof element.requiresSelection !== "boolean"
+    ) {
+      throw new TypeError("requiresSelection must be boolean");
+    }
     if (element.type === "separator") {
       if (
         Object.keys(element).some((key) =>

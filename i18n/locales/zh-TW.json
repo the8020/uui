@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "將此版面配置用作所有人的預設",
     "layouts.forMe": "為我",
     "layouts.forEveryone": "為所有人",
-    "selection.removeValue": "移除{value}"
+    "selection.removeValue": "移除{value}",
+    "selection.equals": "等於",
+    "selection.notEqual": "不等於",
+    "selection.greater": "大於",
+    "selection.greaterEqual": "大於或等於",
+    "selection.less": "小於",
+    "selection.lessEqual": "小於或等於",
+    "selection.between": "介於",
+    "selection.pattern": "符合模式",
+    "selection.value": "值",
+    "selection.deleteCriteria": "刪除所選條件（{count}）"
   }
 }

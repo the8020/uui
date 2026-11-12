@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "Gunakan tata letak ini sebagai default semua orang",
     "layouts.forMe": "Untuk saya",
     "layouts.forEveryone": "Untuk semua orang",
-    "selection.removeValue": "Hapus {value}"
+    "selection.removeValue": "Hapus {value}",
+    "selection.equals": "Sama dengan",
+    "selection.notEqual": "Tidak sama dengan",
+    "selection.greater": "Lebih besar dari",
+    "selection.greaterEqual": "Lebih besar atau sama dengan",
+    "selection.less": "Lebih kecil dari",
+    "selection.lessEqual": "Lebih kecil atau sama dengan",
+    "selection.between": "Di antara",
+    "selection.pattern": "Cocok dengan pola",
+    "selection.value": "Nilai",
+    "selection.deleteCriteria": "Hapus kriteria terpilih ({count})"
   }
 }

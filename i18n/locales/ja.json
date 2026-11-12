@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "このレイアウトを全員の既定にする",
     "layouts.forMe": "自分用",
     "layouts.forEveryone": "全員用",
-    "selection.removeValue": "{value}を削除"
+    "selection.removeValue": "{value}を削除",
+    "selection.equals": "等しい",
+    "selection.notEqual": "等しくない",
+    "selection.greater": "より大きい",
+    "selection.greaterEqual": "以上",
+    "selection.less": "より小さい",
+    "selection.lessEqual": "以下",
+    "selection.between": "範囲内",
+    "selection.pattern": "パターンに一致",
+    "selection.value": "値",
+    "selection.deleteCriteria": "選択した条件を削除（{count}）"
   }
 }

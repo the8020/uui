@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "Dùng bố cục này làm mặc định cho mọi người",
     "layouts.forMe": "Cho tôi",
     "layouts.forEveryone": "Cho mọi người",
-    "selection.removeValue": "Xóa {value}"
+    "selection.removeValue": "Xóa {value}",
+    "selection.equals": "Bằng",
+    "selection.notEqual": "Không bằng",
+    "selection.greater": "Lớn hơn",
+    "selection.greaterEqual": "Lớn hơn hoặc bằng",
+    "selection.less": "Nhỏ hơn",
+    "selection.lessEqual": "Nhỏ hơn hoặc bằng",
+    "selection.between": "Trong khoảng",
+    "selection.pattern": "Khớp mẫu",
+    "selection.value": "Giá trị",
+    "selection.deleteCriteria": "Xóa điều kiện đã chọn ({count})"
   }
 }

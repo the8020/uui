@@ -328,6 +328,16 @@
     "layouts.defaultEveryone": "Gamitin ang layout na ito bilang default para sa lahat",
     "layouts.forMe": "Para sa akin",
     "layouts.forEveryone": "Para sa lahat",
-    "selection.removeValue": "Alisin ang {value}"
+    "selection.removeValue": "Alisin ang {value}",
+    "selection.equals": "Katumbas ng",
+    "selection.notEqual": "Hindi katumbas ng",
+    "selection.greater": "Mas malaki sa",
+    "selection.greaterEqual": "Mas malaki o katumbas ng",
+    "selection.less": "Mas maliit sa",
+    "selection.lessEqual": "Mas maliit o katumbas ng",
+    "selection.between": "Sa pagitan",
+    "selection.pattern": "Tugma sa pattern",
+    "selection.value": "Halaga",
+    "selection.deleteCriteria": "Tanggalin ang mga napiling pamantayan ({count})"
   }
 }
