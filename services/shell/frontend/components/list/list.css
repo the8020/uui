@@ -666,7 +666,7 @@
 }
 
 .layout-fields-table :is(th, td):nth-child(5) {
-  width: 10rem;
+  width: 12rem;
 }
 
 .layout-fields-table .field {
