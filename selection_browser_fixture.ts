@@ -158,10 +158,15 @@ export async function verifySelection(page: Browser) {
   await help("names");
   await click(button("values", active));
   await wait(
-    `!!${list("choices")}?.querySelector('tbody input[type="checkbox"]')`,
+    `${list("choices")}?.querySelectorAll('tbody tr').length > 1`,
   );
   await click(
     `${list("choices")}.querySelector('tbody input[type="checkbox"]')`,
+  );
+  await wait(
+    `${
+      list("choices")
+    }.querySelector('.data-list-page-summary').textContent.startsWith('(1 of')`,
   );
   await click(
     `${
@@ -193,10 +198,15 @@ export async function verifySelection(page: Browser) {
   );
   await click(button("values", active));
   await wait(
-    `!!${list("choices")}?.querySelector('tbody input[type="checkbox"]')`,
+    `${list("choices")}?.querySelectorAll('tbody tr').length > 1`,
   );
   await click(
     `${list("choices")}.querySelector('tbody input[type="checkbox"]')`,
+  );
+  await wait(
+    `${
+      list("choices")
+    }.querySelector('.data-list-page-summary').textContent.startsWith('(1 of')`,
   );
   await click(button("done", active));
   await wait(`${list("criteria")}?.querySelectorAll('tbody tr').length===2`);
