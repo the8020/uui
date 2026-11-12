@@ -23,6 +23,7 @@ import {
 } from "../../renderer.ts";
 import { ResponsiveProgramHeader } from "../../responsive_header.ts";
 import { renderIconText } from "../../icon_text.ts";
+import { iconButton } from "./tools.ts";
 
 export interface LayoutCallbacks {
   layout(id: string, layout: ListLayout): boolean;
@@ -341,17 +342,17 @@ export async function layoutEditor(
         elements: [
           {
             id: `up:${index}`,
-            label: `[[icon=arrow_upward]] ${
-              t("layouts.up")
-            }: ${column.heading}`,
-            class: index === 0 ? "is-unavailable" : undefined,
+            label: "[[icon=arrow_upward]]",
+            class: `data-list-icon-button ${
+              index === 0 ? "is-unavailable" : ""
+            }`,
           },
           {
             id: `down:${index}`,
-            label: `[[icon=arrow_downward]] ${
-              t("layouts.down")
-            }: ${column.heading}`,
-            class: index === order.length - 1 ? "is-unavailable" : undefined,
+            label: "[[icon=arrow_downward]]",
+            class: `data-list-icon-button ${
+              index === order.length - 1 ? "is-unavailable" : ""
+            }`,
           },
         ],
       };
@@ -390,6 +391,22 @@ export async function layoutEditor(
       { render: () => document.createElement("div") },
     );
     body.querySelector(".screen-title")?.remove();
+    for (
+      const button of body.querySelectorAll<HTMLButtonElement>(
+        ".data-list-icon-button",
+      )
+    ) {
+      const [direction, position] = button.dataset.elementId!.split(":");
+      const label = `${
+        t(direction === "up" ? "layouts.up" : "layouts.down")
+      }: ${
+        available.find((column) => column.key === order[Number(position)])!
+          .heading
+      }`;
+      button.setAttribute("aria-label", label);
+      button.title = label;
+    }
+
     body.querySelector<HTMLInputElement>('[data-bind="name"]')?.setAttribute(
       "maxlength",
       "80",
@@ -472,38 +489,56 @@ export async function layoutEditor(
       const edit = document.createElement("button");
       edit.type = "button";
       edit.className = "data-list-column-button";
-      edit.textContent = label;
+      const text = document.createElement("span");
+      text.className = "data-list-heading";
+      text.textContent = label;
+      edit.title = label;
+      edit.append(text);
       edit.addEventListener("click", () => open(layout, item));
       first.replaceChildren(edit);
-      cell(item ? t(item.global ? "layouts.shared" : "layouts.personal") : "");
-      cell(
-        item &&
+      const scope = item
+        ? t(item.global ? "layouts.shared" : "layouts.personal")
+        : "";
+      const defaultLabel = item &&
           catalog[item.global ? "global" : "personal"].defaultName === label
-          ? t(item.global ? "layouts.forEveryone" : "layouts.forMe")
-          : "",
-      );
+        ? t(item.global ? "layouts.forEveryone" : "layouts.forMe")
+        : "";
+      cell(scope);
+      cell(defaultLabel);
+      const metadata = document.createElement("span");
+      metadata.className = "layout-row-meta";
+      metadata.textContent = [scope, defaultLabel].filter(Boolean).join(" · ");
+      first.append(metadata);
+      tr.addEventListener("click", (event) => {
+        if (
+          !(event.target instanceof Element) || event.target.closest("button")
+        ) return;
+        open(layout, item);
+      });
       const buttons = tr.insertCell();
-      const applyButton = document.createElement("button");
-      applyButton.type = "button";
-      applyButton.className = "button button-secondary";
-      applyButton.textContent = t("layouts.apply");
-      applyButton.addEventListener("click", () => apply(layout));
-      buttons.append(applyButton);
+      buttons.append(
+        iconButton(
+          `${t("layouts.apply")}: ${label}`,
+          "play_arrow",
+          () => apply(layout),
+        ),
+      );
       if (item && (!item.global || catalog.canManageGlobal)) {
-        const remove = document.createElement("button");
-        remove.type = "button";
-        remove.className = "button button-danger";
-        remove.textContent = t("layouts.delete");
-        remove.addEventListener("click", () =>
-          execute(async () => {
-            await command({
-              operation: "delete",
-              global: item.global,
-              name: item.name,
-            });
-            drawList();
-          }));
-        buttons.append(remove);
+        buttons.append(
+          iconButton(
+            `${t("layouts.delete")}: ${label}`,
+            "delete",
+            () =>
+              execute(async () => {
+                await command({
+                  operation: "delete",
+                  global: item.global,
+                  name: item.name,
+                });
+                drawList();
+              }),
+          ),
+        );
       }
     };
     row(t("layouts.builtin"), builtin);

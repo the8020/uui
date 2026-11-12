@@ -182,9 +182,7 @@ export async function verifyLayouts(page: Browser) {
   });
   await wait(`!!${dialog}.querySelector('table')`);
   await click(
-    `Array.from(${
-      row("UX Mine")
-    }.querySelectorAll('button')).find(b=>b.textContent==='Delete')`,
+    `${row("UX Mine")}.querySelector('[aria-label="Delete: UX Mine"]')`,
   );
   await wait(`!${row("UX Mine")}`);
   await click(`${dialog}.querySelector('[aria-label="Close"]')`);
