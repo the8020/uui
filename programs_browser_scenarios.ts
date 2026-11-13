@@ -1432,8 +1432,15 @@ async function verifyCustomization(page: BrowserDriver): Promise<void> {
     "Back saved an unsaved color",
   );
   await verifyAccentAppearance(page, "accent-configure");
+  // Direct-choice fields draw no help button; F4 still opens their help.
+  assert(
+    await page.evaluate<boolean>(
+      "document.querySelector('[data-bind=accessMode]').closest('.field').querySelector('.field-help-button') === null",
+    ),
+    "a select drew an edit button",
+  );
   await page.evaluate(
-    "document.querySelector('[data-bind=accessMode]').closest('.field').querySelector('.field-help-button').click()",
+    "(() => { const select = document.querySelector('[data-bind=accessMode]'); select.focus(); select.dispatchEvent(new KeyboardEvent('keydown', { key: 'F4', bubbles: true })); })()",
   );
   await wait(
     page,

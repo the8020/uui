@@ -70,6 +70,42 @@ export default function fixture() {
         page.evaluate<string>(
           `document.querySelector('[data-element-id=${id}] input').value`,
         );
+      // Date pickers are a direct choice: no edit button, read-only keeps view.
+      assertEquals(
+        await page.evaluate(
+          `['instant', 'local', 'mirror', 'offset'].map((id) =>
+          document.querySelector('[data-element-id=' + id + '] .field-help-button')
+            ?.querySelector('.material-icon')?.dataset.materialIcon ?? null)`,
+        ),
+        [null, null, "chevron_right", "chevron_right"],
+      );
+      // F4 still opens help on a field without the button.
+      const key = (name: string, code: number) =>
+        Promise.all(
+          ["keyDown", "keyUp"].map((type) =>
+            page.command("Input.dispatchKeyEvent", {
+              type,
+              key: name,
+              code: name,
+              windowsVirtualKeyCode: code,
+            })
+          ),
+        );
+      await page.evaluate(
+        "document.querySelector('[data-element-id=local] input').focus()",
+      );
+      await key("F4", 115);
+      await wait("dialog.presentation-modal[open]");
+      await key("Escape", 27);
+      const deadline = Date.now() + 5000;
+      while (
+        await page.evaluate<boolean>(
+          "!!document.querySelector('dialog.presentation-modal[open]')",
+        )
+      ) {
+        if (Date.now() > deadline) throw new Error("help did not close");
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
       assertEquals(await value("instant"), "2026-10-18T06:20:30.123");
       assertEquals(await value("mirror"), "2026-10-18T06:20:30.123");
       assertEquals(await value("offset"), "2026-10-18T06:20:30.123");

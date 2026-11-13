@@ -1,4 +1,5 @@
 import { type KeyboardShortcut, shortcutKey } from "../../../protocol.ts";
+import { fieldHelpActions } from "./field_help_actions.ts";
 
 const enterActions = new WeakMap<HTMLInputElement, () => void>();
 
@@ -134,14 +135,18 @@ export function installKeyboardShortcuts(options: {
           };
         }
       } else if (active instanceof HTMLElement && available(active)) {
+        const field = active.closest(".field");
         const target = action === "help"
-          ? active.closest(".field")?.querySelector<HTMLButtonElement>(
-            ".field-help-button",
-          )
+          ? field?.querySelector<HTMLButtonElement>(".field-help-button")
           : action === "click"
           ? active
           : undefined;
         if (target && available(target)) run = () => target.click();
+        else if (action === "help" && field) {
+          // Direct-choice fields draw no help button but keep F1/F4.
+          const help = fieldHelpActions.get(field);
+          if (help) run = help;
+        }
       }
     }
     if (!run) return;

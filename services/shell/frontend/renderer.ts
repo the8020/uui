@@ -15,6 +15,7 @@ import type { LayoutDocument, LayoutNode } from "/p/the8020/uui/layout.ts";
 import { humanize } from "../../../humanize.ts";
 import { fieldGridPositions } from "./field_grid.ts";
 import { createOverflowText, disposeOverflowText } from "./overflow.ts";
+import { fieldHelpActions } from "./field_help_actions.ts";
 import {
   createMaterialIcon,
   expandIconPlaceholders,
@@ -707,6 +708,22 @@ function renderRadioControl(
   return group;
 }
 
+/**
+ * Editable controls that are already a complete choice (lists, checkboxes,
+ * pickers) get no edit button: it would only repeat the control. F1/F4 still
+ * open their help.
+ */
+const DIRECT_CHOICE_CONTROLS = new Set<ControlDescriptor["control"]>([
+  "select",
+  "checkbox",
+  "switch",
+  "radio",
+  "date",
+  "datetime",
+  "range",
+  "color",
+]);
+
 function addFieldHelp(
   wrapper: HTMLElement,
   shell: HTMLElement,
@@ -715,6 +732,10 @@ function addFieldHelp(
   disabled: boolean,
 ): void {
   if (control.fieldHelp === false) return;
+  fieldHelpActions.set(wrapper, () => callbacks.help(control));
+  if (!control.readOnly && DIRECT_CHOICE_CONTROLS.has(control.control)) {
+    return;
+  }
   wrapper.classList.add("field-has-edit-affordance");
   const button = document.createElement("button");
   button.type = "button";

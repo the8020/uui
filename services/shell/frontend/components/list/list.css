@@ -1,7 +1,6 @@
 .data-list-container {
   --list-row-height: 36px;
   --list-header-height: 37px;
-  --list-tools-width: 24px;
 
   min-width: 0;
 }
@@ -14,7 +13,8 @@
 }
 
 .data-list-custom-toolbar > .program-header {
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .data-list {
@@ -150,21 +150,51 @@
   overflow: hidden;
 }
 
-.data-list th:last-child .data-list-column-button {
-  padding-inline-end: calc(7px + var(--list-tools-width));
-}
-
-.data-list-tools-toggle {
+/* Drag a heading's end edge to resize its column; double-click resets it. */
+.data-list-column-resizer {
   position: absolute;
   z-index: 1;
-  inset: 0 0 auto auto;
-  justify-content: flex-end;
-  width: var(--list-tools-width);
+  inset-block: 0;
+  inset-inline-end: 0;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.data-list-column-resizer::after {
+  content: "";
+  position: absolute;
+  inset-block: 25%;
+  inset-inline-end: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background-color 120ms ease;
+}
+
+.data-list th:hover .data-list-column-resizer::after {
+  background: var(--border);
+}
+
+.data-list-column-resizer:hover::after,
+.data-list th.is-resizing .data-list-column-resizer::after {
+  background: var(--primary);
+}
+
+/* List tools open from the toolbar row above the table, at its end. */
+.data-list-tools-toggle {
+  flex: 0 0 auto;
+  justify-content: center;
+  width: var(--list-row-height);
+  margin-inline-start: auto;
   padding: 0;
-  background: var(--surface);
+  border-radius: 6px;
   color: var(--muted);
-  font-size: 1.25rem;
-  font-weight: 800;
+}
+
+.data-list-tools-toggle.is-open {
+  background: var(--primary-soft);
+  color: var(--primary);
 }
 
 .data-list-popover {

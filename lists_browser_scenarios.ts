@@ -1093,19 +1093,19 @@ async function toolsOverlay(
 ): Promise<void> {
   const layout = await page.evaluate<
     {
-      headerOnly: boolean;
+      inToolbar: boolean;
+      aboveHeader: boolean;
       rightGap: number;
-      width: number;
-      fitsHeader: boolean;
-      padding: string;
+      icon: string | null;
+      lastHeadingPadding: string;
     }
   >(`(() => { const h=document.querySelector(${
     JSON.stringify(selector)
-  }); const t=h.querySelector('[aria-label="List tools"]'); const r=t.getBoundingClientRect(); const s=h.querySelector('.data-list-scroll').getBoundingClientRect(); const head=h.querySelector('thead').getBoundingClientRect(); return { headerOnly:!t.closest('table'), rightGap:s.right-r.right, width:r.width, fitsHeader:r.top>=head.top && r.bottom<=head.bottom, padding:getComputedStyle(t).padding }; })()`);
+  }); const t=h.querySelector('[aria-label="List tools"]'); const r=t.getBoundingClientRect(); const head=h.querySelector('thead').getBoundingClientRect(); const last=[...h.querySelectorAll('thead .data-list-column-button')].at(-1); return { inToolbar:t.parentElement?.classList.contains('data-list-custom-toolbar') ?? false, aboveHeader:r.bottom<=head.top, rightGap:h.querySelector('.data-list-custom-toolbar').getBoundingClientRect().right-r.right, icon:t.querySelector('.material-icon')?.dataset.materialIcon ?? null, lastHeadingPadding:getComputedStyle(last).paddingInlineEnd }; })()`);
   assert(
-    layout.headerOnly && Math.abs(layout.rightGap) < 1 && layout.width <= 24 &&
-      layout.fitsHeader && layout.padding === "0px",
-    `tools overlay uses only the header's right edge: ${
+    layout.inToolbar && layout.aboveHeader && Math.abs(layout.rightGap) < 1 &&
+      layout.icon === "settings" && layout.lastHeadingPadding === "7px",
+    `gear list tools button ends the toolbar row above the header: ${
       JSON.stringify(layout)
     }`,
   );

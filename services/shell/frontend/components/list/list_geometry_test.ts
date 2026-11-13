@@ -19,3 +19,13 @@ Deno.test("list columns retain readable minimum widths in narrow viewports", () 
   assertEquals(listColumnWidths(["compact", "long"], 200), [58, 260]);
   assertEquals(listColumnWidths(["compact", "long"], 318), [58, 260]);
 });
+
+Deno.test("dragged column widths stay fixed while the others share the rest", () => {
+  assertEquals(
+    listColumnWidths(["short", "short", "long"], 1000, [undefined, 300]),
+    [110 + 330 * 1 / 5, 300, 260 + 330 * 4 / 5],
+  );
+  // Wider fixed columns than the space scroll instead of squeezing others.
+  assertEquals(listColumnWidths(["short", "long"], 400, [500]), [500, 260]);
+  assertEquals(listColumnWidths(["compact"], 200, [80]), [80]);
+});

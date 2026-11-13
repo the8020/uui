@@ -157,11 +157,18 @@ Parent DOX: [shell frontend](../../AGENTS.md).
   clear-all actions only for applied sorts or filters. `filter_list_off` clears
   sort; `filter_alt_off` clears column filters and quick search together.
   Clearing one query category preserves the other and affects only that list.
-- The List tools `+`/`−` toggle overlays only the header at the viewport's exact
-  right edge, including during horizontal scroll. Keep its width at 24px with
-  zero padding; reserve clearance only in the last column heading. Data columns
-  use the full table width, with no tools column or empty body cells, so row
-  content and highlights continue to the right edge.
+- Each column heading ends in a drag handle. Dragging sets that column's width
+  (at least 48px), double-click resets it. Widths live in the list element's
+  `data.columnWidths` by column key, so they survive redraws, refresh and reload
+  of the same Model; saved list layouts do not store them. Columns without a
+  dragged width share the remaining space by semantic length, and the table
+  scrolls horizontally when fixed widths exceed the list.
+- The List tools toggle is a gear (`settings`) icon button at the end of the
+  reserved toolbar row above the table, after the program's toolbar items, and
+  is highlighted while open. It never overlays the header, so the last column
+  heading needs no clearance. Data columns use the full table width, with no
+  tools column or empty body cells, so row content and highlights continue to
+  the right edge.
 
 # Work Guidance
 

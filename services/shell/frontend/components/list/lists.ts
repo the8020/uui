@@ -24,6 +24,8 @@ import { listColumnWidths, listRowCapacity } from "./list_geometry.ts";
 import { browserPageSizes, LIST_PAGE_SIZES } from "./page_size.ts";
 import { getPath, paginationItems } from "../../model.ts";
 
+const MIN_COLUMN_WIDTH = 48;
+
 export interface ListCallbacks extends ListToolCallbacks {
   elements(elements: ScreenElement[]): HTMLElement[];
   request(updates: ListRequest[]): boolean;
@@ -415,7 +417,7 @@ class ListController {
         button.classList.add("has-filter");
       }
       button.addEventListener("click", () => this.openColumn(column, button));
-      cell.append(button, measure);
+      cell.append(button, measure, this.columnResizer(column.key, cell));
       head.append(cell);
       this.#measures.push({ column, button, measure, full, short });
     }
@@ -423,7 +425,8 @@ class ListController {
     toggle.type = "button";
     toggle.className = "data-list-tools-toggle";
     toggle.id = `${this.#prefix}-tools`;
-    toggle.textContent = state.toolbarOpen ? "−" : "+";
+    renderIconText(toggle, "[[icon=settings]]", { decorativeIcons: true });
+    toggle.classList.toggle("is-open", state.toolbarOpen);
     toggle.setAttribute("aria-label", t("shell.listTools"));
     toggle.setAttribute("aria-expanded", String(state.toolbarOpen));
     toggle.setAttribute("aria-controls", toolbar.id);
@@ -439,11 +442,13 @@ class ListController {
     toggle.addEventListener("click", () => {
       state.toolbarOpen = !state.toolbarOpen;
       toolbar.hidden = !state.toolbarOpen;
-      toggle.textContent = state.toolbarOpen ? "−" : "+";
+      toggle.classList.toggle("is-open", state.toolbarOpen);
       toggle.setAttribute("aria-expanded", String(state.toolbarOpen));
       if (state.toolbarOpen) search.focus({ preventScroll: true });
       this.schedule();
     });
+    // The reserved toolbar row above the table holds it, never the header.
+    customToolbar.append(toggle);
     const body = this.#table.createTBody();
     snapshot.rows.forEach((item, index) => {
       const row = body.insertRow();
@@ -515,7 +520,7 @@ class ListController {
     this.#scroll.append(this.#table);
     const viewport = document.createElement("div");
     viewport.className = "data-list-viewport";
-    viewport.append(toggle, this.#scroll);
+    viewport.append(this.#scroll);
     this.#pagination = this.pagination();
     this.host.append(viewport, this.#pagination);
     this.#rendering = false;
@@ -547,6 +552,64 @@ class ListController {
     }
   }
 
+  /** Column widths the user dragged, by column key; kept in element state. */
+  columnWidths(): Record<string, number> {
+    const value = this.#state?.data?.columnWidths;
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+      return {};
+    }
+    return Object.fromEntries(
+      Object.entries(value).filter(([, width]) =>
+        typeof width === "number" && Number.isFinite(width)
+      ),
+    ) as Record<string, number>;
+  }
+
+  /** Drag the heading's right edge to set its width; double-click resets it. */
+  columnResizer(key: string, cell: HTMLElement): HTMLElement {
+    const handle = document.createElement("span");
+    handle.className = "data-list-column-resizer";
+    handle.setAttribute("role", "separator");
+    handle.setAttribute("aria-orientation", "vertical");
+    handle.setAttribute("aria-hidden", "true");
+    const store = (width: number | undefined) => {
+      const widths = this.columnWidths();
+      if (width === undefined) delete widths[key];
+      else widths[key] = width;
+      this.#state.data = { ...this.#state.data, columnWidths: widths };
+      this.schedule();
+    };
+    handle.addEventListener("click", (event) => event.stopPropagation());
+    handle.addEventListener("dblclick", (event) => {
+      event.stopPropagation();
+      store(undefined);
+    });
+    handle.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const start = event.clientX;
+      const initial = cell.getBoundingClientRect().width;
+      const rtl = getComputedStyle(cell).direction === "rtl";
+      handle.setPointerCapture(event.pointerId);
+      cell.classList.add("is-resizing");
+      const move = (next: PointerEvent) => {
+        const delta = (next.clientX - start) * (rtl ? -1 : 1);
+        store(Math.round(Math.max(MIN_COLUMN_WIDTH, initial + delta)));
+      };
+      const end = () => {
+        cell.classList.remove("is-resizing");
+        handle.removeEventListener("pointermove", move);
+        handle.removeEventListener("pointerup", end);
+        handle.removeEventListener("pointercancel", end);
+      };
+      handle.addEventListener("pointermove", move);
+      handle.addEventListener("pointerup", end);
+      handle.addEventListener("pointercancel", end);
+    });
+    return handle;
+  }
+
   measure(): ListRequest | undefined {
     if (
       !this.host.isConnected || this.host.getClientRects().length === 0 ||
@@ -560,6 +623,7 @@ class ListController {
       snapshot.columns.map((column) => column.length),
       // clientWidth rounds up fractional card widths and can create overflow.
       this.#scroll.getBoundingClientRect().width - selectionWidth,
+      snapshot.columns.map((column) => this.columnWidths()[column.key]),
     );
     if (selectionWidth) widths.unshift(selectionWidth);
     const cols = this.#table.querySelectorAll("col");

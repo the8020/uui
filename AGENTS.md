@@ -107,6 +107,14 @@ Default section order:
   optimized output formats; custom images live in the database, defaults in the
   shell package. Browser titles combine the saved server title and screen title.
 
+- The List tools toggle is a gear icon in the toolbar row above the table, never
+  over the last column heading.
+- Table columns can be resized by dragging the heading edge; double-click resets
+  the width.
+- Editable direct-choice fields (select, checkbox, switch, radio, date,
+  datetime, range, color) show no edit pencil: the control already is the
+  choice. F1/F4 still open their field help; read-only fields keep Chevron
+  Right.
 - Group Back, Exit, and New beside the brand as one gapless segmented control.
   Exit terminates the current session and returns to the entry screen, retaining
   authentication. New opens the base UUI URL with target blank.
@@ -724,15 +732,16 @@ below.
   Browser keyboard dispatch and focus remain owned by the browser child
   contract.
 - Scalar fields expose a pencil or read-only Chevron Right button and
-  focused-field F1/F4 help. The modal owns an isolated draft and keeps the
-  caller Model and surface reserved. Only Done validates against the complete
-  caller schema and commits; Close, Back, and Escape discard even invalid
-  drafts. On every screen, Back (Close, Escape) applies the edits it carries
-  when they are valid and otherwise discards them; it is never refused for an
-  invalid draft. Empty separated tags send no value rather than `""`. A cleared
-  input (`""`) that fails its field schema becomes `null` when nullable,
-  otherwise `undefined` when optional. Valid empty strings stay strings.
-  Validation problems are reported through
+  focused-field F1/F4 help. Editable direct-choice controls draw no pencil;
+  `field_help_actions.ts` keeps their F1/F4 help without a button. The modal
+  owns an isolated draft and keeps the caller Model and surface reserved. Only
+  Done validates against the complete caller schema and commits; Close, Back,
+  and Escape discard even invalid drafts. On every screen, Back (Close, Escape)
+  applies the edits it carries when they are valid and otherwise discards them;
+  it is never refused for an invalid draft. Empty separated tags send no value
+  rather than `""`. A cleared input (`""`) that fails its field schema becomes
+  `null` when nullable, otherwise `undefined` when optional. Valid empty strings
+  stay strings. Validation problems are reported through
   `describeError(error, schema?, bind?)` (`errors.ts`, exported from `mod.ts`):
   the field's label and a plain message, with "Enter a value." for empty or
   missing required values; programs use it instead of showing raw Zod messages.
@@ -886,11 +895,11 @@ below.
   horizontally; fractional sizing and invisible heading measurements must not
   create scrollbars. Header popovers expose full headings, shared field
   descriptions, typed filters, sort, and clear actions; icons use the vendored
-  `[[icon=...]]` registry. The rightmost List tools disclosure opens the search
-  toolbar. Drafts, focus/caret, expansion, and horizontal scroll survive
-  updates. The pagination footer is hidden for single-page and empty results
-  without selection; sources that fit on one page reserve no footer space.
-  Clearing controls appear only for active queries. The
+  `[[icon=...]]` registry. The gear List tools button at the end of the list's
+  toolbar row opens the search toolbar. Drafts, focus/caret, expansion, and
+  horizontal scroll survive updates. The pagination footer is hidden for
+  single-page and empty results without selection; sources that fit on one page
+  reserve no footer space. Clearing controls appear only for active queries. The
   [browser contract](services/shell/frontend/AGENTS.md) owns list control layout
   and confirmation behavior. Encapsulate browser lists and their data tools in
   `services/shell/frontend/components/list/`. The expanded toolbar includes
@@ -1196,6 +1205,10 @@ below.
 
 # Verification
 
+- `deno run -A presentation_browser_e2e.ts
+  --fixture=./column_resize_browser_fixture.ts`
+  drags a heading edge with the real mouse, checks the shared remaining width,
+  no column menu, retention across a program redraw, and double-click reset.
 - `deno run -A presentation_browser_e2e.ts
   --fixture=./icon_value_browser_fixture.ts`
   checks icons in read-only field values and screen descriptions, literal
