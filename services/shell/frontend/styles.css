@@ -1547,6 +1547,32 @@ body:has(.uui-content-fullscreen) {
   cursor: default;
 }
 
+/* Read-only values with icon placeholders: the layer shows them over the input. */
+.field :is(input, textarea)[readonly].field-has-icon-value {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+.field-input-shell > .field-icon-value {
+  position: absolute;
+  inset: 0 0 1px;
+  overflow: hidden;
+  color: var(--text);
+  line-height: var(--field-grid-control-height, 38px);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.field-input-shell > .field-icon-value.field-icon-value-multiline {
+  line-height: normal;
+  white-space: pre-wrap;
+}
+
+.field-has-edit-affordance .field-input-shell > .field-icon-value {
+  padding-inline-end: 1.8rem;
+}
+
 .field-has-edit-affordance input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
 .field-has-edit-affordance textarea,
 .field-has-edit-affordance select {

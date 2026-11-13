@@ -4,6 +4,7 @@ import {
   MAX_RENDERED_MESSAGES,
   MAX_RETAINED_MESSAGES,
   MessageCollection,
+  messagePreview,
   messageToastTimeoutMilliseconds,
   MIN_MESSAGE_TOAST_TIMEOUT_MILLISECONDS,
   type PresentedMessage,
@@ -64,3 +65,12 @@ function message(sequence: number): PresentedMessage {
     receivedAt: sequence,
   };
 }
+
+Deno.test("message previews keep icon placeholders whole", () => {
+  assertEquals(
+    messagePreview("**Report** [[icon=check_circle color=success]] _done_"),
+    "Report [[icon=check_circle color=success]] done",
+  );
+  const long = messagePreview(`${"x".repeat(90)} [[icon=error color=danger]]`);
+  assertEquals(long, `${"x".repeat(90)}…`);
+});

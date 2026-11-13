@@ -15,7 +15,12 @@ import type { LayoutDocument, LayoutNode } from "/p/the8020/uui/layout.ts";
 import { humanize } from "../../../humanize.ts";
 import { fieldGridPositions } from "./field_grid.ts";
 import { createOverflowText, disposeOverflowText } from "./overflow.ts";
-import { createMaterialIcon, renderIconText } from "./icon_text.ts";
+import {
+  createMaterialIcon,
+  expandIconPlaceholders,
+  parseIconText,
+  renderIconText,
+} from "./icon_text.ts";
 import {
   dateTimeInputValue,
   getPath,
@@ -103,6 +108,7 @@ export function renderScreen(
   if (snapshot.description) {
     const description = element("div", "screen-description");
     renderMarkdown(description, snapshot.description);
+    expandIconPlaceholders(description);
     article.append(description);
   }
   const controls = new Map(
@@ -623,6 +629,7 @@ function renderControlBody(
   }
   const inputShell = element("div", "field-input-shell");
   inputShell.append(input);
+  refreshIconValue(input);
   if (control.control === "range" && input instanceof HTMLInputElement) {
     const output = document.createElement("output");
     output.className = "field-range-value";
@@ -795,6 +802,7 @@ export function synchronizeBinding(
       candidate.checked = Boolean(value);
     } else {
       setInputValue(candidate, value);
+      refreshIconValue(candidate);
     }
     if (candidate instanceof HTMLInputElement && candidate.type === "range") {
       updateRangeOutput(candidate);
@@ -815,6 +823,44 @@ function setInputValue(
     text = dateTimeInputValue(text);
   }
   if (input.value !== text) input.value = text;
+}
+
+/**
+ * Read-only values may carry `[[icon=…]]` placeholders, as list cells do. An
+ * input cannot hold icons, so a non-interactive layer shows the rendered value
+ * while the input keeps the plain text for selection and assistive technology.
+ */
+function refreshIconValue(
+  input: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+): void {
+  const shell = input.parentElement;
+  if (shell === null || input instanceof HTMLSelectElement) return;
+  const raw = input.value;
+  const tokens = input.readOnly && raw.includes("[[icon=")
+    ? parseIconText(raw)
+    : [];
+  let layer = shell.querySelector<HTMLElement>(":scope > .field-icon-value");
+  if (!tokens.some((token) => token.type === "icon")) {
+    layer?.remove();
+    input.classList.remove("field-has-icon-value");
+    return;
+  }
+  if (layer === null) {
+    layer = element("div", "field-icon-value");
+    layer.setAttribute("aria-hidden", "true");
+    shell.append(layer);
+  }
+  layer.classList.toggle(
+    "field-icon-value-multiline",
+    input instanceof HTMLTextAreaElement,
+  );
+  renderIconText(layer, raw, { decorativeIcons: true });
+  const text = tokens.map((token) => token.type === "text" ? token.text : "")
+    .join("");
+  input.value = input instanceof HTMLTextAreaElement
+    ? text
+    : text.replace(/\s+/g, " ").trim();
+  input.classList.add("field-has-icon-value");
 }
 
 function updateRangeOutput(input: HTMLInputElement): void {

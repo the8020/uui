@@ -1,5 +1,5 @@
 import { renderMarkdown } from "../../../frontend/mod.ts";
-import { renderIconText } from "./icon_text.ts";
+import { expandIconPlaceholders, renderIconText } from "./icon_text.ts";
 import { AnchoredPopover } from "./popover.ts";
 
 interface OverflowController {
@@ -84,22 +84,7 @@ export function createOverflowText(
     }
     if (!rendered) {
       renderMarkdown(popover.element, content);
-      // Preserve UUI icon placeholders within Markdown text without flattening it.
-      const walker = document.createTreeWalker(
-        popover.element,
-        NodeFilter.SHOW_TEXT,
-      );
-      const nodes: Text[] = [];
-      while (walker.nextNode()) nodes.push(walker.currentNode as Text);
-      for (const node of nodes) {
-        if (
-          !node.textContent?.includes("[[icon=") ||
-          node.parentElement?.closest("code, pre")
-        ) continue;
-        const span = document.createElement("span");
-        renderIconText(span, node.textContent);
-        node.replaceWith(span);
-      }
+      expandIconPlaceholders(popover.element);
       rendered = true;
     }
     popover.show();

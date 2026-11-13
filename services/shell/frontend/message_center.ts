@@ -8,7 +8,11 @@ import {
 } from "../../../messages.ts";
 export { MAX_RETAINED_MESSAGES } from "../../../messages.ts";
 import { renderMarkdown } from "../../../frontend/mod.ts";
-import { createMaterialIcon } from "./icon_text.ts";
+import {
+  createMaterialIcon,
+  expandIconPlaceholders,
+  renderIconText,
+} from "./icon_text.ts";
 
 export const MAX_RENDERED_MESSAGES = 10;
 export const MIN_MESSAGE_TOAST_TIMEOUT_MILLISECONDS = 1_000;
@@ -390,6 +394,7 @@ export class MessageCenter {
     }
     if (body.dataset.rendered === "true") return;
     renderMarkdown(body, message.body);
+    expandIconPlaceholders(body);
     body.dataset.rendered = "true";
   }
 
@@ -622,7 +627,9 @@ export class MessageCenter {
       kind.textContent = messageKindLabel(message.kind);
       const preview = document.createElement("span");
       preview.className = "message-history-preview";
-      preview.textContent = messagePreview(message.body);
+      renderIconText(preview, messagePreview(message.body), {
+        decorativeIcons: true,
+      });
       const time = document.createElement("time");
       time.className = "message-history-time";
       const timestamp = new Date(message.receivedAt);
@@ -658,6 +665,7 @@ export class MessageCenter {
     const body = document.createElement("div");
     body.className = "message-history-body";
     renderMarkdown(body, message.body);
+    expandIconPlaceholders(body);
     entry.append(body);
   }
 }
@@ -668,14 +676,24 @@ function messageKindLabel(kind: UUIMessageKind): string {
     : kind[0]!.toUpperCase() + kind.slice(1);
 }
 
-function messagePreview(body: string): string {
-  const plain = body
+export function messagePreview(body: string): string {
+  // Keep icon placeholders intact while Markdown punctuation is removed.
+  const icons: string[] = [];
+  const protectedBody = body.replace(/\[\[icon=[^\]]*\]\]/g, (icon) => {
+    icons.push(icon);
+    return `\uE000${icons.length - 1}\uE000`;
+  });
+  const plain = protectedBody
     .replace(/```[\s\S]*?```/g, " code ")
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
     .replace(/^[#>*+\-\d.\s]+/gm, "")
     .replace(/[*_~`|]/g, "")
     .replace(/\s+/g, " ")
-    .trim();
-  return plain.length <= 96 ? plain : `${plain.slice(0, 95)}…`;
+    .trim()
+    .replace(/\uE000(\d+)\uE000/g, (_, index) => icons[Number(index)]!);
+  // Never cut an icon placeholder in half.
+  return plain.length <= 96
+    ? plain
+    : `${plain.slice(0, 95).replace(/\[\[(?:(?!\]\]).)*$/, "").trimEnd()}…`;
 }

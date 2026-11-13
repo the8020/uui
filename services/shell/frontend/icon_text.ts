@@ -70,6 +70,28 @@ export function renderIconText(
   );
 }
 
+/**
+ * Expand `[[icon=…]]` placeholders inside already rendered Markdown, leaving
+ * code and preformatted text literal.
+ */
+export function expandIconPlaceholders(
+  root: HTMLElement,
+  options: IconRenderOptions = {},
+): void {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes: Text[] = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode as Text);
+  for (const node of nodes) {
+    if (
+      !node.textContent?.includes("[[icon=") ||
+      node.parentElement?.closest("code, pre")
+    ) continue;
+    const span = document.createElement("span");
+    renderIconText(span, node.textContent, options);
+    node.replaceWith(span);
+  }
+}
+
 export function createMaterialIcon(
   name: MaterialIconName,
   color?: string,

@@ -991,12 +991,18 @@ below.
   `danger`, its `error` alias, `info`, `brand`, or a 3/4/6/8-digit hex value.
   The complete locally hosted Material Symbols font and its generated
   name/codepoint catalogue resolve every icon in the collection, including
-  digit-leading names. Inline icons are `1.2em`, button icons are `1.5em`, and
-  explicitly sized shell icons remain `20px`; icon glyphs fit their full boxes
-  without cropping. Unrecognized names and invalid colors remain literal text.
-  Shell-owned affordances use the same renderer; programs need no per-icon
-  registration or external network request. `vendor_material_symbols.py` updates
-  the pinned font, generated catalogue, and stylesheet reference together.
+  digit-leading names. Read-only text and textarea field values render their
+  placeholders in an `aria-hidden` layer over the input, which keeps the plain
+  text without placeholders for selection and assistive technology; editable
+  values stay literal. Screen descriptions and message history bodies expand
+  placeholders in rendered Markdown outside code, as cell popovers do, and
+  message previews keep them whole. Inline icons are `1.2em`, button icons are
+  `1.5em`, and explicitly sized shell icons remain `20px`; icon glyphs fit their
+  full boxes without cropping. Unrecognized names and invalid colors remain
+  literal text. Shell-owned affordances use the same renderer; programs need no
+  per-icon registration or external network request.
+  `vendor_material_symbols.py` updates the pinned font, generated catalogue, and
+  stylesheet reference together.
 - The authenticated shell uses the static demo's light/dark visual tokens and
   component language with an explicit two-level hierarchy. Screen and section
   canvases remain unboxed and section titles render as H1 headings; semantic
@@ -1190,6 +1196,10 @@ below.
 
 # Verification
 
+- `deno run -A presentation_browser_e2e.ts
+  --fixture=./icon_value_browser_fixture.ts`
+  checks icons in read-only field values and screen descriptions, literal
+  editable values, and removal of the icon layer when a value changes.
 - `deno run -A presentation_browser_e2e.ts
   --fixture=./datetime_browser_fixture.ts`
   checks shared datetime rendering and editing.
