@@ -898,7 +898,9 @@ function receive(raw: unknown): void {
       closeNativeDownloads();
       setInteractionPending(undefined);
       ended = true;
-      messageCenter.dispose();
+      if (message.redirectUrl === undefined) {
+        messageCenter.synchronize(message.messages ?? []);
+      } else messageCenter.dispose();
       clearPresentation();
       themePreferences.endSession();
       sessionStorage.removeItem(routeKey);

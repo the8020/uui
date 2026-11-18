@@ -26,6 +26,7 @@ import {
 } from "./programs.ts";
 import {
   type BrowserContext,
+  MAX_UUI_MESSAGE_BODY_LENGTH,
   parseBrowserContext,
   parseClientMessage,
   type PresentationShowMessage,
@@ -121,6 +122,11 @@ interface SessionRecord {
   runInSession: ReturnType<typeof AsyncLocalStorage.snapshot>;
   completePersistent: () => Promise<void>;
   ended: boolean;
+  endMessage?: { type: "session.end"; message: string; redirectUrl?: string };
+  finalError?: string;
+  finalizationTimer?: ReturnType<typeof setTimeout>;
+  metadataFinalized?: boolean;
+  completion?: Promise<void>;
   terminationFailure?: string;
 }
 
@@ -235,6 +241,7 @@ export function defineSessionService(
       record.disconnectTimer = undefined;
       try {
         const current = agentResponse(record);
+        if (record.ended) return Response.json(current);
         if (command.command.op !== "screen") {
           const expected = command.expected;
           if (
@@ -386,22 +393,28 @@ async function establish(
   }
   startHeartbeat(record);
   startDisconnectTimer(record);
-  void handler({
-    sessionId,
-    auth: record.auth,
-    signal: controller.signal,
-    program,
-    inputs,
-  }).then(
+  void Promise.resolve().then(() =>
+    handler({
+      sessionId,
+      auth: record.auth,
+      signal: controller.signal,
+      program,
+      inputs,
+    })
+  ).then(
     () => {
       if (!record.ended) void end(record, "session handler returned");
     },
     (error: unknown) => {
       if (record.ended) return;
+      record.finalError =
+        errorMessage(error).trim().slice(0, MAX_UUI_MESSAGE_BODY_LENGTH) ||
+        "Program failed";
+      record.messages.add(record.finalError, "error");
       emit(record, {
         type: "session.error",
         code: "program_failed",
-        message: errorMessage(error),
+        message: record.finalError,
       });
       void end(record, "session handler failed");
     },
@@ -476,7 +489,7 @@ async function connect(
   log(record, "lifecycle", resumed ? "resumed" : "connected");
   updateMetadata(record);
   const connection = crypto.randomUUID();
-  connectChannels(connection);
+  if (!record.ended) connectChannels(connection);
   if (resumed) {
     replay(
       record,
@@ -495,6 +508,13 @@ async function connect(
       resumed: false,
       connection,
     }, false);
+  }
+
+  if (record.ended) {
+    emitEnd(record);
+    socket.close(1000, "session ended");
+    disconnected(record);
+    return;
   }
 
   try {
@@ -619,7 +639,7 @@ function workerMessage(
     else emit(record, value, false);
     return;
   }
-  if (record.executionId === undefined || !sessions.has(record.executionId)) {
+  if (record.ended || !sessions.has(record.executionId)) {
     return;
   }
   if (value.type === "session.end") {
@@ -762,7 +782,11 @@ function startDisconnectTimer(record: SessionRecord): void {
   }
   record.disconnectTimer = setTimeout(
     () =>
-      void record.runInSession(() => end(record, "disconnect grace expired")),
+      void record.runInSession(() =>
+        end(record, "disconnect grace expired", undefined, false).catch(() =>
+          undefined
+        )
+      ),
     record.config.disconnectGraceMilliseconds,
   );
 }
@@ -787,38 +811,82 @@ async function end(
   record: SessionRecord,
   reason: string,
   redirectUrl?: string,
+  retainResult = redirectUrl === undefined,
 ): Promise<void> {
-  if (!sessions.delete(record.executionId)) return;
+  if (record.ended) {
+    if (!retainResult) await finalize(record);
+    return;
+  }
   record.ended = true;
   if (record.heartbeatTimer !== undefined) clearInterval(record.heartbeatTimer);
   if (record.disconnectTimer !== undefined) {
     clearTimeout(record.disconnectTimer);
   }
-  emit(record, { type: "session.end", message: reason, redirectUrl }, false);
+  record.endMessage = { type: "session.end", message: reason, redirectUrl };
+  emitEnd(record);
   record.controller.abort(new DOMException(reason, "AbortError"));
   record.unbind();
   log(record, "lifecycle", "ended");
-  await record.metadataWrites.catch(() => undefined);
-  try {
-    await removeMetadata(record);
-    // Completing the persistent route may immediately stop this Worker. Remove
-    // package-owned metadata first so successful completion cannot leave a
-    // live-looking session row behind.
+  if (!retainResult) return await finalize(record);
+  updateMetadata(record, true);
+  record.finalizationTimer = setTimeout(
+    () =>
+      void record.runInSession(() => finalize(record).catch(() => undefined)),
+    uiConfig.finalResultRetentionMilliseconds,
+  );
+  record.socket?.close(1000, reason.slice(0, 120));
+  disconnected(record);
+}
+
+function emitEnd(record: SessionRecord): void {
+  emit(record, {
+    ...record.endMessage!,
+    messages: record.messages.snapshot(),
+  }, false);
+}
+
+async function finalize(record: SessionRecord): Promise<void> {
+  if (record.completion !== undefined) return await record.completion;
+  if (record.finalizationTimer !== undefined) {
+    clearTimeout(record.finalizationTimer);
+  }
+  record.completion = (async () => {
+    if (!record.metadataFinalized) {
+      await record.metadataWrites;
+      try {
+        await removeMetadata(record);
+      } catch (error) {
+        console.error(
+          "UUI session metadata removal failed",
+          errorMessage(error),
+        );
+      }
+      record.metadataFinalized = true;
+    }
+    // Completion is exact and idempotent; a metadata failure must not retain capacity.
     await record.completePersistent();
+    sessions.delete(record.executionId);
+  })();
+  try {
+    await record.completion;
   } catch (error) {
     record.terminationFailure = errorMessage(error);
-    try {
-      await writeMetadata(record);
-    } catch {
-      // The bounded Worker log is the final fallback when package state is lost.
-    }
     console.error(
       "UUI persistent execution completion failed",
-      errorMessage(error),
+      record.terminationFailure,
     );
+    record.completion = undefined;
+    // Retry only terminal binding release, never the program or a client action.
+    record.finalizationTimer = setTimeout(
+      () =>
+        void record.runInSession(() => finalize(record).catch(() => undefined)),
+      1000,
+    );
+    throw error;
+  } finally {
+    record.socket?.close(1000, "session ended");
+    disconnected(record);
   }
-  record.socket?.close(1000, reason.slice(0, 120));
-  record.socket = undefined;
 }
 
 function sessionByID(sessionId: string): SessionRecord {
@@ -842,7 +910,11 @@ function sessionRecordStatus(record: SessionRecord): Record<string, unknown> {
 
     sandbox_id: record.placement.sandboxId,
     worker_id: record.placement.workerId,
-    state: record.socket === undefined ? "DISCONNECTED" : "CONNECTED",
+    state: record.ended
+      ? "ENDED"
+      : record.socket === undefined
+      ? "DISCONNECTED"
+      : "CONNECTED",
     current_screen_id: currentScreen(record)?.id,
     current_screen_title: currentScreen(record)?.title,
     server_sequence: record.serverSequence,
@@ -862,8 +934,8 @@ function currentScreen(record: SessionRecord) {
   )?.screen;
 }
 
-function updateMetadata(record: SessionRecord): void {
-  if (record.ended) return;
+function updateMetadata(record: SessionRecord, terminal = false): void {
+  if (record.ended && !terminal) return;
   record.metadataWrites = record.metadataWrites.then(() =>
     record.runInSession(() => writeMetadata(record))
   ).catch((error) => {
@@ -924,7 +996,12 @@ export const workerFunctions = Object.freeze({
   "uui.session.terminate": async (
     input: unknown,
   ): Promise<Record<string, unknown>> => {
-    await end(sessionByInput(input), "terminated through session management");
+    await end(
+      sessionByInput(input),
+      "terminated through session management",
+      undefined,
+      false,
+    );
     return { terminated: true };
   },
 });
@@ -988,7 +1065,10 @@ function releaseClient(record: SessionRecord, clientId: string): void {
   record.clients = record.clients.filter((client) => client.id !== clientId);
 }
 
-function agentResponse(record: SessionRecord, error?: string): AgentResponse {
+function agentResponse(
+  record: SessionRecord,
+  error = record.finalError,
+): AgentResponse {
   const presentation = record.currentPresentation;
   const surface = presentation?.presentation.surfaces.at(-1);
   return {

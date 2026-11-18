@@ -522,6 +522,357 @@ test("ordinary persistent UUI service owns metadata and exact Worker administrat
   }
 });
 
+test("final results survive completion before or during the first authorized read", async () => {
+  for (const outcome of ["success", "denial", "failure"] as const) {
+    for (const readFirst of [false, true]) {
+      const store = new MemorySessionMetadataStore();
+      let finish!: () => void;
+      let completions = 0;
+      const service = defineSessionService(async () => {
+        if (readFirst) await new Promise<void>((resolve) => finish = resolve);
+        sendMessage(
+          "Original final outcome",
+          outcome === "success" ? "success" : "error",
+        );
+        if (outcome === "failure") throw new Error("Original failure");
+      }, {
+        metadataStore: store,
+        completePersistent: () => {
+          completions++;
+          return Promise.resolve();
+        },
+      });
+      try {
+        const established = await service.fetch(
+          new Request("https://example.test/connect", { method: "POST" }),
+          context(metadata),
+        );
+        assertEquals(established.status, 204);
+        const sessionId = established.headers.get("the8020-session")!;
+        const read = () => {
+          const control = controlSession({
+            sessionId,
+            clientId: "reader",
+            operation: "claim",
+            takeover: true,
+          }, metadata.auth.userId!);
+          return service.fetch(
+            new Request("https://example.test/command", {
+              method: "POST",
+              body: JSON.stringify({
+                clientId: "reader",
+                control: control.control,
+                command: { op: "screen" },
+              }),
+            }),
+            context(metadata),
+          );
+        };
+        const pending = read();
+        if (readFirst) {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          finish();
+        }
+        const response = await pending;
+        assertEquals(response.status, 200);
+        const result: AgentResponse = await response.json();
+        assertEquals(result.ended, true);
+        assertEquals(result.messages?.[0], {
+          level: outcome === "success" ? "success" : "error",
+          message: "Original final outcome",
+        });
+        assertEquals(
+          result.error,
+          outcome === "failure" ? "Original failure" : undefined,
+        );
+        assertEquals(await (await read()).json(), result);
+        assertEquals(store.get(sessionId)?.state, "ENDED");
+        assertEquals(completions, 0);
+        assertThrows(() =>
+          controlSession({
+            sessionId,
+            clientId: "foreign",
+            operation: "claim",
+            takeover: true,
+          }, "foreign-user")
+        );
+        assertThrows(() =>
+          controlSession({
+            sessionId: "uis-wrong00000",
+            clientId: "reader",
+            operation: "claim",
+          }, metadata.auth.userId!)
+        );
+        for (
+          const [meta, status] of [
+            [{
+              ...metadata,
+              auth: { ...metadata.auth, userId: "foreign-user" },
+            }, 403],
+            [{ ...metadata, persistentExecutionId: "wrong-execution" }, 404],
+          ] as const
+        ) {
+          assertEquals(
+            (await service.fetch(
+              new Request("https://example.test/command", {
+                method: "POST",
+                body: "{}",
+              }),
+              context(meta),
+            )).status,
+            status,
+          );
+        }
+      } finally {
+        finish?.();
+        await store.clear();
+      }
+      assertEquals(completions, 1);
+    }
+  }
+});
+
+test("terminal WebSocket replay has a fixed read window and completes once without a client", async () => {
+  const store = new MemorySessionMetadataStore();
+  const originalTimeout = globalThis.setTimeout;
+  let expire!: () => void;
+  let retentionTimers = 0;
+  let completions = 0;
+  let finish!: () => void;
+  globalThis.setTimeout = ((callback: TimerHandler, delay?: number) => {
+    if (delay === uiConfig.finalResultRetentionMilliseconds) {
+      assert(typeof callback === "function");
+      expire = callback as () => void;
+      retentionTimers++;
+    }
+    return originalTimeout(callback, delay);
+  }) as typeof setTimeout;
+  const service = defineSessionService(async () => {
+    await new Promise<void>((resolve) => finish = resolve);
+    sendMessage("Final browser result", "success");
+  }, {
+    metadataStore: store,
+    completePersistent: () => {
+      assertEquals(store.size, 0);
+      completions++;
+      return Promise.resolve();
+    },
+  });
+  try {
+    const response = await service.fetch(
+      new Request("https://example.test/connect", { method: "POST" }),
+      context(metadata),
+    );
+    const sessionId = response.headers.get("the8020-session")!;
+    const first = new TestSocket();
+    first.message(connectMessage(0));
+    await service.connectWebSocket(
+      new Request("https://example.test/connect"),
+      context(metadata),
+      first,
+    );
+    await until(() => serverMessages(first, "session.ready").length === 1);
+    finish();
+    await until(() => first.signal.aborted);
+    assertEquals(serverMessages(first, "session.end")[0]?.messages, [
+      { sequence: 1, level: "success", message: "Final browser result" },
+    ]);
+    for (const lastSequence of [0, 1]) {
+      const socket = new TestSocket();
+      socket.message(connectMessage(lastSequence));
+      await service.connectWebSocket(
+        new Request("https://example.test/connect"),
+        context(metadata),
+        socket,
+      );
+      await until(() => socket.signal.aborted);
+      assertEquals(
+        serverMessages(socket, "session.end")[0]?.messages,
+        serverMessages(first, "session.end")[0]?.messages,
+      );
+    }
+    const foreign = new TestSocket();
+    foreign.message(connectMessage(0));
+    await service.connectWebSocket(
+      new Request("https://example.test/connect"),
+      context({
+        ...metadata,
+        auth: { ...metadata.auth, userId: "foreign-user" },
+      }),
+      foreign,
+    );
+    await until(() => foreign.signal.aborted);
+    assertEquals(foreign.sent, []);
+    assertEquals(retentionTimers, 1);
+    assertEquals(completions, 0);
+    assertEquals(store.get(sessionId)?.state, "ENDED");
+    expire();
+    expire();
+    await until(() => completions === 1);
+    assertEquals(store.size, 0);
+    assertThrows(() =>
+      controlSession(
+        { sessionId, clientId: "reader", operation: "claim" },
+        metadata.auth.userId!,
+      )
+    );
+  } finally {
+    globalThis.setTimeout = originalTimeout;
+    finish?.();
+    await store.clear();
+  }
+});
+
+test("empty and oversized program errors cannot prevent terminal finalization", async () => {
+  for (const message of ["   ", "x".repeat(20_001)]) {
+    const store = new MemorySessionMetadataStore();
+    const service = defineSessionService(
+      () => {
+        throw new Error(message);
+      },
+      {
+        metadataStore: store,
+        completePersistent: () => Promise.resolve(),
+      },
+    );
+    try {
+      const response = await service.fetch(
+        new Request("https://example.test/connect", { method: "POST" }),
+        context(metadata),
+      );
+      const sessionId = response.headers.get("the8020-session")!;
+      await until(() => store.get(sessionId)?.state === "ENDED");
+      assertEquals(
+        workerFunctions["uui.session.inspect"]({ sessionId }).state,
+        "ENDED",
+      );
+    } finally {
+      await store.clear();
+    }
+  }
+});
+
+test("metadata deletion failure is visible and cannot skip terminal binding release", async () => {
+  const store = new MemorySessionMetadataStore();
+  const errors: unknown[][] = [];
+  const originalError = console.error;
+  console.error = (...args) => errors.push(args);
+  let completions = 0;
+  let writes = 0;
+  const service = defineSessionService(async ({ signal }) => {
+    await new Promise<void>((resolve) =>
+      signal.addEventListener("abort", () => resolve())
+    );
+  }, {
+    metadataStore: {
+      create: (row) => store.create(row),
+      put: (row) => {
+        writes++;
+        return store.put(row);
+      },
+      remove: () => Promise.reject(new Error("metadata unavailable")),
+    },
+    completePersistent: () => {
+      completions++;
+      return Promise.resolve();
+    },
+  });
+  try {
+    const response = await service.fetch(
+      new Request("https://example.test/connect", { method: "POST" }),
+      context(metadata),
+    );
+    const sessionId = response.headers.get("the8020-session")!;
+    await Promise.all([
+      workerFunctions["uui.session.terminate"]({ sessionId }),
+      workerFunctions["uui.session.terminate"]({ sessionId }),
+    ]);
+    assertEquals(completions, 1);
+    assertEquals(writes, 0);
+    assert(
+      errors.some((args) =>
+        args.join(" ").includes("metadata removal failed metadata unavailable")
+      ),
+    );
+    assertThrows(() => workerFunctions["uui.session.inspect"]({ sessionId }));
+  } finally {
+    console.error = originalError;
+    await store.clear();
+  }
+});
+
+test("failed completion stays visible, retries exact release and never restores removed metadata", async () => {
+  let removals = 0;
+  const store = new MemorySessionMetadataStore(() => {
+    removals++;
+  });
+  const originalTimeout = globalThis.setTimeout;
+  const originalError = console.error;
+  const errors: unknown[][] = [];
+  let retry!: () => void;
+  let attempts = 0;
+  console.error = (...args) => errors.push(args);
+  globalThis.setTimeout = ((callback: TimerHandler, delay?: number) => {
+    if (delay === 1000) {
+      assert(typeof callback === "function");
+      retry = callback as () => void;
+    }
+    return originalTimeout(callback, delay);
+  }) as typeof setTimeout;
+  const service = defineSessionService(async ({ signal }) => {
+    await new Promise<void>((resolve) =>
+      signal.addEventListener("abort", () => resolve())
+    );
+  }, {
+    metadataStore: store,
+    completePersistent: () => {
+      attempts++;
+      return attempts === 1
+        ? Promise.reject(new Error("completion unavailable"))
+        : Promise.resolve();
+    },
+  });
+  try {
+    const response = await service.fetch(
+      new Request("https://example.test/connect", { method: "POST" }),
+      context(metadata),
+    );
+    const sessionId = response.headers.get("the8020-session")!;
+    await assertRejects(
+      () => workerFunctions["uui.session.terminate"]({ sessionId }),
+      Error,
+      "completion unavailable",
+    );
+    assertEquals(store.size, 0);
+    assertEquals(
+      workerFunctions["uui.session.inspect"]({ sessionId }).state,
+      "ENDED",
+    );
+    assert(
+      errors.some((args) =>
+        args.join(" ").includes("completion failed completion unavailable")
+      ),
+    );
+    retry();
+    retry();
+    await until(() => attempts === 2);
+    await until(() => {
+      try {
+        workerFunctions["uui.session.inspect"]({ sessionId });
+        return false;
+      } catch {
+        return true;
+      }
+    });
+    assertEquals(store.size, 0);
+    assertEquals(removals, 1);
+  } finally {
+    globalThis.setTimeout = originalTimeout;
+    console.error = originalError;
+    await store.clear();
+  }
+});
+
 test("session ID registration failure cannot overwrite metadata or retain a Worker slot", async () => {
   let creates = 0, updates = 0, removals = 0, invocations = 0;
   const service = defineSessionService(() => {
@@ -1068,7 +1419,17 @@ test("UUI service enforces its one-execution Worker contract", async () => {
       503,
     );
     finish();
-    await until(() => metadataStore.size === 0);
+    await until(() =>
+      metadataStore.get([...metadataStore.ids()][0]!)?.state === "ENDED"
+    );
+    assertEquals(
+      (await service.fetch(
+        new Request("https://example.test/connect", { method: "POST" }),
+        context({ ...metadata, persistentExecutionId: "persistent-slot-b" }),
+      )).status,
+      503,
+    );
+    await metadataStore.clear();
   } finally {
     await metadataStore.clear();
   }
@@ -1512,6 +1873,10 @@ class MemorySessionMetadataStore implements SessionMetadataStore {
     return this.#records.size;
   }
 
+  ids(): IterableIterator<string> {
+    return this.#records.keys();
+  }
+
   get(sessionId: string): SessionMetadata | undefined {
     const value = this.#records.get(sessionId);
     return value === undefined ? undefined : structuredClone(value);
@@ -1614,11 +1979,11 @@ function connectMessage(lastServerSequence: number) {
 function serverMessages<T extends UUIServerMessage["type"]>(
   socket: TestSocket,
   type: T,
-): Array<Extract<UUIServerMessage, { type: T }>> {
+): Array<UUIServerMessage & { type: T }> {
   return socket.sent.filter((item) => typeof item === "string").map((item) =>
     JSON.parse(String(item)) as UUIServerMessage
   )
-    .filter((item): item is Extract<UUIServerMessage, { type: T }> =>
+    .filter((item): item is UUIServerMessage & { type: T } =>
       item.type === type
     );
 }

@@ -55,6 +55,9 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
   Reload page button. The button clears the remembered session and route,
   removes any explicit session query, and reloads to start a new session.
   Missing executions never recreate their program automatically.
+- Terminal `session.end` synchronizes its bounded message history and keeps
+  Messages usable on the ended screen, including programs that returned before
+  the first connection. Terminal cleanup must not dispose that history.
 - Take control and Reload page use the shared `btn btn-primary` styling.
 
 - The navbar right cluster permits shrinking at narrow widths so the session

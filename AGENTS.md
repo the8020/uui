@@ -363,14 +363,24 @@ below.
   chooses Reload page to start a new session. Only the owner can attach today;
   ownership checks are separate from client IDs and tickets. `openSession()`
   asks the browser to navigate through this same shell path with an explicit ID.
-- The handler atomically maintains one row per live session in
-  `the8020__uui__sessions`, containing exact execution placement, authenticated
-  user identity, lifecycle timestamps/state, latest kernel-observed client IP
-  address and network scope, and bounded current-screen metadata. Reconnection
-  replaces the address fields with the latest observation. It never stores
-  passwords, cookies, route tokens, replay buffers, or unbounded messages. Clean
-  termination removes the record before signaling generic persistent completion;
-  abnormal loss may leave recoverable stale metadata.
+- The handler atomically maintains one row per live or terminal-readable session
+  in `the8020__uui__sessions`, containing exact execution placement,
+  authenticated user identity, lifecycle timestamps/state, latest
+  kernel-observed client IP address and network scope, and bounded
+  current-screen metadata. Reconnection replaces the address fields with the
+  latest observation. It never stores passwords, cookies, route tokens, replay
+  buffers, or unbounded messages. Clean program completion retains its bounded
+  messages, error and ended outcome for `finalResultRetentionMilliseconds` (30
+  seconds) on the original execution; reads/reconnections never extend this
+  window. Terminal metadata is `ENDED`. Browser terminal messages carry the same
+  bounded message history as headless reads. Expiry removes metadata before
+  generic persistent completion; explicit termination, exit/logout redirects and
+  disconnect-grace expiry release immediately. Metadata deletion failure is
+  logged and cannot skip completion. Completion failure remains visible and
+  retries only the exact idempotent terminal release each second, without
+  restoring metadata or replaying work; the existing disconnected native binding
+  lifetime still applies. Abnormal loss or failed deletion may leave recoverable
+  stale metadata.
 - `jobs/cleanup-sessions.toml` schedules `the8020/uui/sessions-cleanup` hourly
   through the jobs package, once per system by default. Root
   `session_cleanup.ts` pages metadata older than the disconnect grace in 100-row
@@ -1204,6 +1214,17 @@ below.
   explicitly asks for onboarding help.
 
 # Verification
+
+- `deno task test:final-result-browser` runs the actual UUI owner in a Web
+  Worker with the real generic supervisor and built Chromium shell. It checks an
+  immediate terminal message in browser history, headless
+  success/denial/failure, repeated reads, wrong principal/Worker/execution
+  rejection, continuation after pool replacement, fixed expiry and capacity
+  release. Authentication eligibility and metadata storage are doubles; this is
+  transport evidence, not an installed kernel/database or production-system
+  test. `session_service_test.ts` also checks completion before/during the first
+  read, terminal replay, expiry, cancellation, concurrent completion and
+  metadata/completion failures.
 
 - `deno run -A presentation_browser_e2e.ts
   --fixture=./column_resize_browser_fixture.ts`

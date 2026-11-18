@@ -192,6 +192,7 @@ export interface SessionErrorMessage extends ServerMessageBase {
   connection?: string;
   message?: string;
   redirectUrl?: string;
+  messages?: import("./messages.ts").UUIMessage[];
 }
 
 export interface PresentationShowMessage extends ServerMessageBase {
@@ -490,7 +491,12 @@ export type UUIWorkerOutbound =
   | { type: "session.open"; targetSessionId: string }
   | { type: "server.ack"; clientSequence: number }
   | { type: "session.error"; code: string; message: string }
-  | { type: "session.end"; message?: string; redirectUrl?: string };
+  | {
+    type: "session.end";
+    message?: string;
+    redirectUrl?: string;
+    messages?: import("./messages.ts").UUIMessage[];
+  };
 
 export function parseClientMessage(
   value: unknown,
