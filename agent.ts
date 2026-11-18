@@ -279,6 +279,7 @@ function screenText(screen: ScreenSnapshot): Element {
     screenCall: screen.screenCall ?? "unavailable",
     title: text(screen.title),
     description: screen.description,
+    systemButtons: Object.values(screen.systemButtons ?? {}).map(button),
     header: [
       ...(screen.header.elements?.flatMap(element) ?? []),
       ...screen.header.controls.flatMap(field),

@@ -19,11 +19,17 @@ import {
   BACK_EVENT,
   type BrowserContext,
   CUSTOMIZATION_EVENT,
+  DEFAULT_SYSTEM_BUTTONS,
+  FULLSCREEN_EVENT,
   type PresentationSnapshot,
   type PresentationSurfaceKind,
   type PresentationSurfaceSnapshot,
+  type ScreenAction,
   type ScreenEventType,
   type ScreenSnapshot,
+  SESSION_EXIT_EVENT,
+  SESSION_NEW_EVENT,
+  SESSION_RESTART_EVENT,
   type UUIServerMessage,
 } from "/p/the8020/uui/protocol.ts";
 import {
@@ -57,13 +63,18 @@ import {
 import { MessageCenter } from "./message_center.ts";
 import { installSessionControls } from "./session_controls.ts";
 import { SummaryBar } from "./summary_bar.ts";
-import { installAppFullscreen } from "./app_fullscreen.ts";
+import {
+  APP_FULLSCREEN_CLASS,
+  installAppFullscreen,
+} from "./app_fullscreen.ts";
+import { applyComponentStyle } from "./component_style.ts";
 import { parseMessage, parseMessageHistory } from "../../../messages.ts";
 import { mergeServerModel, PresentationHistory } from "./presentation.ts";
 import { windowTitleForHeading } from "./window_title.ts";
 import { attachNativeDownloads, closeNativeDownloads } from "./downloads.ts";
 import {
   activeDialog,
+  bindShortcut,
   focusableControls,
   installKeyboardShortcuts,
 } from "./keyboard.ts";
@@ -151,9 +162,15 @@ const messageHistoryList = requiredElement<HTMLElement>(
 const messageDialogClose = requiredElement<HTMLButtonElement>(
   "message-dialog-close",
 );
-const screenBack = requiredElement<HTMLButtonElement>("screen-back");
-const sessionExit = requiredElement<HTMLButtonElement>("session-exit");
-const sessionNew = requiredElement<HTMLAnchorElement>("session-new");
+const systemButtonBar = document.querySelector<HTMLElement>(
+  ".session-navigation",
+)!;
+const toggleAppFullscreen = installAppFullscreen(localStorage);
+const systemButtonNodes = new Map<
+  string,
+  HTMLButtonElement | HTMLAnchorElement
+>();
+let sessionRestarting = false;
 const programHeaderOverflowToggle = requiredElement<HTMLElement>(
   "program-header-overflow-toggle",
 );
@@ -436,7 +453,6 @@ addEventListener("pagehide", () => {
   closeChannels("Page closed");
 });
 
-renderIconText(screenBack, "[[icon=arrow_back]]", { decorativeIcons: true });
 renderIconText(programHeaderOverflowToggle, "[[icon=more_vert]]", {
   decorativeIcons: true,
 });
@@ -492,23 +508,19 @@ document.addEventListener("keydown", (event) => {
   sessionMenu.open = false;
   sessionMenuToggle.focus();
 });
-screenBack.addEventListener("click", requestBack);
-sessionNew.href = new URL(boot.entryUrl ?? "./", location.href).href;
-renderIconText(sessionExit, "[[icon=arrow_upward]]", { decorativeIcons: true });
-renderIconText(sessionNew, "[[icon=add]]", { decorativeIcons: true });
-installAppFullscreen(
-  requiredElement<HTMLButtonElement>("app-fullscreen"),
-  localStorage,
+systemButtonBar.replaceChildren();
+updateSystemButtons();
+installSessionControls(
+  systemButtonBar,
+  requiredElement<HTMLElement>("system-buttons-slot"),
 );
-sessionExit.addEventListener("click", () => {
-  sessionExit.disabled = true;
-  sendClient({ type: "session.exit" });
-});
 installBrowserBack();
 installKeyboardShortcuts({
   roots: () => {
     const layer = activeLayer();
-    return layer === undefined ? [] : [programHeaderRoot, layer.shell];
+    return layer === undefined
+      ? []
+      : [systemButtonBar, programHeaderRoot, layer.shell];
   },
   back: requestBack,
 });
@@ -522,7 +534,9 @@ function requestBack(): boolean {
     return true;
   }
   if (activeLayer()?.lists.closeTools()) return true;
-  if (screenBack.disabled || activeLayer() === undefined) return false;
+  if (interactionSequence !== undefined || activeLayer() === undefined) {
+    return false;
+  }
   dispatch(BACK_EVENT, BACK_EVENT);
   return true;
 }
@@ -843,6 +857,13 @@ function receive(raw: unknown): void {
       setInteractionPending(undefined);
       sendClient({ type: "client.ack", resync: true });
       break;
+    case "session.reset":
+      closeNativeDownloads();
+      pending.clear();
+      clearPresentation();
+      messageCenter.reset();
+      connectChannelRouters(message.connection);
+      break;
     case "session.ping":
       sendClient({ type: "session.pong" });
       break;
@@ -850,6 +871,7 @@ function receive(raw: unknown): void {
       void refreshPreferences();
 
       try {
+        sessionRestarting = false;
         reconcilePresentation(message.presentation);
         syncEndpoints();
         messageCenter.synchronize(message.presentation.messages ?? []);
@@ -997,7 +1019,7 @@ function setConnectionState(
   renderIconText(connectionState, text);
   connectionIndicator.dataset.state = state;
   connectionText = text;
-  sessionExit.disabled = state !== "connected" || ended || suspended;
+  updateSystemButtons();
   updateSessionMenuLabel();
 }
 
@@ -1008,6 +1030,140 @@ function updateSessionMenuLabel(): void {
       sessionMenu.open ? t("shell.close") : t("main.open")
     } ${t("shell.session_menu")}`,
   );
+}
+
+function updateSystemButtons(): void {
+  const layer = layers.get(
+    activeSurfaceID ?? presentationHistory.visible().at(-1) ?? "",
+  );
+  const buttons = layer?.screen.systemButtons ?? DEFAULT_SYSTEM_BUTTONS;
+  for (const [slot, node] of systemButtonNodes) {
+    if (!Object.hasOwn(buttons, slot)) {
+      node.remove();
+      systemButtonNodes.delete(slot);
+    }
+  }
+  let index = 0;
+  for (const [slot, action] of Object.entries(buttons)) {
+    const link = action.id === SESSION_NEW_EVENT;
+    let node = systemButtonNodes.get(slot);
+    if (!node || (node instanceof HTMLAnchorElement) !== link) {
+      node?.remove();
+      node = document.createElement(link ? "a" : "button");
+      node.id = ({
+        back: "screen-back",
+        exit: "session-exit",
+        new: "session-new",
+        fullscreen: "app-fullscreen",
+      } as Record<string, string>)[slot] ?? `system-${slot}`;
+      node.dataset.systemSlot = slot;
+      node.addEventListener("click", (event) => {
+        const current = (layers.get(
+          activeSurfaceID ?? presentationHistory.visible().at(-1) ?? "",
+        )?.screen.systemButtons ??
+          DEFAULT_SYSTEM_BUTTONS)[slot];
+        if (!current) {
+          event.preventDefault();
+          return;
+        }
+        if (current.id === SESSION_NEW_EVENT) return;
+        event.preventDefault();
+        if (current.id === BACK_EVENT) requestBack();
+        else if (current.id === FULLSCREEN_EVENT) {
+          toggleAppFullscreen();
+          updateSystemButtons();
+        } else if (
+          current.id === SESSION_EXIT_EVENT ||
+          current.id === SESSION_RESTART_EVENT
+        ) {
+          if (sessionRestarting || ended || suspended) return;
+          sessionRestarting = true;
+          sendClient({
+            type: current.id === SESSION_EXIT_EVENT
+              ? "session.exit"
+              : "session.restart",
+          });
+          updateSystemButtons();
+        } else dispatch(current.id, "action");
+      });
+      systemButtonNodes.set(slot, node);
+    }
+    if (node instanceof HTMLAnchorElement) {
+      node.href = new URL(boot.entryUrl ?? "./", location.href).href;
+      node.target = "_blank";
+      node.rel = "noopener";
+    } else {
+      node.type = "button";
+      const independent = action.id === FULLSCREEN_EVENT;
+      const exit = action.id === SESSION_EXIT_EVENT ||
+        action.id === SESSION_RESTART_EVENT;
+      node.disabled = !independent &&
+        (ended || suspended || sessionRestarting ||
+          connectionIndicator.dataset.state !== "connected" ||
+          !exit &&
+            (interactionSequence !== undefined || activeSurfaceID === null));
+    }
+    node.className = `btn btn-${
+      action.kind === "primary"
+        ? "primary"
+        : action.kind === "danger"
+        ? "danger"
+        : "ghost"
+    } btn-sm`;
+    node.dataset.systemAction = action.id;
+    if (!action.label.replace(/\[\[icon=[^\]]*\]\]/g, "").trim()) {
+      node.classList.add("screen-back");
+    }
+    let label = action.label;
+    let title = systemButtonTitle(action);
+    if (action.id === FULLSCREEN_EVENT) {
+      const expanded = document.documentElement.classList.contains(
+        APP_FULLSCREEN_CLASS,
+      );
+      node.setAttribute("aria-pressed", String(expanded));
+      if (label === DEFAULT_SYSTEM_BUTTONS.fullscreen!.label && expanded) {
+        label = "[[icon=fullscreen_exit]]";
+      }
+      if (expanded) title = t("app_fullscreen.exit_fullscreen");
+    } else node.removeAttribute("aria-pressed");
+    renderIconText(node, label, { decorativeIcons: title !== "" });
+    if (title) {
+      node.title = title;
+      node.setAttribute("aria-label", title);
+    } else {
+      node.removeAttribute("title");
+      node.removeAttribute("aria-label");
+    }
+    bindShortcut(node, action.shortcut);
+    applyComponentStyle(node, action);
+    if (systemButtonBar.children[index] !== node) {
+      systemButtonBar.insertBefore(
+        node,
+        systemButtonBar.children[index] ?? null,
+      );
+    }
+    index++;
+  }
+  systemButtonBar.hidden = index === 0;
+}
+
+function systemButtonTitle(action: ScreenAction): string {
+  const text = action.label.replace(/\[\[icon=[^\]]*\]\]/g, "").trim();
+  if (text) return text;
+  switch (action.id) {
+    case BACK_EVENT:
+      return t("shell.back");
+    case SESSION_EXIT_EVENT:
+      return t("shell.exit");
+    case SESSION_RESTART_EVENT:
+      return t("shell.reload");
+    case SESSION_NEW_EVENT:
+      return t("shell.new");
+    case FULLSCREEN_EVENT:
+      return t("shell.fullscreen");
+    default:
+      return "";
+  }
 }
 
 function requestLogout(): void {
@@ -1422,7 +1578,6 @@ function clearPresentation(): void {
   interactionSequence = undefined;
   globalHeaderSurfaceID = undefined;
   programHeader.clear();
-  screenBack.disabled = true;
   app.replaceChildren();
   synchronizeWindowTitle();
   updateInteractionState();
@@ -1651,7 +1806,7 @@ function updateInteractionState(): void {
   app.inert = waiting || active?.kind === "modal";
   programHeaderRoot.inert = waiting ||
     activeSurfaceID !== presentationHistory.visible()[0];
-  screenBack.disabled = waiting || active === undefined;
+  updateSystemButtons();
   sessionAccount.disabled = logoutRequested || waiting ||
     active === undefined ||
     active.screen.id === "my-account";

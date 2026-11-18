@@ -3,7 +3,7 @@
   "logoutUrl": "/the8020/uui/login/logout",
   "postLoginUrl": "/the8020/uui/shell/",
   "sessionWebSocketPath": "/the8020/uui/session/connect",
-  "protocolVersion": 12,
+  "protocolVersion": 13,
   "disconnectGraceMilliseconds": 3600000,
   "finalResultRetentionMilliseconds": 30000,
   "heartbeatIntervalMilliseconds": 30000,

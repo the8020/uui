@@ -19,6 +19,10 @@ export const UUI_PROTOCOL_VERSION = uiConfig.protocolVersion;
 export const BACK_EVENT = "back" as const;
 export const ACCOUNT_EVENT = "uui.account" as const;
 export const CUSTOMIZATION_EVENT = "uui.customization" as const;
+export const SESSION_EXIT_EVENT = "uui.session.exit" as const;
+export const SESSION_RESTART_EVENT = "uui.session.restart" as const;
+export const SESSION_NEW_EVENT = "uui.session.new" as const;
+export const FULLSCREEN_EVENT = "uui.fullscreen" as const;
 export const UUI_MESSAGE_KINDS = [
   "info",
   "success",
@@ -49,6 +53,8 @@ export type UUIMessageType =
   | "session.open"
   | "session.logout"
   | "session.exit"
+  | "session.restart"
+  | "session.reset"
   | "session.ping"
   | "session.pong"
   | "presentation.show"
@@ -141,7 +147,7 @@ export interface SessionLogoutMessage extends ClientMessageBase {
 }
 
 export interface SessionExitMessage extends ClientMessageBase {
-  type: "session.exit";
+  type: "session.exit" | "session.restart";
 }
 
 export interface ResyncConfirmMessage extends ClientMessageBase {
@@ -161,7 +167,11 @@ export type UUIClientMessage =
 export interface ServerMessageBase {
   type: Exclude<
     UUIMessageType,
-    "session.connect" | "session.logout" | "session.exit" | "screen.event"
+    | "session.connect"
+    | "session.logout"
+    | "session.exit"
+    | "session.restart"
+    | "screen.event"
   >;
   protocol: number;
   serverSequence: number;
@@ -224,6 +234,7 @@ export interface PingMessage extends ServerMessageBase {
 }
 
 export type UUIServerMessage =
+  | SessionResetMessage
   | SessionReadyMessage
   | SessionResumedMessage
   | SessionErrorMessage
@@ -233,6 +244,11 @@ export type UUIServerMessage =
   | SessionOpenMessage
   | AcknowledgementMessage
   | PingMessage;
+
+export interface SessionResetMessage extends ServerMessageBase {
+  type: "session.reset";
+  connection: string;
+}
 
 export interface FieldOption {
   value: string | number | boolean;
@@ -390,6 +406,19 @@ export type ScreenActionDeclaration = Omit<ScreenAction, "id" | "label"> & {
   id?: string;
 };
 
+/** Slot-keyed changes to the default navigation buttons; null removes a slot. */
+export type SystemButtons = Record<
+  string,
+  Partial<Omit<ScreenActionDeclaration, "requiresSelection">> | null
+>;
+
+export const DEFAULT_SYSTEM_BUTTONS: Readonly<Record<string, ScreenAction>> = {
+  back: { id: BACK_EVENT, label: "[[icon=arrow_back]]" },
+  exit: { id: SESSION_EXIT_EVENT, label: "[[icon=arrow_upward]]" },
+  new: { id: SESSION_NEW_EVENT, label: "[[icon=add]]" },
+  fullscreen: { id: FULLSCREEN_EVENT, label: "[[icon=fullscreen]]" },
+};
+
 /** Flexible empty space in an ordered row of UUI elements. */
 export interface Separator extends ComponentStyle {
   id: string;
@@ -443,6 +472,7 @@ export type CustomElementDeclaration =
 export type CustomElementOptions = Omit<CustomElementDeclaration, "id">;
 
 export interface ScreenSnapshot extends ComponentStyle {
+  systemButtons?: Record<string, ScreenAction>;
   id: string;
   screenCall?: string;
   revision: number;
@@ -486,6 +516,8 @@ export interface PresentationSnapshot {
 
 export type UUIWorkerOutbound =
   | ChannelFrame
+  | { type: "session.exit" | "session.restart" }
+  | { type: "session.reset"; connection: string }
   | { type: "presentation.show"; presentation: PresentationSnapshot }
   | { type: "clipboard.write"; text: string }
   | { type: "session.open"; targetSessionId: string }
@@ -536,7 +568,7 @@ export function parseClientMessage(
   }
   if (
     value.type === "session.pong" || value.type === "session.logout" ||
-    value.type === "session.exit"
+    value.type === "session.exit" || value.type === "session.restart"
   ) {
     return value as unknown as
       | SessionPongMessage

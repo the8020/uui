@@ -46,6 +46,7 @@ import { DOWNLOAD_POLICY } from "./download_metadata.ts";
 import type { AgentOperation } from "./agent.ts";
 import { displayPath, locationFromStack } from "./src/short_dump.ts";
 import { explicitElementIDs, resolveElementIDs } from "./identifiers.ts";
+import { resolveSystemButtons } from "./system_buttons.ts";
 import {
   type ListChange,
   type ListQuery,
@@ -76,6 +77,7 @@ import type {
   ScreenHeader,
   ScreenSnapshot,
   Separator,
+  SystemButtons,
   UUIClientMessage,
   UUIWorkerOutbound,
 } from "./protocol.ts";
@@ -83,6 +85,10 @@ import {
   ACCOUNT_EVENT,
   BACK_EVENT,
   CUSTOMIZATION_EVENT,
+  FULLSCREEN_EVENT,
+  SESSION_EXIT_EVENT,
+  SESSION_NEW_EVENT,
+  SESSION_RESTART_EVENT,
   shortcutKey,
   UUI_PROTOCOL_VERSION,
   type UUIMessageKind,
@@ -138,6 +144,7 @@ export interface CallScreenOptions<T extends z.ZodRawShape>
   layout?: unknown;
   controls?: ControlDeclaration[];
   actions?: ScreenActionDeclaration[];
+  systemButtons?: SystemButtons;
   header?: {
     elements?: ScreenElementDeclaration[];
     controls?: ControlDeclaration[];
@@ -467,6 +474,11 @@ export function bindSession(value: SessionChannel): () => void {
   };
 }
 
+/** Keep all descendants of a program bound to this session's lifetime. */
+export function runInSession<T>(run: () => T): T {
+  return surfaceContext.run(requireBoundSession().root, run);
+}
+
 /** Start native save under an explicitly captured pending screen/connection attachment. */
 export function download(
   options: DownloadOptions,
@@ -567,6 +579,7 @@ async function showScreen<T extends z.ZodRawShape>(
       options.actions,
       options.header,
       options.layout,
+      options.systemButtons,
     );
     if (declaredTexts) await declaredTexts;
     if (!currentLocalization()!.hasBundle("the8020/i18n")) {
@@ -574,6 +587,7 @@ async function showScreen<T extends z.ZodRawShape>(
     }
   }
   const title = text(options.title);
+  const systemButtons = resolveSystemButtons(options.systemButtons);
   const description = text(options.description);
   const initial = options.schema.safeParse(options.model.data, {
     error: validationError,
@@ -694,7 +708,13 @@ async function showScreen<T extends z.ZodRawShape>(
     reserved,
   ));
   const shortcuts = new Set<string>();
-  for (const element of [...resolvedControls, ...resolvedActions]) {
+  for (
+    const element of [
+      ...resolvedControls,
+      ...resolvedActions,
+      ...Object.values(systemButtons),
+    ]
+  ) {
     validateComponentStyle(element);
     validateShortcut(element.shortcut);
     if (element.shortcut === undefined) continue;
@@ -756,6 +776,12 @@ async function showScreen<T extends z.ZodRawShape>(
       throw new TypeError(
         `duplicate, empty, unlabeled, or reserved action ${action.id}`,
       );
+    }
+    actionIDs.add(action.id);
+  }
+  for (const action of Object.values(systemButtons)) {
+    if (actionIDs.has(action.id)) {
+      throw new TypeError(`duplicate action ${action.id}`);
     }
     actionIDs.add(action.id);
   }
@@ -851,6 +877,7 @@ async function showScreen<T extends z.ZodRawShape>(
       layout,
       actions,
       header,
+      systemButtons,
       customElements,
       channelGeneration,
       downloadNamespace:
@@ -994,7 +1021,13 @@ async function showScreen<T extends z.ZodRawShape>(
         return;
       }
       if (command.op === "click") {
-        const action = resolvedActions.find((item) => item.id === command.id);
+        const action = [...resolvedActions, ...Object.values(systemButtons)]
+          .find((item) => item.id === command.id);
+        if (
+          action?.id === SESSION_NEW_EVENT || action?.id === FULLSCREEN_EVENT
+        ) {
+          throw new TypeError("This button requires a browser");
+        }
         if (action) return dispatch({ action: action.id });
         for (
           const custom of [
@@ -1552,7 +1585,11 @@ async function closeSurface(
 }
 
 function requireBoundSession(): BoundSession {
-  if (boundSession === undefined || !boundSession.active) {
+  const surface = surfaceContext.getStore();
+  if (
+    boundSession === undefined || !boundSession.active ||
+    surface !== undefined && (surface.state !== boundSession || !surface.active)
+  ) {
     throw new Error("UUI session channel is not bound");
   }
   return boundSession;
@@ -1659,6 +1696,26 @@ function receiveScreenMessage<T extends z.ZodRawShape>(
   message: ScreenEventMessage,
 ): void {
   if (call.settled || call.surface.pending !== call) return;
+  if (
+    message.instanceId === model.screen.instanceId &&
+    (message.action === SESSION_EXIT_EVENT ||
+      message.action === SESSION_RESTART_EVENT) &&
+    Object.values(call.snapshot().systemButtons ?? {}).some((button) =>
+      button.id === message.action
+    )
+  ) {
+    state.lastClientSequence = message.clientSequence;
+    state.channel.send({
+      type: "server.ack",
+      clientSequence: message.clientSequence,
+    });
+    state.channel.send({
+      type: message.action === SESSION_EXIT_EVENT
+        ? "session.exit"
+        : "session.restart",
+    });
+    return;
+  }
   let selection:
     | { value: unknown; bind: string; controlId: string }
     | undefined;
@@ -1921,46 +1978,36 @@ function captureCallMessages(
 }
 
 export function copyText(text: string): void {
-  if (boundSession === undefined) {
-    throw new Error("UUI session channel is not bound");
-  }
+  const state = requireBoundSession();
   if (typeof text !== "string" || text.length > 1_000_000) {
     throw new TypeError("clipboard text must not exceed 1,000,000 characters");
   }
-  boundSession.channel.send({ type: "clipboard.write", text });
+  state.channel.send({ type: "clipboard.write", text });
 }
 
 export function endSession(message?: string, redirectUrl?: string): void {
-  if (boundSession === undefined) {
-    throw new Error("UUI session channel is not bound");
-  }
-  boundSession.channel.send({ type: "session.end", message, redirectUrl });
+  requireBoundSession().channel.send({
+    type: "session.end",
+    message,
+    redirectUrl,
+  });
 }
 
 /** Ask the browser to connect to another live session through the UUI shell. */
 export function openSession(sessionId: string): void {
-  if (boundSession === undefined) {
-    throw new Error("UUI session channel is not bound");
-  }
-  boundSession.channel.send({
+  requireBoundSession().channel.send({
     type: "session.open",
     targetSessionId: sessionId,
   });
 }
 
 export function currentSessionId(): string {
-  if (boundSession === undefined) {
-    throw new Error("UUI session channel is not bound");
-  }
-  return boundSession.channel.sessionId;
+  return requireBoundSession().channel.sessionId;
 }
 
 /** Latest browser handshake metadata; absent for channels without a browser. */
 export function currentBrowser(): BrowserContext | undefined {
-  if (boundSession === undefined) {
-    throw new Error("UUI session channel is not bound");
-  }
-  return boundSession.channel.browser;
+  return requireBoundSession().channel.browser;
 }
 
 function applyChanges<T extends z.ZodRawShape>(

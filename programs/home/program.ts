@@ -9,6 +9,7 @@ import {
   Model,
   packageAssetURL,
   sendMessage,
+  SESSION_RESTART_EVENT,
   z,
 } from "/p/the8020/uui/mod.ts";
 import { context } from "@the8020/context";
@@ -78,6 +79,9 @@ export async function runHome(programsRoot: string): Promise<void> {
         schema: HomeScreen,
         model: screenModel,
         layout,
+        systemButtons: {
+          exit: { id: SESSION_RESTART_EVENT, label: "[[icon=refresh]]" },
+        },
         header: {
           actions: [
             { id: "refresh", label: msg("program.refresh") },

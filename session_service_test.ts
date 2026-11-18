@@ -874,9 +874,9 @@ test("failed completion stays visible, retries exact release and never restores 
   }
 });
 
-test("detached logout, exit and redirect survive failed completion and retry release", async () => {
+test("detached logout, restart and redirect survive failed completion and retry release", async () => {
   for (
-    const action of ["session.logout", "session.exit", "redirect"] as const
+    const action of ["session.logout", "session.restart", "redirect"] as const
   ) {
     const store = new MemorySessionMetadataStore();
     const originalTimeout = globalThis.setTimeout;
@@ -902,6 +902,12 @@ test("detached logout, exit and redirect survive failed completion and retry rel
       }
     }, {
       metadataStore: store,
+      retireWorker: () => {
+        attempts++;
+        return attempts === 1
+          ? Promise.reject(new Error("completion unavailable"))
+          : Promise.resolve();
+      },
       completePersistent: () => {
         attempts++;
         return attempts === 1
@@ -1428,7 +1434,107 @@ test("session logout ends the persistent execution and redirects", async () => {
   }
 });
 
-test("session exit ends the persistent execution and redirects", async () => {
+test("session exit restarts in place and rejects old continuations", async () => {
+  const metadataStore = new MemorySessionMetadataStore();
+  let runs = 0, completions = 0;
+  const signals: AbortSignal[] = [];
+  const late = Promise.withResolvers<void>();
+  let lateResult: Promise<void> | undefined;
+  const service = defineSessionService(async ({ signal }) => {
+    signals.push(signal);
+    const run = ++runs;
+    if (run === 1) {
+      lateResult = (async () => {
+        await late.promise;
+        assertThrows(() => sendMessage("old output"));
+        assertThrows(() => endSession("old termination"));
+        await assertRejects(() =>
+          callScreen({ id: "old", model: new Model({}), schema: z.object({}) })
+        );
+      })();
+    }
+    sendMessage(`run ${run}`);
+    await callScreen({
+      id: `run-${run}`,
+      model: new Model({}),
+      schema: z.object({}),
+    });
+  }, {
+    metadataStore,
+    completePersistent: () => {
+      completions++;
+      return Promise.resolve();
+    },
+  });
+  let sessionId = "";
+  try {
+    const response = await service.fetch(
+      new Request("https://example.test/connect", { method: "POST" }),
+      context(metadata),
+    );
+    sessionId = response.headers.get("the8020-session")!;
+    const socket = new TestSocket();
+    socket.message(connectMessage(0));
+    await service.connectWebSocket(
+      new Request("https://example.test/connect"),
+      context(metadata),
+      socket,
+    );
+    await until(() => serverMessages(socket, "presentation.show").length > 0);
+    for (let sequence = 1; sequence <= 2; sequence++) {
+      socket.message({
+        type: "session.exit",
+        protocol: UUI_PROTOCOL_VERSION,
+        sessionId,
+        clientSequence: sequence,
+      });
+      await until(() =>
+        serverMessages(socket, "presentation.show").at(-1)?.presentation
+          .surfaces[0]?.screen.id === `run-${sequence + 1}`
+      );
+      assertEquals(signals[sequence - 1]!.aborted, true);
+      assertEquals(socket.signal.aborted, false);
+      assertEquals(completions, 0);
+      assertEquals(metadataStore.size, 1);
+    }
+    late.resolve();
+    await lateResult;
+    assertEquals(serverMessages(socket, "session.reset").length, 2);
+    assertEquals(serverMessages(socket, "session.end").length, 0);
+    assertEquals(
+      serverMessages(socket, "presentation.show").at(-1)?.presentation.messages
+        ?.map((message) => message.message),
+      ["run 3"],
+    );
+    const resumed = new TestSocket();
+    socket.close(1000, "reload");
+    await until(() =>
+      workerFunctions["uui.session.inspect"]({ sessionId }).state ===
+        "DISCONNECTED"
+    );
+    resumed.message(connectMessage(0));
+    await service.connectWebSocket(
+      new Request("https://example.test/connect"),
+      context(metadata),
+      resumed,
+    );
+    await until(() => serverMessages(resumed, "presentation.show").length > 0);
+    assertEquals(
+      serverMessages(resumed, "presentation.show")[0]?.presentation.surfaces[0]
+        ?.screen.id,
+      "run-3",
+    );
+    assertEquals(runs, 3);
+  } finally {
+    late.resolve();
+    if (sessionId) {
+      await workerFunctions["uui.session.terminate"]({ sessionId });
+    }
+    await metadataStore.clear();
+  }
+});
+
+test("session restart retires the Worker and redirects", async () => {
   const metadataStore = new MemorySessionMetadataStore();
   let completions = 0;
   let handlerAborted = false;
@@ -1449,7 +1555,7 @@ test("session exit ends the persistent execution and redirects", async () => {
     },
     {
       metadataStore,
-      completePersistent: () => {
+      retireWorker: () => {
         completions++;
         return Promise.resolve();
       },
@@ -1476,7 +1582,7 @@ test("session exit ends the persistent execution and redirects", async () => {
     );
     sessionId = ready.sessionId;
     socket.message({
-      type: "session.exit",
+      type: "session.restart",
       protocol: UUI_PROTOCOL_VERSION,
       sessionId,
       clientSequence: 1,
@@ -1485,7 +1591,7 @@ test("session exit ends the persistent execution and redirects", async () => {
     const ended = socket.sent.map((item) => JSON.parse(String(item))).find(
       (item) => item.type === "session.end",
     );
-    assertEquals(ended.message, "Session exited");
+    assertEquals(ended.message, "Session restarted");
     assertEquals(ended.redirectUrl, "/the8020/uui/shell/");
     assertEquals(handlerAborted, true);
     assertEquals(metadataStore.size, 0);

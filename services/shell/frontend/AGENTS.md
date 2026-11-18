@@ -33,11 +33,16 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
 - Use existing message-center notifications for user-facing messages. No screen
   banners; frontend diagnostics use `console.error`. On resync, acknowledge with
   `client.ack` and request the current snapshot directly.
-- Back, Exit, and New form one gapless segmented navigation group. Exit sends
-  `session.exit` and uses the upward arrow icon. It follows the server-selected
-  entry URL after termination clears per-tab state. New is a normal base-URL
-  anchor with `target="_blank"` and `rel="noopener"`, using fresh-navigation
-  startup.
+- Back, Exit, New, and Fullscreen form one gapless segmented navigation group.
+  The active screen's resolved `systemButtons` replace its slots independently
+  of covered screens, reusing action labels, kinds, shortcuts and styling. Added
+  buttons emit ordinary actions with dirty bindings. Exit sends `session.exit`;
+  `session.reset` clears old presentation, pending inputs and message history
+  without reloading or reconnecting. Home substitutes Reload page
+  (`SESSION_RESTART_EVENT`), which sends `session.restart` and follows the
+  server-selected entry URL after termination clears per-tab state. New is a
+  normal base-URL anchor with `target="_blank"` and `rel="noopener"`, using
+  fresh-navigation startup.
 
 - One live socket controls a session. Code 4001 opens a native modal with a
   full-screen blurred backdrop, "This session has been taken over by another
@@ -69,6 +74,8 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
   modal interactions make only the program frame inert. Escape closes an open
   user menu before dismissing its modal. Native Tab can reach the global
   controls; field-navigation shortcuts remain scoped to the dialog frame.
+- The same popover/slot mechanism keeps system navigation interactive above
+  native modals. Removed buttons leave no gap; the active screen owns shortcuts.
 - Reconcile stable surfaces and retained DOM while preserving dirty values,
   focus, custom elements, and list state. Identical snapshots that retain DOM
   must also retain its bound model object so later edits reach submitted data.
@@ -299,6 +306,10 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
   behavior.
 
 # Verification
+
+- `deno task test:system-buttons-browser` covers override/add/remove, custom
+  action draft submission, page/modal restoration, real pointer clicks on the
+  navigation popover, and fullscreen.
 
 - Run UUI `deno task check` and `deno task test`, and rebuild with
   `services/shell/build.sh` for browser-source changes.

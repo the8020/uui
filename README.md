@@ -147,6 +147,39 @@ restores the last synchronized position. Brief reconnects preserve live browser
 state. This lasts within the live session/Worker; there is no database
 view-state storage or recovery of program continuations after Worker loss.
 
+## System buttons
+
+`systemButtons` patches the navigation buttons for the active screen. The
+default slots are `back`, `exit`, `new`, and `fullscreen`. Omitted slots and
+properties keep their defaults; `null` removes a slot. New slots append in
+declaration order, require a label, and use their slot name as the action ID
+unless `id` overrides it. Each screen starts from defaults, including modals.
+
+```ts
+import { SESSION_RESTART_EVENT } from "/p/the8020/uui/mod.ts";
+
+const event = await callScreen({
+  id: "example",
+  schema: Screen,
+  model,
+  systemButtons: {
+    exit: { id: SESSION_RESTART_EVENT, label: "[[icon=refresh]]" },
+    new: null,
+    help: { label: "[[icon=help]] Help" },
+  },
+});
+if (event.action === "help") {
+  // Open this program's help.
+}
+```
+
+Buttons reuse ordinary action labels (including localized text), kinds,
+shortcuts, classes and styles. Custom actions submit through the ordinary screen
+event and draft-validation path. Changing a label alone preserves the action.
+Exit resets the program to Home within the same Worker and connection; Home uses
+the override above to offer a full session reload with Worker retirement.
+Authentication remains intact for either action.
+
 ## Channels
 
 Programs and browser components use `send(id, data)` and
@@ -304,7 +337,7 @@ is discarded. Arbitrary business side effects remain owner responsibilities.
 One ChannelRouter handles all traffic on the existing authenticated UUI
 WebSocket. The session service retains controller/socket/session checks;
 internal envelopes bind messages and stream controls to their initiating side,
-sequence and screen/connection generations. Protocol version 12 omits list
+sequence and screen/connection generations. Protocol version 13 omits list
 revisions; the pending call retains the displayed-to-source mappings. No
 endpoint catalog, permission system, extra backend service or socket is exposed.
 Do not import the server `mod.ts` barrel into browser modules.
@@ -798,7 +831,7 @@ mount and use the returned `editor` (native `EditorView`) for commands and
 extensions; the vendored library exports the shared CodeMirror state/view
 primitives.
 
-Protocol version 12 carries generic ID/data channel frames. Each screen snapshot
+Protocol version 13 carries generic ID/data channel frames. Each screen snapshot
 carries `state`, element-specific `lists`, and `channelGeneration`. List
 bindings in the wire business model are empty arrays; displayed rows live in
 `lists[].rows`. The list's `update` operation on the common namespace carries

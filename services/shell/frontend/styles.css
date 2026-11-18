@@ -2033,10 +2033,22 @@ body:has(.uui-content-fullscreen) {
 }
 
 .session-navigation {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: 0;
+  width: max-content;
+  overflow: visible;
+  background: var(--bg);
+  color: var(--text);
   display: inline-flex;
   flex-shrink: 0;
   border: 1px solid var(--border);
   border-radius: 6px;
+}
+
+.session-navigation[hidden] {
+  display: none;
 }
 
 .session-navigation > .btn {
@@ -2220,11 +2232,11 @@ body:has(.uui-content-fullscreen) {
 }
 
 @media (max-width: 1212px) {
-  #app-fullscreen {
+  [data-system-action="uui.fullscreen"] {
     display: none;
   }
 
-  .session-navigation > #session-new {
+  .session-navigation > .btn:nth-last-child(2):has(+ [data-system-action="uui.fullscreen"]) {
     border-radius: 0 5px 5px 0;
   }
 }

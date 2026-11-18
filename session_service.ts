@@ -40,6 +40,7 @@ import {
   commandScreen,
   connectChannels,
   disconnectChannels,
+  runInSession,
 } from "./session.ts";
 import {
   agentRequest,
@@ -84,6 +85,7 @@ interface SessionLogEntry {
 }
 
 interface SessionRecord {
+  handler: (context: UUISessionContext) => Promise<void>;
   localization: Localization;
   languageBundle: import("/p/the8020/i18n/messages.ts").Bundle;
   executionId: string;
@@ -121,6 +123,8 @@ interface SessionRecord {
   metadataStore: SessionMetadataStore;
   runInSession: ReturnType<typeof AsyncLocalStorage.snapshot>;
   completePersistent: () => Promise<void>;
+  retireWorker: () => Promise<void>;
+  restartRequested?: boolean;
   ended: boolean;
   endMessage?: { type: "session.end"; message: string; redirectUrl?: string };
   finalError?: string;
@@ -132,18 +136,34 @@ interface SessionRecord {
 
 class AsyncQueue<T> {
   #items: T[] = [];
-  #waiters: Array<(value: T) => void> = [];
+  #waiters: Array<{ resolve(value: T): void; reject(error: unknown): void }> =
+    [];
+  #closed = false;
 
   push(value: T): void {
+    if (this.#closed) return;
     const waiter = this.#waiters.shift();
     if (waiter === undefined) this.#items.push(value);
-    else waiter(value);
+    else waiter.resolve(value);
   }
 
   async shift(): Promise<T> {
+    if (this.#closed) {
+      throw new DOMException("Session input closed", "AbortError");
+    }
     const value = this.#items.shift();
     if (value !== undefined) return value;
-    return await new Promise<T>((resolve) => this.#waiters.push(resolve));
+    return await new Promise<T>((resolve, reject) =>
+      this.#waiters.push({ resolve, reject })
+    );
+  }
+
+  close(): void {
+    this.#closed = true;
+    this.#items.length = 0;
+    for (const waiter of this.#waiters.splice(0)) {
+      waiter.reject(new DOMException("Session input closed", "AbortError"));
+    }
   }
 }
 
@@ -153,6 +173,7 @@ let databaseMetadataStore: Promise<SessionMetadataStore> | undefined;
 export interface SessionServiceOptions {
   metadataStore?: SessionMetadataStore;
   completePersistent?: () => Promise<void>;
+  retireWorker?: () => Promise<void>;
 }
 
 export function defineSessionService(
@@ -330,19 +351,11 @@ async function establish(
   await currentLocalization()?.bundle("the8020/uui");
   await currentLocalization()?.bundle("the8020/i18n");
   const messages = new MessageHistory();
-  const unbind = bindSession({
-    sessionId,
-    messageHistory: messages,
-    get browser() {
-      return record.browser;
-    },
-    send: (message) => workerMessage(record, message),
-    receive: () => input.shift(),
-  });
   const now = Date.now();
   Object.assign(
     record,
     {
+      handler,
       localization: currentLocalization()!,
       languageBundle: await currentLocalization()!.bundle("the8020/uui"),
       executionId,
@@ -355,7 +368,6 @@ async function establish(
       config: sessionConfiguration(),
       input,
       controller,
-      unbind,
       hasConnected: false,
       clients: [],
       control: 0,
@@ -376,9 +388,16 @@ async function establish(
       runInSession: AsyncLocalStorage.snapshot(),
       completePersistent: options.completePersistent ??
         (() => kernel.execution.completePersistent()),
+      retireWorker: options.retireWorker ??
+        (async () => {
+          await kernel.admin.execute("worker.kill", {
+            worker_id: record.placement.workerId,
+          });
+        }),
       ended: false,
     } satisfies Partial<SessionRecord>,
   );
+  bindProgram(record);
   sessions.set(executionId, record);
   log(record, "lifecycle", "created");
   try {
@@ -393,22 +412,53 @@ async function establish(
   }
   startHeartbeat(record);
   startDisconnectTimer(record);
-  void Promise.resolve().then(() =>
-    handler({
-      sessionId,
-      auth: record.auth,
-      signal: controller.signal,
-      program,
-      inputs,
-    })
-  ).then(
+  startProgram(record, program, inputs);
+  return new Response(null, {
+    status: 204,
+    headers: { "the8020-session": sessionId },
+  });
+}
+
+function bindProgram(record: SessionRecord): void {
+  const { controller, input } = record;
+  record.unbind = bindSession({
+    sessionId: record.sessionId,
+    messageHistory: record.messages,
+    get browser() {
+      return record.browser;
+    },
+    send: (message) => {
+      if (!controller.signal.aborted) workerMessage(record, message);
+    },
+    receive: () => input.shift(),
+  });
+}
+
+function startProgram(
+  record: SessionRecord,
+  program?: string,
+  inputs?: unknown[],
+): void {
+  const { controller } = record;
+  void Promise.resolve().then(() => {
+    if (controller.signal.aborted) return;
+    return runInSession(() =>
+      record.handler({
+        sessionId: record.sessionId,
+        auth: record.auth,
+        signal: controller.signal,
+        program,
+        inputs,
+      })
+    );
+  }).then(
     () => {
-      if (!record.ended) {
+      if (!record.ended && !controller.signal.aborted) {
         void end(record, "session handler returned").catch(() => undefined);
       }
     },
     (error: unknown) => {
-      if (record.ended) return;
+      if (record.ended || controller.signal.aborted) return;
       record.finalError =
         errorMessage(error).trim().slice(0, MAX_UUI_MESSAGE_BODY_LENGTH) ||
         "Program failed";
@@ -421,10 +471,37 @@ async function establish(
       void end(record, "session handler failed").catch(() => undefined);
     },
   );
-  return new Response(null, {
-    status: 204,
-    headers: { "the8020-session": sessionId },
+}
+
+function exitProgram(record: SessionRecord): void {
+  if (record.ended) return;
+  record.runInSession(() => {
+    record.controller.abort(new DOMException("Session exited", "AbortError"));
+    record.unbind();
+    record.input.close();
+    record.controller = new AbortController();
+    record.input = new AsyncQueue();
+    record.messages = new MessageHistory();
+    record.currentPresentation = undefined;
+    record.commandError = undefined;
+    record.replay.length = 0;
+    record.replayBytes = 0;
+    record.replayFloor = record.serverSequence;
+    bindProgram(record);
+    const connection = crypto.randomUUID();
+    if (record.socket) connectChannels(connection);
+    emit(record, { type: "session.reset", connection });
+    updateMetadata(record);
+    log(record, "lifecycle", "restarted in place");
+    startProgram(record);
   });
+}
+
+function restartSession(record: SessionRecord): void {
+  record.restartRequested = true;
+  void end(record, "Session restarted", uiConfig.postLoginUrl).catch(() =>
+    undefined
+  );
 }
 
 async function connect(
@@ -603,9 +680,12 @@ function clientMessage(
   }
   if (message.type === "session.exit") {
     record.lastClientSequence = message.clientSequence;
-    void end(record, "Session exited", uiConfig.postLoginUrl).catch(() =>
-      undefined
-    );
+    exitProgram(record);
+    return;
+  }
+  if (message.type === "session.restart") {
+    record.lastClientSequence = message.clientSequence;
+    restartSession(record);
     return;
   }
   if (message.type === "client.ack" && message.resync === true) {
@@ -644,6 +724,14 @@ function workerMessage(
     return;
   }
   if (record.ended || !sessions.has(record.executionId)) {
+    return;
+  }
+  if (value.type === "session.exit") {
+    exitProgram(record);
+    return;
+  }
+  if (value.type === "session.restart") {
+    restartSession(record);
     return;
   }
   if (value.type === "session.end") {
@@ -832,6 +920,7 @@ async function end(
   emitEnd(record);
   record.controller.abort(new DOMException(reason, "AbortError"));
   record.unbind();
+  record.input.close();
   log(record, "lifecycle", "ended");
   if (!retainResult) return await finalize(record);
   updateMetadata(record, true);
@@ -870,7 +959,8 @@ async function finalize(record: SessionRecord): Promise<void> {
       record.metadataFinalized = true;
     }
     // Completion is exact and idempotent; a metadata failure must not retain capacity.
-    await record.completePersistent();
+    if (record.restartRequested) await record.retireWorker();
+    else await record.completePersistent();
     sessions.delete(record.executionId);
   })();
   try {

@@ -17,6 +17,10 @@ Parent DOX: [uui programs DOX](../AGENTS.md).
 # Local Contracts
 
 - Refresh and Logout stay in the page header.
+- The initial Home screen overrides the `exit` system-button slot with the
+  refresh icon and framework `SESSION_RESTART_EVENT`. Its header Refresh still
+  refreshes only the Home catalog; the system button reloads the session and
+  retires its Worker.
 - Tiles come from installed `widgets/*.toml` declarations (format owned by
   `the8020/packages/widgets.ts`). A widget appears only when `open.program` is
   an installed UUI program, including non-discoverable ones. Every discoverable
@@ -64,10 +68,11 @@ Parent DOX: [uui programs DOX](../AGENTS.md).
   Left/Right arrows; double-click or Home restores the 280px default. The width
   is a browser-only `localStorage` preference, clamped to 180px and 60% of the
   navigator. Narrow viewports stack the tree above the tiles without a divider.
-- Reuse package-owned program identifiers and descriptions. Build the catalog
-  (widgets and manifests, read in parallel) on the first render and keep it for
-  the session; only explicit Refresh rebuilds it. Default tiles require both uui
-  and discoverable flags.
+- Reuse package-owned program identifiers and descriptions. Build the catalog on
+  the first render and keep it between ordinary program returns. Header Refresh
+  and soft Exit rebuild it. Widget and program discovery run in parallel;
+  program manifests are read sequentially. Default tiles require both uui and
+  discoverable flags.
 - Invoke ordinary programs and return silently without a generic completion
   notification.
 

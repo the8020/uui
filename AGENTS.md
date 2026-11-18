@@ -116,8 +116,10 @@ Default section order:
   choice. F1/F4 still open their field help; read-only fields keep Chevron
   Right.
 - Group Back, Exit, and New beside the brand as one gapless segmented control.
-  Exit terminates the current session and returns to the entry screen, retaining
-  authentication. New opens the base UUI URL with target blank.
+  Exit restarts the UUI program at Home in the same Worker and connection. Home
+  overrides Exit with Reload page, which retires that Worker and reloads the
+  entry URL, retaining authentication. New opens the base UUI URL with target
+  blank.
 
 When the user requests a durable behavior change, record it here or in the
 relevant child AGENTS.md
@@ -245,8 +247,24 @@ below.
   kernel `0.8` line. Package tags use bare semantic versions; package manifests
   and runtime `/p/` imports remain unversioned.
 
-- `session.exit` uses ordinary session termination and redirects to the
-  configured post-login entry URL without signing out.
+- `callScreen({ systemButtons })` patches default `back`, `exit`, `new`, and
+  `fullscreen` slots. Omitted slots/properties retain defaults; null removes a
+  slot; new slots append in declaration order and require a label. Reuse action
+  IDs, labels, kinds, shortcuts and component styling; the slot key defaults the
+  action ID for additions. Each screen resolves its own defaults independently,
+  including modal screens. Added actions use ordinary screen events and draft
+  validation; reserved session actions remain framework-owned.
+- `session.exit` cancels the current program, screens, channels and queued
+  input, clears presentation/replay/message state, and starts Home on the same
+  native execution, UUI session ID, Worker, socket, language and authenticated
+  identity. `session.reset` replaces browser presentation and channel connection
+  state. Program async contexts retain their old lifetime; late framework output
+  and new calls from an exited run reject. Arbitrary abort-ignoring application
+  work may continue; it cannot target the replacement UUI run.
+- `session.restart` removes session metadata and invokes the existing native
+  `worker.kill` for this concurrency-one Worker's trusted placement before its
+  capacity is reused. The shell reloads the configured post-login URL. Explicit
+  logout and ordinary termination retain their existing completion paths.
 
 - `preferences.ts` exposes `fetchUserPreferences(username?)`, resolving each
   nullable field from the named user, the empty-username default, and built-ins.
@@ -272,9 +290,10 @@ below.
   services.
 - `the8020/uui/home` and `the8020/uui/program-terminated` are hidden ordinary
   programs selected by package-local `ui-config.json`. Home keeps its catalog
-  for the session and rebuilds it on Refresh, batching fresh permission checks
-  on each render; Program terminated defensively presents bounded exception,
-  stack, source context, and copyable dump data.
+  between ordinary program returns and rebuilds it on Refresh or soft Exit,
+  batching fresh permission checks on each render; Program terminated
+  defensively presents bounded exception, stack, source context, and copyable
+  dump data.
 - `program.toml` declares `uui` as an optional boolean defaulting to false. Home
   includes only programs with `uui = true` and `discoverable = true`, and
   returns silently after invocation. Discovery logs and skips an invalid
@@ -374,8 +393,8 @@ below.
   seconds) on the original execution; reads/reconnections never extend this
   window. Terminal metadata is `ENDED`. Browser terminal messages carry the same
   bounded message history as headless reads. Expiry removes metadata before
-  generic persistent completion; explicit termination, exit/logout redirects and
-  disconnect-grace expiry release immediately. Metadata deletion failure is
+  generic persistent completion; explicit termination, restart/logout redirects
+  and disconnect-grace expiry release immediately. Metadata deletion failure is
   logged and cannot skip completion. Completion failure remains visible and
   retries only the exact idempotent terminal release each second, without
   restoring metadata or replaying work; the existing disconnected native binding
@@ -833,7 +852,7 @@ below.
   references resolve to control IDs centrally, and each descriptor has one
   placement. Column IDs are list-local; framework DOM IDs also include surface
   and Model identity. Component internals remain owned by the providing package.
-- Protocol version 12 carries generic ID/data channel frames and internally
+- Protocol version 13 carries generic ID/data channel frames and internally
   assigned component routing within each screen generation; it retains
   model-bound custom fields, component metadata, exact decimal semantics and
   field help. Model state and list snapshots remain screen-owned. Wire business
@@ -929,16 +948,16 @@ below.
   gold token, `20` uses the primary text color, and a `24px` by `3px` rule
   centered within the line box renders the pipe independently of font glyph
   metrics.
-- The shell owns one always-visible icon-only Material `arrow_back` button
-  immediately after the brand, retains the accessible `Back` label, and emits
-  the reserved `BACK_EVENT` as both action and event type to the topmost visible
-  surface. The browser Back action traverses one marked same-URL guard entry,
-  restores it with `history.forward()` before invoking the same Back path. Never
-  recreate it with pushState after traversal: Chromium can skip replacement
-  entries during subsequent native Back actions. Reload adopts the existing
-  guard instead of adding another. Program header controls and actions render
-  from the screen snapshot between Back and the always-visible session
-  disclosure. That disclosure combines one `8px` status circle, the
+- The shell's default navigation includes an icon-only Material `arrow_back`
+  button immediately after the brand, retains the accessible `Back` label, and
+  emits the reserved `BACK_EVENT` as both action and event type to the topmost
+  visible surface. The browser Back action traverses one marked same-URL guard
+  entry, restores it with `history.forward()` before invoking the same Back
+  path. Never recreate it with pushState after traversal: Chromium can skip
+  replacement entries during subsequent native Back actions. Reload adopts the
+  existing guard instead of adding another. Program header controls and actions
+  render from the screen snapshot between navigation and the always-visible
+  session disclosure. That disclosure combines one `8px` status circle, the
   authenticated username, and a Material `menu` icon in one button. Connected is
   green; connecting and reconnecting are red, while a visually hidden live label
   preserves the complete textual state. The username remains one line and
@@ -1216,6 +1235,13 @@ below.
   explicitly asks for onboarding help.
 
 # Verification
+
+- `system_buttons_test.ts` covers slot patching, removal, addition and invalid
+  declarations. `session_service_test.ts` verifies repeated in-place exits,
+  stale continuations, reconnect, and hard-restart Worker retirement.
+  `deno task test:system-buttons-browser` checks action routing with draft
+  edits, button appearance, removal/addition, modal/page overrides and return,
+  real pointer access above modals, and the fullscreen toggle.
 
 - `deno task test:final-result-browser` runs the actual UUI owner in a Web
   Worker with the real generic supervisor and built Chromium shell. It checks an
