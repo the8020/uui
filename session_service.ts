@@ -1,3 +1,4 @@
+import { msg } from "./i18n/messages.ts";
 import { technicalGuard } from "./technical_guard.ts";
 import { browserLocalization } from "./localization.ts";
 import {
@@ -248,7 +249,10 @@ export function defineSessionService(
         record.control !== command.control
       ) {
         return Response.json(
-          agentResponse(record, "Session control changed; attach again."),
+          agentResponse(
+            record,
+            record.localization.text(msg("errors.session_control_changed")),
+          ),
           { status: 409 },
         );
       }
@@ -275,7 +279,7 @@ export function defineSessionService(
             return Response.json(
               agentResponse(
                 record,
-                "The screen changed. Review the refreshed transcript; use --force to act despite refreshes of this same screen.",
+                record.localization.text(msg("errors.screen_changed")),
               ),
               { status: 409 },
             );
@@ -465,7 +469,7 @@ function startProgram(
       if (record.ended || controller.signal.aborted) return;
       record.finalError =
         errorMessage(error).trim().slice(0, MAX_UUI_MESSAGE_BODY_LENGTH) ||
-        "Program failed";
+        record.localization.text(msg("errors.program_failed"));
       record.messages.add(record.finalError, "error");
       emit(record, {
         type: "session.error",
@@ -679,7 +683,11 @@ function clientMessage(
   }
   if (message.type === "session.logout") {
     record.lastClientSequence = message.clientSequence;
-    void end(record, "Signing out…", uiConfig.logoutUrl).catch(() => undefined);
+    void end(
+      record,
+      record.localization.text(msg("errors.signing_out")),
+      uiConfig.logoutUrl,
+    ).catch(() => undefined);
     return;
   }
   if (message.type === "session.exit") {

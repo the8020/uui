@@ -3,11 +3,13 @@ import {
   currentLocalization,
   direction,
   Localization,
+  localizedText,
   translations,
   withLocalization,
 } from "/p/the8020/i18n/mod.ts";
 import { defineService } from "/p/the8020/services/http.ts";
 import { login, logout as logoutUser } from "/p/the8020/users/mod.ts";
+import { msg } from "../../i18n/messages.ts";
 import uiConfig from "../../ui-config.json" with { type: "json" };
 import { fetchBranding } from "../../branding.ts";
 import { brandingAsset, brandingHead } from "../shell/branding.ts";
@@ -72,7 +74,9 @@ service.post(
       selected &&
       !current.configuration.languages.some((item) => item.code === selected)
     ) {
-      return new Response("Invalid language", { status: 400 });
+      return new Response(await localizedText(msg("login.invalid_language")), {
+        status: 400,
+      });
     }
     return await withLocalization(
       new Localization(

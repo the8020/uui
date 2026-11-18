@@ -263,7 +263,7 @@ const endpointEntries = new Map<
 >();
 const channels = new ChannelRouter("client", (frame) => {
   if (socket?.readyState !== WebSocket.OPEN) {
-    throw new Error("UUI connection unavailable");
+    throw new Error(t("frontend.errors.uui_connection_unavailable"));
   }
   if (frame instanceof Uint8Array) {
     const decoded = decodeStreamChunk(frame);
@@ -379,12 +379,18 @@ function listRequest(
   signal?: AbortSignal,
 ): Promise<unknown> {
   if (!layerIsActive(layer)) {
-    return Promise.reject(new Error("The screen is busy or unavailable"));
+    return Promise.reject(
+      new Error(t("frontend.errors.the_screen_is_busy_or_unavailable")),
+    );
   }
   const namespace = layer.screen.lists.find((list) => list.id === listId)
     ?.channelNamespace;
   const channel = namespace ? endpointFor(layer, namespace) : undefined;
-  if (!channel) return Promise.reject(new Error("List channel unavailable"));
+  if (!channel) {
+    return Promise.reject(
+      new Error(t("frontend.errors.list_channel_unavailable")),
+    );
+  }
   const token = crypto.randomUUID();
   const owner = AbortSignal.any([channel.signal, ...(signal ? [signal] : [])]);
   if (owner.aborted) {
@@ -619,7 +625,9 @@ async function connectAttempt(): Promise<void> {
         showEndedSession();
         return;
       }
-      if (!response.ok) throw new Error("Could not connect to the session");
+      if (!response.ok) {
+        throw new Error(t("frontend.errors.could_not_connect_to_the_session"));
+      }
       const result = await response.json();
       // Consume only the intent carried by this request; a button click may arrive during a poll.
       if (takeover) initialClaim = false;
@@ -817,7 +825,7 @@ function receive(raw: unknown): void {
     } catch {
       closeNativeDownloads();
       socket?.close(1003, "invalid stream frame");
-      console.error("The server sent invalid stream data.");
+      console.error(t("frontend.errors.the_server_sent_invalid_stream_data"));
     }
     return;
   }
@@ -826,7 +834,7 @@ function receive(raw: unknown): void {
   try {
     message = JSON.parse(raw) as UUIServerMessage;
   } catch {
-    console.error("The server sent an invalid message.");
+    console.error(t("frontend.errors.the_server_sent_an_invalid_message"));
     return;
   }
   if (
@@ -888,7 +896,9 @@ function receive(raw: unknown): void {
         messageCenter.synchronize(message.presentation.messages ?? []);
         if (!suspended && controlDialog.open) controlDialog.close();
       } catch {
-        console.error("The server sent an invalid presentation.");
+        console.error(
+          t("frontend.errors.the_server_sent_an_invalid_presentation"),
+        );
       }
       break;
     case "channel.frame":

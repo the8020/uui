@@ -47,10 +47,10 @@ export async function openBrowserDownload(
   signal: AbortSignal,
 ): Promise<{ cleanup(): void; done: Promise<void> }> {
   if (!globalThis.isSecureContext) {
-    throw new Error("Open UUI over HTTPS to download files");
+    throw new Error(t("frontend.errors.open_uui_over_https_to_download_files"));
   }
   if (!navigator.serviceWorker) {
-    throw new Error("This browser cannot stream downloads");
+    throw new Error(t("frontend.errors.this_browser_cannot_stream_downloads"));
   }
   const workerURL = new URL("./download-worker.js", location.href);
   const registration = await navigator.serviceWorker.register(workerURL, {
@@ -59,12 +59,14 @@ export async function openBrowserDownload(
   signal.throwIfAborted();
   const worker = registration.active ?? registration.installing ??
     registration.waiting;
-  if (worker === null) throw new Error("Could not start the download worker");
+  if (worker === null) {
+    throw new Error(t("frontend.errors.could_not_start_the_download_worker"));
+  }
   await new Promise<void>((resolve, reject) => {
     const changed = () => {
       if (worker.state === "activated") finish();
       else if (worker.state === "redundant") {
-        finish(new Error("Download worker stopped"));
+        finish(new Error(t("frontend.errors.download_worker_stopped")));
       }
     };
     const aborted = () =>
@@ -76,7 +78,10 @@ export async function openBrowserDownload(
       error ? reject(error) : resolve();
     };
     const timer = setTimeout(
-      () => finish(new Error("Download worker startup timed out")),
+      () =>
+        finish(
+          new Error(t("frontend.errors.download_worker_startup_timed_out")),
+        ),
       DOWNLOAD_START_TIMEOUT,
     );
     worker.addEventListener("statechange", changed);
@@ -124,7 +129,8 @@ export async function openBrowserDownload(
         error ? reject(error) : resolve();
       };
       const timer = setTimeout(
-        () => finish(new Error("Download startup timed out")),
+        () =>
+          finish(new Error(t("frontend.errors.download_startup_timed_out"))),
         DOWNLOAD_START_TIMEOUT,
       );
       signal.addEventListener("abort", abort, { once: true });
@@ -133,6 +139,7 @@ export async function openBrowserDownload(
           {
             url?: string;
             error?: string;
+            textKey?: string;
             complete?: boolean;
             cancelled?: boolean;
           }
@@ -150,12 +157,16 @@ export async function openBrowserDownload(
           return;
         }
         if (event.data.error !== undefined) {
-          finish(new Error(event.data.error));
+          finish(
+            new Error(
+              event.data.textKey ? t(event.data.textKey) : event.data.error,
+            ),
+          );
           return;
         }
         const expected = new URL(`./__downloads/${token}`, workerURL).href;
         if (event.data.url !== expected) {
-          finish(new Error("Invalid download destination"));
+          finish(new Error(t("frontend.errors.invalid_download_destination")));
           return;
         }
         // Navigation is intentional: an anchor's download attribute can bypass
@@ -173,7 +184,9 @@ export async function openBrowserDownload(
           contentType: metadata.contentType,
         }, [stream, channel.port2]);
       } catch {
-        finish(new Error("This browser cannot stream downloads"));
+        finish(
+          new Error(t("frontend.errors.this_browser_cannot_stream_downloads")),
+        );
       }
     });
     signal.addEventListener("abort", cleanup, { once: true });

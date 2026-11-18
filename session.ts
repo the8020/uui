@@ -1,4 +1,9 @@
 import {
+  localizedText as resolveMessage,
+  text as formatMessage,
+} from "/p/the8020/i18n/mod.ts";
+import { msg as messageSymbol } from "/p/the8020/uui/i18n/messages.ts";
+import {
   currentLocalization,
   prepareTexts,
   resolveTexts,
@@ -976,7 +981,15 @@ async function showScreen<T extends z.ZodRawShape>(
       }
       if (command.op === "select" || command.op === "list") {
         const list = current.lists.find((item) => item.id === command.id);
-        if (!list) throw new TypeError(`Unknown list ${command.id}`);
+        if (!list) {
+          throw new TypeError(
+            await resolveMessage(
+              messageSymbol("errors.unknown_list", {
+                value1: String(command.id),
+              }),
+            ),
+          );
+        }
         if (command.op === "select") {
           return dispatch({
             action: "select",
@@ -1045,7 +1058,11 @@ async function showScreen<T extends z.ZodRawShape>(
         if (
           action?.id === SESSION_NEW_EVENT || action?.id === FULLSCREEN_EVENT
         ) {
-          throw new TypeError("This button requires a browser");
+          throw new TypeError(
+            await resolveMessage(
+              messageSymbol("errors.this_button_requires_a_browser"),
+            ),
+          );
         }
         if (action) return dispatch({ action: action.id });
         for (
@@ -1068,7 +1085,13 @@ async function showScreen<T extends z.ZodRawShape>(
             });
           }
         }
-        throw new TypeError(`Unknown button ${command.id}`);
+        throw new TypeError(
+          await resolveMessage(
+            messageSymbol("errors.unknown_button", {
+              value1: String(command.id),
+            }),
+          ),
+        );
       }
       const control = resolvedControls.find((control) =>
         !control.hidden &&
@@ -1077,11 +1100,27 @@ async function showScreen<T extends z.ZodRawShape>(
             `${control.id}/${input.name}` === command.id
           ))
       );
-      if (!control) throw new TypeError(`Unknown field ${command.id}`);
+      if (!control) {
+        throw new TypeError(
+          await resolveMessage(
+            messageSymbol("errors.unknown_field", {
+              value1: String(command.id),
+            }),
+          ),
+        );
+      }
       const schema = schemaAtPath(options.schema, control.bind)!;
       if (command.op === "value-help") {
         const provider = valueHelpFor(schema, control);
-        if (!provider) throw new TypeError(`No value help for ${command.id}`);
+        if (!provider) {
+          throw new TypeError(
+            await resolveMessage(
+              messageSymbol("errors.no_value_help_for", {
+                value1: String(command.id),
+              }),
+            ),
+          );
+        }
         const page = await readValueHelp(provider, {
           query: { search: command.search, filters: {}, sort: null },
           offset: command.offset,
@@ -1099,7 +1138,13 @@ async function showScreen<T extends z.ZodRawShape>(
       }
       if (command.op === "enter") {
         if (control.readOnly || !control.enterEvent) {
-          throw new TypeError(`Enter is unavailable for ${command.id}`);
+          throw new TypeError(
+            await resolveMessage(
+              messageSymbol("errors.enter_is_unavailable_for", {
+                value1: String(command.id),
+              }),
+            ),
+          );
         }
         return dispatch({
           action: control.enterEvent,
@@ -1118,7 +1163,13 @@ async function showScreen<T extends z.ZodRawShape>(
             ? inputs[0]
             : undefined);
         if (!input) {
-          throw new TypeError(`Use a named input of ${control.id}`);
+          throw new TypeError(
+            await resolveMessage(
+              messageSymbol("errors.use_a_named_input_of", {
+                value1: String(control.id),
+              }),
+            ),
+          );
         }
         if (input.path !== "") {
           value = structuredClone(getPath(options.model.data, control.bind));
@@ -1213,7 +1264,11 @@ async function showScreen<T extends z.ZodRawShape>(
                   get: () => getPath(options.model.data, control.bind),
                   set: (value) => {
                     if (control.readOnly) {
-                      throw new TypeError("This field is read-only");
+                      throw new TypeError(
+                        formatMessage(
+                          messageSymbol("errors.this_field_is_read_only_2"),
+                        ),
+                      );
                     }
                     const candidate = structuredClone(options.model.data);
                     setPath(candidate, control.bind, value);
@@ -1352,7 +1407,9 @@ async function showScreen<T extends z.ZodRawShape>(
           if (!signal.aborted) {
             const message =
               (error instanceof Error ? error.message.slice(0, 1000) : "") ||
-              "List operation failed";
+              await resolveMessage(
+                messageSymbol("errors.list_operation_failed"),
+              );
             output.send(message, "error");
             endpoint.send("result", { token, error: message });
           }
@@ -1641,7 +1698,11 @@ export async function commandScreen(
   sequence: number,
 ): Promise<unknown> {
   const call = requireBoundSession().surfaces.at(-1)?.pending;
-  if (!call || call.settled) throw new Error("The screen is still working");
+  if (!call || call.settled) {
+    throw new Error(
+      await resolveMessage(messageSymbol("errors.the_screen_is_still_working")),
+    );
+  }
   return await call.command(command, sequence);
 }
 
@@ -1876,7 +1937,9 @@ function scheduleRedraw<T extends z.ZodRawShape>(
       }
       try {
         output.send(
-          error instanceof Error ? error.message : "Could not refresh the list",
+          error instanceof Error ? error.message : await resolveMessage(
+            messageSymbol("errors.could_not_refresh_the_list"),
+          ),
           "error",
         );
       } catch { /* stale captured output cannot change history */ }

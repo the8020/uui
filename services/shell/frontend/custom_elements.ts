@@ -42,7 +42,13 @@ function acquireStyle(url: string): { ready: Promise<void>; release(): void } {
         reject(new DOMException("Stylesheet released", "AbortError"));
       element.onload = () => resolve();
       element.onerror = () =>
-        reject(new Error(`Unable to load stylesheet ${url}`));
+        reject(
+          new Error(
+            t("frontend.errors.unable_to_load_stylesheet", {
+              url: String(url),
+            }),
+          ),
+        );
     });
     style = { element, ready, cancel, references: 0 };
     styles.set(url, style);

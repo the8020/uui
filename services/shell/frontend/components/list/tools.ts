@@ -220,7 +220,9 @@ export class ListTools {
       );
       signal?.throwIfAborted();
       if (page.more && page.rows.length === 0) {
-        throw new Error("The list returned an empty page before its end.");
+        throw new Error(
+          t("frontend.errors.the_list_returned_an_empty_page_before_its_end"),
+        );
       }
       result.rows.push(...page.rows);
       result.more = page.more;
@@ -254,7 +256,9 @@ export class ListTools {
       offset += page.rows.length;
       if (!page.more) break;
       if (page.rows.length === 0) {
-        throw new Error("The list returned an empty page before its end.");
+        throw new Error(
+          t("frontend.errors.the_list_returned_an_empty_page_before_its_end"),
+        );
       }
     }
     return rows;
@@ -397,7 +401,11 @@ export class ListTools {
             const styleReady = new Promise<void>((resolve, reject) => {
               css.onload = () => resolve();
               css.onerror = () =>
-                reject(new Error("Could not load the table stylesheet."));
+                reject(
+                  new Error(
+                    t("frontend.errors.could_not_load_the_table_stylesheet"),
+                  ),
+                );
             });
             document.head.append(css);
             signal.addEventListener("abort", () => css.remove(), {

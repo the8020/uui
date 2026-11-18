@@ -7,6 +7,7 @@ import {
   type Selection,
   selectionElement,
   selectionSchema,
+  selectionTexts,
 } from "/p/the8020/db/selection.ts";
 import {
   field as defineField,
@@ -466,6 +467,7 @@ export function prepareSchemaTexts(
     if (seen.has(declared)) return;
     seen.add(declared);
     metadata.push(fieldMetadata(declared));
+    if (selectionElement(declared)) metadata.push(selectionTexts);
     const inner = unwrap(declared).schema;
     if (inner instanceof z.ZodObject) {
       Object.values(inner.shape).forEach((value) => visit(value as z.ZodType));

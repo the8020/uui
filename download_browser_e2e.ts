@@ -19,7 +19,28 @@ import {
 } from "./mod.ts";
 import { controlSession, workerFunctions } from "./session_service.ts";
 import shell from "./services/shell/service.ts";
+import "./test_localization.ts";
+import {
+  defaultConfiguration,
+  Localization,
+  withLocalization,
+} from "/p/the8020/i18n/mod.ts";
+import { brandingDatabase } from "./branding_test_support.ts";
+
 import demoForm from "/p/the8020/demo/programs/demo-form/program.ts";
+
+using _database = await brandingDatabase();
+const localization = new Localization(
+  "en",
+  defaultConfiguration,
+  async (packageId) => ({
+    package: packageId,
+    language: "en",
+    texts: (await import(`/p/${packageId}/i18n/locales/en.json`, {
+      with: { type: "json" },
+    })).default.texts,
+  }),
+);
 
 const temporaryRoot = await Deno.makeTempDir({
   prefix: "uui-download-browser-",
@@ -166,67 +187,75 @@ const server = Deno.serve({
   port: 0,
   signal: serverAbort.signal,
   onListen() {},
-}, async (request) => {
-  const url = new URL(request.url);
-  const isSession = url.pathname.startsWith("/the8020/uui/session/");
-  const prefix = isSession ? "/the8020/uui/session" : "/the8020/uui/shell";
-  const metadata: RequestMetadata = {
-    contextId: crypto.randomUUID(),
-    serviceId: isSession ? "the8020/uui/session" : "the8020/uui/shell",
-    serviceGeneration: 1,
-    canonicalBasePath: prefix + "/",
-    originalUrl: url.href,
-    client: { ipAddress: "127.0.0.1", networkScope: "loopback" },
-    persistentExecutionId: "download-browser-execution",
-    persistentKeepAliveMilliseconds: 600_000,
-    execution: {
-      nodeId: "node",
+}, (request) =>
+  withLocalization(localization, async () => {
+    const url = new URL(request.url);
+    const isSession = url.pathname.startsWith("/the8020/uui/session/");
+    const prefix = isSession ? "/the8020/uui/session" : "/the8020/uui/shell";
+    const metadata: RequestMetadata = {
+      contextId: crypto.randomUUID(),
+      serviceId: isSession ? "the8020/uui/session" : "the8020/uui/shell",
+      serviceGeneration: 1,
+      canonicalBasePath: prefix + "/",
+      originalUrl: url.href,
+      client: { ipAddress: "127.0.0.1", networkScope: "loopback" },
+      persistentExecutionId: "download-browser-execution",
+      persistentKeepAliveMilliseconds: 600_000,
+      execution: {
+        nodeId: "node",
 
-      sandboxId: "sandbox",
-      workerId: "worker",
-    },
-    user: { userId: "user", username: "Browser test" },
-    auth: {
-      authenticated: true,
-      realm: "user",
-      userId: "user",
-      username: "Browser test",
-    },
-  };
-  url.pathname = url.pathname.slice(prefix.length) || "/";
-  const relative = new Request(url, request);
-  if (!isSession && url.pathname === "/upload.js") {
-    return new Response(uploadModule, {
-      headers: { "Content-Type": "text/javascript" },
-    });
-  }
-  const context = { meta: metadata, signal: request.signal };
-  if (!isSession && url.pathname === "/control") {
-    const control = controlSession(await request.json(), metadata.user.userId);
-    return Response.json({
-      ...control,
-      ...(control.active ? { route: "download-browser-route" } : {}),
-    });
-  }
-  if (request.headers.get("upgrade") === "websocket") {
-    const { socket, response } = Deno.upgradeWebSocket(request, {
-      protocol: "the8020.uui.v1",
-    });
-    const bridge = new BrowserSocket(socket);
-    sockets.add(bridge);
-    socket.addEventListener("close", () => sockets.delete(bridge));
-    const accepted = await session.connectWebSocket(relative, context, bridge);
-    assertEquals(accepted.status, 204);
-    return response;
-  }
-  if (url.pathname.includes("/__downloads/")) backendDownloadRequests++;
-  if (isSession) {
-    const response = await session.fetch(relative, context);
-    response.headers.set("the8020-route", "download-browser-route");
-    return response;
-  }
-  return shell.fetch(relative, context);
-});
+        sandboxId: "sandbox",
+        workerId: "worker",
+      },
+      user: { userId: "user", username: "Browser test" },
+      auth: {
+        authenticated: true,
+        realm: "user",
+        userId: "user",
+        username: "Browser test",
+      },
+    };
+    url.pathname = url.pathname.slice(prefix.length) || "/";
+    const relative = new Request(url, request);
+    if (!isSession && url.pathname === "/upload.js") {
+      return new Response(uploadModule, {
+        headers: { "Content-Type": "text/javascript" },
+      });
+    }
+    const context = { meta: metadata, signal: request.signal };
+    if (!isSession && url.pathname === "/control") {
+      const control = controlSession(
+        await request.json(),
+        metadata.user.userId,
+      );
+      return Response.json({
+        ...control,
+        ...(control.active ? { route: "download-browser-route" } : {}),
+      });
+    }
+    if (request.headers.get("upgrade") === "websocket") {
+      const { socket, response } = Deno.upgradeWebSocket(request, {
+        protocol: "the8020.uui.v1",
+      });
+      const bridge = new BrowserSocket(socket);
+      sockets.add(bridge);
+      socket.addEventListener("close", () => sockets.delete(bridge));
+      const accepted = await session.connectWebSocket(
+        relative,
+        context,
+        bridge,
+      );
+      assertEquals(accepted.status, 204);
+      return response;
+    }
+    if (url.pathname.includes("/__downloads/")) backendDownloadRequests++;
+    if (isSession) {
+      const response = await session.fetch(relative, context);
+      response.headers.set("the8020-route", "download-browser-route");
+      return response;
+    }
+    return shell.fetch(relative, context);
+  }));
 
 class BrowserSocket implements WebSocketSession {
   readonly protocol = "the8020.uui.v1";

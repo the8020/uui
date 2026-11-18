@@ -1,3 +1,5 @@
+import { text as formatMessage } from "/p/the8020/i18n/mod.ts";
+import { msg as messageSymbol } from "/p/the8020/uui/i18n/messages.ts";
 import { DEFAULT_SERVER_TITLE, serverTitle } from "./src/branding_fields.ts";
 import { type BrandingImage, brandingImage } from "./src/branding_images.ts";
 
@@ -31,7 +33,9 @@ export function validateBrandingImage(
   const expected = brandingImage[kind];
   let width = 0, height = 0;
   if (bytes.byteLength > expected.maximumBytes) {
-    throw new Error("Converted image is too large.");
+    throw new Error(
+      formatMessage(messageSymbol("errors.converted_image_is_too_large")),
+    );
   }
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   if (kind === "favicon") {
@@ -63,7 +67,13 @@ export function validateBrandingImage(
   }
   if (width !== expected.width || height !== expected.height) {
     throw new Error(
-      `Select a valid ${expected.width}×${expected.height} ${kind} image.`,
+      formatMessage(
+        messageSymbol("errors.select_a_valid_image", {
+          value1: String(expected.width),
+          value2: String(expected.height),
+          kind: String(kind),
+        }),
+      ),
     );
   }
 }

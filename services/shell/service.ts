@@ -1,5 +1,9 @@
 import { browserLocalization } from "../../localization.ts";
-import { currentLocalization, withLocalization } from "/p/the8020/i18n/mod.ts";
+import {
+  currentLocalization,
+  localizedText,
+  withLocalization,
+} from "/p/the8020/i18n/mod.ts";
 import { direction, format } from "/p/the8020/i18n/messages.ts";
 import {
   defineService,
@@ -12,6 +16,7 @@ import { technicalGuard } from "../../technical_guard.ts";
 import { AssetServer } from "./assets.ts";
 import { fetchBranding } from "../../branding.ts";
 import { brandingAsset, brandingHead, escapeHTML } from "./branding.ts";
+import { msg } from "../../i18n/messages.ts";
 import uiConfig from "../../ui-config.json" with { type: "json" };
 
 const frontend = new URL("./frontend/", import.meta.url);
@@ -92,7 +97,9 @@ service.post("/control", {
         : 409,
       {
         error: "session_unavailable",
-        message: error instanceof Error ? error.message : "Session unavailable",
+        message: error instanceof Error
+          ? error.message
+          : await localizedText(msg("errors.session_unavailable")),
       },
     );
   }

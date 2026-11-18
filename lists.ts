@@ -1,3 +1,8 @@
+import {
+  localizedText as resolveMessage,
+  text as formatMessage,
+} from "/p/the8020/i18n/mod.ts";
+import { msg as messageSymbol } from "/p/the8020/uui/i18n/messages.ts";
 import { context } from "@the8020/context";
 import { type ListLayout, parseLayoutCommand } from "./list_layout.ts";
 import { resolveTexts } from "/p/the8020/i18n/mod.ts";
@@ -285,7 +290,11 @@ export class ScreenLists {
   }
 
   private layoutKey(id: string): string {
-    if (!this.#layoutScope) throw new Error("Saved layouts are unavailable");
+    if (!this.#layoutScope) {
+      throw new Error(
+        formatMessage(messageSymbol("errors.saved_layouts_are_unavailable")),
+      );
+    }
     const definition = this.#definitions.get(id)!;
     return JSON.stringify([
       this.#layoutScope,
@@ -685,7 +694,11 @@ export class ScreenLists {
       const source = listSources.get(this.model!)?.get(request.id);
       if (!source) {
         throw new TypeError(
-          "This list source does not provide independent reads.",
+          await resolveMessage(
+            messageSymbol(
+              "errors.this_list_source_does_not_provide_independent_reads",
+            ),
+          ),
         );
       }
       signal = AbortSignal.any([signal, source.lifetime.signal]);
@@ -769,7 +782,9 @@ export class ScreenLists {
             !columns.some((column) => column.key === key)
           )
         ) {
-          throw new TypeError("Unknown layout column");
+          throw new TypeError(
+            formatMessage(messageSymbol("errors.unknown_layout_column")),
+          );
         }
         normalizeQuery(request.query, columns);
         if (
@@ -777,7 +792,13 @@ export class ScreenLists {
           (request.query.sort !== null ||
             Object.keys(request.query.filters).length > 0)
         ) {
-          throw new TypeError("this list source supports quick search only");
+          throw new TypeError(
+            formatMessage(
+              messageSymbol(
+                "errors.this_list_source_supports_quick_search_only",
+              ),
+            ),
+          );
         }
       }
     }
@@ -884,9 +905,17 @@ export class ScreenLists {
       const view = this.view(change.id);
       const definition = this.#definitions.get(change.id)!;
       if (view.provider && change.rows.length > 0) {
-        throw new TypeError("List providers do not support row edits");
+        throw new TypeError(
+          formatMessage(
+            messageSymbol("errors.list_providers_do_not_support_row_edits"),
+          ),
+        );
       }
-      if (definition.readOnly) throw new TypeError("This list is read-only");
+      if (definition.readOnly) {
+        throw new TypeError(
+          formatMessage(messageSymbol("errors.this_list_is_read_only")),
+        );
+      }
       const rows = getPath(candidate, definition.bind);
       if (!Array.isArray(rows)) {
         throw new TypeError("invalid list edit binding");
@@ -936,7 +965,9 @@ function validateRowEdit(
       item instanceof z.ZodReadonly || fieldMetadata(item)?.readOnly
     )
   ) {
-    throw new TypeError("This row field is read-only");
+    throw new TypeError(
+      formatMessage(messageSymbol("errors.this_row_field_is_read_only")),
+    );
   }
   const raw = unwrap(schema).schema;
   if (raw instanceof z.ZodObject) {
@@ -1046,7 +1077,9 @@ function buildColumns(
         semanticType,
         heading: options.columnOptions?.[key]?.heading ??
           options.headings?.[key] ?? metadata?.label ??
-          (key === "" ? options.label ?? "Value" : humanize(key)),
+          (key === ""
+            ? options.label ?? formatMessage(messageSymbol("field_help.value"))
+            : humanize(key)),
         description: metadata?.description,
         length: options.columnOptions?.[key]?.length ??
           (metadata?.length === "full" ? "long" : metadata?.length) ??

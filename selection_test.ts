@@ -127,3 +127,40 @@ Deno.test("selection tokens describe operators and signs without backend codes",
     "10 … 30 · Between",
   );
 });
+
+Deno.test("selection validation prepares the owning catalog and translates custom issues", async () => {
+  const { Localization, withLocalization, defaultConfiguration } = await import(
+    "/p/the8020/i18n/mod.ts"
+  );
+  const { validationError } = await import("/p/the8020/i18n/validation.ts");
+  const { prepareSchemaTexts } = await import("./fields.ts");
+  const schema = z.object({ range: field(z.number(), { selection: true }) });
+  const loaded: string[] = [];
+  await withLocalization(
+    new Localization("cs", defaultConfiguration, (packageId) => {
+      loaded.push(packageId);
+      return Promise.resolve({
+        package: packageId,
+        language: "cs",
+        texts: {
+          "selection.the_upper_endpoint_must_be_at_or_after_the_lower_endpoint":
+            "Horní mez nesmí být menší než dolní mez.",
+        },
+      });
+    }),
+    async () => {
+      await prepareSchemaTexts(schema);
+      const result = schema.safeParse({
+        range: [{ sign: "I", option: "BT", low: 2, high: 1 }],
+      }, { error: validationError });
+      assertEquals(result.success, false);
+      if (!result.success) {
+        assertEquals(
+          result.error.issues[0]!.message,
+          "Horní mez nesmí být menší než dolní mez.",
+        );
+      }
+      assertEquals(loaded, ["the8020/db"]);
+    },
+  );
+});

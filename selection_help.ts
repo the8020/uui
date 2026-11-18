@@ -1,3 +1,5 @@
+import { localizedText as resolveMessage } from "/p/the8020/i18n/mod.ts";
+import { msg as messageSymbol } from "/p/the8020/uui/i18n/messages.ts";
 import { fieldSchemas, z } from "/p/the8020/db/fields.ts";
 import { text } from "/p/the8020/i18n/mod.ts";
 import {
@@ -152,7 +154,9 @@ export async function runSelectionHelp(
           return;
         } catch (error) {
           sendMessage(
-            error instanceof Error ? error.message : "Invalid selection",
+            error instanceof Error
+              ? error.message
+              : await resolveMessage(messageSymbol("errors.invalid_selection")),
             "error",
           );
         }
@@ -282,7 +286,9 @@ export async function runSelectionHelp(
         return;
       } catch (error) {
         sendMessage(
-          error instanceof Error ? error.message : "Invalid selection",
+          error instanceof Error
+            ? error.message
+            : await resolveMessage(messageSymbol("errors.invalid_selection")),
           "error",
         );
       }

@@ -1,3 +1,5 @@
+import { localizedText as resolveMessage } from "/p/the8020/i18n/mod.ts";
+import { msg as messageSymbol } from "/p/the8020/uui/i18n/messages.ts";
 import { context } from "@the8020/context";
 import { kernel } from "@the8020/kernel";
 import { text } from "/p/the8020/i18n/mod.ts";
@@ -74,7 +76,12 @@ async function available<T>(read: Promise<T>): Promise<T | undefined> {
   try {
     return await read;
   } catch (error) {
-    console.error("Status information unavailable", error);
+    console.error(
+      await resolveMessage(
+        messageSymbol("errors.status_information_unavailable"),
+      ),
+      error,
+    );
   }
 }
 

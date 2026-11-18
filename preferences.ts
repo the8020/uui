@@ -1,3 +1,5 @@
+import { localizedText as resolveMessage } from "/p/the8020/i18n/mod.ts";
+import { msg as messageSymbol } from "/p/the8020/uui/i18n/messages.ts";
 import {
   DEFAULT_ACCENT_COLOR,
   preferenceOverrides,
@@ -8,7 +10,11 @@ import {
 async function currentUsername(): Promise<string> {
   const { currentUser } = await import("/p/the8020/users/mod.ts");
   const user = currentUser();
-  if (!user) throw new Error("Sign in to customize UUI.");
+  if (!user) {
+    throw new Error(
+      await resolveMessage(messageSymbol("errors.sign_in_to_customize_uui")),
+    );
+  }
   return user.username;
 }
 

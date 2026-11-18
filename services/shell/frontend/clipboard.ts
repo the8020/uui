@@ -1,3 +1,4 @@
+import { t } from "./i18n.ts";
 /** Shared clipboard write, including browsers without secure-context Clipboard API. */
 export async function writeClipboard(text: string): Promise<void> {
   try {
@@ -16,7 +17,7 @@ export async function writeClipboard(text: string): Promise<void> {
     textarea.select();
     try {
       if (!document.execCommand("copy")) {
-        throw new Error("The browser did not allow copying.");
+        throw new Error(t("ui.the_browser_did_not_allow_copying"));
       }
     } finally {
       textarea.remove();
