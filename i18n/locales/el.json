@@ -412,6 +412,12 @@
     "login.invalid_language": "Απαράβλητη γλώσσα",
     "errors.session_unavailable": "Συνεδρία μη διαθέσιμη",
     "frontend.errors.invalid_or_unavailable_download": "Απαράβλητη ή μη διαθέσιμη λήψη",
-    "frontend.errors.invalid_download_destination": "Απαράβλητο προορισμό λήψης"
+    "frontend.errors.invalid_download_destination": "Απαράβλητο προορισμό λήψης",
+    "shortcuts.title": "Συντομεύσεις",
+    "shortcuts.help": "Πληκτρολογήστε κωδικό και πατήστε Enter για άνοιγμα προγράμματος. Το μολύβι ή F1/F4 ανοίγει τη βοήθεια επιλογής· αναζητήστε κωδικό, πρόγραμμα ή περιγραφή. Οι προσωπικές συντομεύσεις υπερισχύουν των αντίστοιχων προεπιλογών.",
+    "shortcuts.duplicate": "Η συντόμευση χρησιμοποιείται ήδη.",
+    "shortcuts.not_found": "Κανένα πρόγραμμα δεν αντιστοιχεί σε αυτή τη συντόμευση.",
+    "shortcuts.ambiguous": "Πολλά προγράμματα χρησιμοποιούν αυτή τη συντόμευση. Ορίστε προσωπική αντιστοίχιση στην Προσαρμογή.",
+    "shortcuts.customize": "Προσαρμογή"
   }
 }

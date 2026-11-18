@@ -412,6 +412,12 @@
     "login.invalid_language": "Ungültige Sprache",
     "errors.session_unavailable": "Sitzung nicht verfügbar",
     "frontend.errors.invalid_or_unavailable_download": "Nicht gültig oder nicht verfügbar",
-    "frontend.errors.invalid_download_destination": "Nicht gültiges Download-Ziel"
+    "frontend.errors.invalid_download_destination": "Nicht gültiges Download-Ziel",
+    "shortcuts.title": "Kürzel",
+    "shortcuts.help": "Code eingeben und mit Enter das Programm öffnen. Stift oder F1/F4 öffnet die Auswahlhilfe; nach Code, Programm oder Beschreibung suchen. Eigene Kürzel haben Vorrang vor gleichlautenden Vorgaben.",
+    "shortcuts.duplicate": "Dieses Kürzel wird bereits verwendet.",
+    "shortcuts.not_found": "Kein Programm passt zu diesem Kürzel.",
+    "shortcuts.ambiguous": "Mehrere Programme verwenden dieses Kürzel. Unter Anpassung eine eigene Zuordnung festlegen.",
+    "shortcuts.customize": "Anpassen"
   }
 }

@@ -412,6 +412,12 @@
     "login.invalid_language": "Невалиден език",
     "errors.session_unavailable": "Недостъпна сесия",
     "frontend.errors.invalid_or_unavailable_download": "Недействителен или недостъпен изтегляне",
-    "frontend.errors.invalid_download_destination": "Невалидно местоназначение за изтегляне"
+    "frontend.errors.invalid_download_destination": "Невалидно местоназначение за изтегляне",
+    "shortcuts.title": "Съкращения",
+    "shortcuts.help": "Въведете код и натиснете Enter, за да отворите програма. Моливът или F1/F4 отваря помощ за избор; търсете по код, програма или описание. Личните съкращения заменят съответните стандартни.",
+    "shortcuts.duplicate": "Съкращението вече се използва.",
+    "shortcuts.not_found": "Няма програма с това съкращение.",
+    "shortcuts.ambiguous": "Няколко програми използват това съкращение. Задайте лично съответствие в Персонализиране.",
+    "shortcuts.customize": "Персонализиране"
   }
 }

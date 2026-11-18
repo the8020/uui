@@ -412,6 +412,12 @@
     "login.invalid_language": "Bahasa yang tidak valid",
     "errors.session_unavailable": "Sesi tidak tersedia",
     "frontend.errors.invalid_or_unavailable_download": "Unduh tidak valid atau tidak tersedia",
-    "frontend.errors.invalid_download_destination": "Destinasi unduhan yang tidak valid"
+    "frontend.errors.invalid_download_destination": "Destinasi unduhan yang tidak valid",
+    "shortcuts.title": "Kode pintas",
+    "shortcuts.help": "Masukkan kode lalu tekan Enter untuk membuka program. Pensil atau F1/F4 membuka bantuan nilai; cari menurut kode, program, atau deskripsi. Kode pribadi menggantikan kode bawaan yang sama.",
+    "shortcuts.duplicate": "Kode pintas sudah digunakan.",
+    "shortcuts.not_found": "Tidak ada program yang cocok dengan kode pintas ini.",
+    "shortcuts.ambiguous": "Beberapa program memakai kode pintas ini. Tetapkan pemetaan pribadi di Kustomisasi.",
+    "shortcuts.customize": "Sesuaikan"
   }
 }

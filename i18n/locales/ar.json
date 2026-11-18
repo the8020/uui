@@ -412,6 +412,12 @@
     "login.invalid_language": "لغة غير صالحة",
     "errors.session_unavailable": "جلسة غير متوفرة",
     "frontend.errors.invalid_or_unavailable_download": "تحميل غير صالح أو غير متوفر",
-    "frontend.errors.invalid_download_destination": "وجهة تنزيل غير صالحة"
+    "frontend.errors.invalid_download_destination": "وجهة تنزيل غير صالحة",
+    "shortcuts.title": "الرموز المختصرة",
+    "shortcuts.help": "أدخل رمزًا واضغط Enter لفتح برنامج. افتح مساعدة القيم بالقلم أو F1/F4؛ ابحث بالرمز أو البرنامج أو الوصف. تتجاوز الرموز الشخصية الرموز الافتراضية المطابقة.",
+    "shortcuts.duplicate": "الرمز المختصر مستخدم بالفعل.",
+    "shortcuts.not_found": "لا يوجد برنامج يطابق هذا الرمز المختصر.",
+    "shortcuts.ambiguous": "تستخدم عدة برامج هذا الرمز. عيّن ربطًا شخصيًا في التخصيص.",
+    "shortcuts.customize": "تخصيص"
   }
 }

@@ -412,6 +412,12 @@
     "login.invalid_language": "Nevaljan jezik",
     "errors.session_unavailable": "Sjednica nije dostupna",
     "frontend.errors.invalid_or_unavailable_download": "Nevaljan ili nedostupni preuzimanje",
-    "frontend.errors.invalid_download_destination": "Nevaljan cilj preuzimanja"
+    "frontend.errors.invalid_download_destination": "Nevaljan cilj preuzimanja",
+    "shortcuts.title": "Kratice",
+    "shortcuts.help": "Unesite kod i pritisnite Enter za otvaranje programa. Olovka ili F1/F4 otvara pomoć pri odabiru; tražite po kodu, programu ili opisu. Osobne kratice zamjenjuju odgovarajuće zadane.",
+    "shortcuts.duplicate": "Kratica se već koristi.",
+    "shortcuts.not_found": "Nijedan program ne odgovara ovoj kratici.",
+    "shortcuts.ambiguous": "Više programa koristi ovu kraticu. Postavite osobno pridruživanje u Prilagodbi.",
+    "shortcuts.customize": "Prilagodi"
   }
 }

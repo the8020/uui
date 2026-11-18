@@ -412,6 +412,12 @@
     "login.invalid_language": "Nieważny język",
     "errors.session_unavailable": "Sesja niedostępna",
     "frontend.errors.invalid_or_unavailable_download": "Nieważne lub niedostępne pobranie",
-    "frontend.errors.invalid_download_destination": "Nieważne miejsce pobrania"
+    "frontend.errors.invalid_download_destination": "Nieważne miejsce pobrania",
+    "shortcuts.title": "Skróty",
+    "shortcuts.help": "Wpisz kod i naciśnij Enter, aby otworzyć program. Ołówek lub F1/F4 otwiera pomoc wyboru; szukaj według kodu, programu lub opisu. Własne skróty zastępują odpowiadające im domyślne.",
+    "shortcuts.duplicate": "Skrót jest już używany.",
+    "shortcuts.not_found": "Żaden program nie odpowiada temu skrótowi.",
+    "shortcuts.ambiguous": "Kilka programów używa tego skrótu. Ustaw własne przypisanie w Personalizacji.",
+    "shortcuts.customize": "Dostosuj"
   }
 }

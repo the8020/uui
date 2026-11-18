@@ -412,6 +412,12 @@
     "login.invalid_language": "Ógildi tungumál",
     "errors.session_unavailable": "Fundur er ekki í boði",
     "frontend.errors.invalid_or_unavailable_download": "Ógildi eða ekki hægt að sækja",
-    "frontend.errors.invalid_download_destination": "Ógildi niðurhalsmarki"
+    "frontend.errors.invalid_download_destination": "Ógildi niðurhalsmarki",
+    "shortcuts.title": "Flýtikóðar",
+    "shortcuts.help": "Sláðu inn kóða og ýttu á Enter til að opna forrit. Blýanturinn eða F1/F4 opnar valhjálp; leitaðu eftir kóða, forriti eða lýsingu. Persónulegir flýtikóðar ganga framar samsvarandi sjálfgefnum kóðum.",
+    "shortcuts.duplicate": "Flýtikóðinn er þegar í notkun.",
+    "shortcuts.not_found": "Ekkert forrit samsvarar þessum flýtikóða.",
+    "shortcuts.ambiguous": "Fleiri forrit nota þennan flýtikóða. Veldu persónulega tengingu í Sérstillingu.",
+    "shortcuts.customize": "Sérsníða"
   }
 }

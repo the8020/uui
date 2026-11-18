@@ -412,6 +412,12 @@
     "login.invalid_language": "अमान्य भाषा",
     "errors.session_unavailable": "सत्र अनुपलब्ध",
     "frontend.errors.invalid_or_unavailable_download": "अमान्य या अनुपलब्ध डाउनलोड",
-    "frontend.errors.invalid_download_destination": "अवैध डाउनलोड गंतव्य"
+    "frontend.errors.invalid_download_destination": "अवैध डाउनलोड गंतव्य",
+    "shortcuts.title": "शॉर्टकट",
+    "shortcuts.help": "कोड लिखें और प्रोग्राम खोलने के लिए Enter दबाएँ। पेंसिल या F1/F4 से मान सहायता खोलें; कोड, प्रोग्राम या विवरण से खोजें। निजी शॉर्टकट समान डिफ़ॉल्ट शॉर्टकट की जगह लेते हैं।",
+    "shortcuts.duplicate": "यह शॉर्टकट पहले से उपयोग में है।",
+    "shortcuts.not_found": "इस शॉर्टकट से कोई प्रोग्राम मेल नहीं खाता।",
+    "shortcuts.ambiguous": "कई प्रोग्राम इस शॉर्टकट का उपयोग करते हैं। अनुकूलन में निजी मैपिंग चुनें।",
+    "shortcuts.customize": "अनुकूलित करें"
   }
 }

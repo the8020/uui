@@ -412,6 +412,12 @@
     "login.invalid_language": "Llengua invalida",
     "errors.session_unavailable": "Sessió no disponible",
     "frontend.errors.invalid_or_unavailable_download": "Descarga invalida o no disponible",
-    "frontend.errors.invalid_download_destination": "Destinat de descarga inválidu"
+    "frontend.errors.invalid_download_destination": "Destinat de descarga inválidu",
+    "shortcuts.title": "Dreceres",
+    "shortcuts.help": "Introduïu un codi i premeu Retorn per obrir un programa. El llapis o F1/F4 obre l’ajuda de valors; cerqueu per codi, programa o descripció. Les dreceres personals substitueixen les predeterminades coincidents.",
+    "shortcuts.duplicate": "La drecera ja s’utilitza.",
+    "shortcuts.not_found": "Cap programa correspon a aquesta drecera.",
+    "shortcuts.ambiguous": "Diversos programes utilitzen aquesta drecera. Definiu una assignació personal a Personalització.",
+    "shortcuts.customize": "Personalitza"
   }
 }

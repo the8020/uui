@@ -3,3 +3,5 @@ description = "Customize your UUI preferences"
 entrypoint = "program.ts"
 discoverable = false
 uui = true
+
+shortcut = "PREF"

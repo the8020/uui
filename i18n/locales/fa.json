@@ -412,6 +412,12 @@
     "login.invalid_language": "زبان غیرفعال",
     "errors.session_unavailable": "جلسه در دسترس نیست",
     "frontend.errors.invalid_or_unavailable_download": "دانلود ناشناخته یا در دسترس نیست",
-    "frontend.errors.invalid_download_destination": "مقصد دانلود ناشناخته"
+    "frontend.errors.invalid_download_destination": "مقصد دانلود ناشناخته",
+    "shortcuts.title": "کدهای میانبر",
+    "shortcuts.help": "کد را وارد کنید و برای باز کردن برنامه Enter را بزنید. مداد یا F1/F4 راهنمای انتخاب را باز می‌کند؛ با کد، برنامه یا توضیح جستجو کنید. میانبرهای شخصی جایگزین پیش‌فرض‌های همسان می‌شوند.",
+    "shortcuts.duplicate": "این میانبر قبلاً استفاده شده است.",
+    "shortcuts.not_found": "هیچ برنامه‌ای با این میانبر مطابقت ندارد.",
+    "shortcuts.ambiguous": "چند برنامه از این میانبر استفاده می‌کنند. در شخصی‌سازی یک نگاشت شخصی تعیین کنید.",
+    "shortcuts.customize": "شخصی‌سازی"
   }
 }

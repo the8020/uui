@@ -412,6 +412,12 @@
     "login.invalid_language": "Língua inválida",
     "errors.session_unavailable": "Sessão não disponível",
     "frontend.errors.invalid_or_unavailable_download": "Download inválido ou indisponível",
-    "frontend.errors.invalid_download_destination": "Destino de download inválido"
+    "frontend.errors.invalid_download_destination": "Destino de download inválido",
+    "shortcuts.title": "Atalhos",
+    "shortcuts.help": "Digite um código e pressione Enter para abrir um programa. O lápis ou F1/F4 abre a ajuda de valores; pesquise por código, programa ou descrição. Atalhos pessoais substituem os padrões correspondentes.",
+    "shortcuts.duplicate": "O atalho já está em uso.",
+    "shortcuts.not_found": "Nenhum programa corresponde a este atalho.",
+    "shortcuts.ambiguous": "Vários programas usam este atalho. Defina uma associação pessoal em Personalização.",
+    "shortcuts.customize": "Personalizar"
   }
 }

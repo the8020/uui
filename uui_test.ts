@@ -2003,14 +2003,9 @@ Deno.test("field help drafts, cancels, commits, and pages searchable choices thr
       selection: { id: list.id, index: 0 },
     });
     await flushMicrotasks();
-    assertEquals(
-      (topScreen(lastPresentation(test)).model as { value: string }).value,
-      "user1999",
-    );
-    assertEquals(model.data.user, "user0");
-    await action(BACK_EVENT);
     assertEquals(topScreen(lastPresentation(test)).id, "help-owner");
-    assertEquals(model.data.user, "user0");
+    assertEquals(model.data.user, "user1999");
+    model.data.user = "user0";
     await open("user");
     await action("open", [{ bind: "value", value: "user20" }]);
     assertEquals(
@@ -2307,7 +2302,7 @@ Deno.test("back always leaves a screen and discards invalid drafts", async () =>
   }
 });
 
-Deno.test("single-value field help highlights the value and finishes on activate", async () => {
+Deno.test("single-value field help highlights the value and commits on one click", async () => {
   const test = new TestChannel();
   const unbind = bindSession(test);
   const country = field(z.string(), {
@@ -2353,7 +2348,7 @@ Deno.test("single-value field help highlights the value and finishes on activate
       [true, false],
     );
     test.push({
-      ...eventFor(shown, "select", 3, "activate"),
+      ...eventFor(shown, "select", 3, "select"),
       selection: { id: list.id, index: 1 },
     });
     await settle();
@@ -2366,7 +2361,7 @@ Deno.test("single-value field help highlights the value and finishes on activate
   }
 });
 
-Deno.test("enum field help exposes searchable options and commits only on Done", async () => {
+Deno.test("enum field help exposes searchable options and cancels an unchosen draft", async () => {
   const test = new TestChannel();
   const unbind = bindSession(test);
   const schema = z.object({ value: z.enum(["red", "green", "blue"]) });
@@ -4848,6 +4843,70 @@ Deno.test("failed surface pushes restore ownership and session end releases cove
     await closing;
     assertEquals(removed, true);
     assertEquals(pageNext.signal.aborted && modalNext.signal.aborted, true);
+  } finally {
+    unbind();
+  }
+});
+
+Deno.test("field help actions preserve callbacks and an invalid draft across a nested modal", async () => {
+  const test = new TestChannel();
+  const unbind = bindSession(test);
+  const value = field(
+    field(z.string().min(2), {
+      helpActions: [{
+        label: "Customize",
+        run: () =>
+          presentModal(async () => {
+            await callScreen({
+              id: "help-action-target",
+              schema: z.object({}),
+              model: new Model({}),
+            });
+          }),
+      }],
+    }),
+    { label: "Code" },
+  ).optional();
+  const model = new Model({ value: "OK" });
+  let sequence = 0;
+  const action = async (
+    id: string,
+    changes: { bind: string; value: unknown }[] = [],
+  ) => {
+    test.push({ ...eventFor(lastPresentation(test), id, ++sequence), changes });
+    await flushMicrotasks();
+  };
+  try {
+    const pending = callScreen({
+      id: "help-action-owner",
+      schema: z.object({ value }),
+      model,
+    });
+    void pending.catch(() => {});
+    const shown = lastPresentation(test);
+    test.push({
+      ...eventFor(shown, "field-help", ++sequence, "field-help"),
+      controlId: topScreen(shown).controls[0]!.id,
+      bind: "value",
+    });
+    await flushMicrotasks();
+    assertEquals(
+      topScreen(lastPresentation(test)).header?.actions.map((a) => a.label),
+      ["Done", "Customize"],
+    );
+    await action("help-action-0", [{ bind: "value", value: "x" }]);
+    assertEquals(topScreen(lastPresentation(test)).id, "help-action-target");
+    assertEquals(model.data.value, "OK");
+    await action(BACK_EVENT);
+    assertEquals(topScreen(lastPresentation(test)).id, "uui-field-help");
+    assertEquals(
+      (topScreen(lastPresentation(test)).model as { value: string }).value,
+      "x",
+    );
+    await action(BACK_EVENT);
+    assertEquals(model.data.value, "OK");
+    await action("finish");
+    await pending;
   } finally {
     unbind();
   }

@@ -412,6 +412,12 @@
     "login.invalid_language": "Invalid na wika",
     "errors.session_unavailable": "Hindi available ang sesyon",
     "frontend.errors.invalid_or_unavailable_download": "Invalid o hindi magagamit download",
-    "frontend.errors.invalid_download_destination": "Invalid na destinasyon ng pag-download"
+    "frontend.errors.invalid_download_destination": "Invalid na destinasyon ng pag-download",
+    "shortcuts.title": "Mga shortcut",
+    "shortcuts.help": "Maglagay ng code at pindutin ang Enter para buksan ang programa. Gamitin ang lapis o F1/F4 para sa tulong sa pagpili; maghanap ayon sa code, programa o paglalarawan. Pinapalitan ng personal na shortcut ang katugmang default.",
+    "shortcuts.duplicate": "Ginagamit na ang shortcut.",
+    "shortcuts.not_found": "Walang programang tumutugma sa shortcut na ito.",
+    "shortcuts.ambiguous": "Maraming programa ang gumagamit ng shortcut na ito. Magtakda ng personal na pagtutugma sa Pag-customize.",
+    "shortcuts.customize": "I-customize"
   }
 }

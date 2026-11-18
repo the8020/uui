@@ -412,6 +412,12 @@
     "login.invalid_language": "Недійсна мова",
     "errors.session_unavailable": "Сеанс недоступний",
     "frontend.errors.invalid_or_unavailable_download": "Недійний або недоступний завантаження",
-    "frontend.errors.invalid_download_destination": "Недійне місце завантаження"
+    "frontend.errors.invalid_download_destination": "Недійне місце завантаження",
+    "shortcuts.title": "Скорочення",
+    "shortcuts.help": "Введіть код і натисніть Enter, щоб відкрити програму. Олівець або F1/F4 відкриває довідку вибору; шукайте за кодом, програмою чи описом. Особисті скорочення замінюють відповідні типові.",
+    "shortcuts.duplicate": "Це скорочення вже використовується.",
+    "shortcuts.not_found": "Жодна програма не відповідає цьому скороченню.",
+    "shortcuts.ambiguous": "Кілька програм мають це скорочення. Задайте особисте призначення в Персоналізації.",
+    "shortcuts.customize": "Налаштувати"
   }
 }

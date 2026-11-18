@@ -412,6 +412,12 @@
     "login.invalid_language": "Bahasa yang tidak sah",
     "errors.session_unavailable": "Sesi tidak tersedia",
     "frontend.errors.invalid_or_unavailable_download": "Muat turun tidak sah atau tidak tersedia",
-    "frontend.errors.invalid_download_destination": "Destinasi muat turun yang tidak sah"
+    "frontend.errors.invalid_download_destination": "Destinasi muat turun yang tidak sah",
+    "shortcuts.title": "Kod pintas",
+    "shortcuts.help": "Masukkan kod dan tekan Enter untuk membuka program. Pensel atau F1/F4 membuka bantuan nilai; cari mengikut kod, program atau perihalan. Kod peribadi menggantikan kod lalai yang sepadan.",
+    "shortcuts.duplicate": "Kod pintas sudah digunakan.",
+    "shortcuts.not_found": "Tiada program sepadan dengan kod pintas ini.",
+    "shortcuts.ambiguous": "Beberapa program menggunakan kod pintas ini. Tetapkan pemetaan peribadi dalam Penyesuaian.",
+    "shortcuts.customize": "Sesuaikan"
   }
 }

@@ -412,6 +412,12 @@
     "login.invalid_language": "Nem érvényes nyelv",
     "errors.session_unavailable": "Nem áll rendelkezésre ülés",
     "frontend.errors.invalid_or_unavailable_download": "Hivatalos vagy nem elérhető letöltés",
-    "frontend.errors.invalid_download_destination": "Nem érvényes letöltési célpont"
+    "frontend.errors.invalid_download_destination": "Nem érvényes letöltési célpont",
+    "shortcuts.title": "Rövid kódok",
+    "shortcuts.help": "Írja be a kódot, és az Enter megnyomásával nyissa meg a programot. A ceruza vagy az F1/F4 megnyitja a választási súgót; keressen kód, program vagy leírás szerint. A személyes kódok felülírják az egyező alapértékeket.",
+    "shortcuts.duplicate": "Ez a kód már használatban van.",
+    "shortcuts.not_found": "Ehhez a kódhoz nem tartozik program.",
+    "shortcuts.ambiguous": "Több program használja ezt a kódot. Adjon meg személyes hozzárendelést a Testreszabásban.",
+    "shortcuts.customize": "Testreszabás"
   }
 }

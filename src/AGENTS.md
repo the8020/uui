@@ -9,6 +9,8 @@ Parent DOX: [uui DOX](../AGENTS.md).
 
 - Own `preference_fields.ts`, `session_fields.ts`, `status_fields.ts`,
   `short_dump.ts`, `short_dump_test.ts`, and `home_test.ts`.
+- `shortcut_fields.ts` owns canonical program references and at most 100
+  personal shortcut rows, rejecting duplicate codes without regard to case.
 
 # Local Contracts
 

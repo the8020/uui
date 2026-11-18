@@ -412,6 +412,12 @@
     "login.invalid_language": "Ngôn ngữ không hợp lệ",
     "errors.session_unavailable": "Trò chơi không có sẵn",
     "frontend.errors.invalid_or_unavailable_download": "Download không hợp lệ hoặc không có sẵn",
-    "frontend.errors.invalid_download_destination": "Địa điểm tải xuống không hợp lệ"
+    "frontend.errors.invalid_download_destination": "Địa điểm tải xuống không hợp lệ",
+    "shortcuts.title": "Mã tắt",
+    "shortcuts.help": "Nhập mã rồi nhấn Enter để mở chương trình. Bút chì hoặc F1/F4 mở trợ giúp chọn giá trị; tìm theo mã, chương trình hoặc mô tả. Mã cá nhân thay thế mã mặc định trùng khớp.",
+    "shortcuts.duplicate": "Mã tắt đã được sử dụng.",
+    "shortcuts.not_found": "Không có chương trình khớp với mã tắt này.",
+    "shortcuts.ambiguous": "Nhiều chương trình dùng mã tắt này. Hãy đặt ánh xạ cá nhân trong Tùy chỉnh.",
+    "shortcuts.customize": "Tùy chỉnh"
   }
 }

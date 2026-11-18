@@ -412,6 +412,12 @@
     "login.invalid_language": "Ugyldig språk",
     "errors.session_unavailable": "Sesjon ikke tilgjengelig",
     "frontend.errors.invalid_or_unavailable_download": "Ugyldig eller ikke tilgjengelig",
-    "frontend.errors.invalid_download_destination": "Ugyldig nedlastingsmål"
+    "frontend.errors.invalid_download_destination": "Ugyldig nedlastingsmål",
+    "shortcuts.title": "Snarveier",
+    "shortcuts.help": "Skriv inn en kode og trykk Enter for å åpne et program. Blyanten eller F1/F4 åpner valghjelpen; søk etter kode, program eller beskrivelse. Personlige snarveier erstatter tilsvarende standarder.",
+    "shortcuts.duplicate": "Snarveien er allerede i bruk.",
+    "shortcuts.not_found": "Ingen programmer samsvarer med denne snarveien.",
+    "shortcuts.ambiguous": "Flere programmer bruker denne snarveien. Velg en personlig kobling i Tilpasning.",
+    "shortcuts.customize": "Tilpass"
   }
 }

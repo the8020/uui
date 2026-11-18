@@ -412,6 +412,12 @@
     "login.invalid_language": "无效的语言",
     "errors.session_unavailable": "会议不开放",
     "frontend.errors.invalid_or_unavailable_download": "无效或不可下载",
-    "frontend.errors.invalid_download_destination": "无效的下载目的地"
+    "frontend.errors.invalid_download_destination": "无效的下载目的地",
+    "shortcuts.title": "快捷码",
+    "shortcuts.help": "输入代码并按 Enter 打开程序。点击铅笔或按 F1/F4 打开值帮助，可按代码、程序或描述搜索。个人快捷码优先于同名默认快捷码。",
+    "shortcuts.duplicate": "此快捷码已被使用。",
+    "shortcuts.not_found": "没有程序与此快捷码匹配。",
+    "shortcuts.ambiguous": "多个程序使用此快捷码。请在自定义中设置个人映射。",
+    "shortcuts.customize": "自定义"
   }
 }

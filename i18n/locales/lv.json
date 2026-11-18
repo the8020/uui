@@ -412,6 +412,12 @@
     "login.invalid_language": "Nevalidā valoda",
     "errors.session_unavailable": "Sesija nav pieejama",
     "frontend.errors.invalid_or_unavailable_download": "Neatbilstoša vai nepietiekama lejupielādēšana",
-    "frontend.errors.invalid_download_destination": "Neatbilstoša lejupielādes vieta"
+    "frontend.errors.invalid_download_destination": "Neatbilstoša lejupielādes vieta",
+    "shortcuts.title": "Īskodi",
+    "shortcuts.help": "Ievadiet kodu un nospiediet Enter, lai atvērtu programmu. Zīmulis vai F1/F4 atver izvēles palīdzību; meklējiet pēc koda, programmas vai apraksta. Personiskie īskodi aizstāj atbilstošos noklusējumus.",
+    "shortcuts.duplicate": "Īskods jau tiek izmantots.",
+    "shortcuts.not_found": "Šim īskodam neatbilst neviena programma.",
+    "shortcuts.ambiguous": "Šo īskodu izmanto vairākas programmas. Sadaļā Pielāgošana iestatiet personisku piesaisti.",
+    "shortcuts.customize": "Pielāgot"
   }
 }

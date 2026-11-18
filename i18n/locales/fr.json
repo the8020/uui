@@ -412,6 +412,12 @@
     "login.invalid_language": "Langue invalide",
     "errors.session_unavailable": "La séance n'est pas disponible",
     "frontend.errors.invalid_or_unavailable_download": "Téléchargement invalide ou non disponible",
-    "frontend.errors.invalid_download_destination": "Destination de téléchargement non valide"
+    "frontend.errors.invalid_download_destination": "Destination de téléchargement non valide",
+    "shortcuts.title": "Raccourcis",
+    "shortcuts.help": "Saisissez un code et appuyez sur Entrée pour ouvrir un programme. Le crayon ou F1/F4 ouvre la liste de choix ; recherchez par code, programme ou description. Les raccourcis personnels remplacent ceux par défaut.",
+    "shortcuts.duplicate": "Ce raccourci est déjà utilisé.",
+    "shortcuts.not_found": "Aucun programme ne correspond à ce raccourci.",
+    "shortcuts.ambiguous": "Plusieurs programmes utilisent ce raccourci. Définissez une association personnelle dans Personnalisation.",
+    "shortcuts.customize": "Personnaliser"
   }
 }

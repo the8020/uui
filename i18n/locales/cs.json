@@ -412,6 +412,12 @@
     "login.invalid_language": "Neplatný jazyk",
     "errors.session_unavailable": "Relace není dostupná",
     "frontend.errors.invalid_or_unavailable_download": "Neplatné nebo nedostupné stahování",
-    "frontend.errors.invalid_download_destination": "Neplatný cíl stahování"
+    "frontend.errors.invalid_download_destination": "Neplatný cíl stahování",
+    "shortcuts.title": "Zkratky",
+    "shortcuts.help": "Zadejte kód a stisknutím Enter spusťte program. Tužka nebo F1/F4 otevře nápovědu s výběrem; hledejte podle kódu, programu či popisu. Osobní zkratky mají přednost před výchozími.",
+    "shortcuts.duplicate": "Zkratka je již použita.",
+    "shortcuts.not_found": "Této zkratce neodpovídá žádný program.",
+    "shortcuts.ambiguous": "Tuto zkratku používá více programů. V Přizpůsobení nastavte osobní zkratku.",
+    "shortcuts.customize": "Přizpůsobit"
   }
 }

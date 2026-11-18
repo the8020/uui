@@ -412,6 +412,12 @@
     "login.invalid_language": "Epävirallinen kieli",
     "errors.session_unavailable": "Istunto ei ole käytettävissä",
     "frontend.errors.invalid_or_unavailable_download": "Käytettävissä oleva lataus",
-    "frontend.errors.invalid_download_destination": "Väärä latauskohde"
+    "frontend.errors.invalid_download_destination": "Väärä latauskohde",
+    "shortcuts.title": "Pikakoodit",
+    "shortcuts.help": "Kirjoita koodi ja avaa ohjelma painamalla Enter. Kynä tai F1/F4 avaa valintaohjeen; hae koodilla, ohjelmalla tai kuvauksella. Omat pikakoodit korvaavat vastaavat oletukset.",
+    "shortcuts.duplicate": "Pikakoodi on jo käytössä.",
+    "shortcuts.not_found": "Tätä pikakoodia vastaavaa ohjelmaa ei ole.",
+    "shortcuts.ambiguous": "Usea ohjelma käyttää tätä pikakoodia. Määritä oma kohdistus Mukautus-näkymässä.",
+    "shortcuts.customize": "Mukauta"
   }
 }

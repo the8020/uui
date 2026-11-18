@@ -412,6 +412,12 @@
     "login.invalid_language": "Недействительный язык",
     "errors.session_unavailable": "Заседание недоступно",
     "frontend.errors.invalid_or_unavailable_download": "Недействительный или недоступный скачать",
-    "frontend.errors.invalid_download_destination": "Недействительная цель загрузки"
+    "frontend.errors.invalid_download_destination": "Недействительная цель загрузки",
+    "shortcuts.title": "Сокращения",
+    "shortcuts.help": "Введите код и нажмите Enter, чтобы открыть программу. Карандаш или F1/F4 открывает справку выбора; ищите по коду, программе или описанию. Личные сокращения заменяют совпадающие стандартные.",
+    "shortcuts.duplicate": "Это сокращение уже используется.",
+    "shortcuts.not_found": "Ни одна программа не соответствует этому сокращению.",
+    "shortcuts.ambiguous": "Несколько программ используют это сокращение. Задайте личное назначение в Персонализации.",
+    "shortcuts.customize": "Настроить"
   }
 }

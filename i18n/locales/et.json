@@ -412,6 +412,12 @@
     "login.invalid_language": "Invalid keel",
     "errors.session_unavailable": "Istung ei ole saadaval",
     "frontend.errors.invalid_or_unavailable_download": "Invalid või kättesaamatu alla laadimine",
-    "frontend.errors.invalid_download_destination": "Valetamatu alla laadimise sihtkoht"
+    "frontend.errors.invalid_download_destination": "Valetamatu alla laadimise sihtkoht",
+    "shortcuts.title": "Kiirkoodid",
+    "shortcuts.help": "Sisesta kood ja vajuta programmi avamiseks Enter. Pliiats või F1/F4 avab valikuabi; otsi koodi, programmi või kirjelduse järgi. Isiklikud kiirkoodid asendavad vastavad vaikekoodid.",
+    "shortcuts.duplicate": "Kiirkood on juba kasutusel.",
+    "shortcuts.not_found": "Selle kiirkoodiga programmi ei leitud.",
+    "shortcuts.ambiguous": "Mitu programmi kasutab seda kiirkoodi. Määra Kohandamises isiklik seos.",
+    "shortcuts.customize": "Kohanda"
   }
 }

@@ -412,6 +412,12 @@
     "login.invalid_language": "Invalida språk",
     "errors.session_unavailable": "Sammanträde inte tillgänglig",
     "frontend.errors.invalid_or_unavailable_download": "Invalida eller otillgängliga nedladdning",
-    "frontend.errors.invalid_download_destination": "Invalida nedladdningsmål"
+    "frontend.errors.invalid_download_destination": "Invalida nedladdningsmål",
+    "shortcuts.title": "Genvägar",
+    "shortcuts.help": "Ange en kod och tryck Enter för att öppna ett program. Pennan eller F1/F4 öppnar valhjälpen; sök på kod, program eller beskrivning. Personliga genvägar ersätter motsvarande standardvärden.",
+    "shortcuts.duplicate": "Genvägen används redan.",
+    "shortcuts.not_found": "Inget program matchar denna genväg.",
+    "shortcuts.ambiguous": "Flera program använder denna genväg. Välj en personlig koppling i Anpassning.",
+    "shortcuts.customize": "Anpassa"
   }
 }

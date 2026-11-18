@@ -412,6 +412,12 @@
     "login.invalid_language": "유효 없는 언어",
     "errors.session_unavailable": "회의가 열리지 않습니다",
     "frontend.errors.invalid_or_unavailable_download": "유효하지 않거나 사용할 수 없는 다운로드",
-    "frontend.errors.invalid_download_destination": "유효하지 않은 다운로드 목적지"
+    "frontend.errors.invalid_download_destination": "유효하지 않은 다운로드 목적지",
+    "shortcuts.title": "바로가기 코드",
+    "shortcuts.help": "코드를 입력하고 Enter를 누르면 프로그램이 열립니다. 연필 또는 F1/F4로 값 도움말을 열어 코드, 프로그램 또는 설명으로 검색하세요. 개인 코드는 일치하는 기본 코드보다 우선합니다.",
+    "shortcuts.duplicate": "이미 사용 중인 바로가기 코드입니다.",
+    "shortcuts.not_found": "이 바로가기 코드와 일치하는 프로그램이 없습니다.",
+    "shortcuts.ambiguous": "여러 프로그램이 이 코드를 사용합니다. 사용자 지정에서 개인 연결을 설정하세요.",
+    "shortcuts.customize": "사용자 지정"
   }
 }

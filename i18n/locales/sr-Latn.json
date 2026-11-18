@@ -412,6 +412,12 @@
     "login.invalid_language": "Nevažni jezik",
     "errors.session_unavailable": "Sesija nije dostupna",
     "frontend.errors.invalid_or_unavailable_download": "Nevažni ili nedostupni preuzimanje",
-    "frontend.errors.invalid_download_destination": "Nevalidna destinacija preuzimanja"
+    "frontend.errors.invalid_download_destination": "Nevalidna destinacija preuzimanja",
+    "shortcuts.title": "Prečice",
+    "shortcuts.help": "Unesite kod i pritisnite Enter da otvorite program. Olovka ili F1/F4 otvara pomoć pri izboru; tražite po kodu, programu ili opisu. Lične prečice zamenjuju odgovarajuće podrazumevane.",
+    "shortcuts.duplicate": "Prečica se već koristi.",
+    "shortcuts.not_found": "Nijedan program ne odgovara ovoj prečici.",
+    "shortcuts.ambiguous": "Više programa koristi ovu prečicu. Podesite lično pridruživanje u Prilagođavanju.",
+    "shortcuts.customize": "Prilagodi"
   }
 }

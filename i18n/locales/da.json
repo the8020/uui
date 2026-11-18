@@ -412,6 +412,12 @@
     "login.invalid_language": "Ugyldigt sprog",
     "errors.session_unavailable": "Session ikke tilgængelig",
     "frontend.errors.invalid_or_unavailable_download": "Ugyldig eller ikke tilgængelig download",
-    "frontend.errors.invalid_download_destination": "Ugyldig download destination"
+    "frontend.errors.invalid_download_destination": "Ugyldig download destination",
+    "shortcuts.title": "Genveje",
+    "shortcuts.help": "Indtast en kode og tryk Enter for at åbne et program. Blyanten eller F1/F4 åbner valghjælpen; søg efter kode, program eller beskrivelse. Personlige genveje erstatter tilsvarende standarder.",
+    "shortcuts.duplicate": "Genvejen er allerede i brug.",
+    "shortcuts.not_found": "Intet program matcher denne genvej.",
+    "shortcuts.ambiguous": "Flere programmer bruger denne genvej. Vælg en personlig tilknytning i Tilpasning.",
+    "shortcuts.customize": "Tilpas"
   }
 }

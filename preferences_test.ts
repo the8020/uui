@@ -60,7 +60,7 @@ test("UUI preferences inherit per field, save only personal overrides, and clean
     });
   };
   const put = database.prepare(
-    `INSERT INTO the8020__uui__user_preferences VALUES (?, ?)`,
+    `INSERT INTO the8020__uui__user_preferences (username, accentColor) VALUES (?, ?)`,
   );
   try {
     assertEquals(descriptorOf(table).columns[1]?.nullable, true);

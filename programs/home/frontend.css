@@ -1,3 +1,67 @@
+.screen.home-screen {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(12rem, 18rem);
+  align-items: center;
+  gap: 2rem 1rem;
+}
+
+.home-screen > .home-layout {
+  display: contents;
+}
+
+.home-launcher {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.home-launcher .uui-elements {
+  justify-content: flex-end;
+}
+
+.home-programs {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.home-screen .home-shortcut {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 0.5rem;
+  align-items: center;
+  width: 100%;
+}
+
+.home-screen .home-shortcut > label {
+  display: flex;
+  align-items: center;
+  height: auto;
+  font-size: 0;
+  color: var(--primary);
+}
+
+.home-screen .home-shortcut > label .material-icon {
+  font-size: 1.25rem;
+}
+
+.home-screen .home-shortcut > .field-message {
+  grid-column: 2;
+}
+
+.home-screen .home-shortcut > [data-message-kind="hint"] {
+  visibility: hidden;
+}
+
+.home-tile-shortcut {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  align-self: end;
+  grid-row: 5;
+}
+
 .home-navigator {
   --home-tree-width: 280px;
   display: grid;
@@ -149,7 +213,7 @@
 
 .home-tile {
   display: grid;
-  grid-template-rows: auto auto 1fr auto;
+  grid-template-rows: auto auto 1fr auto auto;
   gap: 0.35rem;
   min-height: 8.5rem;
   border: 1px solid var(--border);
@@ -240,6 +304,18 @@
 }
 
 @media (max-width: 700px) {
+  .screen.home-screen {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1rem;
+  }
+
+  .home-launcher {
+    grid-column: 1;
+    grid-row: auto;
+    justify-self: end;
+    width: min(100%, 18rem);
+  }
+
   .home-navigator {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(8rem, 40%) minmax(0, 1fr);

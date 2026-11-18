@@ -146,7 +146,7 @@ class MultipleDraft {
   }
 }
 
-/** An isolated draft: only Done commits through the caller's complete schema. */
+/** An isolated draft: Done or a scalar choice commits through the caller schema. */
 export async function runFieldHelp(
   schema: z.ZodType,
   control: ControlDescriptor,
@@ -333,6 +333,10 @@ export async function runFieldHelp(
             label: msg("field_help.done"),
             kind: "primary" as const,
           }]),
+          ...(metadata?.helpActions ?? []).map((action, index) => ({
+            id: `help-action-${index}`,
+            label: action.label,
+          })),
           ...(metadata?.open === undefined || model.data.value == null ||
               model.data.value === ""
             ? []
@@ -341,14 +345,13 @@ export async function runFieldHelp(
       },
     });
     if (event.action === BACK_EVENT) return;
-    // One value: a click selects, a double-click selects and finishes.
+    // One value: selecting a row commits through the same validation as Done.
     const chosen = event.action === "select" && draft === undefined &&
       editable &&
       (event.eventType === "select" || event.eventType === "activate");
     if (chosen) model.data.value = structuredClone(event.value);
     if (
-      (event.action === "done" ||
-        chosen && event.eventType === "activate") && editable
+      (event.action === "done" || chosen) && editable
     ) {
       try {
         binding.set(model.data.value);
@@ -362,6 +365,10 @@ export async function runFieldHelp(
         );
       }
     }
+    const helpAction = metadata?.helpActions?.find((_, index) =>
+      event.action === `help-action-${index}`
+    );
+    if (helpAction) await helpAction.run();
     if (event.action === "open" && metadata?.open !== undefined) {
       try {
         const value = schema.parse(model.data.value);

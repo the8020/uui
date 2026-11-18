@@ -412,6 +412,12 @@
     "login.invalid_language": "Lenguaje inválido",
     "errors.session_unavailable": "Sesión no disponible",
     "frontend.errors.invalid_or_unavailable_download": "Descarga inválida o no disponible",
-    "frontend.errors.invalid_download_destination": "Destino de descarga inválido"
+    "frontend.errors.invalid_download_destination": "Destino de descarga inválido",
+    "shortcuts.title": "Atajos",
+    "shortcuts.help": "Escriba un código y pulse Enter para abrir un programa. El lápiz o F1/F4 abre la ayuda de valores; busque por código, programa o descripción. Los atajos personales sustituyen a los predeterminados coincidentes.",
+    "shortcuts.duplicate": "El atajo ya está en uso.",
+    "shortcuts.not_found": "Ningún programa coincide con este atajo.",
+    "shortcuts.ambiguous": "Varios programas usan este atajo. Defina una asignación personal en Personalización.",
+    "shortcuts.customize": "Personalizar"
   }
 }

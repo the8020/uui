@@ -2,3 +2,5 @@ schema = 1
 uui = true
 description = "List layouts"
 entrypoint = "program.ts"
+
+shortcut = "LISTDEMO"

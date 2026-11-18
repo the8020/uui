@@ -412,6 +412,12 @@
     "login.invalid_language": "Lingua invalida",
     "errors.session_unavailable": "Non è disponibile",
     "frontend.errors.invalid_or_unavailable_download": "Scarica invalida o non disponibile",
-    "frontend.errors.invalid_download_destination": "Destino di download non valido"
+    "frontend.errors.invalid_download_destination": "Destino di download non valido",
+    "shortcuts.title": "Scorciatoie",
+    "shortcuts.help": "Inserisci un codice e premi Invio per aprire un programma. La matita o F1/F4 apre la guida ai valori; cerca per codice, programma o descrizione. Le scorciatoie personali sostituiscono quelle predefinite corrispondenti.",
+    "shortcuts.duplicate": "La scorciatoia è già in uso.",
+    "shortcuts.not_found": "Nessun programma corrisponde a questa scorciatoia.",
+    "shortcuts.ambiguous": "Più programmi usano questa scorciatoia. Imposta una corrispondenza personale in Personalizzazione.",
+    "shortcuts.customize": "Personalizza"
   }
 }

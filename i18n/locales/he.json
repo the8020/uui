@@ -412,6 +412,12 @@
     "login.invalid_language": "שפה לא חוקית",
     "errors.session_unavailable": "פגישה לא זמינה",
     "frontend.errors.invalid_or_unavailable_download": "לא חוקי או לא זמין",
-    "frontend.errors.invalid_download_destination": "יעד הורדה לא חוקי"
+    "frontend.errors.invalid_download_destination": "יעד הורדה לא חוקי",
+    "shortcuts.title": "קודי קיצור",
+    "shortcuts.help": "יש להזין קוד וללחוץ Enter לפתיחת תוכנית. העיפרון או F1/F4 פותחים עזרה לבחירת ערך; חפשו לפי קוד, תוכנית או תיאור. קיצורים אישיים מחליפים את ברירות המחדל התואמות.",
+    "shortcuts.duplicate": "קוד הקיצור כבר בשימוש.",
+    "shortcuts.not_found": "אין תוכנית המתאימה לקוד זה.",
+    "shortcuts.ambiguous": "כמה תוכניות משתמשות בקוד זה. הגדירו שיוך אישי בהתאמה אישית.",
+    "shortcuts.customize": "התאמה אישית"
   }
 }

@@ -412,6 +412,12 @@
     "login.invalid_language": "Geçersiz dil",
     "errors.session_unavailable": "Oturum mevcut değil",
     "frontend.errors.invalid_or_unavailable_download": "Geçersiz veya kullanılamayan indir",
-    "frontend.errors.invalid_download_destination": "Geçersiz indirme hedefi"
+    "frontend.errors.invalid_download_destination": "Geçersiz indirme hedefi",
+    "shortcuts.title": "Kısa kodlar",
+    "shortcuts.help": "Bir kod yazıp programı açmak için Enter tuşuna basın. Kalem veya F1/F4 değer yardımını açar; kod, program veya açıklamaya göre arayın. Kişisel kodlar eşleşen varsayılanları geçersiz kılar.",
+    "shortcuts.duplicate": "Bu kısa kod zaten kullanılıyor.",
+    "shortcuts.not_found": "Bu kısa kodla eşleşen program yok.",
+    "shortcuts.ambiguous": "Birden fazla program bu kısa kodu kullanıyor. Özelleştirme bölümünde kişisel bir eşleme belirleyin.",
+    "shortcuts.customize": "Özelleştir"
   }
 }

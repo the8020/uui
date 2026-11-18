@@ -412,6 +412,12 @@
     "login.invalid_language": "ภาษาไร้สาระ",
     "errors.session_unavailable": "การประชุมไม่ได้",
     "frontend.errors.invalid_or_unavailable_download": "ดาวน์โหลดที่ไม่เหมาะสม หรือไม่พร้อม",
-    "frontend.errors.invalid_download_destination": "จุดดาวน์โหลดไม่ถูกต้อง"
+    "frontend.errors.invalid_download_destination": "จุดดาวน์โหลดไม่ถูกต้อง",
+    "shortcuts.title": "รหัสลัด",
+    "shortcuts.help": "ป้อนรหัสแล้วกด Enter เพื่อเปิดโปรแกรม ใช้ดินสอหรือ F1/F4 เพื่อเปิดตัวช่วยเลือกค่า ค้นหาด้วยรหัส โปรแกรม หรือคำอธิบาย รหัสส่วนตัวมีลำดับเหนือรหัสเริ่มต้นที่ตรงกัน",
+    "shortcuts.duplicate": "รหัสลัดนี้ถูกใช้แล้ว",
+    "shortcuts.not_found": "ไม่มีโปรแกรมที่ตรงกับรหัสลัดนี้",
+    "shortcuts.ambiguous": "หลายโปรแกรมใช้รหัสลัดนี้ โปรดกำหนดการจับคู่ส่วนตัวในการปรับแต่ง",
+    "shortcuts.customize": "ปรับแต่ง"
   }
 }

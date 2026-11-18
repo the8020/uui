@@ -412,6 +412,12 @@
     "login.invalid_language": "Neveljavni jezik",
     "errors.session_unavailable": "Sedenja ni na voljo",
     "frontend.errors.invalid_or_unavailable_download": "Neveljavna ali nepridostljiva preboj",
-    "frontend.errors.invalid_download_destination": "Neveljavna destinacija prenosa"
+    "frontend.errors.invalid_download_destination": "Neveljavna destinacija prenosa",
+    "shortcuts.title": "Bližnjice",
+    "shortcuts.help": "Vnesite kodo in pritisnite Enter, da odprete program. Svinčnik ali F1/F4 odpre pomoč pri izbiri; iščite po kodi, programu ali opisu. Osebne bližnjice nadomestijo ustrezne privzete.",
+    "shortcuts.duplicate": "Bližnjica je že uporabljena.",
+    "shortcuts.not_found": "Noben program ne ustreza tej bližnjici.",
+    "shortcuts.ambiguous": "To bližnjico uporablja več programov. V Prilagoditvi nastavite osebno povezavo.",
+    "shortcuts.customize": "Prilagodi"
   }
 }

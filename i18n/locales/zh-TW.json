@@ -412,6 +412,12 @@
     "login.invalid_language": "不有效的語言",
     "errors.session_unavailable": "該會議無法進行",
     "frontend.errors.invalid_or_unavailable_download": "不有效或無法下載",
-    "frontend.errors.invalid_download_destination": "不有效的下載目的地"
+    "frontend.errors.invalid_download_destination": "不有效的下載目的地",
+    "shortcuts.title": "快捷碼",
+    "shortcuts.help": "輸入代碼並按 Enter 開啟程式。點選鉛筆或按 F1/F4 開啟值說明，可依代碼、程式或描述搜尋。個人快捷碼優先於同名預設快捷碼。",
+    "shortcuts.duplicate": "此快捷碼已被使用。",
+    "shortcuts.not_found": "沒有程式與此快捷碼相符。",
+    "shortcuts.ambiguous": "多個程式使用此快捷碼。請在自訂中設定個人對應。",
+    "shortcuts.customize": "自訂"
   }
 }

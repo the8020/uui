@@ -113,8 +113,9 @@ Default section order:
   optimized output formats; custom images live in the database, defaults in the
   shell package. Browser titles combine the saved server title and screen title.
 
-- The List tools toggle is a gear icon in the toolbar row above the table, never
-  over the last column heading.
+- The List tools toggle is a small gear over the visible right edge of the
+  column-header row. It stays fixed during horizontal table scrolling, masks
+  only headers beneath it, and reserves no body column or empty toolbar row.
 - Table columns can be resized by dragging the heading edge; double-click resets
   the width.
 - Editable direct-choice fields (select, checkbox, switch, radio, date,
@@ -130,7 +131,7 @@ Default section order:
 When the user requests a durable behavior change, record it here or in the
 relevant child AGENTS.md
 
-- Customization opens from the hamburger menu as an ordinary UUI page and owns
+- Customization opens from the hamburger menu as an ordinary UUI modal and owns
   user preferences. Accent color applies on Save in light and dark themes;
   purple remains the built-in default. Nullable preference columns store only
   personal overrides, inheriting the empty-username row and then built-ins.
@@ -251,11 +252,11 @@ below.
 
 - List-specific controls and actions belong in that list's `toolbar`, including
   creation, selection operations, refresh, and backend paging. Screen navigation
-  and form-wide Save/Cancel stay in the page header. Every list reserves the
-  shared navbar-height toolbar row, even when empty; controls keep one line and
-  overflow into the same ordered three-dot disclosure as page headers. Toolbar
-  actions may declare `requiresSelection: true` to disable them while their list
-  has no checked rows; action handlers still validate their targets.
+  and form-wide Save/Cancel stay in the page header. Nonempty custom toolbars
+  use the shared navbar-height row; empty toolbars collapse. Controls keep one
+  line and overflow into the same ordered three-dot disclosure as page headers.
+  Toolbar actions may declare `requiresSelection: true` to disable them while
+  their list has no checked rows; action handlers still validate their targets.
 
 - UUI `0.8.2` and demo `0.8.0` are the paired managed-channel releases for the
   kernel `0.8` line. Package tags use bare semantic versions; package manifests
@@ -284,7 +285,10 @@ below.
   nullable field from the named user, the empty-username default, and built-ins.
   Omitted username uses the authenticated identity. `saveUserPreferences` writes
   only that identity's overrides; null or matching the current default removes
-  the override. With only accent color, an all-default personal row is deleted.
+  the override. An all-default personal row is deleted only when it also has no
+  personal shortcuts. `fetchUserShortcuts()` reads only the authenticated user's
+  mappings; these do not inherit the empty-username row. Saving preferences can
+  atomically replace shortcuts with the color, and color-only saves retain them.
   `tables/user_preferences.ts` owns storage; `users.deleted` asynchronously
   deletes only the named user's rows and preserves shared defaults.
 - The shell reads effective preferences through authenticated, uncached
@@ -293,11 +297,17 @@ below.
   added. Theme switching immediately reapplies the last accent. Read failures go
   to `console.error` and preserve the current accent.
 - The reserved `CUSTOMIZATION_EVENT` opens `the8020/uui/customization` through
-  the same protected page path as My account, retaining the pending caller and
-  draft. Back discards unsaved preferences. Use system default changes the
-  draft; Save commits it. The reusable `color` control uses native HTML color
-  input, ordinary string binding, schema validation, help, and disabled
-  read-only input.
+  the protected modal path, retaining the pending caller and draft. My account
+  remains a page. Back discards unsaved preferences. Use system default changes
+  the draft; Save commits it and closes Customization. The reusable `color`
+  control uses native HTML color input, ordinary string binding, schema
+  validation, help, and disabled read-only input.
+- `shortcuts.ts` combines program defaults with personal mappings and supplies
+  ordinary shortcut/program value help. `src/shortcut_fields.ts` owns validated
+  personal rows. Home launches without arguments in the current UUI session;
+  existing program authorization applies. Personal mappings win by code,
+  including when their target is no longer installed; duplicate defaults never
+  choose an arbitrary target.
 
 - Deployed service identity and canonical paths derive from
   `packages/the8020/uui`; login, shell, and session are ordinary default-enabled
@@ -780,36 +790,40 @@ below.
 - Scalar fields expose a pencil or read-only Chevron Right button and
   focused-field F1/F4 help. Editable direct-choice controls draw no pencil;
   `field_help_actions.ts` keeps their F1/F4 help without a button. The modal
-  owns an isolated draft and keeps the caller Model and surface reserved. Only
-  Done validates against the complete caller schema and commits; Close, Back,
-  and Escape discard even invalid drafts. On every screen, Back (Close, Escape)
-  applies the edits it carries when they are valid and otherwise discards them;
-  it is never refused for an invalid draft. Empty separated tags send no value
-  rather than `""`. A cleared input (`""`) that fails its field schema becomes
-  `null` when nullable, otherwise `undefined` when optional. Valid empty strings
-  stay strings. Validation problems are reported through
-  `describeError(error, schema?, bind?)` (`errors.ts`, exported from `mod.ts`):
-  the field's label and a plain message, with "Enter a value." for empty or
-  missing required values; programs use it instead of showing raw Zod messages.
-  Show Done only in edit mode, followed by Navigate when semantic `open(value)`
-  exists. Navigate opens a related page without committing and restores help on
-  return. Markdown descriptions appear in full. `fieldHelp: false` suppresses
-  help. Field help shows a Value help card below the value when the field has a
-  provider or ordinary control options. Its list opens with search visible and
-  focused (`focusSearch`), and its value's field group is a layout `summary`:
-  once it scrolls away, the dialog shows a compact bar under its toolbar
-  (outside the scrolling body) with the label, the value or tags (removable
-  there, at most three lines, then `+N more`, which scrolls back to the field)
-  and a search mirroring the list's. One value: the current value's row is
-  highlighted, a click selects it into the draft, and a double-click or Enter
-  selects it and finishes like Done. Several values (arrays of scalars, or text
-  declaring `multiple`): rows have checkboxes kept by key across pages and
-  searches; the header selects every match within the on-screen limit
-  (`SELECT_ALL_LIMITS`, default 500, read in pages of 500) or refuses above it;
-  values not offered by help, such as ranges, stay as written; the schema's
-  array maximum refuses more; selection order is kept; there is no double-click
-  finish, only Done. Read-only fields retain lookup and navigation, but choices
-  never edit their bound value.
+  owns an isolated draft and keeps the caller Model and surface reserved. Done
+  or a single-value row click validates against the complete caller schema and
+  commits; Close, Back, and Escape discard even invalid drafts. On every screen,
+  Back (Close, Escape) applies the edits it carries when they are valid and
+  otherwise discards them; it is never refused for an invalid draft. Empty
+  separated tags send no value rather than `""`. A cleared input (`""`) that
+  fails its field schema becomes `null` when nullable, otherwise `undefined`
+  when optional. Valid empty strings stay strings. Validation problems are
+  reported through `describeError(error, schema?, bind?)` (`errors.ts`, exported
+  from `mod.ts`): the field's label and a plain message, with "Enter a value."
+  for empty or missing required values; programs use it instead of showing raw
+  Zod messages. Show Done only in edit mode, followed by Navigate when semantic
+  `open(value)` exists. Navigate opens a related page without committing and
+  restores help on return. UUI field metadata may declare
+  `helpActions: [{ label, run }]`; each Worker-local callback runs without
+  committing the draft and may open ordinary pages or modals. Callbacks never
+  enter browser descriptors. Shortcut help uses this for Customize and refreshes
+  its choices on return. Markdown descriptions appear in full.
+  `fieldHelp: false` suppresses help. Field help shows a Value help card below
+  the value when the field has a provider or ordinary control options. Its list
+  opens with search visible and focused (`focusSearch`), and its value's field
+  group is a layout `summary`: once it scrolls away, the dialog shows a compact
+  bar under its toolbar (outside the scrolling body) with the label, the value
+  or tags (removable there, at most three lines, then `+N more`, which scrolls
+  back to the field) and a search mirroring the list's. One value: the current
+  value's row is highlighted; a click or Enter validates, commits the selected
+  value, and closes help. Several values (arrays of scalars, or text declaring
+  `multiple`): rows have checkboxes kept by key across pages and searches; the
+  header selects every match within the on-screen limit (`SELECT_ALL_LIMITS`,
+  default 500, read in pages of 500) or refuses above it; values not offered by
+  help, such as ranges, stay as written; the schema's array maximum refuses
+  more; selection order is kept; there is no double-click finish, only Done.
+  Read-only fields retain lookup and navigation, but choices never edit their
+  bound value.
 - `field(scalar, { selection: true })` returns a criteria-array schema while
   retaining the scalar's semantic meaning, validation and value help. Scalars
   without this property keep their behavior. `selection_help.ts` owns an
@@ -850,10 +864,10 @@ below.
   filter/sort before paging at the database owner.
 - Help uses ordinary screen, modal, list, and page machinery. Inline edits are
   flushed before opening. A reactive field returns one ordinary change event
-  only after Done commits a changed value. The caller and its ScreenChannel stay
-  pending during help: background redraws update the covered snapshot;
-  exit/failure settles after help returns. Read-only controls reject client
-  edits at the session boundary.
+  only after Done or a single-value selection commits a changed value. The
+  caller and its ScreenChannel stay pending during help: background redraws
+  update the covered snapshot; exit/failure settles after help returns.
+  Read-only controls reject client edits at the session boundary.
 - A Model creates its `mdl-*` screen identity through the shared operational ID
   helper and retains it for the wrapper's lifetime. IDs are scoped to the UUI
   session; registering a screen rejects a collision with any pending Model
@@ -911,8 +925,9 @@ below.
   replacement/disposal, reset, settlement/removal, coverage and connection loss
   cancel owning work and drop late output. Unabortable queries may continue
   internally; remote consistency remains source-owned. Field help retains typed
-  columns, first-column selection, isolated drafts and Done-only commits without
-  ordinary browsing screen reissue.
+  columns, first-column selection, and isolated drafts without ordinary browsing
+  screen reissue. Single-value selection commits immediately; multiple-value
+  selection waits for Done.
 - Capture scroll and toolbar metadata with existing interactions, including
   Back, paging, queries, and capacity. Never send standalone or periodic scroll
   updates. Browser-local positions survive redraw and surface/instance returns;
@@ -1468,14 +1483,15 @@ below.
   and custom-element preservation, dirty `ScreenChannel` redraws, Escape/Back
   routing, reload of a later page plus modal, and restoration of the earlier
   page-plus-modal continuation. It also exercises pencil/Chevron Right/F1/F4
-  field help drafts, invalid Close cancellation, Done-only commits, Markdown,
-  bounded search and standard pagination over 2,001 choices, related-record
-  navigation, and desktop/mobile sizing. Interaction helpers wait for the
-  shell's in-flight gate to release before clicking. Run it with
-  `deno task test:presentation-browser`; it is not part of the ordinary
-  unit-test glob. Pass `--browser=/path/to/chromium` when Chromium is not at the
-  default path. `--field-help` focuses on field help, all local icon glyphs,
-  Chevron Right sizing, and editing after an identical retained snapshot.
+  field help drafts, invalid Close cancellation, single-click scalar commits,
+  read-only no-op clicks, Markdown, bounded search and standard pagination over
+  2,001 choices, related-record navigation, and desktop/mobile sizing.
+  Interaction helpers wait for the shell's in-flight gate to release before
+  clicking. Run it with `deno task test:presentation-browser`; it is not part of
+  the ordinary unit-test glob. Pass `--browser=/path/to/chromium` when Chromium
+  is not at the default path. `--field-help` focuses on field help, all local
+  icon glyphs, Chevron Right sizing, and editing after an identical retained
+  snapshot.
 - The Programs browser suite checks the development conflict screen with the
   existing code editor, Git line annotations, saved text, file deletion, and
   activation continuation. Its kernel replies are deterministic doubles; the

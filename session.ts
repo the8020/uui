@@ -1240,22 +1240,27 @@ async function showScreen<T extends z.ZodRawShape>(
                 }));
             })
             : control === undefined
-            ? presentPage(async () => {
-              if (target === CUSTOMIZATION_EVENT) {
-                const { default: customization } = await import(
-                  "./programs/customization/program.ts"
+            ? (target === CUSTOMIZATION_EVENT ? presentModal : presentPage)(
+              async () => {
+                if (target === CUSTOMIZATION_EVENT) {
+                  const { default: customization } = await import(
+                    "./programs/customization/program.ts"
+                  );
+                  await withProgram(
+                    "the8020/uui/customization",
+                    () => customization(),
+                  );
+                  return;
+                }
+                const { default: myAccount } = await import(
+                  "/p/the8020/users/programs/my-account/program.ts"
                 );
                 await withProgram(
-                  "the8020/uui/customization",
-                  () => customization(),
+                  "the8020/users/my-account",
+                  () => myAccount(),
                 );
-                return;
-              }
-              const { default: myAccount } = await import(
-                "/p/the8020/users/programs/my-account/program.ts"
-              );
-              await withProgram("the8020/users/my-account", () => myAccount());
-            })
+              },
+            )
             : presentModal(() =>
               runFieldHelp(
                 schemaAtPath(options.schema, control.bind)!,

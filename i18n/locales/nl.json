@@ -412,6 +412,12 @@
     "login.invalid_language": "Niet geldige taal",
     "errors.session_unavailable": "Zitting niet beschikbaar",
     "frontend.errors.invalid_or_unavailable_download": "Niet geldig of niet beschikbaar download",
-    "frontend.errors.invalid_download_destination": "Niet geldig downloadbestemming"
+    "frontend.errors.invalid_download_destination": "Niet geldig downloadbestemming",
+    "shortcuts.title": "Snelcodes",
+    "shortcuts.help": "Voer een code in en druk op Enter om een programma te openen. Het potlood of F1/F4 opent de keuzehulp; zoek op code, programma of beschrijving. Persoonlijke snelcodes vervangen overeenkomende standaardcodes.",
+    "shortcuts.duplicate": "Deze snelcode is al in gebruik.",
+    "shortcuts.not_found": "Geen programma komt overeen met deze snelcode.",
+    "shortcuts.ambiguous": "Meerdere programma’s gebruiken deze snelcode. Kies een persoonlijke koppeling bij Aanpassing.",
+    "shortcuts.customize": "Aanpassen"
   }
 }

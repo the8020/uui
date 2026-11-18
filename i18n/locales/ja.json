@@ -412,6 +412,12 @@
     "login.invalid_language": "不有効な言語",
     "errors.session_unavailable": "セッションは利用できません",
     "frontend.errors.invalid_or_unavailable_download": "無効または利用できないダウンロード",
-    "frontend.errors.invalid_download_destination": "無効なダウンロード目的地"
+    "frontend.errors.invalid_download_destination": "無効なダウンロード目的地",
+    "shortcuts.title": "ショートカット",
+    "shortcuts.help": "コードを入力して Enter を押すとプログラムが開きます。鉛筆または F1/F4 で値の選択ヘルプを開き、コード、プログラム、説明で検索できます。同じコードでは個人設定が既定値より優先されます。",
+    "shortcuts.duplicate": "このショートカットは既に使用されています。",
+    "shortcuts.not_found": "このショートカットに一致するプログラムはありません。",
+    "shortcuts.ambiguous": "複数のプログラムがこのショートカットを使用しています。カスタマイズで個人用の割り当てを設定してください。",
+    "shortcuts.customize": "カスタマイズ"
   }
 }

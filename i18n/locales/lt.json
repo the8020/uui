@@ -412,6 +412,12 @@
     "login.invalid_language": "Negalima kalba",
     "errors.session_unavailable": "Sesija nepriklauso",
     "frontend.errors.invalid_or_unavailable_download": "Neįgaliojimas arba nepasiekiamas atsisiųsti",
-    "frontend.errors.invalid_download_destination": "Negalima atsisiųsti"
+    "frontend.errors.invalid_download_destination": "Negalima atsisiųsti",
+    "shortcuts.title": "Trumpieji kodai",
+    "shortcuts.help": "Įveskite kodą ir paspauskite Enter, kad atidarytumėte programą. Pieštukas arba F1/F4 atveria pasirinkimo pagalbą; ieškokite pagal kodą, programą ar aprašą. Asmeniniai kodai pakeičia atitinkamus numatytuosius.",
+    "shortcuts.duplicate": "Šis kodas jau naudojamas.",
+    "shortcuts.not_found": "Šio kodo neatitinka jokia programa.",
+    "shortcuts.ambiguous": "Šį kodą naudoja kelios programos. Tinkinimo lange nustatykite asmeninį priskyrimą.",
+    "shortcuts.customize": "Tinkinti"
   }
 }

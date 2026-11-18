@@ -412,6 +412,12 @@
     "login.invalid_language": "Limba invalidă",
     "errors.session_unavailable": "Sesiunea nu este disponibilă",
     "frontend.errors.invalid_or_unavailable_download": "Descărcare invalidă sau indisponibilă",
-    "frontend.errors.invalid_download_destination": "Destinație de descărcare nu validă"
+    "frontend.errors.invalid_download_destination": "Destinație de descărcare nu validă",
+    "shortcuts.title": "Coduri rapide",
+    "shortcuts.help": "Introduceți un cod și apăsați Enter pentru a deschide un program. Creionul sau F1/F4 deschide ajutorul pentru valori; căutați după cod, program sau descriere. Codurile personale înlocuiesc valorile implicite corespunzătoare.",
+    "shortcuts.duplicate": "Codul este deja folosit.",
+    "shortcuts.not_found": "Niciun program nu corespunde acestui cod.",
+    "shortcuts.ambiguous": "Mai multe programe folosesc acest cod. Definiți o asociere personală în Personalizare.",
+    "shortcuts.customize": "Personalizează"
   }
 }

@@ -412,6 +412,12 @@
     "login.invalid_language": "Neplatný jazyk",
     "errors.session_unavailable": "Sedenie nie je k dispozícii",
     "frontend.errors.invalid_or_unavailable_download": "Neplatné alebo nedostupné stiahnutie",
-    "frontend.errors.invalid_download_destination": "Neplatné miesto pre stiahnutie"
+    "frontend.errors.invalid_download_destination": "Neplatné miesto pre stiahnutie",
+    "shortcuts.title": "Skratky",
+    "shortcuts.help": "Zadajte kód a stlačením Enter spustite program. Ceruzka alebo F1/F4 otvorí pomoc s výberom; hľadajte podľa kódu, programu či popisu. Osobné skratky majú prednosť pred predvolenými.",
+    "shortcuts.duplicate": "Skratka sa už používa.",
+    "shortcuts.not_found": "Tejto skratke nezodpovedá žiadny program.",
+    "shortcuts.ambiguous": "Túto skratku používa viac programov. V Prispôsobení nastavte osobnú skratku.",
+    "shortcuts.customize": "Prispôsobiť"
   }
 }
