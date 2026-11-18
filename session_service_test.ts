@@ -16,6 +16,7 @@ import {
   captureMessages,
   currentBrowser,
   currentScreenChannel,
+  endSession,
   presentModal,
   presentPage,
   sendMessage,
@@ -870,6 +871,108 @@ test("failed completion stays visible, retries exact release and never restores 
     globalThis.setTimeout = originalTimeout;
     console.error = originalError;
     await store.clear();
+  }
+});
+
+test("detached logout, exit and redirect survive failed completion and retry release", async () => {
+  for (
+    const action of ["session.logout", "session.exit", "redirect"] as const
+  ) {
+    const store = new MemorySessionMetadataStore();
+    const originalTimeout = globalThis.setTimeout;
+    const originalError = console.error;
+    const errors: unknown[][] = [];
+    let retry!: () => void;
+    let attempts = 0;
+    let sessionId = "";
+    console.error = (...args) => errors.push(args);
+    globalThis.setTimeout = ((callback: TimerHandler, delay?: number) => {
+      if (delay === 1000) {
+        assert(typeof callback === "function");
+        retry = callback as () => void;
+      }
+      return originalTimeout(callback, delay);
+    }) as typeof setTimeout;
+    const service = defineSessionService(async ({ signal }) => {
+      if (action === "redirect") endSession("Redirected", "/finished");
+      else {
+        await new Promise<void>((resolve) =>
+          signal.addEventListener("abort", () => resolve(), { once: true })
+        );
+      }
+    }, {
+      metadataStore: store,
+      completePersistent: () => {
+        attempts++;
+        return attempts === 1
+          ? Promise.reject(new Error("completion unavailable"))
+          : Promise.resolve();
+      },
+    });
+    try {
+      const response = await service.fetch(
+        new Request("https://example.test/connect", { method: "POST" }),
+        context(metadata),
+      );
+      sessionId = response.headers.get("the8020-session")!;
+      if (action !== "redirect") {
+        const socket = new TestSocket();
+        socket.message(connectMessage(0));
+        await service.connectWebSocket(
+          new Request("https://example.test/connect"),
+          context(metadata),
+          socket,
+        );
+        await until(() => serverMessages(socket, "session.ready").length === 1);
+        socket.message({
+          type: action,
+          protocol: UUI_PROTOCOL_VERSION,
+          sessionId,
+          clientSequence: 1,
+        });
+        await until(() => socket.signal.aborted);
+        assertEquals(
+          serverMessages(socket, "session.end")[0]?.redirectUrl,
+          action === "session.logout"
+            ? uiConfig.logoutUrl
+            : uiConfig.postLoginUrl,
+        );
+      }
+      await until(() => retry !== undefined);
+      // Let unhandled rejections surface before manually advancing the retry.
+      await new Promise((resolve) => originalTimeout(resolve, 0));
+      assertEquals(attempts, 1);
+      assertEquals(store.size, 0);
+      assertEquals(
+        workerFunctions["uui.session.inspect"]({ sessionId }).state,
+        "ENDED",
+      );
+      assert(
+        errors.some((args) =>
+          args.join(" ").includes("completion failed completion unavailable")
+        ),
+      );
+      retry();
+      await until(() => attempts === 2);
+      await until(() => {
+        try {
+          workerFunctions["uui.session.inspect"]({ sessionId });
+          return false;
+        } catch {
+          return true;
+        }
+      });
+      assertEquals(store.size, 0);
+    } finally {
+      globalThis.setTimeout = originalTimeout;
+      console.error = originalError;
+      if (sessionId !== "") {
+        await workerFunctions["uui.session.terminate"]({ sessionId }).catch(
+          () => undefined,
+        );
+      }
+      await store.clear();
+    }
   }
 });
 

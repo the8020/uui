@@ -17,7 +17,7 @@ export default async function fixture(root: string) {
 import { defineSessionService, workerFunctions } from ${
       JSON.stringify(new URL("./session_service.ts", import.meta.url).href)
     };
-import { sendMessage } from ${
+import { endSession, sendMessage } from ${
       JSON.stringify(new URL("./session.ts", import.meta.url).href)
     };
 import { withTestLocalization } from ${
@@ -26,6 +26,10 @@ import { withTestLocalization } from ${
 export { workerFunctions };
 const service = defineSessionService(async ({ inputs }) => {
   const outcome = inputs?.[0] ?? "success";
+  if (outcome === "redirect") {
+    endSession("Redirected", "/finished");
+    return;
+  }
   sendMessage("Original final " + outcome, outcome === "success" ? "success" : "error");
   if (outcome === "failure") throw new Error("Original program failure");
 }, {metadataStore: {create: async () => {}, put: async () => {}, remove: async () => {}}});
@@ -56,6 +60,17 @@ export default {
       throw new Error(`Unexpected kernel call: ${call.operation}`);
     },
   });
+  let failNextCompletion = false;
+  let completionAttempts = 0;
+  const complete = supervisor.completePersistentExecution.bind(supervisor);
+  supervisor.completePersistentExecution = (...args) => {
+    completionAttempts++;
+    if (failNextCompletion) {
+      failNextCompletion = false;
+      throw new Error("transient terminal release failure");
+    }
+    complete(...args);
+  };
   await supervisor.startWorker({
     metadata: {
       nodeId: "nod-0000000041",
@@ -346,8 +361,25 @@ export default {
         assert((await invoke("uui.session.terminate", { sessionId })).ok);
         assertEquals(supervisor.workers()[0]?.persistent_executions, 0);
       }
+      executionId = newId("pex");
+      failNextCompletion = true;
+      completionAttempts = 0;
+      const redirected = await transport(
+        new Request("http://service/connect", {
+          method: "POST",
+          body: JSON.stringify({ inputs: ["redirect"] }),
+        }),
+        false,
+      );
+      assertEquals(redirected.status, 204);
+      await wait(() => {
+        const worker = supervisor.workers()[0]!;
+        assertEquals(worker.state, "ready", worker.failure);
+        return Promise.resolve(worker.persistent_executions === 0);
+      });
+      assertEquals(completionAttempts, 2);
       console.log(
-        "Real Worker/supervisor final-result reads, owner/target rejection, draining continuation, browser history and bounded capacity release passed.",
+        "Real Worker/supervisor final-result reads, owner/target rejection, draining continuation, browser history, bounded capacity release and detached redirect release retry passed.",
       );
     },
     async close() {

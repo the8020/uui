@@ -379,8 +379,10 @@ below.
   logged and cannot skip completion. Completion failure remains visible and
   retries only the exact idempotent terminal release each second, without
   restoring metadata or replaying work; the existing disconnected native binding
-  lifetime still applies. Abnormal loss or failed deletion may leave recoverable
-  stale metadata.
+  lifetime still applies. Detached terminal callers handle the logged rejection
+  so the Worker survives to retry; awaited administrative termination propagates
+  the failure. Abnormal loss or failed deletion may leave recoverable stale
+  metadata.
 - `jobs/cleanup-sessions.toml` schedules `the8020/uui/sessions-cleanup` hourly
   through the jobs package, once per system by default. Root
   `session_cleanup.ts` pages metadata older than the disconnect grace in 100-row
@@ -1224,7 +1226,9 @@ below.
   transport evidence, not an installed kernel/database or production-system
   test. `session_service_test.ts` also checks completion before/during the first
   read, terminal replay, expiry, cancellation, concurrent completion and
-  metadata/completion failures.
+  metadata/completion failures, including detached logout/exit/redirect release
+  retries. The transport fixture also injects a supervisor completion failure
+  during a detached redirect and checks Worker survival and eventual release.
 
 - `deno run -A presentation_browser_e2e.ts
   --fixture=./column_resize_browser_fixture.ts`

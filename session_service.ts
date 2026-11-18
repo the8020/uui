@@ -403,7 +403,9 @@ async function establish(
     })
   ).then(
     () => {
-      if (!record.ended) void end(record, "session handler returned");
+      if (!record.ended) {
+        void end(record, "session handler returned").catch(() => undefined);
+      }
     },
     (error: unknown) => {
       if (record.ended) return;
@@ -416,7 +418,7 @@ async function establish(
         code: "program_failed",
         message: record.finalError,
       });
-      void end(record, "session handler failed");
+      void end(record, "session handler failed").catch(() => undefined);
     },
   );
   return new Response(null, {
@@ -596,12 +598,14 @@ function clientMessage(
   }
   if (message.type === "session.logout") {
     record.lastClientSequence = message.clientSequence;
-    void end(record, "Signing out…", uiConfig.logoutUrl);
+    void end(record, "Signing out…", uiConfig.logoutUrl).catch(() => undefined);
     return;
   }
   if (message.type === "session.exit") {
     record.lastClientSequence = message.clientSequence;
-    void end(record, "Session exited", uiConfig.postLoginUrl);
+    void end(record, "Session exited", uiConfig.postLoginUrl).catch(() =>
+      undefined
+    );
     return;
   }
   if (message.type === "client.ack" && message.resync === true) {
@@ -643,7 +647,9 @@ function workerMessage(
     return;
   }
   if (value.type === "session.end") {
-    void end(record, value.message ?? "session ended", value.redirectUrl);
+    void end(record, value.message ?? "session ended", value.redirectUrl).catch(
+      () => undefined,
+    );
     return;
   }
   if (value.type === "session.error" && record.commanding) {
