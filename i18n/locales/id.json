@@ -338,6 +338,21 @@
     "selection.between": "Di antara",
     "selection.pattern": "Cocok dengan pola",
     "selection.value": "Nilai",
-    "selection.deleteCriteria": "Hapus kriteria terpilih ({count})"
+    "selection.deleteCriteria": "Hapus kriteria terpilih ({count})",
+    "shell.status": "Status",
+    "status.address": "Alamat sistem",
+    "status.package_version": "Versi paket",
+    "status.kernel_version": "Versi kernel",
+    "status.uui_version": "Versi UUI",
+    "status.time_zone": "Zona waktu",
+    "status.source": "Sumber layar",
+    "status.protocol": "Protokol UUI",
+    "status.modified": "Perubahan lokal",
+    "status.copy_diagnostics": "Salin diagnostik",
+    "status.technical_details": "Detail teknis",
+    "status.credit": "Platform sumber terbuka untuk aplikasi bisnis.",
+    "programs.status.description": "Detail teknis",
+    "status.program_name": "Nama program",
+    "status.program_id": "ID program"
   }
 }

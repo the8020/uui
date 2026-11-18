@@ -338,6 +338,21 @@
     "selection.between": "Között",
     "selection.pattern": "Illeszkedik a mintára",
     "selection.value": "Érték",
-    "selection.deleteCriteria": "Kijelölt feltételek törlése ({count})"
+    "selection.deleteCriteria": "Kijelölt feltételek törlése ({count})",
+    "shell.status": "Állapot",
+    "status.address": "Rendszercím",
+    "status.package_version": "Csomagverzió",
+    "status.kernel_version": "Kernelverzió",
+    "status.uui_version": "UUI-verzió",
+    "status.time_zone": "Időzóna",
+    "status.source": "Képernyő forrása",
+    "status.protocol": "UUI-protokoll",
+    "status.modified": "Helyi módosítások",
+    "status.copy_diagnostics": "Diagnosztika másolása",
+    "status.technical_details": "Műszaki részletek",
+    "status.credit": "Nyílt forráskódú platform üzleti alkalmazásokhoz.",
+    "programs.status.description": "Műszaki részletek",
+    "status.program_name": "Program neve",
+    "status.program_id": "Programazonosító"
   }
 }

@@ -1,0 +1,7 @@
+.screen.uui-status > .screen-title {
+  display: none;
+}
+
+.screen.uui-status > .screen-title + * {
+  margin-block-start: 0;
+}

@@ -30,6 +30,7 @@ import {
   SESSION_EXIT_EVENT,
   SESSION_NEW_EVENT,
   SESSION_RESTART_EVENT,
+  STATUS_EVENT,
   type UUIServerMessage,
 } from "/p/the8020/uui/protocol.ts";
 import {
@@ -144,6 +145,8 @@ const sessionMenuToggle = requiredElement<HTMLElement>("session-menu-toggle");
 const sessionMenuIcon = requiredElement<HTMLElement>("session-menu-icon");
 const sessionUsername = requiredElement<HTMLElement>("session-username");
 const sessionLogout = requiredElement<HTMLButtonElement>("session-logout");
+const sessionStatus = requiredElement<HTMLButtonElement>("session-status");
+const brandStatus = requiredElement<HTMLButtonElement>("brand-status");
 const sessionAccount = requiredElement<HTMLButtonElement>("session-account");
 const sessionCustomization = requiredElement<HTMLButtonElement>(
   "session-customization",
@@ -461,6 +464,7 @@ renderIconText(messageDialogClose, "[[icon=close]]", {
   decorativeIcons: true,
 });
 renderSessionMenuAction(sessionLogout, "logout", t("shell.logout"));
+renderSessionMenuAction(sessionStatus, "info", t("shell.status"));
 renderSessionMenuAction(sessionAccount, "person", t("shell.account"));
 renderSessionMenuAction(
   sessionCustomization,
@@ -484,6 +488,13 @@ themeToggle.addEventListener("click", () => {
   sessionMenu.open = false;
 });
 sessionLogout.addEventListener("click", requestLogout);
+for (const button of [sessionStatus, brandStatus]) {
+  button.addEventListener("click", () => {
+    sessionMenu.open = false;
+    dispatch(STATUS_EVENT, "action");
+  });
+}
+installSessionControls(brandStatus, requiredElement<HTMLElement>("brand-slot"));
 sessionAccount.addEventListener("click", () => {
   sessionMenu.open = false;
   dispatch(ACCOUNT_EVENT, "action");
@@ -1813,6 +1824,9 @@ function updateInteractionState(): void {
   sessionCustomization.disabled = logoutRequested || waiting ||
     active === undefined ||
     active.screen.id === "customization";
+  sessionStatus.disabled = logoutRequested || waiting ||
+    active === undefined || active.screen.programId === "the8020/uui/status";
+  brandStatus.disabled = sessionStatus.disabled;
   if (pageWaiting) {
     app.setAttribute("aria-busy", "true");
     programHeaderRoot.setAttribute("aria-busy", "true");
@@ -1847,7 +1861,9 @@ function dispatchFromLayer(
     eventType,
     value,
     bind,
-    changes: changesForBindings(layer.model, layer.dirty.bindings()),
+    changes: action === STATUS_EVENT
+      ? []
+      : changesForBindings(layer.model, layer.dirty.bindings()),
   });
 }
 
@@ -1901,7 +1917,9 @@ function sendClient(
     pending.set(message.clientSequence, {
       encoded,
       surfaceId: layer.surfaceId,
-      dirty: layer.dirty.capture(),
+      dirty: payload.action === STATUS_EVENT
+        ? new Map()
+        : layer.dirty.capture(),
     });
   }
   if (socket?.readyState === WebSocket.OPEN) socket.send(encoded);

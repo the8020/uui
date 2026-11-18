@@ -136,6 +136,14 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
   active screen's dirty bindings through that same gate. Disable it while no
   screen is active, an interaction is pending, or My account is already active.
   The server calls the users program; no account code enters the browser bundle.
+- Status sits immediately above Logout and dispatches `STATUS_EVENT` without
+  dirty bindings or their acknowledgement, preserving invalid drafts. Disable it
+  while no screen is active, an interaction is pending, or Status is already
+  active. Its content belongs to the ordinary Status program modal.
+- The navbar wordmark is a keyboard-accessible button for the same Status action
+  and disabled state. Reuse `installSessionControls` to keep it usable above
+  native dialogs. The shared logo pipe uses font-relative dimensions, preserving
+  its 24px height and 3px width at the navbar's 30px type size.
 - Customization uses reserved `CUSTOMIZATION_EVENT` through that same gate and
   stays disabled while unavailable or already active. `presentation.show`
   refreshes effective preferences from the uncached authenticated shell

@@ -47,6 +47,7 @@ import type { AgentOperation } from "./agent.ts";
 import { displayPath, locationFromStack } from "./src/short_dump.ts";
 import { explicitElementIDs, resolveElementIDs } from "./identifiers.ts";
 import { resolveSystemButtons } from "./system_buttons.ts";
+import { screenProgram, withProgram } from "./programs.ts";
 import {
   type ListChange,
   type ListQuery,
@@ -90,6 +91,7 @@ import {
   SESSION_NEW_EVENT,
   SESSION_RESTART_EVENT,
   shortcutKey,
+  STATUS_EVENT,
   UUI_PROTOCOL_VERSION,
   type UUIMessageKind,
   validateComponentStyle,
@@ -159,6 +161,8 @@ export interface SessionChannel {
   readonly sessionId: string;
   readonly browser?: BrowserContext;
   readonly messageHistory?: MessageHistory;
+  readonly startedAt?: string;
+  readonly connectionState?: string;
   send(message: UUIWorkerOutbound | Uint8Array): void;
   receive(): Promise<UUIClientMessage | Uint8Array>;
 }
@@ -189,7 +193,8 @@ interface ActiveScreenCall {
     target:
       | ControlDescriptor
       | typeof ACCOUNT_EVENT
-      | typeof CUSTOMIZATION_EVENT,
+      | typeof CUSTOMIZATION_EVENT
+      | typeof STATUS_EVENT,
   ) => void;
   readonly command: (
     command: AgentOperation,
@@ -510,9 +515,9 @@ export function presentPage<T>(
 export async function callScreen<T extends z.ZodRawShape>(
   options: CallScreenOptions<T>,
 ): Promise<ScreenEvent> {
-  const source = locationFromStack(
-    new Error().stack?.split("\n").slice(2).join("\n") ?? "",
-  );
+  const stack = new Error().stack?.split("\n").slice(2).join("\n") ?? "";
+  const source = locationFromStack(stack);
+  const programId = screenProgram(stack);
   const screenCall = source
     ? `${displayPath(source.path)}:${source.line}`
     : undefined;
@@ -531,7 +536,14 @@ export async function callScreen<T extends z.ZodRawShape>(
   }
   const screenChannel = surface.nextScreenChannel!;
   try {
-    return await showScreen(options, state, surface, screenChannel, screenCall);
+    return await showScreen(
+      options,
+      state,
+      surface,
+      screenChannel,
+      screenCall,
+      programId,
+    );
   } finally {
     if (surface.currentScreenChannel !== screenChannel) {
       screenChannel[disposeChannel]();
@@ -551,6 +563,7 @@ async function showScreen<T extends z.ZodRawShape>(
   surface: PresentationSurface,
   screenChannel: ScreenChannel,
   screenCall: string | undefined,
+  programId: string | undefined,
 ): Promise<ScreenEvent> {
   if (options.id.length === 0) throw new TypeError("screen ID is required");
   validateComponentStyle(options);
@@ -771,7 +784,8 @@ async function showScreen<T extends z.ZodRawShape>(
     if (
       action.id.length === 0 || action.label.length === 0 ||
       actionIDs.has(action.id) || action.id === BACK_EVENT ||
-      action.id === ACCOUNT_EVENT || action.id === CUSTOMIZATION_EVENT
+      action.id === ACCOUNT_EVENT || action.id === CUSTOMIZATION_EVENT ||
+      action.id === STATUS_EVENT
     ) {
       throw new TypeError(
         `duplicate, empty, unlabeled, or reserved action ${action.id}`,
@@ -855,6 +869,7 @@ async function showScreen<T extends z.ZodRawShape>(
     return {
       id: options.id,
       screenCall,
+      programId,
       ...(options.class === undefined ? {} : { class: options.class }),
       ...(options.style === undefined ? {} : { style: options.style }),
       revision: screenRevision,
@@ -1141,7 +1156,8 @@ async function showScreen<T extends z.ZodRawShape>(
     target:
       | ControlDescriptor
       | typeof ACCOUNT_EVENT
-      | typeof CUSTOMIZATION_EVENT,
+      | typeof CUSTOMIZATION_EVENT
+      | typeof STATUS_EVENT,
   ): Promise<void> {
     const control = typeof target === "string" ? undefined : target;
     if (call.presenting || call.settled) return;
@@ -1151,19 +1167,39 @@ async function showScreen<T extends z.ZodRawShape>(
       await surfaceContext.run(
         surface,
         () =>
-          control === undefined
+          target === STATUS_EVENT
+            ? presentModal(async () => {
+              const { default: status } = await import(
+                "./programs/status/program.ts"
+              );
+              await withProgram("the8020/uui/status", () =>
+                status({
+                  programId,
+                  screenId: options.id,
+                  title,
+                  screenCall,
+                  sessionId: state.channel.sessionId,
+                  startedAt: state.channel.startedAt,
+                  connectionState: state.channel.connectionState,
+                  browser: state.channel.browser,
+                }));
+            })
+            : control === undefined
             ? presentPage(async () => {
               if (target === CUSTOMIZATION_EVENT) {
                 const { default: customization } = await import(
                   "./programs/customization/program.ts"
                 );
-                await customization();
+                await withProgram(
+                  "the8020/uui/customization",
+                  () => customization(),
+                );
                 return;
               }
               const { default: myAccount } = await import(
                 "/p/the8020/users/programs/my-account/program.ts"
               );
-              await myAccount();
+              await withProgram("the8020/users/my-account", () => myAccount());
             })
             : presentModal(() =>
               runFieldHelp(
@@ -1740,14 +1776,16 @@ function receiveScreenMessage<T extends z.ZodRawShape>(
       selection = lists.select(message.selection);
     }
     try {
-      applyChanges(
-        schema,
-        model.data,
-        message.changes,
-        lists,
-        message.listChanges ?? [],
-        controls,
-      );
+      if (message.action !== STATUS_EVENT) {
+        applyChanges(
+          schema,
+          model.data,
+          message.changes,
+          lists,
+          message.listChanges ?? [],
+          controls,
+        );
+      }
     } catch (error) {
       // Back always leaves: invalid drafts are discarded, not reported.
       if (message.action !== BACK_EVENT) throw error;
@@ -1773,7 +1811,8 @@ function receiveScreenMessage<T extends z.ZodRawShape>(
     clientSequence: message.clientSequence,
   });
   if (
-    message.action === ACCOUNT_EVENT || message.action === CUSTOMIZATION_EVENT
+    message.action === ACCOUNT_EVENT ||
+    message.action === CUSTOMIZATION_EVENT || message.action === STATUS_EVENT
   ) call.open(message.action);
   else if (helpControl !== undefined) call.open(helpControl);
   else if (message.eventType !== "field-help") {

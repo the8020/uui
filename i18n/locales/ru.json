@@ -338,6 +338,21 @@
     "selection.between": "Между",
     "selection.pattern": "Соответствует шаблону",
     "selection.value": "Значение",
-    "selection.deleteCriteria": "Удалить выбранные условия ({count})"
+    "selection.deleteCriteria": "Удалить выбранные условия ({count})",
+    "shell.status": "Статус",
+    "status.address": "Адрес системы",
+    "status.package_version": "Версия пакета",
+    "status.kernel_version": "Версия ядра",
+    "status.uui_version": "Версия UUI",
+    "status.time_zone": "Часовой пояс",
+    "status.source": "Источник экрана",
+    "status.protocol": "Протокол UUI",
+    "status.modified": "Локальные изменения",
+    "status.copy_diagnostics": "Копировать диагностику",
+    "status.technical_details": "Технические сведения",
+    "status.credit": "Платформа с открытым кодом для бизнес-приложений.",
+    "programs.status.description": "Технические сведения",
+    "status.program_name": "Имя программы",
+    "status.program_id": "ID программы"
   }
 }

@@ -338,6 +338,21 @@
     "selection.between": "Zwischen",
     "selection.pattern": "Entspricht Muster",
     "selection.value": "Wert",
-    "selection.deleteCriteria": "Ausgewählte Kriterien löschen ({count})"
+    "selection.deleteCriteria": "Ausgewählte Kriterien löschen ({count})",
+    "shell.status": "Status",
+    "status.address": "Systemadresse",
+    "status.package_version": "Paketversion",
+    "status.kernel_version": "Kernel-Version",
+    "status.uui_version": "UUI-Version",
+    "status.time_zone": "Zeitzone",
+    "status.source": "Bildschirmquelle",
+    "status.protocol": "UUI-Protokoll",
+    "status.modified": "Lokale Änderungen",
+    "status.copy_diagnostics": "Diagnosedaten kopieren",
+    "status.technical_details": "Technische Details",
+    "status.credit": "Open-Source-Plattform für Geschäftsanwendungen.",
+    "programs.status.description": "Technische Details",
+    "status.program_name": "Programmname",
+    "status.program_id": "Programm-ID"
   }
 }

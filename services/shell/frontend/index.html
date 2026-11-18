@@ -34,11 +34,15 @@
     <header class="navbar">
       <div class="container navbar-inner">
         <div class="navbar-leading">
-          <div class="brand" dir="ltr" aria-label="80|20">
+          <div id="brand-slot">
+            <button class="brand brand-button" id="brand-status" type="button"
+              popover="manual" dir="ltr" aria-label="80|20" title="Status"
+              data-i18n-title="shell.status" disabled>
             <span class="brand-gold" aria-hidden="true">80</span><span
               class="brand-pipe"
               aria-hidden="true"
             >|</span><span aria-hidden="true">20</span>
+          </button>
           </div>
           <div id="system-buttons-slot">
             <div class="session-navigation" role="group" popover="manual"
@@ -157,6 +161,12 @@
                   aria-pressed="true"
                   aria-label="Switch to light mode"
                 ></button>
+                <button
+                  class="btn btn-ghost btn-sm session-menu-action"
+                  id="session-status"
+                  type="button"
+                  disabled
+                ><span class="session-menu-action-label" data-i18n="shell.status">Status</span></button>
                 <button
                   class="btn btn-ghost btn-sm session-menu-action session-logout"
                   id="session-logout"

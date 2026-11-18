@@ -338,6 +338,21 @@
     "selection.between": "بین",
     "selection.pattern": "مطابق الگو",
     "selection.value": "مقدار",
-    "selection.deleteCriteria": "حذف معیارهای انتخاب‌شده ({count})"
+    "selection.deleteCriteria": "حذف معیارهای انتخاب‌شده ({count})",
+    "shell.status": "وضعیت",
+    "status.address": "نشانی سامانه",
+    "status.package_version": "نسخهٔ بسته",
+    "status.kernel_version": "نسخهٔ هسته",
+    "status.uui_version": "نسخهٔ UUI",
+    "status.time_zone": "منطقهٔ زمانی",
+    "status.source": "منبع صفحه",
+    "status.protocol": "پروتکل UUI",
+    "status.modified": "تغییرات محلی",
+    "status.copy_diagnostics": "کپی اطلاعات عیب‌یابی",
+    "status.technical_details": "جزئیات فنی",
+    "status.credit": "پلتفرم متن‌باز برای برنامه‌های کسب‌وکار.",
+    "programs.status.description": "جزئیات فنی",
+    "status.program_name": "نام برنامه",
+    "status.program_id": "شناسهٔ برنامه"
   }
 }

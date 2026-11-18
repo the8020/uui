@@ -338,6 +338,21 @@
     "selection.between": "Μεταξύ",
     "selection.pattern": "Ταιριάζει με μοτίβο",
     "selection.value": "Τιμή",
-    "selection.deleteCriteria": "Διαγραφή επιλεγμένων κριτηρίων ({count})"
+    "selection.deleteCriteria": "Διαγραφή επιλεγμένων κριτηρίων ({count})",
+    "shell.status": "Κατάσταση",
+    "status.address": "Διεύθυνση συστήματος",
+    "status.package_version": "Έκδοση πακέτου",
+    "status.kernel_version": "Έκδοση πυρήνα",
+    "status.uui_version": "Έκδοση UUI",
+    "status.time_zone": "Ζώνη ώρας",
+    "status.source": "Πηγή οθόνης",
+    "status.protocol": "Πρωτόκολλο UUI",
+    "status.modified": "Τοπικές τροποποιήσεις",
+    "status.copy_diagnostics": "Αντιγραφή διαγνωστικών",
+    "status.technical_details": "Τεχνικές λεπτομέρειες",
+    "status.credit": "Πλατφόρμα ανοικτού κώδικα για επιχειρηματικές εφαρμογές.",
+    "programs.status.description": "Τεχνικές λεπτομέρειες",
+    "status.program_name": "Όνομα προγράμματος",
+    "status.program_id": "ID προγράμματος"
   }
 }

@@ -338,6 +338,21 @@
     "selection.between": "Medzi",
     "selection.pattern": "Zodpovedá vzoru",
     "selection.value": "Hodnota",
-    "selection.deleteCriteria": "Odstrániť vybrané podmienky ({count})"
+    "selection.deleteCriteria": "Odstrániť vybrané podmienky ({count})",
+    "shell.status": "Stav",
+    "status.address": "Adresa systému",
+    "status.package_version": "Verzia balíka",
+    "status.kernel_version": "Verzia jadra",
+    "status.uui_version": "Verzia UUI",
+    "status.time_zone": "Časové pásmo",
+    "status.source": "Zdroj obrazovky",
+    "status.protocol": "Protokol UUI",
+    "status.modified": "Miestne zmeny",
+    "status.copy_diagnostics": "Kopírovať diagnostiku",
+    "status.technical_details": "Technické údaje",
+    "status.credit": "Open-source platforma pre podnikové aplikácie.",
+    "programs.status.description": "Technické údaje",
+    "status.program_name": "Názov programu",
+    "status.program_id": "ID programu"
   }
 }

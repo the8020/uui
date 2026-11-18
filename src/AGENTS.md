@@ -2,15 +2,18 @@ Parent DOX: [uui DOX](../AGENTS.md).
 
 # Purpose
 
-- Own semantic preference, session, and short-dump fields, dump shaping, and
-  focused standard-program tests.
+- Own semantic preference, session, Status, and short-dump fields, dump shaping,
+  and focused standard-program tests.
 
 # Ownership
 
-- Own `preference_fields.ts`, `session_fields.ts`, `short_dump.ts`,
-  `short_dump_test.ts`, and `home_test.ts`.
+- Own `preference_fields.ts`, `session_fields.ts`, `status_fields.ts`,
+  `short_dump.ts`, `short_dump_test.ts`, and `home_test.ts`.
 
 # Local Contracts
+
+- `status_fields.ts` composes owner-defined user, system, program, session,
+  runtime and language fields with Status-specific version/source labels.
 
 - `branding_fields.ts` owns the bounded server-title field and default;
   browser-safe `branding_images.ts` owns image dimensions, formats, and output

@@ -338,6 +338,21 @@
     "selection.between": "Välillä",
     "selection.pattern": "Vastaa kuviota",
     "selection.value": "Arvo",
-    "selection.deleteCriteria": "Poista valitut ehdot ({count})"
+    "selection.deleteCriteria": "Poista valitut ehdot ({count})",
+    "shell.status": "Tila",
+    "status.address": "Järjestelmän osoite",
+    "status.package_version": "Paketin versio",
+    "status.kernel_version": "Ytimen versio",
+    "status.uui_version": "UUI-versio",
+    "status.time_zone": "Aikavyöhyke",
+    "status.source": "Näkymän lähde",
+    "status.protocol": "UUI-protokolla",
+    "status.modified": "Paikalliset muutokset",
+    "status.copy_diagnostics": "Kopioi diagnostiikka",
+    "status.technical_details": "Tekniset tiedot",
+    "status.credit": "Avoimen lähdekoodin alusta yrityssovelluksille.",
+    "programs.status.description": "Tekniset tiedot",
+    "status.program_name": "Ohjelman nimi",
+    "status.program_id": "Ohjelman tunnus"
   }
 }

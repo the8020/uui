@@ -101,6 +101,12 @@ Default section order:
 
 ## User Preferences
 
+- Status opens from the navbar logo or immediately above Logout in the user menu
+  as a read-only modal for the screen that was active. Show the centered 80|20
+  wordmark, localized project description and GitHub link, practical
+  identity/version fields, expandable technical details, and Copy diagnostics.
+  Opening it must preserve even an invalid unsaved draft.
+
 - Administration provides System customization for the server title, favicon,
   and social preview. Defaults are `80|20`, the square yellow `80` icon, and the
   branded social image. Center-crop uploads with minimal removal and convert to
@@ -187,14 +193,16 @@ below.
 - [frontend/AGENTS.md](frontend/AGENTS.md): Provide shared browser Markdown
   rendering outside service-owned source trees.
 - [programs/AGENTS.md](programs/AGENTS.md): Own standard Home, Program
-  terminated, customization, user cleanup, and session administration programs.
+  terminated, customization, Status, user cleanup, and session administration
+  programs.
 - [events/AGENTS.md](events/AGENTS.md): Subscribe to account deletion for UUI
   preference and list-layout cleanup.
 - [jobs/AGENTS.md](jobs/AGENTS.md): Schedule hourly obsolete-session cleanup.
 - [services/AGENTS.md](services/AGENTS.md): Declare and expose the login, shell,
   and persistent session services.
-- [src/AGENTS.md](src/AGENTS.md): Own shared preference/session/short-dump
-  fields, short-dump shaping, and focused standard-program tests.
+- [src/AGENTS.md](src/AGENTS.md): Own shared
+  preference/session/Status/short-dump fields, short-dump shaping, and focused
+  standard-program tests.
 - [tables/AGENTS.md](tables/AGENTS.md): Own user preference overrides and
   bounded persistent metadata for UUI application sessions.
 
@@ -222,6 +230,12 @@ below.
   construction, sandbox placement, physical WebSockets, or kernel routing.
 
 # Local Contracts
+
+- `STATUS_EVENT` opens the ordinary `programs/status` modal with server-captured
+  screen, session and browser context. It neither applies nor acknowledges dirty
+  bindings. Screen snapshots carry optional `programId`: the closest program
+  frame in the call stack wins, with the async-local `invokeProgram` scope as
+  fallback for shared helpers. This is diagnostic provenance, not authority.
 
 - `the8020/i18n` owns catalogs and overrides. UUI prepares referenced field,
   action, layout and list texts once per screen; wire descriptors remain
@@ -1235,6 +1249,11 @@ below.
   explicitly asks for onboarding help.
 
 # Verification
+
+- `status_test.ts` checks program provenance and the own-account diagnostic
+  projection. `deno task test:status-browser` covers the real menu/modal,
+  invalid-draft preservation, copy, nested modals, Escape and desktop/mobile
+  branding. Screenshots go to `/tmp/8020-status-{1280,390}.png`.
 
 - `system_buttons_test.ts` covers slot patching, removal, addition and invalid
   declarations. `session_service_test.ts` verifies repeated in-place exits,

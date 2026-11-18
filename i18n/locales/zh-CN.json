@@ -338,6 +338,21 @@
     "selection.between": "介于",
     "selection.pattern": "匹配模式",
     "selection.value": "值",
-    "selection.deleteCriteria": "删除所选条件（{count}）"
+    "selection.deleteCriteria": "删除所选条件（{count}）",
+    "shell.status": "状态",
+    "status.address": "系统地址",
+    "status.package_version": "软件包版本",
+    "status.kernel_version": "内核版本",
+    "status.uui_version": "UUI 版本",
+    "status.time_zone": "时区",
+    "status.source": "屏幕源代码",
+    "status.protocol": "UUI 协议",
+    "status.modified": "本地修改",
+    "status.copy_diagnostics": "复制诊断信息",
+    "status.technical_details": "技术详情",
+    "status.credit": "面向业务应用的开源平台。",
+    "programs.status.description": "技术详情",
+    "status.program_name": "程序名称",
+    "status.program_id": "程序 ID"
   }
 }

@@ -338,6 +338,21 @@
     "selection.between": "範囲内",
     "selection.pattern": "パターンに一致",
     "selection.value": "値",
-    "selection.deleteCriteria": "選択した条件を削除（{count}）"
+    "selection.deleteCriteria": "選択した条件を削除（{count}）",
+    "shell.status": "状態",
+    "status.address": "システムアドレス",
+    "status.package_version": "パッケージバージョン",
+    "status.kernel_version": "カーネルバージョン",
+    "status.uui_version": "UUIバージョン",
+    "status.time_zone": "タイムゾーン",
+    "status.source": "画面のソース",
+    "status.protocol": "UUIプロトコル",
+    "status.modified": "ローカルの変更",
+    "status.copy_diagnostics": "診断情報をコピー",
+    "status.technical_details": "技術情報",
+    "status.credit": "業務アプリケーション向けのオープンソースプラットフォーム。",
+    "programs.status.description": "技術情報",
+    "status.program_name": "プログラム名",
+    "status.program_id": "プログラムID"
   }
 }

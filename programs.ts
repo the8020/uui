@@ -1,5 +1,6 @@
 import { metadataText } from "/p/the8020/packages/localization.ts";
 import { currentLocalization } from "/p/the8020/i18n/mod.ts";
+import { AsyncLocalStorage } from "node:async_hooks";
 import {
   type ProgramManifest,
   readProgramManifest,
@@ -40,6 +41,21 @@ export class ProgramExecutionError extends Error {
 }
 
 const segmentPattern = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const programScope = new AsyncLocalStorage<string>();
+
+export function withProgram<T>(id: string, run: () => T): T {
+  return programScope.run(id, run);
+}
+
+/** Direct program calls take precedence over the enclosing invocation. */
+export function screenProgram(stack: string): string | undefined {
+  const match = stack.match(
+    /\/(?:workspace\/packages|p)\/([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+)\/programs\/([A-Za-z0-9._-]+)\//,
+  );
+  return match
+    ? `${match[1]}/${match[2]}/${match[3]}`
+    : programScope.getStore();
+}
 
 export async function discoverPrograms(
   packagesRoot = "/workspace/packages",
@@ -125,8 +141,9 @@ export async function invokeProgram(
     if (typeof module.default !== "function") {
       throw new TypeError(`program ${id} must default-export a function`);
     }
+    const run = module.default;
     await currentLocalization()?.bundle(`${namespace}/${repository}`);
-    return await module.default(...inputs);
+    return await withProgram(id, () => run(...inputs));
   } catch (error) {
     if (error instanceof ProgramExecutionError) throw error;
     throw new ProgramExecutionError(id, entrypoint, error);

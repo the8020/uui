@@ -338,6 +338,21 @@
     "selection.between": "Entre",
     "selection.pattern": "Corresponde ao padrão",
     "selection.value": "Valor",
-    "selection.deleteCriteria": "Excluir critérios selecionados ({count})"
+    "selection.deleteCriteria": "Excluir critérios selecionados ({count})",
+    "shell.status": "Status",
+    "status.address": "Endereço do sistema",
+    "status.package_version": "Versão do pacote",
+    "status.kernel_version": "Versão do kernel",
+    "status.uui_version": "Versão do UUI",
+    "status.time_zone": "Fuso horário",
+    "status.source": "Origem da tela",
+    "status.protocol": "Protocolo UUI",
+    "status.modified": "Alterações locais",
+    "status.copy_diagnostics": "Copiar diagnóstico",
+    "status.technical_details": "Detalhes técnicos",
+    "status.credit": "Plataforma de código aberto para aplicações empresariais.",
+    "programs.status.description": "Detalhes técnicos",
+    "status.program_name": "Nome do programa",
+    "status.program_id": "ID do programa"
   }
 }

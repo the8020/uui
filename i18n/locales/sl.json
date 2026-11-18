@@ -338,6 +338,21 @@
     "selection.between": "Med",
     "selection.pattern": "Ustreza vzorcu",
     "selection.value": "Vrednost",
-    "selection.deleteCriteria": "Izbriši izbrane pogoje ({count})"
+    "selection.deleteCriteria": "Izbriši izbrane pogoje ({count})",
+    "shell.status": "Stanje",
+    "status.address": "Naslov sistema",
+    "status.package_version": "Različica paketa",
+    "status.kernel_version": "Različica jedra",
+    "status.uui_version": "Različica UUI",
+    "status.time_zone": "Časovni pas",
+    "status.source": "Izvor zaslona",
+    "status.protocol": "Protokol UUI",
+    "status.modified": "Lokalne spremembe",
+    "status.copy_diagnostics": "Kopiraj diagnostiko",
+    "status.technical_details": "Tehnične podrobnosti",
+    "status.credit": "Odprtokodna platforma za poslovne aplikacije.",
+    "programs.status.description": "Tehnične podrobnosti",
+    "status.program_name": "Ime programa",
+    "status.program_id": "ID programa"
   }
 }

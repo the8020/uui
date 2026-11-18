@@ -338,6 +338,21 @@
     "selection.between": "के बीच",
     "selection.pattern": "पैटर्न से मेल खाता है",
     "selection.value": "मान",
-    "selection.deleteCriteria": "चुनी गई शर्तें हटाएँ ({count})"
+    "selection.deleteCriteria": "चुनी गई शर्तें हटाएँ ({count})",
+    "shell.status": "स्थिति",
+    "status.address": "सिस्टम का पता",
+    "status.package_version": "पैकेज संस्करण",
+    "status.kernel_version": "कर्नेल संस्करण",
+    "status.uui_version": "UUI संस्करण",
+    "status.time_zone": "समय क्षेत्र",
+    "status.source": "स्क्रीन का स्रोत",
+    "status.protocol": "UUI प्रोटोकॉल",
+    "status.modified": "स्थानीय बदलाव",
+    "status.copy_diagnostics": "निदान जानकारी कॉपी करें",
+    "status.technical_details": "तकनीकी विवरण",
+    "status.credit": "व्यावसायिक अनुप्रयोगों के लिए ओपन-सोर्स प्लेटफ़ॉर्म।",
+    "programs.status.description": "तकनीकी विवरण",
+    "status.program_name": "प्रोग्राम का नाम",
+    "status.program_id": "प्रोग्राम आईडी"
   }
 }

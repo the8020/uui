@@ -338,6 +338,21 @@
     "selection.between": "Á milli",
     "selection.pattern": "Samsvarar mynstri",
     "selection.value": "Gildi",
-    "selection.deleteCriteria": "Eyða völdum skilyrðum ({count})"
+    "selection.deleteCriteria": "Eyða völdum skilyrðum ({count})",
+    "shell.status": "Staða",
+    "status.address": "Kerfisvistfang",
+    "status.package_version": "Útgáfa pakka",
+    "status.kernel_version": "Útgáfa kjarna",
+    "status.uui_version": "Útgáfa UUI",
+    "status.time_zone": "Tímabelti",
+    "status.source": "Frumkóði skjás",
+    "status.protocol": "UUI-samskiptaregla",
+    "status.modified": "Staðbundnar breytingar",
+    "status.copy_diagnostics": "Afrita greiningargögn",
+    "status.technical_details": "Tæknilegar upplýsingar",
+    "status.credit": "Opinn hugbúnaðarvettvangur fyrir viðskiptaforrit.",
+    "programs.status.description": "Tæknilegar upplýsingar",
+    "status.program_name": "Heiti forrits",
+    "status.program_id": "Auðkenni forrits"
   }
 }

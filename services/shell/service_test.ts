@@ -163,7 +163,13 @@ test("shell emits only non-secret boot data and local assets", async () => {
   assertEquals(body.includes(">Light mode</button>"), false);
   assertEquals(body.includes(">Dark mode</button>"), false);
   assertEquals(
-    body.includes('class="brand" dir="ltr" aria-label="80|20"'),
+    body.includes(
+      '<button class="brand brand-button" id="brand-status" type="button"',
+    ),
+    true,
+  );
+  assertEquals(
+    body.includes('dir="ltr" aria-label="80|20" title="Status"'),
     true,
   );
   assertEquals(body.includes('class="brand-gold"'), true);
@@ -289,7 +295,7 @@ test("shell emits only non-secret boot data and local assets", async () => {
   );
   assertMatch(
     cssBody,
-    /\.brand-pipe::before\s*\{[^}]*position:\s*absolute;[^}]*inset-block-start:\s*50%;[^}]*inset-inline-start:\s*50%;[^}]*height:\s*24px;[^}]*border-inline-start:\s*3px solid var\(--text\);[^}]*translate:\s*-50% -50%;/s,
+    /\.brand-pipe::before\s*\{[^}]*position:\s*absolute;[^}]*inset-block-start:\s*50%;[^}]*inset-inline-start:\s*50%;[^}]*width:\s*0\.1em;[^}]*height:\s*0\.8em;[^}]*background:\s*var\(--text\);[^}]*translate:\s*-50% -50%;/s,
   );
   assertMatch(
     cssBody,

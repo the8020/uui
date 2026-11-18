@@ -338,6 +338,21 @@
     "selection.between": "Vahemikus",
     "selection.pattern": "Vastab mustrile",
     "selection.value": "Väärtus",
-    "selection.deleteCriteria": "Kustuta valitud tingimused ({count})"
+    "selection.deleteCriteria": "Kustuta valitud tingimused ({count})",
+    "shell.status": "Olek",
+    "status.address": "Süsteemi aadress",
+    "status.package_version": "Paketi versioon",
+    "status.kernel_version": "Tuuma versioon",
+    "status.uui_version": "UUI versioon",
+    "status.time_zone": "Ajavöönd",
+    "status.source": "Kuva lähtekood",
+    "status.protocol": "UUI protokoll",
+    "status.modified": "Kohalikud muudatused",
+    "status.copy_diagnostics": "Kopeeri diagnostika",
+    "status.technical_details": "Tehnilised andmed",
+    "status.credit": "Avatud lähtekoodiga platvorm ärirakendustele.",
+    "programs.status.description": "Tehnilised andmed",
+    "status.program_name": "Programmi nimi",
+    "status.program_id": "Programmi ID"
   }
 }

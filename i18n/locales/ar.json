@@ -338,6 +338,21 @@
     "selection.between": "بين",
     "selection.pattern": "يطابق النمط",
     "selection.value": "القيمة",
-    "selection.deleteCriteria": "حذف المعايير المحددة ({count})"
+    "selection.deleteCriteria": "حذف المعايير المحددة ({count})",
+    "shell.status": "الحالة",
+    "status.address": "عنوان النظام",
+    "status.package_version": "إصدار الحزمة",
+    "status.kernel_version": "إصدار النواة",
+    "status.uui_version": "إصدار UUI",
+    "status.time_zone": "المنطقة الزمنية",
+    "status.source": "مصدر الشاشة",
+    "status.protocol": "بروتوكول UUI",
+    "status.modified": "تعديلات محلية",
+    "status.copy_diagnostics": "نسخ بيانات التشخيص",
+    "status.technical_details": "التفاصيل التقنية",
+    "status.credit": "منصة مفتوحة المصدر لتطبيقات الأعمال.",
+    "programs.status.description": "التفاصيل التقنية",
+    "status.program_name": "اسم البرنامج",
+    "status.program_id": "معرّف البرنامج"
   }
 }

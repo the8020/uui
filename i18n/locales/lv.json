@@ -338,6 +338,21 @@
     "selection.between": "Starp",
     "selection.pattern": "Atbilst paraugam",
     "selection.value": "Vērtība",
-    "selection.deleteCriteria": "Dzēst atlasītos kritērijus ({count})"
+    "selection.deleteCriteria": "Dzēst atlasītos kritērijus ({count})",
+    "shell.status": "Statuss",
+    "status.address": "Sistēmas adrese",
+    "status.package_version": "Pakotnes versija",
+    "status.kernel_version": "Kodola versija",
+    "status.uui_version": "UUI versija",
+    "status.time_zone": "Laika josla",
+    "status.source": "Ekrāna avots",
+    "status.protocol": "UUI protokols",
+    "status.modified": "Lokālās izmaiņas",
+    "status.copy_diagnostics": "Kopēt diagnostiku",
+    "status.technical_details": "Tehniskā informācija",
+    "status.credit": "Atvērtā pirmkoda platforma uzņēmējdarbības lietotnēm.",
+    "programs.status.description": "Tehniskā informācija",
+    "status.program_name": "Programmas nosaukums",
+    "status.program_id": "Programmas ID"
   }
 }

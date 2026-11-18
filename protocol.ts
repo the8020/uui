@@ -19,6 +19,7 @@ export const UUI_PROTOCOL_VERSION = uiConfig.protocolVersion;
 export const BACK_EVENT = "back" as const;
 export const ACCOUNT_EVENT = "uui.account" as const;
 export const CUSTOMIZATION_EVENT = "uui.customization" as const;
+export const STATUS_EVENT = "uui.status" as const;
 export const SESSION_EXIT_EVENT = "uui.session.exit" as const;
 export const SESSION_RESTART_EVENT = "uui.session.restart" as const;
 export const SESSION_NEW_EVENT = "uui.session.new" as const;
@@ -475,6 +476,7 @@ export interface ScreenSnapshot extends ComponentStyle {
   systemButtons?: Record<string, ScreenAction>;
   id: string;
   screenCall?: string;
+  programId?: string;
   revision: number;
   title?: string;
   description?: string;

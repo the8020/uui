@@ -35,6 +35,8 @@ Parent DOX: [uui/services DOX](../AGENTS.md).
   HEAD/304.
 - `build.sh` builds System customization separately; its previews use temporary
   browser blob URLs authorized by the shell image CSP.
+- The same build emits `public/status-brand.js` and copies its scoped CSS from
+  the Status program's frontend; they load with that ordinary custom element.
 
 - The manifest keeps one Worker warm by default to avoid idle cold starts.
 - Authenticated `GET /preferences` resolves only `meta.user.username` through

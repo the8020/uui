@@ -338,6 +338,21 @@
     "selection.between": "Mellan",
     "selection.pattern": "Matchar mönster",
     "selection.value": "Värde",
-    "selection.deleteCriteria": "Ta bort valda villkor ({count})"
+    "selection.deleteCriteria": "Ta bort valda villkor ({count})",
+    "shell.status": "Status",
+    "status.address": "Systemadress",
+    "status.package_version": "Paketversion",
+    "status.kernel_version": "Kärnversion",
+    "status.uui_version": "UUI-version",
+    "status.time_zone": "Tidszon",
+    "status.source": "Skärmens källa",
+    "status.protocol": "UUI-protokoll",
+    "status.modified": "Lokala ändringar",
+    "status.copy_diagnostics": "Kopiera diagnostik",
+    "status.technical_details": "Tekniska detaljer",
+    "status.credit": "Plattform med öppen källkod för affärsapplikationer.",
+    "programs.status.description": "Tekniska detaljer",
+    "status.program_name": "Programnamn",
+    "status.program_id": "Program-ID"
   }
 }

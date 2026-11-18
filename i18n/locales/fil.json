@@ -338,6 +338,21 @@
     "selection.between": "Sa pagitan",
     "selection.pattern": "Tugma sa pattern",
     "selection.value": "Halaga",
-    "selection.deleteCriteria": "Tanggalin ang mga napiling pamantayan ({count})"
+    "selection.deleteCriteria": "Tanggalin ang mga napiling pamantayan ({count})",
+    "shell.status": "Katayuan",
+    "status.address": "Address ng sistema",
+    "status.package_version": "Bersyon ng package",
+    "status.kernel_version": "Bersyon ng kernel",
+    "status.uui_version": "Bersyon ng UUI",
+    "status.time_zone": "Time zone",
+    "status.source": "Pinagmulan ng screen",
+    "status.protocol": "Protocol ng UUI",
+    "status.modified": "Mga lokal na pagbabago",
+    "status.copy_diagnostics": "Kopyahin ang diagnostics",
+    "status.technical_details": "Mga teknikal na detalye",
+    "status.credit": "Open-source na platform para sa mga application ng negosyo.",
+    "programs.status.description": "Mga teknikal na detalye",
+    "status.program_name": "Pangalan ng programa",
+    "status.program_id": "ID ng programa"
   }
 }

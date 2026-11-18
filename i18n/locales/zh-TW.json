@@ -338,6 +338,21 @@
     "selection.between": "介於",
     "selection.pattern": "符合模式",
     "selection.value": "值",
-    "selection.deleteCriteria": "刪除所選條件（{count}）"
+    "selection.deleteCriteria": "刪除所選條件（{count}）",
+    "shell.status": "狀態",
+    "status.address": "系統位址",
+    "status.package_version": "套件版本",
+    "status.kernel_version": "核心版本",
+    "status.uui_version": "UUI 版本",
+    "status.time_zone": "時區",
+    "status.source": "畫面原始碼",
+    "status.protocol": "UUI 協定",
+    "status.modified": "本機修改",
+    "status.copy_diagnostics": "複製診斷資訊",
+    "status.technical_details": "技術詳細資料",
+    "status.credit": "適用於商業應用程式的開源平台。",
+    "programs.status.description": "技術詳細資料",
+    "status.program_name": "程式名稱",
+    "status.program_id": "程式 ID"
   }
 }

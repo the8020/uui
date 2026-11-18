@@ -424,6 +424,10 @@ function bindProgram(record: SessionRecord): void {
   record.unbind = bindSession({
     sessionId: record.sessionId,
     messageHistory: record.messages,
+    startedAt: new Date(record.createdAt).toISOString(),
+    get connectionState() {
+      return record.socket === undefined ? "DISCONNECTED" : "CONNECTED";
+    },
     get browser() {
       return record.browser;
     },

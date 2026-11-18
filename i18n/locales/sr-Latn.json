@@ -338,6 +338,21 @@
     "selection.between": "Između",
     "selection.pattern": "Odgovara obrascu",
     "selection.value": "Vrednost",
-    "selection.deleteCriteria": "Izbriši izabrane kriterijume ({count})"
+    "selection.deleteCriteria": "Izbriši izabrane kriterijume ({count})",
+    "shell.status": "Status",
+    "status.address": "Adresa sistema",
+    "status.package_version": "Verzija paketa",
+    "status.kernel_version": "Verzija jezgra",
+    "status.uui_version": "Verzija UUI-ja",
+    "status.time_zone": "Vremenska zona",
+    "status.source": "Izvor ekrana",
+    "status.protocol": "Protokol UUI",
+    "status.modified": "Lokalne izmene",
+    "status.copy_diagnostics": "Kopiraj dijagnostiku",
+    "status.technical_details": "Tehnički detalji",
+    "status.credit": "Platforma otvorenog koda za poslovne aplikacije.",
+    "programs.status.description": "Tehnički detalji",
+    "status.program_name": "Naziv programa",
+    "status.program_id": "ID programa"
   }
 }

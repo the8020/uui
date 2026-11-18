@@ -338,6 +338,21 @@
     "selection.between": "Tussen",
     "selection.pattern": "Komt overeen met patroon",
     "selection.value": "Waarde",
-    "selection.deleteCriteria": "Geselecteerde criteria verwijderen ({count})"
+    "selection.deleteCriteria": "Geselecteerde criteria verwijderen ({count})",
+    "shell.status": "Status",
+    "status.address": "Systeemadres",
+    "status.package_version": "Pakketversie",
+    "status.kernel_version": "Kernelversie",
+    "status.uui_version": "UUI-versie",
+    "status.time_zone": "Tijdzone",
+    "status.source": "Schermbron",
+    "status.protocol": "UUI-protocol",
+    "status.modified": "Lokale wijzigingen",
+    "status.copy_diagnostics": "Diagnostiek kopiëren",
+    "status.technical_details": "Technische details",
+    "status.credit": "Open-sourceplatform voor bedrijfsapplicaties.",
+    "programs.status.description": "Technische details",
+    "status.program_name": "Programmanaam",
+    "status.program_id": "Programma-ID"
   }
 }

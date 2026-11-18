@@ -338,6 +338,21 @@
     "selection.between": "ระหว่าง",
     "selection.pattern": "ตรงกับรูปแบบ",
     "selection.value": "ค่า",
-    "selection.deleteCriteria": "ลบเงื่อนไขที่เลือก ({count})"
+    "selection.deleteCriteria": "ลบเงื่อนไขที่เลือก ({count})",
+    "shell.status": "สถานะ",
+    "status.address": "ที่อยู่ระบบ",
+    "status.package_version": "เวอร์ชันแพ็กเกจ",
+    "status.kernel_version": "เวอร์ชันเคอร์เนล",
+    "status.uui_version": "เวอร์ชัน UUI",
+    "status.time_zone": "เขตเวลา",
+    "status.source": "แหล่งที่มาของหน้าจอ",
+    "status.protocol": "โพรโทคอล UUI",
+    "status.modified": "การแก้ไขในเครื่อง",
+    "status.copy_diagnostics": "คัดลอกข้อมูลวินิจฉัย",
+    "status.technical_details": "รายละเอียดทางเทคนิค",
+    "status.credit": "แพลตฟอร์มโอเพนซอร์สสำหรับแอปพลิเคชันธุรกิจ",
+    "programs.status.description": "รายละเอียดทางเทคนิค",
+    "status.program_name": "ชื่อโปรแกรม",
+    "status.program_id": "รหัสโปรแกรม"
   }
 }

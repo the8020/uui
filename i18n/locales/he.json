@@ -338,6 +338,21 @@
     "selection.between": "בין",
     "selection.pattern": "תואם לתבנית",
     "selection.value": "ערך",
-    "selection.deleteCriteria": "מחיקת תנאים נבחרים ({count})"
+    "selection.deleteCriteria": "מחיקת תנאים נבחרים ({count})",
+    "shell.status": "מצב",
+    "status.address": "כתובת המערכת",
+    "status.package_version": "גרסת החבילה",
+    "status.kernel_version": "גרסת הליבה",
+    "status.uui_version": "גרסת UUI",
+    "status.time_zone": "אזור זמן",
+    "status.source": "מקור המסך",
+    "status.protocol": "פרוטוקול UUI",
+    "status.modified": "שינויים מקומיים",
+    "status.copy_diagnostics": "העתקת נתוני אבחון",
+    "status.technical_details": "פרטים טכניים",
+    "status.credit": "פלטפורמת קוד פתוח ליישומים עסקיים.",
+    "programs.status.description": "פרטים טכניים",
+    "status.program_name": "שם התוכנית",
+    "status.program_id": "מזהה התוכנית"
   }
 }

@@ -338,6 +338,21 @@
     "selection.between": "Antara",
     "selection.pattern": "Sepadan dengan corak",
     "selection.value": "Nilai",
-    "selection.deleteCriteria": "Padam kriteria dipilih ({count})"
+    "selection.deleteCriteria": "Padam kriteria dipilih ({count})",
+    "shell.status": "Status",
+    "status.address": "Alamat sistem",
+    "status.package_version": "Versi pakej",
+    "status.kernel_version": "Versi kernel",
+    "status.uui_version": "Versi UUI",
+    "status.time_zone": "Zon waktu",
+    "status.source": "Sumber skrin",
+    "status.protocol": "Protokol UUI",
+    "status.modified": "Perubahan setempat",
+    "status.copy_diagnostics": "Salin diagnostik",
+    "status.technical_details": "Butiran teknikal",
+    "status.credit": "Platform sumber terbuka untuk aplikasi perniagaan.",
+    "programs.status.description": "Butiran teknikal",
+    "status.program_name": "Nama program",
+    "status.program_id": "ID program"
   }
 }

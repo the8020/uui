@@ -338,6 +338,21 @@
     "selection.between": "사이",
     "selection.pattern": "패턴과 일치",
     "selection.value": "값",
-    "selection.deleteCriteria": "선택한 조건 삭제 ({count})"
+    "selection.deleteCriteria": "선택한 조건 삭제 ({count})",
+    "shell.status": "상태",
+    "status.address": "시스템 주소",
+    "status.package_version": "패키지 버전",
+    "status.kernel_version": "커널 버전",
+    "status.uui_version": "UUI 버전",
+    "status.time_zone": "시간대",
+    "status.source": "화면 소스",
+    "status.protocol": "UUI 프로토콜",
+    "status.modified": "로컬 변경 사항",
+    "status.copy_diagnostics": "진단 정보 복사",
+    "status.technical_details": "기술 정보",
+    "status.credit": "비즈니스 애플리케이션을 위한 오픈 소스 플랫폼.",
+    "programs.status.description": "기술 정보",
+    "status.program_name": "프로그램 이름",
+    "status.program_id": "프로그램 ID"
   }
 }

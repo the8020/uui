@@ -2,7 +2,7 @@ Parent DOX: [uui DOX](../AGENTS.md).
 
 # Purpose
 
-- Own Home, Program terminated, Customization, user cleanup, and session
+- Own Home, Program terminated, Customization, Status, user cleanup, and session
   administration.
 
 # Ownership
@@ -26,6 +26,9 @@ Parent DOX: [uui DOX](../AGENTS.md).
 - From the repository root, run `deno task check` and `deno task test`.
 
 # Child DOX Index
+
+- [status/AGENTS.md](status/AGENTS.md): Identify the active screen, user, system
+  and runtime in the user-menu Status modal.
 
 - [selection-demo/AGENTS.md](selection-demo/AGENTS.md): Demonstrate typed
   selection fields, database results and standard list variants.

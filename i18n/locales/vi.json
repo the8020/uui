@@ -338,6 +338,21 @@
     "selection.between": "Trong khoảng",
     "selection.pattern": "Khớp mẫu",
     "selection.value": "Giá trị",
-    "selection.deleteCriteria": "Xóa điều kiện đã chọn ({count})"
+    "selection.deleteCriteria": "Xóa điều kiện đã chọn ({count})",
+    "shell.status": "Trạng thái",
+    "status.address": "Địa chỉ hệ thống",
+    "status.package_version": "Phiên bản gói",
+    "status.kernel_version": "Phiên bản nhân",
+    "status.uui_version": "Phiên bản UUI",
+    "status.time_zone": "Múi giờ",
+    "status.source": "Nguồn màn hình",
+    "status.protocol": "Giao thức UUI",
+    "status.modified": "Thay đổi cục bộ",
+    "status.copy_diagnostics": "Sao chép chẩn đoán",
+    "status.technical_details": "Chi tiết kỹ thuật",
+    "status.credit": "Nền tảng mã nguồn mở cho ứng dụng doanh nghiệp.",
+    "programs.status.description": "Chi tiết kỹ thuật",
+    "status.program_name": "Tên chương trình",
+    "status.program_id": "ID chương trình"
   }
 }

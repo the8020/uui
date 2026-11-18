@@ -338,6 +338,21 @@
     "selection.between": "Între",
     "selection.pattern": "Corespunde modelului",
     "selection.value": "Valoare",
-    "selection.deleteCriteria": "Șterge criteriile selectate ({count})"
+    "selection.deleteCriteria": "Șterge criteriile selectate ({count})",
+    "shell.status": "Stare",
+    "status.address": "Adresa sistemului",
+    "status.package_version": "Versiunea pachetului",
+    "status.kernel_version": "Versiunea nucleului",
+    "status.uui_version": "Versiunea UUI",
+    "status.time_zone": "Fus orar",
+    "status.source": "Sursa ecranului",
+    "status.protocol": "Protocol UUI",
+    "status.modified": "Modificări locale",
+    "status.copy_diagnostics": "Copiază diagnosticul",
+    "status.technical_details": "Detalii tehnice",
+    "status.credit": "Platformă cu sursă deschisă pentru aplicații de afaceri.",
+    "programs.status.description": "Detalii tehnice",
+    "status.program_name": "Numele programului",
+    "status.program_id": "ID-ul programului"
   }
 }

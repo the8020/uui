@@ -338,6 +338,21 @@
     "selection.between": "Между",
     "selection.pattern": "Съответства на шаблон",
     "selection.value": "Стойност",
-    "selection.deleteCriteria": "Изтриване на избраните критерии ({count})"
+    "selection.deleteCriteria": "Изтриване на избраните критерии ({count})",
+    "shell.status": "Състояние",
+    "status.address": "Адрес на системата",
+    "status.package_version": "Версия на пакета",
+    "status.kernel_version": "Версия на ядрото",
+    "status.uui_version": "Версия на UUI",
+    "status.time_zone": "Часова зона",
+    "status.source": "Източник на екрана",
+    "status.protocol": "Протокол UUI",
+    "status.modified": "Локални промени",
+    "status.copy_diagnostics": "Копиране на диагностиката",
+    "status.technical_details": "Технически подробности",
+    "status.credit": "Платформа с отворен код за бизнес приложения.",
+    "programs.status.description": "Технически подробности",
+    "status.program_name": "Име на програмата",
+    "status.program_id": "ID на програмата"
   }
 }

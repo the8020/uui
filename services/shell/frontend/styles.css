@@ -827,6 +827,23 @@ textarea {
   color: var(--brand-gold);
 }
 
+.brand-button {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: 0;
+  width: max-content;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.brand-button:disabled {
+  cursor: default;
+}
+
 .brand-pipe {
   position: relative;
   align-self: stretch;
@@ -840,9 +857,9 @@ textarea {
   content: "";
   inset-block-start: 50%;
   inset-inline-start: 50%;
-  width: 0;
-  height: 24px;
-  border-inline-start: 3px solid var(--text);
+  width: 0.1em;
+  height: 0.8em;
+  background: var(--text);
   translate: -50% -50%;
 }
 

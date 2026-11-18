@@ -338,6 +338,21 @@
     "selection.between": "Mellom",
     "selection.pattern": "Samsvarer med mønster",
     "selection.value": "Verdi",
-    "selection.deleteCriteria": "Slett valgte kriterier ({count})"
+    "selection.deleteCriteria": "Slett valgte kriterier ({count})",
+    "shell.status": "Status",
+    "status.address": "Systemadresse",
+    "status.package_version": "Pakkeversjon",
+    "status.kernel_version": "Kjerneversjon",
+    "status.uui_version": "UUI-versjon",
+    "status.time_zone": "Tidssone",
+    "status.source": "Skjermens kilde",
+    "status.protocol": "UUI-protokoll",
+    "status.modified": "Lokale endringer",
+    "status.copy_diagnostics": "Kopier diagnostikk",
+    "status.technical_details": "Tekniske detaljer",
+    "status.credit": "Plattform med åpen kildekode for forretningsapplikasjoner.",
+    "programs.status.description": "Tekniske detaljer",
+    "status.program_name": "Programnavn",
+    "status.program_id": "Program-ID"
   }
 }

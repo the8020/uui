@@ -338,6 +338,21 @@
     "selection.between": "Arasında",
     "selection.pattern": "Desenle eşleşir",
     "selection.value": "Değer",
-    "selection.deleteCriteria": "Seçili ölçütleri sil ({count})"
+    "selection.deleteCriteria": "Seçili ölçütleri sil ({count})",
+    "shell.status": "Durum",
+    "status.address": "Sistem adresi",
+    "status.package_version": "Paket sürümü",
+    "status.kernel_version": "Çekirdek sürümü",
+    "status.uui_version": "UUI sürümü",
+    "status.time_zone": "Saat dilimi",
+    "status.source": "Ekran kaynağı",
+    "status.protocol": "UUI protokolü",
+    "status.modified": "Yerel değişiklikler",
+    "status.copy_diagnostics": "Tanılama bilgilerini kopyala",
+    "status.technical_details": "Teknik ayrıntılar",
+    "status.credit": "İş uygulamaları için açık kaynaklı platform.",
+    "programs.status.description": "Teknik ayrıntılar",
+    "status.program_name": "Program adı",
+    "status.program_id": "Program kimliği"
   }
 }

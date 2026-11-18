@@ -338,6 +338,21 @@
     "selection.between": "Між",
     "selection.pattern": "Відповідає шаблону",
     "selection.value": "Значення",
-    "selection.deleteCriteria": "Видалити вибрані умови ({count})"
+    "selection.deleteCriteria": "Видалити вибрані умови ({count})",
+    "shell.status": "Статус",
+    "status.address": "Адреса системи",
+    "status.package_version": "Версія пакета",
+    "status.kernel_version": "Версія ядра",
+    "status.uui_version": "Версія UUI",
+    "status.time_zone": "Часовий пояс",
+    "status.source": "Джерело екрана",
+    "status.protocol": "Протокол UUI",
+    "status.modified": "Локальні зміни",
+    "status.copy_diagnostics": "Копіювати діагностику",
+    "status.technical_details": "Технічні відомості",
+    "status.credit": "Платформа з відкритим кодом для бізнес-застосунків.",
+    "programs.status.description": "Технічні відомості",
+    "status.program_name": "Назва програми",
+    "status.program_id": "ID програми"
   }
 }

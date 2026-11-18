@@ -338,6 +338,21 @@
     "selection.between": "Tarp",
     "selection.pattern": "Atitinka šabloną",
     "selection.value": "Reikšmė",
-    "selection.deleteCriteria": "Ištrinti pasirinktus kriterijus ({count})"
+    "selection.deleteCriteria": "Ištrinti pasirinktus kriterijus ({count})",
+    "shell.status": "Būsena",
+    "status.address": "Sistemos adresas",
+    "status.package_version": "Paketo versija",
+    "status.kernel_version": "Branduolio versija",
+    "status.uui_version": "UUI versija",
+    "status.time_zone": "Laiko juosta",
+    "status.source": "Ekrano šaltinis",
+    "status.protocol": "UUI protokolas",
+    "status.modified": "Vietiniai pakeitimai",
+    "status.copy_diagnostics": "Kopijuoti diagnostiką",
+    "status.technical_details": "Techninė informacija",
+    "status.credit": "Atvirojo kodo platforma verslo programoms.",
+    "programs.status.description": "Techninė informacija",
+    "status.program_name": "Programos pavadinimas",
+    "status.program_id": "Programos ID"
   }
 }
