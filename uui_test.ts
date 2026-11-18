@@ -4214,6 +4214,35 @@ Deno.test("headless list work retains its initiating connection and cannot commi
   }
 });
 
+Deno.test("inferred custom fields retain their schema-owned channel", async () => {
+  const transport = new TestChannel();
+  const unbind = bindSession(transport);
+  const controller = nextScreenChannel();
+  const channel = new Channel();
+  connectChannels("inferred-field-channel");
+  const pending = callScreen({
+    id: "inferred-field-channel",
+    schema: z.object({
+      files: field(z.string(), {
+        custom: { module: "/picker.js", config: {}, channel },
+      }),
+    }),
+    model: new Model({ files: "" }),
+  });
+  try {
+    const control = topScreen(lastPresentation(transport)).controls[0]!;
+    assertEquals(
+      control.custom!.channelNamespace,
+      channel.capture().reference.namespace,
+    );
+    assertEquals(JSON.stringify(control).includes('"channel":'), false);
+  } finally {
+    controller.exit();
+    await pending;
+    unbind();
+  }
+});
+
 Deno.test("inline layout and list-toolbar custom bindings retain their owning channels", async () => {
   const transport = new TestChannel();
   const unbind = bindSession(transport);

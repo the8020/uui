@@ -655,7 +655,11 @@ async function showScreen<T extends z.ZodRawShape>(
     ? cloneDeclaration(options.controls)
     : fields.filter((field) => !headerBindings.has(field.bind)).map((
       field,
-    ) => ({ ...field, id: undefined }));
+    ) => ({
+      ...field,
+      custom: fieldMetadata(schemaAtPath(options.schema, field.bind)!)?.custom,
+      id: undefined,
+    }));
   for (const control of [...bodyDeclarations, ...headerDeclarations]) {
     control.list ??= cloneDeclaration(
       fields.find((field) => field.bind === control.bind)?.list,

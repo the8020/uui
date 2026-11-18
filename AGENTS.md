@@ -588,7 +588,8 @@ below.
   Shared declaration cloning preserves live references through body/header,
   layout and list-toolbar placements; wire descriptors omit them. Field
   presentation metadata uses weak schema keys and retains channel references
-  separately from serializable cloned presentation options.
+  separately from serializable cloned presentation options. Inferred controls
+  retain these schema-owned channels just like explicitly placed controls.
 - Every callScreen/reset generation owns its registrations, in-flight subscriber
   work and streams. Settlement/removal/exit/failure disposes them. Backend
   Channels reattach within the same logical call after reset; retained browser
