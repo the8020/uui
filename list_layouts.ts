@@ -1,4 +1,9 @@
 import {
+  localizedText as resolveMessage,
+  text as formatMessage,
+} from "/p/the8020/i18n/mod.ts";
+import { msg as messageSymbol } from "/p/the8020/uui/i18n/messages.ts";
+import {
   emptyLayouts,
   type LayoutCatalog,
   parseLayoutCollection,
@@ -10,12 +15,20 @@ export const GLOBAL_LAYOUT_PERMISSION = "the8020.uui.layouts.global.edit";
 async function user(): Promise<string> {
   const { currentUser } = await import("/p/the8020/users/mod.ts");
   const username = currentUser()?.username;
-  if (!username) throw new Error("Sign in to save list layouts.");
+  if (!username) {
+    throw new Error(
+      await resolveMessage(
+        messageSymbol("errors.sign_in_to_save_list_layouts"),
+      ),
+    );
+  }
   return username;
 }
 function key(listKey: string, owner: string): string {
   if (!listKey.length || listKey.length > 1500) {
-    throw new TypeError("Invalid list identity");
+    throw new TypeError(
+      formatMessage(messageSymbol("errors.invalid_list_identity")),
+    );
   }
   return JSON.stringify([listKey, owner]);
 }
@@ -62,7 +75,13 @@ export async function listLayoutCommand(
           !Object.hasOwn(layouts.variants, command.name) &&
           Object.keys(layouts.variants).length >= 50
         ) {
-          throw new RangeError("A list can have at most 50 layouts per owner.");
+          throw new RangeError(
+            await resolveMessage(
+              messageSymbol(
+                "errors.a_list_can_have_at_most_50_layouts_per_owner",
+              ),
+            ),
+          );
         }
         layouts.variants[command.name] = command.layout;
       } else if (command.operation === "delete") {
@@ -72,7 +91,11 @@ export async function listLayoutCommand(
         if (
           command.name !== null &&
           !Object.hasOwn(layouts.variants, command.name)
-        ) throw new TypeError("Unknown layout");
+        ) {
+          throw new TypeError(
+            await resolveMessage(messageSymbol("errors.unknown_layout")),
+          );
+        }
         layouts.defaultName = command.name;
       }
       await tx.updateTable(ListLayouts.table).set({ layouts }).where(

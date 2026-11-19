@@ -353,6 +353,15 @@
     "status.credit": "Plateforme open source pour applications métier.",
     "programs.status.description": "Détails techniques",
     "status.program_name": "Nom du programme",
-    "status.program_id": "ID du programme"
+    "status.program_id": "ID du programme",
+    "shortcuts.title": "Raccourcis",
+    "shortcuts.help": "Saisissez un code et appuyez sur Entrée pour ouvrir un programme. Le crayon ou F1/F4 ouvre la liste de choix ; recherchez par code, programme ou description. Les raccourcis personnels remplacent ceux par défaut.",
+    "shortcuts.duplicate": "Ce raccourci est déjà utilisé.",
+    "shortcuts.not_found": "Aucun programme ne correspond à ce raccourci.",
+    "shortcuts.ambiguous": "Plusieurs programmes utilisent ce raccourci. Définissez une association personnelle dans Personnalisation.",
+    "shortcuts.customize": "Personnaliser",
+    "program.system_logo": "Logo du système",
+    "program.use_default_logo": "Utiliser le logo par défaut",
+    "program.logo_help": "1:1–3:1 · PNG ≤384×128 px · ≤10 MiB. Les autres rapports sont recadrés au centre sur le côté le plus long."
   }
 }

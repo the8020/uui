@@ -14,6 +14,8 @@ Parent DOX: [shell frontend](../../AGENTS.md).
 - Create `fileUpload({ maximumBytes, accept })` for each pending screen call.
   Bind its `custom` descriptor to a filename string with `fieldHelp: false`;
   file selection cannot be edited through the text-value help modal.
+- The custom field wrapper owns the underline; the nested native picker has no
+  border or focus shadow, avoiding two lines in composed image pickers.
 - Call `take()` after the screen action to consume a completed file once. Keep
   bytes outside Models, snapshots, diagnostic messages, and history. Consumers
   validate the actual file format and permissions.

@@ -5,10 +5,11 @@ import {
   type WidgetProgram,
 } from "/p/the8020/packages/widgets.ts";
 import { declarations } from "/p/the8020/auth/src/declarations.ts";
-import { discoverPrograms } from "../../programs.ts";
+import { type DiscoveredProgram, discoverPrograms } from "../../programs.ts";
 import { type HomeFolder, type HomeTile, humanize } from "./tree.ts";
 
 export interface HomeCatalog {
+  programs: DiscoveredProgram[];
   tiles: HomeTile[];
   /** What each tile launches. */
   actions: Map<string, WidgetProgram>;
@@ -32,7 +33,7 @@ const PLATFORM = "the8020/";
 export async function homeCatalog(packagesRoot: string): Promise<HomeCatalog> {
   const [catalog, programs, declared] = await Promise.all([
     readWidgets(packagesRoot),
-    discoverPrograms(packagesRoot),
+    discoverPrograms(packagesRoot, true),
     declarations(new URL(`file://${packagesRoot}/`)),
   ]);
   const declaredActions = new Set(declared.map((item) => item.action));
@@ -123,7 +124,8 @@ export async function homeCatalog(packagesRoot: string): Promise<HomeCatalog> {
   for (const program of programs) {
     const packageId = program.id.split("/").slice(0, 2).join("/");
     if (
-      opened.has(program.id) || program.id.startsWith(PLATFORM) ||
+      !program.discoverable || opened.has(program.id) ||
+      program.id.startsWith(PLATFORM) ||
       broken.has(packageId)
     ) continue;
     tiles.push({
@@ -135,7 +137,7 @@ export async function homeCatalog(packagesRoot: string): Promise<HomeCatalog> {
     });
     opens.set(program.id, { program: program.id, arguments: [] });
   }
-  return { tiles, actions: opens, data, visible };
+  return { programs, tiles, actions: opens, data, visible };
 }
 
 function categoryPath(

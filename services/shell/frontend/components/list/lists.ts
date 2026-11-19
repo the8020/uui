@@ -277,6 +277,7 @@ class ListController {
       }
     }
     this.#toolbar.render(items);
+    customToolbar.hidden = items.length === 0;
     const toolbar = document.createElement("div");
     toolbar.className = "data-list-toolbar";
     toolbar.id = `${this.#prefix}-toolbar`;
@@ -447,8 +448,6 @@ class ListController {
       if (state.toolbarOpen) search.focus({ preventScroll: true });
       this.schedule();
     });
-    // The reserved toolbar row above the table holds it, never the header.
-    customToolbar.append(toggle);
     const body = this.#table.createTBody();
     snapshot.rows.forEach((item, index) => {
       const row = body.insertRow();
@@ -520,7 +519,7 @@ class ListController {
     this.#scroll.append(this.#table);
     const viewport = document.createElement("div");
     viewport.className = "data-list-viewport";
-    viewport.append(this.#scroll);
+    viewport.append(this.#scroll, toggle);
     this.#pagination = this.pagination();
     this.host.append(viewport, this.#pagination);
     this.#rendering = false;

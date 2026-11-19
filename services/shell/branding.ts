@@ -18,6 +18,7 @@ export async function brandingAsset(
   if (!kind) return undefined;
   const bytes = await fetchBrandingImage(kind);
   if (bytes === null) {
+    if (kind === "logo") return new Response(null, { status: 404 });
     const url = new URL(request.url);
     url.search = "";
     return await assets.file(

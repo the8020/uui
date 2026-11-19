@@ -47,6 +47,7 @@
   height: var(--list-header-height);
 }
 
+.data-list-custom-toolbar[hidden],
 .data-list-toolbar[hidden],
 .data-list-heading[hidden],
 .data-list-icon-button[hidden] {
@@ -181,19 +182,31 @@
   background: var(--primary);
 }
 
-/* List tools open from the toolbar row above the table, at its end. */
+/* Overlay only the visible header edge; data rows keep the full width. */
 .data-list-tools-toggle {
-  flex: 0 0 auto;
+  position: absolute;
+  z-index: 2;
+  inset-block-start: 0;
+  inset-inline-end: 0;
   justify-content: center;
-  width: var(--list-row-height);
-  margin-inline-start: auto;
+  width: 28px;
+  height: var(--list-header-height);
   padding: 0;
-  border-radius: 6px;
+  border-radius: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
   color: var(--muted);
 }
 
+.data-list-tools-toggle .material-icon {
+  --material-icon-size: 1rem;
+}
+
+.data-list-tools-toggle:hover,
+.data-list-tools-toggle:focus-visible,
 .data-list-tools-toggle.is-open {
-  background: var(--primary-soft);
+  background: linear-gradient(var(--primary-soft), var(--primary-soft)),
+    var(--surface);
   color: var(--primary);
 }
 

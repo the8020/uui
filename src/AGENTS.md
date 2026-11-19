@@ -9,6 +9,8 @@ Parent DOX: [uui DOX](../AGENTS.md).
 
 - Own `preference_fields.ts`, `session_fields.ts`, `status_fields.ts`,
   `short_dump.ts`, `short_dump_test.ts`, and `home_test.ts`.
+- `shortcut_fields.ts` owns canonical program references and at most 100
+  personal shortcut rows, rejecting duplicate codes without regard to case.
 
 # Local Contracts
 
@@ -18,6 +20,9 @@ Parent DOX: [uui DOX](../AGENTS.md).
 - `branding_fields.ts` owns the bounded server-title field and default;
   browser-safe `branding_images.ts` owns image dimensions, formats, and output
   byte limits shared by conversion, validation, and serving.
+- `branding_conversion.ts` owns bounded backend decoding, centered crops and
+  PNG/JPEG encoding. It loads only when converting an upload, using the pinned
+  ImageScript codec with one thread; codec bytes do not enter the shell bundle.
 
 - `preference_fields.ts` owns the shared six-digit hex accent-color field,
   effective preference schema, nullable override schema, and built-in purple.

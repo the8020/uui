@@ -271,6 +271,7 @@ export async function runProgramsBrowser(root: string): Promise<void> {
       "system/tables/settings",
       "packages/tables/packages",
       "uui/tables/user_preferences",
+      "uui/tables/list_layouts",
     ]
   ) {
     const descriptor = descriptorOf(
@@ -940,7 +941,6 @@ export async function verifyProgramsBrowser(
   await title(page, "Version to install");
   await searchHelp(page, "v1");
   await row(page, "Tag v1");
-  await button(page, "Done");
   await wait(
     page,
     `document.querySelector('[data-bind="selection"]')?.value === 'tag:v1'`,
@@ -1000,7 +1000,6 @@ export async function verifyProgramsBrowser(
   await title(page, "Program");
   await searchHelp(page, "background");
   await row(page, "Background fixture");
-  await button(page, "Done");
   await wait(
     page,
     "document.querySelector('[data-bind=\"username\"]') !== null",
@@ -1059,7 +1058,6 @@ export async function verifyProgramsBrowser(
   await title(page, "Node");
   await searchHelp(page, "Any");
   await row(page, "Any");
-  await button(page, "Done");
   await title(page, "Advanced job settings");
   await button(page, "Done");
   await title(page, "Run program");
@@ -1249,7 +1247,6 @@ async function verifyRuntime(page: BrowserDriver): Promise<void> {
   await title(page, "Public execution user");
   await searchHelp(page, "robot");
   await row(page, "robot");
-  await button(page, "Done");
   await title(page, "Configure api");
   assert(
     await fieldValue(page, "minimumWorkers") === "2" &&
@@ -1610,7 +1607,6 @@ async function verifyDatabase(page: BrowserDriver): Promise<void> {
   await title(page, "Table reference");
   await searchHelp(page, "people");
   await row(page, tableId);
-  await button(page, "Done");
   await title(page, "SQL executor");
   await button(page, "New SELECT");
   await wait(

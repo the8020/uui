@@ -353,6 +353,15 @@
     "status.credit": "面向业务应用的开源平台。",
     "programs.status.description": "技术详情",
     "status.program_name": "程序名称",
-    "status.program_id": "程序 ID"
+    "status.program_id": "程序 ID",
+    "shortcuts.title": "快捷码",
+    "shortcuts.help": "输入代码并按 Enter 打开程序。点击铅笔或按 F1/F4 打开值帮助，可按代码、程序或描述搜索。个人快捷码优先于同名默认快捷码。",
+    "shortcuts.duplicate": "此快捷码已被使用。",
+    "shortcuts.not_found": "没有程序与此快捷码匹配。",
+    "shortcuts.ambiguous": "多个程序使用此快捷码。请在自定义中设置个人映射。",
+    "shortcuts.customize": "自定义",
+    "program.system_logo": "系统标志",
+    "program.use_default_logo": "使用默认标志",
+    "program.logo_help": "1:1–3:1 · PNG ≤384×128 px · ≤10 MiB. 其他宽高比将沿较长边居中裁剪。"
   }
 }

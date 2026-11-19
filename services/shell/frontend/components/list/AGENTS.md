@@ -47,10 +47,10 @@ Parent DOX: [shell frontend](../../AGENTS.md).
 - List chrome uses the shell formatter. Server-provided headings/help are
   already resolved; list values remain application data.
 
-- Every list reserves `--uui-bar-height` for its custom toolbar, including empty
-  toolbars. Reuse `ResponsiveProgramHeader` for ordered three-dot overflow and
-  native controls; dispose its observers/listeners on redraw and removal.
-  Overflow menus do not change list capacity or table alignment.
+- Nonempty custom toolbars reserve `--uui-bar-height`; empty toolbars collapse.
+  Reuse `ResponsiveProgramHeader` for ordered three-dot overflow and native
+  controls; dispose its observers/listeners on redraw and removal. Overflow
+  menus do not change list capacity or table alignment.
 
 - Lists send row indices and operations through their owning namespace without
   list revisions or identity comparisons. The pending call retains source
@@ -163,12 +163,11 @@ Parent DOX: [shell frontend](../../AGENTS.md).
   of the same Model; saved list layouts do not store them. Columns without a
   dragged width share the remaining space by semantic length, and the table
   scrolls horizontally when fixed widths exceed the list.
-- The List tools toggle is a gear (`settings`) icon button at the end of the
-  reserved toolbar row above the table, after the program's toolbar items, and
-  is highlighted while open. It never overlays the header, so the last column
-  heading needs no clearance. Data columns use the full table width, with no
-  tools column or empty body cells, so row content and highlights continue to
-  the right edge.
+- The List tools toggle is a 16px gear (`settings`) in a 28px-wide overlay at
+  the visible inline-end edge of the column-header row. It stays outside the
+  horizontal scroll container; headers scroll behind its opaque background. Only
+  header content is covered. Data columns, row content and highlights use the
+  full table width with no tools column, body inset or empty toolbar row.
 
 # Work Guidance
 
@@ -186,8 +185,8 @@ Parent DOX: [shell frontend](../../AGENTS.md).
 - Run UUI `deno task check`, `deno task test`, and `services/shell/build.sh`.
 - `deno task test:list-selection-browser` covers native/Shift/drag/keyboard
   selection, all pages and filters, reload, selected totals, toolbar controls,
-  actual demo bulk actions, equal navbar/list toolbar heights, paired lists with
-  empty toolbars, and native/custom fields inside narrow overflow menus. Pass
+  actual demo bulk actions, navbar-height nonempty toolbars, collapsed empty
+  toolbars, and native/custom fields inside narrow overflow menus. Pass
   `--screenshots` to capture the paired desktop and mobile overflow layouts.
 - `data_test.ts` checks column projection, formats/quoting and list result
   validation; channel_test.ts owns generic delivery/lifetimes;

@@ -13,6 +13,8 @@ export {
 export interface DiscoveredProgram {
   id: string;
   description: string;
+  shortcut?: string;
+  discoverable?: boolean;
 }
 
 export interface TerminatedProgramInput {
@@ -59,6 +61,7 @@ export function screenProgram(stack: string): string | undefined {
 
 export async function discoverPrograms(
   packagesRoot = "/workspace/packages",
+  includeHidden = false,
 ): Promise<DiscoveredProgram[]> {
   const result: DiscoveredProgram[] = [];
   for await (const namespace of Deno.readDir(packagesRoot)) {
@@ -86,7 +89,9 @@ export async function discoverPrograms(
             }
             continue;
           }
-          if (!manifest.discoverable || !manifest.uui) continue;
+          if ((!includeHidden && !manifest.discoverable) || !manifest.uui) {
+            continue;
+          }
           result.push({
             id: `${namespace.name}/${repository.name}/${program.name}`,
             description: await metadataText(
@@ -94,6 +99,8 @@ export async function discoverPrograms(
               `programs.${program.name}.description`,
               manifest.description,
             ),
+            ...(manifest.shortcut ? { shortcut: manifest.shortcut } : {}),
+            ...(includeHidden ? { discoverable: manifest.discoverable } : {}),
           });
         }
       } catch (error) {

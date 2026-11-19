@@ -63,6 +63,7 @@ export default function mount(
 
   const lookup = new Map<string, { node: HomeNode; parent?: HomeNode }>();
   const values = new Map<string, TileValue>();
+  let shortcuts: Record<string, string[]> = {};
   const pending = new Map<string, number>();
   const index = (node: HomeNode, parent?: HomeNode) => {
     lookup.set(node.id, { node, parent });
@@ -187,6 +188,17 @@ export default function mount(
       button.append(live);
       showValue(button, values.get(node.tile));
     }
+    if (node.tile !== undefined) {
+      const footer = element("span", "home-tile-shortcut");
+      const codes = shortcuts[node.tile] ?? [];
+      if (codes.length) {
+        context.renderText(
+          footer,
+          `[[icon=keyboard_command_key]] ${codes.join(" · ")}`,
+        );
+      }
+      button.append(footer);
+    }
     button.addEventListener("click", () => open(node));
     return button;
   };
@@ -285,6 +297,13 @@ export default function mount(
     if (button !== null) showValue(button, value);
   });
   const ticker = setInterval(() => loadVisible(true), DATA_TICK_MS);
+  const shortcutUpdates = context.channel.subscribe(
+    "shortcuts",
+    (_id, data) => {
+      shortcuts = data as Record<string, string[]>;
+      render();
+    },
+  );
 
   const focusItem = (id: string) => {
     focused = id;
@@ -420,12 +439,17 @@ export default function mount(
       for (const value of values.values()) value.at = 0;
       pending.clear();
       render();
+      context.channel.send("shortcuts", {});
+    },
+    setActive(active) {
+      if (active) context.channel.send("shortcuts", {});
     },
     captureState: persist,
     dispose() {
       resize.disconnect();
       clearInterval(ticker);
       receiving.unsubscribe();
+      shortcutUpdates.unsubscribe();
     },
   };
 }

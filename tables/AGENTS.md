@@ -26,14 +26,18 @@ Parent DOX: [uui DOX](../AGENTS.md).
   independent.
 
 - `branding.ts` holds one row (`id = 1`) with server title, image revision, and
-  nullable binary favicon/social overrides. Missing rows use built-ins; null
-  images use shell files. Title-only saves preserve existing image columns.
+  nullable binary logo/favicon/social overrides. Missing rows use built-ins;
+  null favicon/social images use shell files and null logo uses the wordmark.
+  Title-only saves preserve existing image columns.
 
 - `user_preferences.ts` has username as its primary key and nullable preferences
   from `src/preference_fields.ts`. Empty username holds system defaults;
   personal rows contain only overrides. Avoid an account foreign key so defaults
   are valid. UUI's `users.deleted` subscriber removes personal rows after
   account deletion.
+- Its nullable JSON `shortcuts` column holds personal shortcut/program pairs.
+  Null means no personal mappings; it does not inherit system defaults. Color
+  changes preserve mappings unless the same save explicitly replaces them.
 
 - Session identifiers, client address, screen ID, and execution references reuse
   `src/session_fields.ts`. Persisted lifecycle enums and logical datetime

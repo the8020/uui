@@ -2007,17 +2007,6 @@ async function verifyFieldHelp(page: BrowserPage): Promise<void> {
   await click(page, `${modal} tr[data-row-index="0"]`);
   await waitForPage(
     page,
-    `document.querySelector('${modal} [data-bind="value"]')?.value === 'user1999'`,
-    "selection fills draft",
-  );
-  assertEquals(
-    fieldHelpModel.data.user,
-    "user2",
-    "selection does not commit before Done",
-  );
-  await clickButton(page, "Done");
-  await waitForPage(
-    page,
     `document.querySelectorAll('${modal}').length === 0 && document.querySelector('[data-bind="user"]')?.value === 'user1999'`,
     "choosing a value updates the original field",
   );
@@ -2098,6 +2087,14 @@ async function verifyFieldHelp(page: BrowserPage): Promise<void> {
       `![...document.querySelectorAll('${modal} button')].some(button => button.textContent === 'Done')`,
     ),
     "read-only helper has no Done",
+  );
+  await click(page, `${modal} tr[data-row-index="0"]`);
+  assertEquals(fieldHelpModel.data.recorded, "user1");
+  assertEquals(
+    await page.evaluate(
+      `document.querySelector('${modal} [data-bind="value"]')?.value`,
+    ),
+    "user1",
   );
   await clickButton(page, "Navigate");
   await waitForPage(

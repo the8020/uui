@@ -1,3 +1,8 @@
+import {
+  localizedText as resolveMessage,
+  text as formatMessage,
+} from "/p/the8020/i18n/mod.ts";
+import { msg as messageSymbol } from "/p/the8020/uui/i18n/messages.ts";
 import { msg } from "/p/the8020/uui/i18n/messages.ts";
 import { text as localizedText } from "/p/the8020/i18n/mod.ts";
 import { captureMessages, Channel } from "../../../../../session.ts";
@@ -15,7 +20,13 @@ export function fileUpload(options: { maximumBytes: number; accept?: string }) {
     if (!(source instanceof ReadableStream)) {
       throw new TypeError("Upload requires a byte stream");
     }
-    if (receiving) throw new Error("A file is already uploading");
+    if (receiving) {
+      throw new Error(
+        await resolveMessage(
+          messageSymbol("errors.a_file_is_already_uploading"),
+        ),
+      );
+    }
     const output = captureMessages();
     receiving = true;
     bytes = undefined;
@@ -75,7 +86,13 @@ export function fileUpload(options: { maximumBytes: number; accept?: string }) {
     custom,
     take(): Uint8Array {
       if (bytes === undefined || receiving) {
-        throw new Error("Select a file and wait for its upload to finish");
+        throw new Error(
+          formatMessage(
+            messageSymbol(
+              "errors.select_a_file_and_wait_for_its_upload_to_finish",
+            ),
+          ),
+        );
       }
       const result = bytes;
       bytes = undefined;

@@ -2,7 +2,19 @@
   "schema": 1,
   "id": "main",
   "root": {
-    "type": "custom",
-    "customElement": "programs"
+    "type": "stack",
+    "class": "home-layout",
+    "children": [
+      {
+        "type": "section",
+        "class": "home-launcher",
+        "elements": [{ "id": "shortcut", "bind": "shortcut" }]
+      },
+      {
+        "type": "custom",
+        "class": "home-programs",
+        "customElement": "programs"
+      }
+    ]
   }
 }

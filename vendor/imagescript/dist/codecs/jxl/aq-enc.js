@@ -1,0 +1,198 @@
+import { runChunks } from "../../util/threads.js";
+const SG_MUL = 226.77216153508914, SG_MUL2 = 1 / 73.377132366608819, LOG2 = 0.693147181;
+const SG_RET_MUL = SG_MUL2 * 18.6580932135 * LOG2, SG_V_OFFSET = 7.7825991679894591;
+const NUM_MUL = SG_RET_MUL * 3 * SG_MUL, V_OFFSET = SG_V_OFFSET * LOG2 + 1e-2, DEN_MUL = LOG2 * SG_MUL;
+const gammaRatio = (v) => {
+    v = Math.max(v, 0);
+    const v2 = v * v;
+    return (DEN_MUL * v * v2 + V_OFFSET) / (NUM_MUL * v2 + 1e-2);
+};
+const gammaRatioInverse = (v) => {
+    v = Math.max(v, 0);
+    const v2 = v * v;
+    return (NUM_MUL * v2 + 1e-2) / (DEN_MUL * v * v2 + V_OFFSET);
+};
+function computeMask(v) {
+    const v1 = Math.max(v * 0.80061762862741759, 1e-3), offset3 = 3.7179635626140772;
+    return -0.7647 + 9.4708735624378946 / (v1 * v1 + 0.25 * offset3) + 17.35036561631863 / (v1 + 302.59587815579727) + 6.7943250517376494 / (v1 * v1 + offset3);
+}
+const maskingSqrt = (v) => 0.25 * Math.sqrt(v * Math.sqrt(211.66567973503678 * 1e8) + 27.505837037000106);
+export function maskingChunks({ y: py, w, h, mask1x1, preErosion }) {
+    const MATCH_GAMMA_OFFSET = 0.019, LIMIT = 0.2, rowSum = new Float32Array(w);
+    return band => {
+        for (let y = band * 64; y < Math.min(h, band * 64 + 64); y++) {
+            const r = y * w, r1 = (y > 0 ? y - 1 : y) * w, r2 = (y + 1 < h ? y + 1 : y) * w;
+            for (let x = 0; x < w; x++) {
+                const x1 = x > 0 ? x - 1 : x, x2 = x + 1 < w ? x + 1 : x;
+                const base = 0.25 * (py[r2 + x] + py[r1 + x] + py[r + x1] + py[r + x2]);
+                const gammac = gammaRatio(py[r + x] + MATCH_GAMMA_OFFSET);
+                const d = gammac * (py[r + x] - base);
+                mask1x1[r + x] = 1 / (Math.log1p(Math.abs(d)) + 0.01);
+                const v = maskingSqrt(Math.min(d * d, LIMIT));
+                rowSum[x] = y % 4 ? rowSum[x] + v : v;
+            }
+            if (y % 4 === 3) {
+                const out = (y >> 2) * (w / 4);
+                for (let x = 0; x < w / 4; x++)
+                    preErosion[out + x] = (rowSum[4 * x] + rowSum[4 * x + 1] + rowSum[4 * x + 2] + rowSum[4 * x + 3]) * 0.25;
+            }
+        }
+    };
+}
+export function maskBlurChunks({ w, h, mask1x1, blurred }) {
+    const k = [0.25647067633737225, 0.2050056912354399, 0.1540820486684973, 0.08149576591362004, 0.05127501048123085];
+    const n = 1 / Math.max(1 + 4 * (k[0] + k[1] + k[2] + k[4] + 2 * k[3]), 1e-5);
+    const weights = [n, n * k[0], n * k[2], n * k[1], n * k[4], n * k[3]];
+    return band => symmetric5(mask1x1, w, h, weights, blurred, band * 64, Math.min(h, band * 64 + 64));
+}
+export async function initialQuantField(distance, planes, w, h, scale, threads) {
+    const [px, py, pb] = planes, bw = w / 8, bh = h / 8, bands = Math.ceil(h / 64);
+    const array = (n) => new Float32Array(threads ? new SharedArrayBuffer(4 * n) : new ArrayBuffer(4 * n));
+    const task = { task: 'jxl-masking', y: py, w, h, mask1x1: array(w * h), blurred: array(w * h), preErosion: array((w / 4) * (h / 4)) };
+    await runChunks(threads, task, bands, maskingChunks(task));
+    const aq = fuzzyErosion(distance, task.preErosion, w / 4, h / 4);
+    const mask = Float32Array.from(aq, v => 1 / (v + 0.001));
+    perBlockModulations(distance, px, py, pb, w, bw, bh, scale, aq);
+    await runChunks(threads, { ...task, task: 'jxl-mask-blur' }, bands, maskBlurChunks(task));
+    return { quant: aq, mask, mask1x1: task.blurred };
+}
+function fuzzyErosion(distance, from, w, h) {
+    const mul = distance < 2 ? (2 - distance) / 2 : 0;
+    let k0 = 0.125, k1 = 0.10 - 0.10 * mul, k2 = 0.09 - 0.09 * mul, k3 = 0.06 - 0.06 * mul;
+    const norm = 0.29959705784054957 / (k0 + k1 + k2 + k3);
+    k0 *= norm;
+    k1 *= norm;
+    k2 *= norm;
+    k3 *= norm;
+    const out = new Float32Array((w / 2) * (h / 2)), ow = w / 2;
+    const v = new Float64Array(9);
+    for (let y = 0; y < h; y++) {
+        const t = (y > 0 ? y - 1 : y) * w, r = y * w, b = (y + 1 < h ? y + 1 : y) * w;
+        for (let x = 0; x < w; x++) {
+            const xm = x > 0 ? x - 1 : x, xp = x + 1 < w ? x + 1 : x;
+            v[0] = from[r + x];
+            v[1] = from[r + xm];
+            v[2] = from[r + xp];
+            v[3] = from[t + xm];
+            v[4] = from[t + x];
+            v[5] = from[t + xp];
+            v[6] = from[b + xm];
+            v[7] = from[b + x];
+            v[8] = from[b + xp];
+            let m0 = Infinity, m1 = Infinity, m2 = Infinity, m3 = Infinity;
+            for (let i = 0; i < 9; i++) {
+                const a = v[i];
+                if (a >= m3)
+                    continue;
+                if (a < m0) {
+                    m3 = m2;
+                    m2 = m1;
+                    m1 = m0;
+                    m0 = a;
+                }
+                else if (a < m1) {
+                    m3 = m2;
+                    m2 = m1;
+                    m1 = a;
+                }
+                else if (a < m2) {
+                    m3 = m2;
+                    m2 = a;
+                }
+                else
+                    m3 = a;
+            }
+            const val = k0 * m0 + k1 * m1 + k2 * m2 + k3 * m3, o = (y >> 1) * ow + (x >> 1);
+            out[o] = x % 2 === 0 && y % 2 === 0 ? val : out[o] + val;
+        }
+    }
+    return out;
+}
+function perBlockModulations(distance, px, py, pb, w, bw, bh, scale, aq) {
+    const baseLevel = 0.48 * scale;
+    let dampen = 1;
+    if (distance >= 2)
+        dampen = Math.max(0, 1 - (distance - 2) / (14 - 2));
+    const mul = scale * dampen, add = (1 - dampen) * baseLevel;
+    for (let by = 0; by < bh; by++) {
+        for (let bx = 0; bx < bw; bx++)
+            aq[by * bw + bx] = Math.exp(blockModulation(px, py, pb, by * 8 * w + bx * 8, w, aq[by * bw + bx])) * mul + add;
+    }
+}
+function blockModulation(px, py, pb, o, w, e) {
+    let v = computeMask(e);
+    let hf = 0;
+    for (let dy = 0; dy < 8; dy++) {
+        const r = o + dy * w, next = dy === 7 ? r : r + w;
+        for (let dx = 0; dx < 8; dx++) {
+            const p = py[r + dx];
+            if (dx < 7)
+                hf += Math.min(0.0206, Math.abs(p - py[r + dx + 1]));
+            hf += Math.min(0.0206, Math.abs(p - py[next + dx]));
+        }
+    }
+    v += hf * -0.38 + 0.42;
+    let ratio = 0;
+    for (let dy = 0; dy < 8; dy++) {
+        for (let dx = 0; dx < 8; dx++) {
+            const iny = py[o + dy * w + dx] + 0.16, inx = px[o + dy * w + dx];
+            ratio += gammaRatioInverse(iny - inx) + gammaRatioInverse(iny + inx);
+        }
+    }
+    v += 0.1005613337192697 * Math.log2(ratio * (0.5 / 64));
+    const LIMIT = 0.027121074570634722;
+    let blue = 0;
+    for (let dy = 0; dy < 8; dy++) {
+        for (let dx = 0; dx < 8; dx++) {
+            const i = o + dy * w + dx, eff = py[i] + 0.084381641171960495 + Math.abs(px[i]);
+            if (pb[i] > eff)
+                blue += Math.min(pb[i] - eff, LIMIT);
+        }
+    }
+    if (blue >= 32 * LIMIT)
+        blue = 64 * LIMIT - blue;
+    if (blue >= 15.398788439047934 * LIMIT)
+        blue = 15.398788439047934 * LIMIT;
+    return v + blue * 0.14207000358439159;
+}
+function symmetric5(m, w, h, [c, r, R, d, D, L], out, y0, y1) {
+    const mirror = (v, n) => {
+        while (v < 0 || v >= n)
+            v = v < 0 ? -v - 1 : 2 * n - 1 - v;
+        return v;
+    };
+    for (let y = y0; y < y1; y++) {
+        const r0 = mirror(y - 2, h) * w, r1 = mirror(y - 1, h) * w, r2 = y * w, r3 = mirror(y + 1, h) * w, r4 = mirror(y + 2, h) * w;
+        for (let x = 0; x < w; x++) {
+            const inside = x >= 2 && x + 2 < w;
+            const c0 = inside ? x - 2 : mirror(x - 2, w), c1 = inside ? x - 1 : mirror(x - 1, w), c3 = inside ? x + 1 : mirror(x + 1, w), c4 = inside ? x + 2 : mirror(x + 2, w);
+            let sum = 0;
+            sum += D * m[r0 + c0];
+            sum += L * m[r1 + c0];
+            sum += R * m[r2 + c0];
+            sum += L * m[r3 + c0];
+            sum += D * m[r4 + c0];
+            sum += L * m[r0 + c1];
+            sum += d * m[r1 + c1];
+            sum += r * m[r2 + c1];
+            sum += d * m[r3 + c1];
+            sum += L * m[r4 + c1];
+            sum += R * m[r0 + x];
+            sum += r * m[r1 + x];
+            sum += c * m[r2 + x];
+            sum += r * m[r3 + x];
+            sum += R * m[r4 + x];
+            sum += L * m[r0 + c3];
+            sum += d * m[r1 + c3];
+            sum += r * m[r2 + c3];
+            sum += d * m[r3 + c3];
+            sum += L * m[r4 + c3];
+            sum += D * m[r0 + c4];
+            sum += L * m[r1 + c4];
+            sum += R * m[r2 + c4];
+            sum += L * m[r3 + c4];
+            sum += D * m[r4 + c4];
+            out[y * w + x] = sum;
+        }
+    }
+}

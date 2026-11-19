@@ -1,3 +1,5 @@
+import { text } from "/p/the8020/i18n/mod.ts";
+import { msg } from "/p/the8020/uui/i18n/messages.ts";
 import type { CustomElementOptions } from "../../../../../protocol.ts";
 
 export type CodeLanguage =
@@ -56,7 +58,12 @@ export function codeEditor(
     styles: [`${base}editor.css`],
     preserve: true,
     fallback: {
-      inputs: [{ name: "value", path: "", label: "Code", multiline: true }],
+      inputs: [{
+        name: "value",
+        path: "",
+        label: text(msg("editor.code")),
+        multiline: true,
+      }],
     },
     config: Object.fromEntries(
       Object.entries(options).filter(([, value]) => value !== undefined),

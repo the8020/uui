@@ -7,6 +7,7 @@ import {
 } from "./branding.ts";
 import { brandingDatabase } from "./branding_test_support.ts";
 import { brandingAsset, brandingHead } from "./services/shell/branding.ts";
+import { convertBrandingImage } from "./src/branding_conversion.ts";
 
 Deno.test("system branding stores only overrides, validates images, checks authority, and serves public assets", async () => {
   const fixture = await brandingDatabase();
@@ -16,12 +17,19 @@ Deno.test("system branding stores only overrides, validates images, checks autho
   const social = await Deno.readFile(
     new URL("./services/shell/frontend/default-social.jpg", import.meta.url),
   );
+  const logo = await convertBrandingImage("logo", social);
   try {
     assertEquals(await fetchBranding(), {
       title: "80|20",
       revision: "default",
+      logo: null,
     });
     assertEquals(await fetchBrandingImage("favicon"), null);
+    assertEquals(
+      (await brandingAsset(new Request("https://test/branding/logo.png")))
+        ?.status,
+      404,
+    );
     assertEquals(
       fixture.database.prepare(
         "select count(*) as n from the8020__uui__branding",
@@ -55,7 +63,19 @@ Deno.test("system branding stores only overrides, validates images, checks autho
       await brandingAsset(new Request("https://test/branding/private.txt")),
       undefined,
     );
-    await saveBranding({ title: ' Acme <&" > ', favicon: icon, social });
+    await saveBranding({ title: ' Acme <&" > ', favicon: icon, social, logo });
+    assertEquals(await fetchBrandingImage("logo"), logo);
+    assertEquals(
+      (await fetchBranding()).logo?.startsWith(
+        "/the8020/uui/login/branding/logo.png?v=",
+      ),
+      true,
+    );
+    assertEquals(
+      (await brandingAsset(new Request("https://test/branding/logo.png")))
+        ?.headers.get("content-type"),
+      "image/png",
+    );
     assertEquals(await fetchBrandingImage("favicon"), icon);
     assertEquals(await fetchBrandingImage("social"), social);
     const saved = await fetchBranding();
@@ -90,6 +110,7 @@ Deno.test("system branding stores only overrides, validates images, checks autho
     assertEquals(head?.status, 200);
     assertEquals(await head?.text(), "");
     await saveBranding({ title: "Renamed" });
+    assertEquals(await fetchBrandingImage("logo"), logo);
     assertEquals(await fetchBrandingImage("favicon"), icon);
     assertEquals(await fetchBrandingImage("social"), social);
     await assertRejects(() => saveBranding({ title: "" }));
@@ -103,7 +124,13 @@ Deno.test("system branding stores only overrides, validates images, checks autho
     );
     assertEquals((await fetchBranding()).title, "Renamed");
     fixture.user("system");
-    await saveBranding({ title: "80|20", favicon: null, social: null });
+    await saveBranding({
+      title: "80|20",
+      favicon: null,
+      social: null,
+      logo: null,
+    });
+    assertEquals((await fetchBranding()).logo, null);
     assertEquals(await fetchBrandingImage("favicon"), null);
     assertEquals(await fetchBrandingImage("social"), null);
   } finally {

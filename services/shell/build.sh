@@ -10,3 +10,5 @@ mkdir -p "$SCRIPT_DIR/.generated"
 "$DENO_COMMAND" bundle --config "$PACKAGE_ROOT/deno.json" --platform browser --minify --sourcemap=external --output "$SCRIPT_DIR/.generated/system-customization.js" "$PACKAGE_ROOT/programs/system-customization/frontend.ts"
 "$DENO_COMMAND" bundle --config "$PACKAGE_ROOT/deno.json" --platform browser --minify --output "$PACKAGE_ROOT/public/status-brand.js" "$PACKAGE_ROOT/programs/status/frontend.ts"
 cp "$PACKAGE_ROOT/programs/status/frontend.css" "$PACKAGE_ROOT/public/status-brand.css"
+
+cp "$PACKAGE_ROOT/programs/system-customization/frontend.css" "$SCRIPT_DIR/.generated/system-customization.css"

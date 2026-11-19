@@ -5,6 +5,7 @@ const Branding = table("the8020__uui__branding", {
   id: t.integer().primaryKey(),
   title: t.from(serverTitle),
   revision: t.text(),
+  logo: t.bytes().nullable(),
   favicon: t.bytes().nullable(),
   social: t.bytes().nullable(),
 });

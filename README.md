@@ -50,14 +50,17 @@ values and standard personal/shared list layouts. See
 
 ## System branding
 
-Open **Administration → System customization** to set the server title, favicon,
-and social preview. Save applies the changes; Back discards them. Editing
-requires `the8020.uui.branding.edit`.
+Open **Administration → System customization** to set the server title, navbar
+logo, favicon, and social preview. Save applies the changes; Back discards them.
+Editing requires `the8020.uui.branding.edit`.
 
-Defaults are `80|20`, a yellow `80` favicon, and the branded social image.
-Uploaded images are center-cropped and resized to 64×64 PNG or 1200×630 JPEG.
-Custom images are stored in the database and served publicly for link previews.
-Browser tabs show the server title followed by the current screen title.
+Defaults are `80|20`, a yellow `80` favicon, and the branded social image. The
+backend converts uploads to 64×64 PNG favicons and 1200×630 JPEG social
+previews. Navbar logos use PNG within 384×128 pixels and retain ratios from 1:1
+through 3:1, including 16:9; other ratios are center-cropped along the longer
+side. Resetting the logo restores the textual wordmark. Custom images are stored
+in the database and served publicly for link previews. Browser tabs show the
+server title followed by the current screen title.
 
 ## Program declarations and launching
 

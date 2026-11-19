@@ -37,7 +37,8 @@ Parent DOX: [uui DOX](../AGENTS.md).
   layouts on distinct orders and deliveries lists.
 
 - [system-customization/AGENTS.md](system-customization/AGENTS.md): Edit the
-  system server title, favicon, and social preview through Administration.
+  system server title, navbar logo, favicon, and social preview through
+  Administration.
 
 - [customization/AGENTS.md](customization/AGENTS.md): Edit authenticated UUI
   preferences with save, default inheritance, and cancel behavior.

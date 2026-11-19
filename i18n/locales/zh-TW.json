@@ -353,6 +353,15 @@
     "status.credit": "適用於商業應用程式的開源平台。",
     "programs.status.description": "技術詳細資料",
     "status.program_name": "程式名稱",
-    "status.program_id": "程式 ID"
+    "status.program_id": "程式 ID",
+    "shortcuts.title": "快捷碼",
+    "shortcuts.help": "輸入代碼並按 Enter 開啟程式。點選鉛筆或按 F1/F4 開啟值說明，可依代碼、程式或描述搜尋。個人快捷碼優先於同名預設快捷碼。",
+    "shortcuts.duplicate": "此快捷碼已被使用。",
+    "shortcuts.not_found": "沒有程式與此快捷碼相符。",
+    "shortcuts.ambiguous": "多個程式使用此快捷碼。請在自訂中設定個人對應。",
+    "shortcuts.customize": "自訂",
+    "program.system_logo": "系統標誌",
+    "program.use_default_logo": "使用預設標誌",
+    "program.logo_help": "1:1–3:1 · PNG ≤384×128 px · ≤10 MiB. 其他長寬比會沿較長邊置中裁切。"
   }
 }

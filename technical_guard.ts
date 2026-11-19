@@ -1,3 +1,5 @@
+import { localizedText as resolveMessage } from "/p/the8020/i18n/mod.ts";
+import { msg as messageSymbol } from "/p/the8020/uui/i18n/messages.ts";
 import type { Middleware } from "/p/the8020/services/http.ts";
 
 const CACHE_MS = 30_000;
@@ -35,12 +37,19 @@ export function technicalGuard(
       cache.set(meta.user.username, entry);
     }
     if (entry.allowed) return await next();
-    return new Response("Technical accounts cannot use the user interface.", {
-      status: 403,
-      headers: {
-        "content-type": "text/plain; charset=utf-8",
-        "cache-control": "no-store",
+    return new Response(
+      await resolveMessage(
+        messageSymbol(
+          "errors.technical_accounts_cannot_use_the_user_interface",
+        ),
+      ),
+      {
+        status: 403,
+        headers: {
+          "content-type": "text/plain; charset=utf-8",
+          "cache-control": "no-store",
+        },
       },
-    });
+    );
   };
 }

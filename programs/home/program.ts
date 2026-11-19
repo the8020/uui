@@ -5,6 +5,7 @@ import {
   callScreen,
   Channel,
   endSession,
+  field,
   invokeProgram,
   Model,
   packageAssetURL,
@@ -19,13 +20,14 @@ import { homeCatalog, permittedTiles } from "./catalog.ts";
 import { homeTree } from "./tree.ts";
 import { readTileData } from "./tile_data.ts";
 import { concurrencyLimit } from "./limiter.ts";
+import { effectiveShortcuts, shortcutFields } from "../../shortcuts.ts";
+import { fetchUserShortcuts } from "../../preferences.ts";
+import { fieldMetadata } from "../../fields.ts";
 
 /** Upper bound on tiles one `load` request may ask for. */
 const MAX_TILES_PER_LOAD = 100;
 /** Data programs running at once per Home session; others wait in order. */
 const DATA_CONCURRENCY = 6;
-
-const HomeScreen = z.object({});
 
 export default function home(): Promise<void> {
   return runHome("/workspace/packages");
@@ -33,13 +35,26 @@ export default function home(): Promise<void> {
 
 export async function runHome(programsRoot: string): Promise<void> {
   // One Model keeps the navigator's selected folder across program returns.
-  const screenModel = new Model<z.infer<typeof HomeScreen>>({});
+  const screenModel = new Model({ shortcut: "" });
   const runData = concurrencyLimit(DATA_CONCURRENCY);
   // The catalog is kept between renders and rebuilt only on explicit Refresh.
   let catalog: Awaited<ReturnType<typeof homeCatalog>> | undefined;
   while (true) {
     catalog ??= await homeCatalog(programsRoot);
     const current = catalog;
+    const fields = shortcutFields(() => Promise.resolve(current.programs));
+    const schema = z.object({
+      shortcut: field(fields.shortcut.or(z.literal("")), {
+        ...fieldMetadata(fields.shortcut),
+        label: `[[icon=keyboard_command_key]] ${
+          localizedText(fieldMetadata(fields.shortcut)!.label!)
+        }`,
+        class: "home-shortcut",
+        description: msg("shortcuts.help"),
+        enterEvent: "launch-shortcut",
+        placeholder: fieldMetadata(fields.shortcut)!.label,
+      }),
+    });
     // Roles may change between renders, so visibility is evaluated each time.
     const tiles = await permittedTiles(
       current,
@@ -47,6 +62,31 @@ export async function runHome(programsRoot: string): Promise<void> {
     );
     const shown = new Set(tiles.map((tile) => tile.id));
     const channel = new Channel();
+    const shortcuts = channel.subscribe("shortcuts", async () => {
+      const output = channel.capture();
+      const rows = effectiveShortcuts(
+        current.programs,
+        await fetchUserShortcuts(),
+      );
+      const counts = new Map<string, number>();
+      for (const row of rows) {
+        counts.set(row.shortcut, (counts.get(row.shortcut) ?? 0) + 1);
+      }
+      const byProgram = new Map<string, string[]>();
+      for (const row of rows) {
+        if (counts.get(row.shortcut) !== 1) continue;
+        const codes = byProgram.get(row.program) ?? [];
+        codes.push(row.shortcut);
+        byProgram.set(row.program, codes);
+      }
+      output.send(
+        "shortcuts",
+        Object.fromEntries(tiles.map((tile) => [
+          tile.id,
+          byProgram.get(current.actions.get(tile.id)!.program) ?? [],
+        ])),
+      );
+    });
     // The browser asks for the tiles it shows, so no result precedes its
     // subscription; each tile is sent as soon as its program answers.
     const loading = channel.subscribe("load", async (_id, data) => {
@@ -75,8 +115,9 @@ export async function runHome(programsRoot: string): Promise<void> {
     try {
       event = await callScreen({
         id: "home",
+        class: "home-screen",
         title: msg("program.welcome_to_80_20"),
-        schema: HomeScreen,
+        schema,
         model: screenModel,
         layout,
         systemButtons: {
@@ -99,6 +140,7 @@ export async function runHome(programsRoot: string): Promise<void> {
       });
     } finally {
       loading.unsubscribe();
+      shortcuts.unsubscribe();
       channel.dispose();
     }
     if (event.action === "refresh") catalog = undefined;
@@ -109,6 +151,26 @@ export async function runHome(programsRoot: string): Promise<void> {
         "/the8020/uui/login/logout",
       );
       return;
+    }
+    if (event.action === "launch-shortcut") {
+      const code = screenModel.data.shortcut.trim().toUpperCase();
+      if (!code) continue;
+      const matches = effectiveShortcuts(
+        current.programs,
+        await fetchUserShortcuts(),
+      )
+        .filter((row) => row.shortcut === code);
+      if (matches.length !== 1) {
+        sendMessage(
+          localizedText(
+            msg(matches.length ? "shortcuts.ambiguous" : "shortcuts.not_found"),
+          ),
+          "error",
+        );
+        continue;
+      }
+      screenModel.data.shortcut = "";
+      await invokeProgram(matches[0]!.program, [], programsRoot);
     }
     if (event.action === "select" && typeof event.value === "string") {
       const action = current.actions.get(event.value);

@@ -27,6 +27,10 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
 - Default brand files are `default-favicon.png` (64×64 optimized palette PNG)
   and `default-social.jpg` (1200×630 progressive JPEG). Their generated masters
   use yellow `80` and yellow/white `80|20` on the dark brand background.
+- A saved system logo replaces only the navbar wordmark inside the existing
+  Status button. Server HTML and presentation preference refreshes use its
+  revisioned URL. Display at 32px high with a 4px radius; reset restores the
+  wordmark, and the button keeps its existing Status action and focus behavior.
 - Window titles prepend boot's server title to the active heading. Ordinary
   preference refreshes update the title and revisioned favicon without polling.
 
@@ -70,10 +74,12 @@ Parent DOX: [uui/services/shell DOX](../AGENTS.md).
 - `session_controls.ts` keeps the user menu and notifications in a manual
   top-layer popover above every modal and backdrop. Retain the same controls in
   the active native dialog's DOM scope so theme, logout, and Messages remain
-  interactive; reserve their navbar position with the original slot. Pending
-  modal interactions make only the program frame inert. Escape closes an open
-  user menu before dismissing its modal. Native Tab can reach the global
-  controls; field-navigation shortcuts remain scoped to the dialog frame.
+  interactive; reserve their navbar position with the original slot. Reposition
+  after image loads and slot-parent resizing, so a changed logo cannot overlap
+  adjacent navigation. Pending modal interactions make only the program frame
+  inert. Escape closes an open user menu before dismissing its modal. Native Tab
+  can reach the global controls; field-navigation shortcuts remain scoped to the
+  dialog frame.
 - The same popover/slot mechanism keeps system navigation interactive above
   native modals. Removed buttons leave no gap; the active screen owns shortcuts.
 - Reconcile stable surfaces and retained DOM while preserving dirty values,

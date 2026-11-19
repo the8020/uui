@@ -1,0 +1,279 @@
+import { encodeAV1, encodeAV1Threaded } from "./av1/encode.js";
+import { startThreads } from "../util/threads.js";
+import { writeISO } from "./gainmap.js";
+const MIN_THREADED_PIXELS = [640 * 640, 448 * 448, 320 * 320], PIXELS_PER_THREAD = [512 << 10, 256 << 10, 256 << 10];
+const QINDEX = [
+    0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68, 72, 76, 80, 84, 88, 92, 96, 100, 104, 108, 112,
+    116, 120, 124, 128, 132, 136, 140, 144, 148, 152, 156, 160, 164, 168, 172, 176, 180, 184, 188, 192, 196, 200, 204, 208,
+    212, 216, 220, 224, 228, 232, 236, 240, 244, 249, 255
+];
+const qindex = (quality) => QINDEX[Math.round((100 - Math.max(0, Math.min(100, quality))) * 63 / 100)];
+const KR = 0.299, KB = 0.114, KG = 1 - KR - KB, CICP = [1, 13, 6];
+const MAP_CICP = [2, 2, 6];
+function toYUV(rgba, width, height, subsampled) {
+    const n = width * height, y = new Uint8Array(n);
+    const u = new Float64Array(n), v = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+        const r = rgba[4 * i], g = rgba[4 * i + 1], b = rgba[4 * i + 2];
+        const l = KR * r + KG * g + KB * b;
+        y[i] = Math.round(l);
+        u[i] = (b - l) / (2 * (1 - KB)) + 128;
+        v[i] = (r - l) / (2 * (1 - KR)) + 128;
+    }
+    const byte = (x) => x < 0 ? 0 : x > 255 ? 255 : Math.round(x);
+    if (!subsampled) {
+        const cu = new Uint8Array(n), cv = new Uint8Array(n);
+        for (let i = 0; i < n; i++) {
+            cu[i] = byte(u[i]);
+            cv[i] = byte(v[i]);
+        }
+        return [y, cu, cv];
+    }
+    const cw = width + 1 >> 1, ch = height + 1 >> 1, cu = new Uint8Array(cw * ch), cv = new Uint8Array(cw * ch);
+    for (let cy = 0; cy < ch; cy++) {
+        for (let cx = 0; cx < cw; cx++) {
+            let su = 0, sv = 0, k = 0;
+            for (let dy = 0; dy < 2 && 2 * cy + dy < height; dy++) {
+                for (let dx = 0; dx < 2 && 2 * cx + dx < width; dx++, k++) {
+                    const i = (2 * cy + dy) * width + 2 * cx + dx;
+                    su += u[i];
+                    sv += v[i];
+                }
+            }
+            cu[cy * cw + cx] = byte(su / k);
+            cv[cy * cw + cx] = byte(sv / k);
+        }
+    }
+    return [y, cu, cv];
+}
+function fillTransparent(rgba, width, height) {
+    const out = rgba.slice();
+    const levels = [];
+    let w = width, h = height, sum = new Float64Array(w * h * 3), n = new Float64Array(w * h);
+    for (let i = 0; i < w * h; i++) {
+        if (!rgba[4 * i + 3])
+            continue;
+        n[i] = 1;
+        for (let c = 0; c < 3; c++)
+            sum[3 * i + c] = rgba[4 * i + c];
+    }
+    levels.push({ w, h, sum, n });
+    while (w > 1 || h > 1) {
+        const pw = w + 1 >> 1, ph = h + 1 >> 1, ps = new Float64Array(pw * ph * 3), pn = new Float64Array(pw * ph);
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                const i = y * w + x, j = (y >> 1) * pw + (x >> 1);
+                pn[j] += n[i];
+                for (let c = 0; c < 3; c++)
+                    ps[3 * j + c] += sum[3 * i + c];
+            }
+        }
+        levels.push({ w: w = pw, h: h = ph, sum: sum = ps, n: n = pn });
+    }
+    let colors = new Float64Array(3);
+    for (let c = 0; c < 3; c++)
+        colors[c] = n[0] ? sum[c] / n[0] : 0;
+    for (let l = levels.length - 2; l >= 0; l--) {
+        const { w, h, sum, n } = levels[l], pw = levels[l + 1].w, next = new Float64Array(w * h * 3);
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                const i = y * w + x, j = (y >> 1) * pw + (x >> 1);
+                for (let c = 0; c < 3; c++)
+                    next[3 * i + c] = n[i] ? sum[3 * i + c] / n[i] : colors[3 * j + c];
+            }
+        }
+        colors = next;
+    }
+    const unknown = [];
+    for (let i = 0; i < width * height; i++)
+        if (!rgba[4 * i + 3])
+            unknown.push(i);
+    for (let pass = 0; pass < 4; pass++) {
+        for (const i of unknown) {
+            const x = i % width, y = (i - x) / width;
+            for (let c = 0; c < 3; c++) {
+                let s = colors[3 * i + c], k = 1;
+                if (x) {
+                    s += colors[3 * (i - 1) + c];
+                    k++;
+                }
+                if (x + 1 < width) {
+                    s += colors[3 * (i + 1) + c];
+                    k++;
+                }
+                if (y) {
+                    s += colors[3 * (i - width) + c];
+                    k++;
+                }
+                if (y + 1 < height) {
+                    s += colors[3 * (i + width) + c];
+                    k++;
+                }
+                colors[3 * i + c] = s / k;
+            }
+        }
+    }
+    for (const i of unknown)
+        for (let c = 0; c < 3; c++)
+            out[4 * i + c] = Math.round(colors[3 * i + c]);
+    return out;
+}
+const ascii = (s) => Array.from(s, c => c.charCodeAt(0));
+const u16 = (v) => [v >> 8 & 255, v & 255];
+const u32 = (v) => [v >>> 24, v >> 16 & 255, v >> 8 & 255, v & 255];
+const box = (type, ...content) => {
+    const body = content.flat();
+    return [...u32(8 + body.length), ...ascii(type), ...body];
+};
+const fullBox = (type, version, flags, ...content) => box(type, [version, flags >> 16 & 255, flags >> 8 & 255, flags & 255], ...content);
+function av1C(data) {
+    let size = 0, i = 1, shift = 0;
+    for (;; i++) {
+        size += (data[i] & 0x7f) << shift;
+        shift += 7;
+        if (!(data[i] & 0x80))
+            break;
+    }
+    const seqObu = Array.from(data.subarray(0, i + 1 + size));
+    const profile = data[i + 1] >> 5, level = (data[i + 1] & 7) << 2 | data[i + 2] >> 6;
+    const monochrome = profile !== 1 && seqMonochrome(data, i + 1);
+    return box('av1C', [0x81, profile << 5 | level, (monochrome ? 0x10 : 0) | (profile === 1 ? 0 : 0x0c), 0], seqObu);
+}
+function seqMonochrome(d, o) {
+    let bit = o * 8;
+    const read = (n) => {
+        let v = 0;
+        for (let k = 0; k < n; k++, bit++)
+            v = v * 2 + (d[bit >> 3] >> (7 - (bit & 7)) & 1);
+        return v;
+    };
+    read(3 + 1 + 1 + 5);
+    const wb = read(4) + 1, hb = read(4) + 1;
+    read(wb + hb + 6);
+    read(1);
+    return !!read(1);
+}
+export async function encode(rgba, width, height, { quality, alphaQuality, subsampling, effort, exif, threads: maxThreads, gainMap }) {
+    if (width < 1 || height < 1)
+        throw new RangeError('AVIF: dimensions must be at least 1');
+    if (width > 65536 || height > 65536)
+        throw new RangeError('AVIF: dimensions must be at most 65536');
+    let opaque = true;
+    for (let i = 3; i < rgba.length; i += 4)
+        if (rgba[i] !== 255) {
+            opaque = false;
+            break;
+        }
+    const original = rgba;
+    if (!opaque && qindex(quality))
+        rgba = fillTransparent(rgba, width, height);
+    let gray = true;
+    for (let i = 0; i < rgba.length; i += 4)
+        if (rgba[i] !== rgba[i + 1] || rgba[i] !== rgba[i + 2]) {
+            gray = false;
+            break;
+        }
+    const lossless = !qindex(quality) && !gray, subsampled = subsampling === '4:2:0' && !lossless && !gray;
+    const cicp = lossless ? [1, 13, 0] : CICP;
+    const planes = gray ? [Uint8Array.from({ length: width * height }, (_, i) => rgba[4 * i])]
+        : lossless ? [1, 2, 0].map(c => Uint8Array.from({ length: width * height }, (_, i) => rgba[4 * i + c])) : toYUV(rgba, width, height, subsampled);
+    const n = Math.min(maxThreads, height + 63 >> 6, Math.ceil((width + 63 >> 6) / 2), Math.max(4, Math.floor(width * height / PIXELS_PER_THREAD[effort])));
+    let threads = n > 1 && width * height >= MIN_THREADED_PIXELS[effort] ? startThreads(n) : null;
+    const stop = () => {
+        if (threads)
+            for (const t of threads)
+                t.terminate();
+        threads = null;
+    };
+    const av1 = async (image, params) => {
+        if (threads) {
+            try {
+                return await encodeAV1Threaded(image, params, threads);
+            }
+            catch {
+                stop();
+            }
+        }
+        return encodeAV1(image, params);
+    };
+    let color, alpha = null, map = null;
+    let mapGray = true;
+    if (gainMap)
+        for (let i = 0; i < gainMap.pixels.length; i += 4)
+            if (gainMap.pixels[i] !== gainMap.pixels[i + 1] || gainMap.pixels[i] !== gainMap.pixels[i + 2]) {
+                mapGray = false;
+                break;
+            }
+    try {
+        color = await av1({ planes, width, height, layout: gray ? 0 : subsampled ? 1 : 3, cicp }, { qidx: qindex(quality), effort });
+        if (!opaque) {
+            const a = new Uint8Array(width * height);
+            for (let i = 0; i < a.length; i++)
+                a[i] = original[4 * i + 3];
+            alpha = await av1({ planes: [a], width, height, layout: 0, cicp: [2, 2, 2] }, { qidx: qindex(alphaQuality), effort });
+        }
+        if (gainMap) {
+            const { pixels, width: w, height: h } = gainMap;
+            const mapPlanes = mapGray ? [Uint8Array.from({ length: w * h }, (_, i) => pixels[4 * i])] : toYUV(pixels, w, h, false);
+            map = await av1({ planes: mapPlanes, width: w, height: h, layout: mapGray ? 0 : 3, cicp: MAP_CICP }, { qidx: qindex(gainMap.quality), effort });
+        }
+    }
+    finally {
+        stop();
+    }
+    const profile = subsampled || gray ? 'MA1B' : 'MA1A';
+    const ftyp = box('ftyp', ascii('avif'), u32(0), ascii('avif'), ascii('mif1'), ascii('miaf'), ascii(profile), map ? ascii('tmap') : []);
+    const hdlr = fullBox('hdlr', 0, 0, u32(0), ascii('pict'), u32(0), u32(0), u32(0), [0]);
+    const pitm = fullBox('pitm', 0, 0, u16(1));
+    const items = [];
+    const properties = [];
+    const property = (p) => properties.push(p);
+    const nclx = (c) => box('colr', ascii('nclx'), u16(c[0]), u16(c[1]), u16(c[2]), [0x80]);
+    const pixi = (channels) => fullBox('pixi', 0, 0, [channels], new Array(channels).fill(8));
+    const ispe = property(fullBox('ispe', 0, 0, u32(width), u32(height)));
+    const colorConfig = property(av1C(color)) | 0x80, colr = property(nclx(cicp));
+    items.push({ type: 'av01', name: 'Color', data: [color], props: [ispe, colorConfig, colr, property(pixi(gray ? 1 : 3))] });
+    const alphaId = alpha ? items.push({
+        type: 'av01', name: 'Alpha', data: [alpha],
+        props: [ispe, property(av1C(alpha)) | 0x80, property(pixi(1)), property(fullBox('auxC', 0, 0, ascii('urn:mpeg:mpegB:cicp:systems:auxiliary:alpha'), [0]))]
+    }) : 0;
+    let mapId = 0, tmapId = 0;
+    if (map && gainMap) {
+        mapId = items.push({
+            type: 'av01', name: 'GMap', hidden: true, data: [map],
+            props: [property(fullBox('ispe', 0, 0, u32(gainMap.width), u32(gainMap.height))), property(av1C(map)) | 0x80, property(nclx(MAP_CICP)), property(pixi(mapGray ? 1 : 3))]
+        });
+        tmapId = items.push({ type: 'tmap', name: 'TMap', data: [[0], writeISO(gainMap.params)], props: [ispe, property(nclx([cicp[0], 16, cicp[2]]))] });
+    }
+    const exifId = exif?.length ? items.push({ type: 'Exif', name: 'Exif', data: [u32(0), exif], props: [] }) : 0;
+    const sizes = items.map(item => item.data.reduce((n, d) => n + d.length, 0));
+    const infe = (id, item) => fullBox('infe', 2, item.hidden ? 1 : 0, u16(id), u16(0), ascii(item.type), ascii(item.name), [0]);
+    const iinf = fullBox('iinf', 0, 0, u16(items.length), ...items.map((item, i) => infe(i + 1, item)));
+    const refs = [alphaId ? box('auxl', u16(alphaId), u16(1), u16(1)) : [], tmapId ? box('dimg', u16(tmapId), u16(2), u16(1), u16(mapId)) : [],
+        exifId ? box('cdsc', u16(exifId), u16(1), u16(1)) : []];
+    const iref = refs.some(r => r.length) ? fullBox('iref', 0, 0, ...refs) : [];
+    const ipco = box('ipco', ...properties);
+    const associated = items.map((item, i) => [i + 1, item.props]).filter(([, props]) => props.length);
+    const ipma = fullBox('ipma', 0, 0, u32(associated.length), ...associated.map(([id, props]) => [...u16(id), props.length, ...props]));
+    const iprp = box('iprp', ipco, ipma);
+    const grpl = tmapId ? box('grpl', fullBox('altr', 0, 0, u32(items.length + 1), u32(2), u32(tmapId), u32(1))) : [];
+    const ilocFor = (offset) => fullBox('iloc', 0, 0, [0x44, 0x00], u16(items.length), ...items.map((_, i) => {
+        const at = offset + sizes.slice(0, i).reduce((n, size) => n + size, 0);
+        return [...u16(i + 1), ...u16(0), ...u16(1), ...u32(at), ...u32(sizes[i])];
+    }));
+    const metaFor = (offset) => fullBox('meta', 0, 0, hdlr, pitm, ilocFor(offset), iinf, iref, iprp, grpl);
+    const headerSize = ftyp.length + metaFor(0).length + 8;
+    const head = [...ftyp, ...metaFor(headerSize)];
+    const mdatSize = 8 + sizes.reduce((n, size) => n + size, 0);
+    const out = new Uint8Array(head.length + mdatSize);
+    out.set(head);
+    out.set([...u32(mdatSize), ...ascii('mdat')], head.length);
+    let at = head.length + 8;
+    for (const item of items) {
+        for (const d of item.data) {
+            out.set(d, at);
+            at += d.length;
+        }
+    }
+    return out;
+}

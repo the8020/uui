@@ -1,3 +1,5 @@
+import { text as formatMessage } from "/p/the8020/i18n/mod.ts";
+import { msg as messageSymbol } from "/p/the8020/uui/i18n/messages.ts";
 import { DEFAULT_SERVER_TITLE, serverTitle } from "./src/branding_fields.ts";
 import { type BrandingImage, brandingImage } from "./src/branding_images.ts";
 
@@ -7,10 +9,14 @@ export const PUBLIC_BRANDING_PATH = "/the8020/uui/login/branding/";
 export async function fetchBranding() {
   const { default: Branding } = await import("./tables/branding.ts");
   const row = await Branding.select([Branding.title, Branding.revision])
+    .select((eb) => eb(Branding.logo, "is not", null).as("hasLogo"))
     .where(Branding.id, "=", 1).executeTakeFirst();
   return {
     title: row?.title ?? DEFAULT_SERVER_TITLE,
     revision: row?.revision ?? "default",
+    logo: row?.hasLogo
+      ? `${PUBLIC_BRANDING_PATH}logo.png?v=${row.revision}`
+      : null,
   };
 }
 
@@ -31,10 +37,12 @@ export function validateBrandingImage(
   const expected = brandingImage[kind];
   let width = 0, height = 0;
   if (bytes.byteLength > expected.maximumBytes) {
-    throw new Error("Converted image is too large.");
+    throw new Error(
+      formatMessage(messageSymbol("errors.converted_image_is_too_large")),
+    );
   }
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  if (kind === "favicon") {
+  if (expected.type === "image/png") {
     if (
       bytes.length >= 45 && view.getUint32(0) === 0x89504e47 &&
       view.getUint32(4) === 0x0d0a1a0a && view.getUint32(8) === 13 &&
@@ -61,22 +69,35 @@ export function validateBrandingImage(
       offset += length + 2;
     }
   }
-  if (width !== expected.width || height !== expected.height) {
+  const validSize = kind === "logo"
+    ? width > 0 && height > 0 && width <= expected.width &&
+      height <= expected.height &&
+      width / height >= brandingImage.logo.minimumRatio &&
+      width / height <= brandingImage.logo.maximumRatio
+    : width === expected.width && height === expected.height;
+  if (!validSize) {
     throw new Error(
-      `Select a valid ${expected.width}×${expected.height} ${kind} image.`,
+      formatMessage(
+        messageSymbol("errors.select_a_valid_image", {
+          value1: String(expected.width),
+          value2: String(expected.height),
+          kind: String(kind),
+        }),
+      ),
     );
   }
 }
 
 export async function saveBranding(input: {
   title: string;
+  logo?: Uint8Array | null;
   favicon?: Uint8Array | null;
   social?: Uint8Array | null;
 }): Promise<void> {
   const { requirePermission } = await import("/p/the8020/auth/mod.ts");
   await requirePermission(BRANDING_PERMISSION, "");
   const title = serverTitle.parse(input.title);
-  for (const kind of ["favicon", "social"] as const) {
+  for (const kind of ["logo", "favicon", "social"] as const) {
     if (input[kind] != null) validateBrandingImage(kind, input[kind]);
   }
   const { db } = await import("/p/the8020/db/mod.ts");
@@ -84,11 +105,13 @@ export async function saveBranding(input: {
   const changes = {
     title,
     revision: crypto.randomUUID(),
+    ...(input.logo !== undefined ? { logo: input.logo } : {}),
     ...(input.favicon !== undefined ? { favicon: input.favicon } : {}),
     ...(input.social !== undefined ? { social: input.social } : {}),
   };
   await db.insertInto(Branding.table).values({
     id: 1,
+    logo: null,
     favicon: null,
     social: null,
     ...changes,

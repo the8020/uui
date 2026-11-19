@@ -353,6 +353,15 @@
     "status.credit": "Atvirojo kodo platforma verslo programoms.",
     "programs.status.description": "Techninė informacija",
     "status.program_name": "Programos pavadinimas",
-    "status.program_id": "Programos ID"
+    "status.program_id": "Programos ID",
+    "shortcuts.title": "Trumpieji kodai",
+    "shortcuts.help": "Įveskite kodą ir paspauskite Enter, kad atidarytumėte programą. Pieštukas arba F1/F4 atveria pasirinkimo pagalbą; ieškokite pagal kodą, programą ar aprašą. Asmeniniai kodai pakeičia atitinkamus numatytuosius.",
+    "shortcuts.duplicate": "Šis kodas jau naudojamas.",
+    "shortcuts.not_found": "Šio kodo neatitinka jokia programa.",
+    "shortcuts.ambiguous": "Šį kodą naudoja kelios programos. Tinkinimo lange nustatykite asmeninį priskyrimą.",
+    "shortcuts.customize": "Tinkinti",
+    "program.system_logo": "Sistemos logotipas",
+    "program.use_default_logo": "Naudoti numatytąjį logotipą",
+    "program.logo_help": "1:1–3:1 · PNG ≤384×128 px · ≤10 MiB. Kiti santykiai apkerpami nuo centro išilgai ilgesnės kraštinės."
   }
 }

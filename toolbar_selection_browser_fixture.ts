@@ -385,19 +385,18 @@ export default function fixture() {
       );
       await idle();
       await checkGaps(".program-header-visible");
-      const alignedToolbars = async (sideBySide: boolean) => {
+      const checkToolbars = async () => {
         assert(
           await page.evaluate<boolean>(`(() => {
           const bars = [...document.querySelectorAll('.data-list-custom-toolbar')];
           const height = document.querySelector('.navbar-inner').getBoundingClientRect().height;
-          const tables = [...document.querySelectorAll('.data-list')];
-          return bars.length === 2 && bars.every(bar => Math.abs(bar.getBoundingClientRect().height - height) < 1)
-            && (!${sideBySide} || Math.abs(tables[0].getBoundingClientRect().top - tables[1].getBoundingClientRect().top) < 1);
+          return bars.length === 2 && bars.some(bar => bar.hidden && bar.getBoundingClientRect().height === 0)
+            && bars.filter(bar => !bar.hidden).every(bar => Math.abs(bar.getBoundingClientRect().height - height) < 1);
         })()`),
-          "list toolbars match navbar height and paired tables align",
+          "nonempty toolbars match navbar height and empty toolbars collapse",
         );
       };
-      await alignedToolbars(true);
+      await checkToolbars();
       await screenshot("paired");
       const revealToolbar = async () => {
         await page.evaluate(`(() => {
@@ -507,7 +506,7 @@ export default function fixture() {
         mobile: true,
       });
       await idle();
-      await alignedToolbars(false);
+      await checkToolbars();
       assert(
         await page.evaluate<boolean>(`(() => {
         const more = document.querySelector('.data-list-custom-toolbar details');
@@ -522,7 +521,7 @@ export default function fixture() {
         const bounds = menu.getBoundingClientRect();
         return bounds.width > 0 && bounds.left >= 9 && bounds.right <= innerWidth - 9;
       })()`), "toolbar overflow fits the viewport");
-      await alignedToolbars(false);
+      await checkToolbars();
       await input("#custom-toolbar-input", "Overflow saved");
       await screenshot("overflow");
       await click("[data-element-id=save-toolbar]");

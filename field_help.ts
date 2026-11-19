@@ -1,3 +1,8 @@
+import {
+  localizedText as resolveMessage,
+  text as formatMessage,
+} from "/p/the8020/i18n/mod.ts";
+import { msg as messageSymbol } from "/p/the8020/uui/i18n/messages.ts";
 import { text as localizedText } from "/p/the8020/i18n/mod.ts";
 import { msg } from "/p/the8020/uui/i18n/messages.ts";
 import {
@@ -57,7 +62,11 @@ export async function readValueHelp(
     Object.keys(result.schema.shape).length === 0
   ) {
     throw new TypeError(
-      "Value help requires a row schema with a selection key first",
+      await resolveMessage(
+        messageSymbol(
+          "errors.value_help_requires_a_row_schema_with_a_selection_key",
+        ),
+      ),
     );
   }
   if (
@@ -65,7 +74,11 @@ export async function readValueHelp(
     typeof result.more !== "boolean"
   ) {
     throw new TypeError(
-      "Value help returned an invalid page or more than the requested limit",
+      await resolveMessage(
+        messageSymbol(
+          "errors.value_help_returned_an_invalid_page_or_more_than_the",
+        ),
+      ),
     );
   }
   return { ...result, rows: result.schema.array().parse(result.rows) };
@@ -133,7 +146,7 @@ class MultipleDraft {
   }
 }
 
-/** An isolated draft: only Done commits through the caller's complete schema. */
+/** An isolated draft: Done or a scalar choice commits through the caller schema. */
 export async function runFieldHelp(
   schema: z.ZodType,
   control: ControlDescriptor,
@@ -199,13 +212,23 @@ export async function runFieldHelp(
           isSelected: (row) => draft.has(keyOf(row)),
           count: () => draft.entries().length,
           validate: (rows, selected) => {
-            if (!editable) throw new TypeError("This field is read-only.");
+            if (!editable) {
+              throw new TypeError(
+                formatMessage(messageSymbol("errors.this_field_is_read_only")),
+              );
+            }
             const maximum = control.multiple?.maximum;
             if (
               selected && maximum !== undefined &&
               new Set([...draft.entries(), ...rows.map(keyOf)]).size > maximum
             ) {
-              throw new TypeError(`Select at most ${maximum} values.`);
+              throw new TypeError(
+                formatMessage(
+                  messageSymbol("errors.select_at_most_values", {
+                    maximum: String(maximum),
+                  }),
+                ),
+              );
             }
           },
           set: (rows, selected) => {
@@ -225,7 +248,12 @@ export async function runFieldHelp(
               rows.push(...chunk.rows);
               if (rows.length > limit) {
                 throw new TypeError(
-                  `The search matches more than ${limit} values. Narrow the search or raise the limit.`,
+                  await resolveMessage(
+                    messageSymbol(
+                      "errors.the_search_matches_more_than_values_narrow_the_search_or",
+                      { limit: String(limit) },
+                    ),
+                  ),
                 );
               }
               if (!chunk.more || chunk.rows.length === 0) break;
@@ -305,6 +333,10 @@ export async function runFieldHelp(
             label: msg("field_help.done"),
             kind: "primary" as const,
           }]),
+          ...(metadata?.helpActions ?? []).map((action, index) => ({
+            id: `help-action-${index}`,
+            label: action.label,
+          })),
           ...(metadata?.open === undefined || model.data.value == null ||
               model.data.value === ""
             ? []
@@ -313,14 +345,13 @@ export async function runFieldHelp(
       },
     });
     if (event.action === BACK_EVENT) return;
-    // One value: a click selects, a double-click selects and finishes.
+    // One value: selecting a row commits through the same validation as Done.
     const chosen = event.action === "select" && draft === undefined &&
       editable &&
       (event.eventType === "select" || event.eventType === "activate");
     if (chosen) model.data.value = structuredClone(event.value);
     if (
-      (event.action === "done" ||
-        chosen && event.eventType === "activate") && editable
+      (event.action === "done" || chosen) && editable
     ) {
       try {
         binding.set(model.data.value);
@@ -334,6 +365,10 @@ export async function runFieldHelp(
         );
       }
     }
+    const helpAction = metadata?.helpActions?.find((_, index) =>
+      event.action === `help-action-${index}`
+    );
+    if (helpAction) await helpAction.run();
     if (event.action === "open" && metadata?.open !== undefined) {
       try {
         const value = schema.parse(model.data.value);

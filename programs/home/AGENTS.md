@@ -54,7 +54,7 @@ Parent DOX: [uui programs DOX](../AGENTS.md).
   status `ok`, `info`, `warning` or `danger`), or `{ tile, error: true }` after
   a logged failure. Tiles render first, show `…` while loading and `—` when
   unavailable; unanswered requests may repeat after 20 seconds.
-- The page body is one preserved custom element. The left tree shows category
+- The navigator is one preserved custom element. The left tree shows category
   folders with their tiles; a root with one folder collapses into it. Folders
   precede tiles, both by order then title. The right pane shows tiles for the
   selected folder's children with a clickable path. Folder tiles and tree
@@ -75,6 +75,18 @@ Parent DOX: [uui programs DOX](../AGENTS.md).
   discoverable flags.
 - Invoke ordinary programs and return silently without a generic completion
   notification.
+- An ordinary shortcut field sits opposite the welcome heading above the
+  navigator, stacking on narrow screens. Enter launches the matching UUI program
+  without arguments. Its pencil and F1/F4 open standard help with searchable
+  shortcut, program and description columns. Both the field and right-aligned
+  tile footers use `keyboard_command_key`. Its prefix label fits the complete
+  icon height. Shortcut help offers Customize, opening the ordinary
+  customization modal above help. Folder tiles have no shortcuts.
+- Discovery includes hidden UUI programs for shortcuts while default tile rules
+  stay unchanged. Personal mappings are read at lookup/launch. The navigator
+  asks for `shortcuts` on activation or update; Home answers with effective
+  codes by tile ID, so returning from Customization refreshes footers. Ambiguous
+  default codes are omitted from footers and report an error on launch.
 
 # Work Guidance
 
@@ -87,6 +99,11 @@ Parent DOX: [uui programs DOX](../AGENTS.md).
   `limiter_test.ts` covers bounded concurrency, and `tree_test.ts` covers folder
   ordering.
 - Run `deno task test:programs-browser` for the shared interactive launch path.
+- `deno task test:shortcuts-browser` exercises Home input/geometry, F4 and
+  nested value help, personal override save, duplicate rejection and mobile
+  sizing through the real shell and SQLite. `shortcuts_test.ts` covers
+  precedence, absent targets, collisions, own-user persistence, validation and
+  deletion cleanup.
 - The native `browser_e2e.ts` harness opens programs from Home through its
   shared `clickRow` helper: when no list row matches, it expands the tree one
   folder at a time and clicks the tile's tree leaf.

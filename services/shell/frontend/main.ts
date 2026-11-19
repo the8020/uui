@@ -111,6 +111,7 @@ interface PresentationLayer {
 interface BootData {
   localization?: import("/p/the8020/i18n/messages.ts").Bundle;
   serverTitle?: string;
+  systemLogo?: string | null;
   entryUrl?: string;
   preferencesUrl?: string;
   username?: string;
@@ -263,7 +264,7 @@ const endpointEntries = new Map<
 >();
 const channels = new ChannelRouter("client", (frame) => {
   if (socket?.readyState !== WebSocket.OPEN) {
-    throw new Error("UUI connection unavailable");
+    throw new Error(t("frontend.errors.uui_connection_unavailable"));
   }
   if (frame instanceof Uint8Array) {
     const decoded = decodeStreamChunk(frame);
@@ -280,7 +281,9 @@ const channels = new ChannelRouter("client", (frame) => {
     return;
   }
   const sequence = sendClient({ ...frame });
-  if (sequence === undefined) throw new Error("UUI connection unavailable");
+  if (sequence === undefined) {
+    throw new Error(t("frontend.errors.uui_connection_unavailable"));
+  }
 });
 function closeChannels(reason: string): void {
   channels.disconnect(reason);
@@ -355,7 +358,7 @@ function endpointFor(
       () => {
         if (
           socket?.readyState !== WebSocket.OPEN || suspended || ended
-        ) throw new Error("UUI connection unavailable");
+        ) throw new Error(t("frontend.errors.uui_connection_unavailable"));
         if (
           activeSurfaceID !== layer.surfaceId ||
           layer.screen.channelGeneration !== generation
@@ -379,12 +382,18 @@ function listRequest(
   signal?: AbortSignal,
 ): Promise<unknown> {
   if (!layerIsActive(layer)) {
-    return Promise.reject(new Error("The screen is busy or unavailable"));
+    return Promise.reject(
+      new Error(t("frontend.errors.the_screen_is_busy_or_unavailable")),
+    );
   }
   const namespace = layer.screen.lists.find((list) => list.id === listId)
     ?.channelNamespace;
   const channel = namespace ? endpointFor(layer, namespace) : undefined;
-  if (!channel) return Promise.reject(new Error("List channel unavailable"));
+  if (!channel) {
+    return Promise.reject(
+      new Error(t("frontend.errors.list_channel_unavailable")),
+    );
+  }
   const token = crypto.randomUUID();
   const owner = AbortSignal.any([channel.signal, ...(signal ? [signal] : [])]);
   if (owner.aborted) {
@@ -495,6 +504,7 @@ for (const button of [sessionStatus, brandStatus]) {
   });
 }
 installSessionControls(brandStatus, requiredElement<HTMLElement>("brand-slot"));
+applySystemLogo(boot.systemLogo);
 sessionAccount.addEventListener("click", () => {
   sessionMenu.open = false;
   dispatch(ACCOUNT_EVENT, "action");
@@ -619,7 +629,9 @@ async function connectAttempt(): Promise<void> {
         showEndedSession();
         return;
       }
-      if (!response.ok) throw new Error("Could not connect to the session");
+      if (!response.ok) {
+        throw new Error(t("frontend.errors.could_not_connect_to_the_session"));
+      }
       const result = await response.json();
       // Consume only the intent carried by this request; a button click may arrive during a poll.
       if (takeover) initialClaim = false;
@@ -817,7 +829,7 @@ function receive(raw: unknown): void {
     } catch {
       closeNativeDownloads();
       socket?.close(1003, "invalid stream frame");
-      console.error("The server sent invalid stream data.");
+      console.error(t("frontend.errors.the_server_sent_invalid_stream_data"));
     }
     return;
   }
@@ -826,7 +838,7 @@ function receive(raw: unknown): void {
   try {
     message = JSON.parse(raw) as UUIServerMessage;
   } catch {
-    console.error("The server sent an invalid message.");
+    console.error(t("frontend.errors.the_server_sent_an_invalid_message"));
     return;
   }
   if (
@@ -888,7 +900,9 @@ function receive(raw: unknown): void {
         messageCenter.synchronize(message.presentation.messages ?? []);
         if (!suspended && controlDialog.open) controlDialog.close();
       } catch {
-        console.error("The server sent an invalid presentation.");
+        console.error(
+          t("frontend.errors.the_server_sent_an_invalid_presentation"),
+        );
       }
       break;
     case "channel.frame":
@@ -972,6 +986,7 @@ async function refreshPreferences(): Promise<void> {
     applyAccent(document.documentElement, accentColor);
     if (typeof preferences.branding?.title === "string") {
       boot.serverTitle = preferences.branding.title;
+      applySystemLogo(preferences.branding.logo);
       synchronizeWindowTitle();
       const favicon = document.querySelector<HTMLLinkElement>(
         "#system-favicon",
@@ -991,6 +1006,19 @@ async function refreshPreferences(): Promise<void> {
       );
     }
   }
+}
+
+function applySystemLogo(url: string | null | undefined): void {
+  const logo = requiredElement<HTMLImageElement>("system-logo");
+  const wordmark = requiredElement<HTMLElement>("system-wordmark");
+  logo.hidden = !url;
+  wordmark.hidden = Boolean(url);
+  if (url) {
+    if (logo.getAttribute("src") !== url) logo.src = url;
+  } else {
+    logo.removeAttribute("src");
+  }
+  brandStatus.setAttribute("aria-label", boot.serverTitle ?? "80|20");
 }
 
 function applyTheme(theme: Theme): void {
@@ -1213,7 +1241,7 @@ function reconcilePresentation(presentation: PresentationSnapshot): void {
     presentation.activeSurfaceId !== null &&
       presentation.activeSurfaceId !== surfaces.at(-1)?.surfaceId
   ) {
-    console.error("The server sent an invalid presentation.");
+    console.error(t("frontend.errors.the_server_sent_an_invalid_presentation"));
     return;
   }
 
@@ -1237,7 +1265,7 @@ function reconcilePresentation(presentation: PresentationSnapshot): void {
       presentation.pageDepth,
     );
   } catch {
-    console.error("The server sent an invalid presentation.");
+    console.error(t("frontend.errors.the_server_sent_an_invalid_presentation"));
     return;
   }
 

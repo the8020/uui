@@ -7,6 +7,7 @@ import {
   type Selection,
   selectionElement,
   selectionSchema,
+  selectionTexts,
 } from "/p/the8020/db/selection.ts";
 import {
   field as defineField,
@@ -60,6 +61,7 @@ export interface FieldMetadata<Value = unknown>
   valueSuffix?: string;
   options?: (Omit<FieldOption, "label"> & { label: Text })[];
   fieldHelp?: boolean;
+  helpActions?: { label: Text; run(): void | Promise<void> }[];
   selection?: boolean;
   semanticType?: "long-string" | "date" | "datetime" | "email" | string;
 }
@@ -92,7 +94,7 @@ export function field<T extends z.ZodType>(
   validateComponentStyle(options);
   normalizeRowSpan(options.rowSpan);
   validateKeyboardMetadata(options);
-  const { valueHelp, open, storage, multiple, ...presentation } = {
+  const { valueHelp, open, storage, multiple, helpActions, ...presentation } = {
     ...fieldMetadata(schema),
     ...options,
   };
@@ -132,7 +134,7 @@ export function field<T extends z.ZodType>(
     open,
     ...(multiple === undefined ? {} : { multiple }),
   });
-  metadata.set(result, configured);
+  metadata.set(result, { ...configured, helpActions });
   if (customChannel) customChannels.set(result, customChannel);
   return result;
 }
@@ -144,7 +146,8 @@ export function fieldMetadata<T extends z.ZodType>(
   for (const current of fieldSchemas(schema).reverse()) {
     const own = metadata.get(current);
     if (own !== undefined) {
-      result = { ...result, ...cloneDeclaration(own) };
+      const { helpActions, ...presentation } = own;
+      result = { ...result, ...cloneDeclaration(presentation), helpActions };
       const channel = customChannels.get(current);
       if (channel && result.custom) {
         result.custom = { ...result.custom, channel };
@@ -466,6 +469,7 @@ export function prepareSchemaTexts(
     if (seen.has(declared)) return;
     seen.add(declared);
     metadata.push(fieldMetadata(declared));
+    if (selectionElement(declared)) metadata.push(selectionTexts);
     const inner = unwrap(declared).schema;
     if (inner instanceof z.ZodObject) {
       Object.values(inner.shape).forEach((value) => visit(value as z.ZodType));
