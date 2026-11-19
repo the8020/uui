@@ -1,0 +1,3643 @@
+/*!
+ * SVG renderer supporting a static subset of SVG 1.1/2:
+ * shapes, paths, transforms, nested svg/use/symbol, presentation attributes, inline styles and simple
+ * <style> sheets (type, class and id selectors), solid colors, linear and radial gradients, patterns, strokes
+ * (joins, caps, dashes), markers, opacity, clip paths, luminance masks, images in data URIs (rasters decoded by
+ * the caller, SVGs and SVGZs) and filters (all primitives, see filter.ts).
+ * Not supported: text, external images, animation and scripting.
+ * How patterns are rendered (a tile in device resolution, its filtering) and their reference cycles broken, and how
+ * images are fitted and sampled follows resvg/usvg, the markers (their placement and orientation,
+ * crates/usvg/src/parser/marker.rs) are ported from usvg (https://github.com/linebender/resvg; Copyright 2017 the
+ * Resvg Authors, MIT License, see THIRD_PARTY_NOTICES.md)
+ */
+import { decode as decodeUTF8, encode as encodeUTF8 } from "../util/utf8.js";
+import { base64 } from "../util/bytes.js";
+import { gunzip } from "../codecs/zlib.js";
+import { applyFilter } from "./filter.js";
+import { multiply, invert } from "../util/matrix.js";
+import { BLEND_MODES, blendPixel } from "./blend.js";
+import { fontFace, layOutText, parseFontFamilies, parseVariationSettings, pathLength, placeOutline, colorTablesOf } from "./svg-text.js";
+import { rasterizeGlyph } from "./text.js";
+import { renderPaintGlyph } from "./colr.js";
+import { decodeSync as decodePNG } from "../codecs/png.js";
+const UNSUPPORTED = new Set(['filter', 'pattern', 'marker', 'foreignObject', 'script', 'style', 'title', 'desc', 'metadata',
+    'defs', 'clipPath', 'mask', 'linearGradient', 'radialGradient', 'stop', 'symbol', 'font', 'font-face', 'animate', 'animateTransform', 'animateMotion', 'set']);
+const INHERITED = new Set(['fill', 'fill-opacity', 'fill-rule', 'stroke', 'stroke-width', 'stroke-opacity', 'stroke-linecap', 'stroke-linejoin',
+    'stroke-miterlimit', 'stroke-dasharray', 'stroke-dashoffset', 'color', 'visibility', 'clip-rule', 'font-size', 'marker-start', 'marker-mid',
+    'marker-end', 'image-rendering', 'color-interpolation-filters', 'paint-order', 'shape-rendering',
+    'font-family', 'font-weight', 'font-style', 'font-stretch', 'font-variant', 'text-anchor', 'letter-spacing', 'word-spacing', 'dominant-baseline',
+    'writing-mode', 'kerning', 'font-kerning', 'text-rendering', 'font-variation-settings', 'font-optical-sizing']);
+const CSS_ONLY = new Set(['font-kerning']);
+const SVG_ELEMENTS = new Set(['a', 'altGlyph', 'altGlyphDef', 'altGlyphItem', 'animate', 'animateColor', 'animateMotion', 'animateTransform', 'circle',
+    'clipPath', 'color-profile', 'cursor', 'defs', 'desc', 'ellipse', 'feBlend', 'feColorMatrix', 'feComponentTransfer', 'feComposite', 'feConvolveMatrix',
+    'feDiffuseLighting', 'feDisplacementMap', 'feDistantLight', 'feDropShadow', 'feFlood', 'feFuncA', 'feFuncB', 'feFuncG', 'feFuncR', 'feGaussianBlur',
+    'feImage', 'feMerge', 'feMergeNode', 'feMorphology', 'feOffset', 'fePointLight', 'feSpecularLighting', 'feSpotLight', 'feTile', 'feTurbulence',
+    'filter', 'font', 'font-face', 'foreignObject', 'g', 'glyph', 'glyphRef', 'hkern', 'image', 'line', 'linearGradient', 'marker', 'mask', 'metadata',
+    'missing-glyph', 'mpath', 'path', 'pattern', 'polygon', 'polyline', 'radialGradient', 'rect', 'script', 'set', 'stop', 'style', 'svg', 'switch',
+    'symbol', 'text', 'textPath', 'title', 'tref', 'tspan', 'use', 'view', 'vkern']);
+const SWITCHABLE = new Set(['svg', 'g', 'a', 'switch', 'use', 'path', 'rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'text', 'image', 'foreignObject']);
+const PROPERTIES = new Set([...INHERITED, 'opacity', 'display', 'clip-path', 'mask', 'stop-color', 'stop-opacity', 'transform', 'transform-origin', 'filter', 'flood-color',
+    'flood-opacity', 'lighting-color', 'text-decoration', 'baseline-shift', 'alignment-baseline']);
+const DEFAULTS = {
+    'fill': 'black', 'fill-opacity': '1', 'fill-rule': 'nonzero', 'stroke': 'none', 'stroke-width': '1', 'stroke-opacity': '1',
+    'stroke-linecap': 'butt', 'stroke-linejoin': 'miter', 'stroke-miterlimit': '4', 'stroke-dasharray': 'none', 'stroke-dashoffset': '0',
+    'color': 'black', 'visibility': 'visible', 'clip-rule': 'nonzero', 'font-size': '16', 'opacity': '1', 'display': 'inline',
+    'stop-color': 'black', 'stop-opacity': '1', 'marker-start': 'none', 'marker-mid': 'none', 'marker-end': 'none',
+    'image-rendering': 'auto', 'filter': 'none', 'flood-color': 'black', 'flood-opacity': '1', 'color-interpolation-filters': 'linearRGB',
+    'lighting-color': 'white', 'shape-rendering': 'auto', 'font-weight': '400', 'font-style': 'normal', 'font-stretch': 'normal',
+    'font-variation-settings': 'normal', 'font-optical-sizing': 'auto',
+    'font-variant': 'normal', 'text-anchor': 'start', 'letter-spacing': 'normal', 'word-spacing': 'normal', 'dominant-baseline': 'auto',
+    'writing-mode': 'lr-tb', 'text-rendering': 'auto'
+};
+const SAMPLES = 16;
+const OFFSETS = Float64Array.from({ length: SAMPLES }, (_, s) => (s + 0.5) / SAMPLES);
+export function render(source, mode, size, images = new Map(), fonts = []) {
+    if (typeof source !== 'string')
+        source = decodeUTF8(source);
+    const root = parseXML(source).children.find(node => node.name === 'svg' && node.svg);
+    if (!root)
+        throw new Error('SVG: no <svg> element');
+    const doc = new Document(root);
+    doc.images = images;
+    doc.given = fonts.map(data => fontFace(data)).filter(face => face !== null);
+    const { width, height } = documentSize(root);
+    if (!(width > 0) || !(height > 0))
+        throw new Error('SVG: invalid dimensions');
+    let outWidth, outHeight;
+    if (mode === 'width') {
+        outWidth = Math.round(size);
+        outHeight = Math.round(height * size / width);
+    }
+    else if (mode === 'height') {
+        outHeight = Math.round(size);
+        outWidth = Math.round(width * size / height);
+    }
+    else {
+        outWidth = Math.round(width * size);
+        outHeight = Math.round(height * size);
+    }
+    outWidth = Math.max(1, outWidth);
+    outHeight = Math.max(1, outHeight);
+    const canvas = new Layer(outWidth, outHeight);
+    doc.renderRoot([outWidth / width, 0, 0, outHeight / height, 0, 0], canvas, 0);
+    return { width: outWidth, height: outHeight, pixels: canvas.toRGBA() };
+}
+function documentSize(root) {
+    const viewBox = parseViewBox(root.attrs.viewBox);
+    const lengthOf = (value, fallback) => {
+        if (value === undefined || value === 'auto')
+            return fallback;
+        if (/%\s*$/.test(value))
+            return fallback * parseFloat(value) / 100;
+        return parseLength(value, null, 16);
+    };
+    return { width: lengthOf(root.attrs.width, viewBox ? viewBox[2] : 100), height: lengthOf(root.attrs.height, viewBox ? viewBox[3] : 100) };
+}
+const glyphDocuments = new WeakMap();
+function drawRaster(layer, image, matrix, filter) {
+    const inverse = invert(matrix);
+    const coverage = inverse && rasterize([transformPoints([0, 0, image.width, 0, image.width, image.height, 0, image.height], matrix)], false, layer.width, layer.height);
+    if (!coverage)
+        return;
+    const translated = Math.abs(matrix[0] - 1) < 1e-6 && Math.abs(matrix[3] - 1) < 1e-6 && matrix[1] === 0 && matrix[2] === 0;
+    layer.fill(coverage, sampler(premultiplied(image), image.width, image.height, inverse, false, translated ? 0 : filter, 1));
+}
+function premultiplied(image) {
+    if (image.premultiplied)
+        return image.premultiplied;
+    const { pixels } = image, d = new Float32Array(pixels.length);
+    for (let i = 0; i < pixels.length; i += 4) {
+        const a = pixels[i + 3] / 255;
+        d[i] = pixels[i] / 255 * a;
+        d[i + 1] = pixels[i + 1] / 255 * a;
+        d[i + 2] = pixels[i + 2] / 255 * a;
+        d[i + 3] = a;
+    }
+    return image.premultiplied = d;
+}
+const RASTER_TYPES = /^image\/(png|jpe?g|gif|webp)$/;
+function dataURI(href) {
+    const m = /^\s*data:([^,]*),([\s\S]*)$/i.exec(href);
+    if (!m)
+        return null;
+    const meta = m[1].split(';').map(part => part.trim());
+    const type = (meta[0] || 'text/plain').toLowerCase();
+    try {
+        if (meta.slice(1).some(part => part.toLowerCase() === 'base64'))
+            return { type, data: base64(m[2].replace(/\s+/g, '').replace(/%([0-9a-f]{2})/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))) };
+        return { type, data: encodeUTF8(decodeURIComponent(m[2])) };
+    }
+    catch {
+        return null;
+    }
+}
+function svgText(data) {
+    return decodeUTF8(data[0] === 0x1f && data[1] === 0x8b ? gunzip(data, 1 << 26) : data);
+}
+function isRaster(data) {
+    return (data[0] === 0x89 && data[1] === 0x50) || (data[0] === 0xff && data[1] === 0xd8) || (data[0] === 0x47 && data[1] === 0x49 && data[2] === 0x46)
+        || (data[0] === 0x52 && data[1] === 0x49 && data[8] === 0x57 && data[9] === 0x45);
+}
+function nestedSvg(href) {
+    const uri = dataURI(href);
+    if (!uri || (uri.type !== 'image/svg+xml' && (uri.type !== 'text/plain' || isRaster(uri.data))))
+        return null;
+    try {
+        const root = parseXML(svgText(uri.data)).children.find(node => node.name === 'svg' && node.svg);
+        if (!root)
+            return null;
+        const { width, height } = documentSize(root);
+        return width > 0 && height > 0 ? { width, height, document: new Document(root) } : null;
+    }
+    catch {
+        return null;
+    }
+}
+export function imageReferences(source) {
+    const found = [], seen = new Set();
+    const visit = (text, depth) => {
+        let root;
+        try {
+            root = parseXML(text());
+        }
+        catch {
+            return;
+        }
+        const stack = [root];
+        while (stack.length) {
+            const node = stack.pop();
+            stack.push(...node.children);
+            if ((node.name !== 'image' && node.name !== 'feImage') || !node.svg)
+                continue;
+            const href = (node.attrs.href || node.attrs['xlink:href'] || '').trim();
+            if (seen.has(href))
+                continue;
+            seen.add(href);
+            const uri = dataURI(href);
+            if (!uri) {
+                found.push({ href });
+                continue;
+            }
+            if (RASTER_TYPES.test(uri.type) || (uri.type === 'text/plain' && isRaster(uri.data)))
+                found.push({ href, data: uri.data });
+            else {
+                found.push({ href });
+                if ((uri.type === 'image/svg+xml' || uri.type === 'text/plain') && depth < 8)
+                    visit(() => svgText(uri.data), depth + 1);
+            }
+        }
+    };
+    visit(() => typeof source === 'string' ? source : decodeUTF8(source), 0);
+    return found;
+}
+const SVG_NS = 'http://www.w3.org/2000/svg';
+function parseXML(text) {
+    text = text.replace(/\r\n?/g, '\n');
+    const root = { name: '#root', attrs: {}, children: [], text: '', svg: false };
+    const stack = [root];
+    const namespaces = [{ '': SVG_NS }];
+    const entities = { amp: '&', lt: '<', gt: '>', quot: '"', apos: '\'' };
+    const doctype = /<!DOCTYPE[^[>]*\[([\s\S]*?)\]\s*>/i.exec(text);
+    if (doctype) {
+        const custom = {};
+        for (const [, name, a, b] of doctype[1].matchAll(/<!ENTITY\s+([\w.-]+)\s+(?:"([^"]*)"|'([^']*)')\s*>/g))
+            custom[name] = a !== undefined ? a : b;
+        const limit = Math.max(1 << 20, text.length * 16);
+        let rest = text.slice(doctype.index + doctype[0].length);
+        for (let pass = 0; pass < 4; pass++) {
+            let size = rest.length;
+            rest = rest.replace(/&([\w.-]+);/g, (match, name) => {
+                if (!(name in custom))
+                    return match;
+                size += custom[name].length - match.length;
+                if (size > limit)
+                    throw new Error('SVG: entity expansion exceeds the size limit');
+                return custom[name];
+            });
+        }
+        text = text.slice(0, doctype.index) + rest;
+    }
+    const decode = (s) => s.replace(/&(#x[0-9a-f]+|#[0-9]+|[a-z_][\w.-]*);/gi, (match, name) => {
+        if (name[0] === '#')
+            return String.fromCodePoint(name[1] === 'x' || name[1] === 'X' ? parseInt(name.slice(2), 16) : parseInt(name.slice(1), 10));
+        return name in entities ? entities[name] : match;
+    });
+    const addText = (value) => {
+        const node = stack[stack.length - 1];
+        node.text += value;
+        if (node.content)
+            node.content.push(value);
+    };
+    let i = 0;
+    while (i < text.length) {
+        if (text[i] !== '<') {
+            const end = text.indexOf('<', i);
+            addText(decode(text.slice(i, end === -1 ? text.length : end)));
+            i = end === -1 ? text.length : end;
+            continue;
+        }
+        if (text.startsWith('<!--', i)) {
+            const end = text.indexOf('-->', i + 4);
+            i = end === -1 ? text.length : end + 3;
+        }
+        else if (text.startsWith('<![CDATA[', i)) {
+            const end = text.indexOf(']]>', i);
+            addText(text.slice(i + 9, end === -1 ? text.length : end));
+            i = end === -1 ? text.length : end + 3;
+        }
+        else if (text.startsWith('<!', i)) {
+            let depth = 0, j = i + 2;
+            for (; j < text.length; j++) {
+                if (text[j] === '[')
+                    depth++;
+                else if (text[j] === ']')
+                    depth--;
+                else if (text[j] === '>' && depth <= 0)
+                    break;
+            }
+            i = j + 1;
+        }
+        else if (text.startsWith('<?', i)) {
+            const end = text.indexOf('?>', i);
+            i = end === -1 ? text.length : end + 2;
+        }
+        else if (text.startsWith('</', i)) {
+            const end = text.indexOf('>', i);
+            if (stack.length > 1) {
+                stack.pop();
+                namespaces.pop();
+            }
+            i = end === -1 ? text.length : end + 1;
+        }
+        else {
+            const match = /^<([^\s/>]+)/.exec(text.slice(i, i + 256));
+            if (!match) {
+                i++;
+                continue;
+            }
+            const qualified = match[1];
+            const node = { name: '', attrs: {}, children: [], text: '', svg: false };
+            i += match[0].length;
+            const attribute = /\s*([^\s=/>]+)\s*(?:=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/y;
+            for (;;) {
+                if (/^\s*\/?>/.test(text.slice(i, i + 64)))
+                    break;
+                attribute.lastIndex = i;
+                const a = attribute.exec(text);
+                if (!a)
+                    break;
+                node.attrs[a[1]] = decode(a[2] !== undefined ? a[2] : a[3] !== undefined ? a[3] : a[4] !== undefined ? a[4] : '');
+                i = attribute.lastIndex;
+            }
+            const scope = Object.assign({}, namespaces[namespaces.length - 1]);
+            for (const name in node.attrs) {
+                if (name === 'xmlns')
+                    scope[''] = node.attrs[name];
+                else if (name.startsWith('xmlns:'))
+                    scope[name.slice(6)] = node.attrs[name];
+            }
+            const colon = qualified.indexOf(':');
+            const prefix = colon === -1 ? '' : qualified.slice(0, colon);
+            node.name = colon === -1 ? qualified : qualified.slice(colon + 1);
+            node.svg = scope[prefix] === SVG_NS;
+            const close = /\s*(\/?)>/y;
+            close.lastIndex = i;
+            const end = close.exec(text);
+            i = end ? close.lastIndex : text.length;
+            const parent = stack[stack.length - 1];
+            parent.children.push(node);
+            if (parent.content)
+                parent.content.push(node);
+            if (parent.content || (node.name === 'text' && node.svg))
+                node.content = [];
+            if (!end || !end[1]) {
+                stack.push(node);
+                namespaces.push(scope);
+            }
+        }
+    }
+    return root;
+}
+function urlReference(value) {
+    let close = -1;
+    for (let open = value.indexOf('url('); open >= 0; open = value.indexOf('url(', open + 4)) {
+        if (close < open && (close = value.indexOf(')', open)) < 0)
+            return null;
+        let inner = value.slice(open + 4, close).trim();
+        if (inner.startsWith('"') || inner.startsWith("'"))
+            inner = inner.slice(1);
+        if (inner.endsWith('"') || inner.endsWith("'"))
+            inner = inner.slice(0, -1);
+        inner = inner.trim();
+        if (/^#[^'"\s]+$/.test(inner))
+            return inner.slice(1);
+    }
+    return null;
+}
+function stripComments(text) {
+    let out = '';
+    for (let i = 0;;) {
+        const start = text.indexOf('/*', i);
+        if (start < 0)
+            return out + text.slice(i);
+        out += text.slice(i, start);
+        const end = text.indexOf('*/', start + 2);
+        if (end < 0)
+            return out;
+        i = end + 2;
+    }
+}
+function blockEnd(text, open) {
+    let depth = 0;
+    for (let i = open; i < text.length; i++) {
+        if (text[i] === '{')
+            depth++;
+        else if (text[i] === '}' && !--depth)
+            return i;
+    }
+    return text.length;
+}
+function parseStyleSheet(text) {
+    const rules = [];
+    text = stripComments(text);
+    const cache = {};
+    const next = (char, i) => {
+        const cached = cache[char];
+        if (cached === undefined || cached !== -1 && cached < i)
+            cache[char] = text.indexOf(char, i);
+        return cache[char];
+    };
+    let order = 0;
+    for (let i = 0; i < text.length;) {
+        const start = i, open = next('{', i), close = next('}', i), at = next('@', i);
+        if (open < 0)
+            break;
+        if (close >= 0 && close < open) {
+            i = close + 1;
+            continue;
+        }
+        if (at >= 0 && at < open) {
+            const semicolon = next(';', at);
+            i = semicolon >= 0 && semicolon < open ? semicolon + 1 : blockEnd(text, open) + 1;
+            continue;
+        }
+        const end = blockEnd(text, open);
+        const body = text.slice(open + 1, end);
+        i = end + 1;
+        if (body.includes('{'))
+            continue;
+        const declarations = parseDeclarations(body);
+        for (const selector of text.slice(start, open).split(',')) {
+            const parsed = parseSelector(selector.trim());
+            if (parsed)
+                rules.push({ ...parsed, order: order++, declarations });
+        }
+    }
+    return rules.sort((a, b) => a.specificity - b.specificity || a.order - b.order);
+}
+function parseSelector(selector) {
+    const tokens = selector.match(/\s*[>+~]\s*|\s+|[^\s>+~]+/g);
+    if (!tokens)
+        return null;
+    const compounds = [];
+    let combinator = null;
+    let specificity = 0;
+    for (const token of tokens) {
+        const trimmed = token.trim();
+        if (!trimmed || trimmed === '>' || trimmed === '+' || trimmed === '~') {
+            if (compounds.length)
+                combinator = trimmed || ' ';
+            continue;
+        }
+        const tests = [];
+        const part = /([a-zA-Z][\w-]*|\*)|#([\w-]+)|\.([\w-]+)|\[\s*([\w:-]+)\s*(?:([~|^$*]?=)\s*(?:"([^"]*)"|'([^']*)'|([^\]\s]*)))?\s*\]|:(first-child)|(.)/g;
+        for (const m of trimmed.matchAll(part)) {
+            if (m[10] !== undefined)
+                return null;
+            if (m[1]) {
+                if (m[1] !== '*') {
+                    tests.push(node => node.name === m[1]);
+                    specificity += 1;
+                }
+            }
+            else if (m[2]) {
+                tests.push(node => node.attrs.id === m[2]);
+                specificity += 100;
+            }
+            else if (m[3]) {
+                tests.push(node => (node.attrs.class || '').split(/\s+/).includes(m[3]));
+                specificity += 10;
+            }
+            else if (m[4]) {
+                const name = m[4], op = m[5], value = m[6] !== undefined ? m[6] : m[7] !== undefined ? m[7] : m[8];
+                tests.push(node => {
+                    const v = node.attrs[name];
+                    if (v === undefined)
+                        return false;
+                    if (!op)
+                        return true;
+                    if (op === '=')
+                        return v === value;
+                    if (op === '~=')
+                        return v.split(/\s+/).includes(value);
+                    if (op === '^=')
+                        return v.startsWith(value);
+                    if (op === '$=')
+                        return v.endsWith(value);
+                    if (op === '*=')
+                        return v.includes(value);
+                    return v === value || v.startsWith(value + '-');
+                });
+                specificity += 10;
+            }
+            else if (m[9]) {
+                tests.push(node => !node.parent || node.parent.children.find(c => c.name) === node);
+                specificity += 10;
+            }
+        }
+        compounds.push({ combinator: compounds.length ? combinator || ' ' : null, test: node => tests.every(t => t(node)) });
+        combinator = null;
+    }
+    if (!compounds.length)
+        return null;
+    const matchAt = (node, index) => {
+        if (!node || !compounds[index].test(node))
+            return false;
+        if (index === 0)
+            return true;
+        const { combinator } = compounds[index];
+        if (combinator === '>')
+            return matchAt(node.parent, index - 1);
+        if (combinator === '+' || combinator === '~') {
+            const siblings = node.parent ? node.parent.children : [];
+            const position = siblings.indexOf(node);
+            if (combinator === '+')
+                return matchAt(siblings[position - 1], index - 1);
+            return siblings.slice(0, position).some(sibling => matchAt(sibling, index - 1));
+        }
+        for (let ancestor = node.parent; ancestor; ancestor = ancestor.parent)
+            if (matchAt(ancestor, index - 1))
+                return true;
+        return false;
+    };
+    return { specificity, match: node => matchAt(node, compounds.length - 1) };
+}
+function parseDeclarations(text) {
+    const declarations = { normal: {}, important: {} };
+    text = stripComments(text);
+    const parts = [];
+    let depth = 0, quote = '', start = 0;
+    for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (quote) {
+            if (c === quote)
+                quote = '';
+        }
+        else if (c === '"' || c === '\'')
+            quote = c;
+        else if (c === '(')
+            depth++;
+        else if (c === ')')
+            depth = Math.max(0, depth - 1);
+        else if (c === ';' && !depth) {
+            parts.push(text.slice(start, i));
+            start = i + 1;
+        }
+    }
+    parts.push(text.slice(start));
+    for (const part of parts) {
+        const colon = part.indexOf(':');
+        if (colon === -1)
+            continue;
+        const name = part.slice(0, colon).trim().toLowerCase();
+        let value = part.slice(colon + 1).trim();
+        const important = /!\s*important\s*$/i.test(value);
+        if (important)
+            value = value.replace(/!\s*important\s*$/i, '').trim();
+        if (name && value)
+            (important ? declarations.important : declarations.normal)[name] = value;
+    }
+    return declarations;
+}
+function validProperty(name, value) {
+    switch (name) {
+        case 'fill':
+        case 'stroke':
+            return value === 'none' || value === 'currentColor' || value === 'inherit' || /^context-(fill|stroke)$/.test(value)
+                || /^url\(/.test(value) || parseColor(value) !== null;
+        case 'color':
+        case 'stop-color':
+        case 'flood-color':
+            return value === 'currentColor' || value === 'inherit' || parseColor(value) !== null;
+        case 'opacity':
+        case 'fill-opacity':
+        case 'stroke-opacity':
+        case 'stop-opacity':
+        case 'flood-opacity':
+            return value === 'inherit' || parseStrictNumber(value) !== null;
+        default:
+            return true;
+    }
+}
+const MAX_INSTANCES = 100000;
+const MAX_DASHES = 1000000;
+const MAX_TILE = 4096 * 1024;
+class Document {
+    budget = { instances: 0 };
+    ids;
+    active;
+    root;
+    rules;
+    images = new Map();
+    nested = new Map();
+    embedded;
+    given = [];
+    outputScale = 1;
+    texts = new WeakMap();
+    constructor(root) {
+        this.ids = new Map();
+        this.active = new Set();
+        const styles = [];
+        const stack = [root];
+        while (stack.length) {
+            const node = stack.pop();
+            if (node.attrs.id && !this.ids.has(node.attrs.id))
+                this.ids.set(node.attrs.id, node);
+            if (node.name === 'style' && node.svg && (!node.attrs.type || node.attrs.type === 'text/css'))
+                styles.push(node.text);
+            for (let i = node.children.length - 1; i >= 0; i--) {
+                node.children[i].parent = node;
+                stack.push(node.children[i]);
+            }
+        }
+        this.root = root;
+        this.rules = parseStyleSheet(styles.join('\n'));
+        this.embedded = embeddedFonts(styles.join('\n'));
+        for (const name of ['fill', 'stroke'])
+            this.breakPatternCycles(name);
+        this.breakImageCycles();
+    }
+    breakImageCycles() {
+        const stack = [this.root];
+        while (stack.length) {
+            const node = stack.pop();
+            stack.push(...node.children);
+            if (node.name !== 'feImage' || !node.parent || !node.parent.attrs.id)
+                continue;
+            const href = this.href(node)?.trim(), target = href?.startsWith('#') ? this.reference(href) : null;
+            if (!target)
+                continue;
+            const inline = target.attrs.style ? parseDeclarations(target.attrs.style) : null;
+            const filter = inline?.important.filter ?? inline?.normal.filter ?? target.attrs.filter;
+            if (filter && [...filter.matchAll(/url\(\s*['"]?#([^'")\s]+)/g)].some(m => m[1] === node.parent?.attrs.id))
+                this.unpaint(target, 'filter');
+        }
+    }
+    breakPatternCycles(name) {
+        const paintOf = (node) => {
+            const inline = node.attrs.style ? parseDeclarations(node.attrs.style) : null;
+            return inline?.important[name] ?? inline?.normal[name] ?? node.attrs[name];
+        };
+        const descendants = (node) => {
+            const list = [], stack = [...node.children];
+            while (stack.length) {
+                const n = stack.shift();
+                list.push(n);
+                stack.unshift(...n.children);
+            }
+            return list;
+        };
+        const patterns = descendants(this.root).filter(node => node.name === 'pattern');
+        for (const pattern of patterns) {
+            for (const node of descendants(pattern)) {
+                const linked = this.reference(paintOf(node));
+                if (!linked)
+                    continue;
+                if (linked === pattern)
+                    this.unpaint(node, name);
+                else
+                    for (const inner of descendants(linked))
+                        if (this.reference(paintOf(inner)) === pattern)
+                            this.unpaint(inner, name);
+            }
+        }
+    }
+    unpaint(node, name) {
+        node.attrs[name] = 'none';
+        if (node.attrs.style)
+            node.attrs.style += `;${name}:none !important`;
+    }
+    reference(value) {
+        if (!value)
+            return null;
+        const id = urlReference(value) ?? (value.trim().startsWith('#') ? value.trim().slice(1) : null);
+        return id ? this.ids.get(id) || null : null;
+    }
+    href(node) {
+        return node.attrs.href || node.attrs['xlink:href'];
+    }
+    computeStyle(node, parent) {
+        if (node.computed && node.computedParent === parent)
+            return node.computed;
+        const own = {};
+        const apply = (declarations) => {
+            for (const name in declarations) {
+                if (name === 'marker')
+                    for (const kind of ['marker-start', 'marker-mid', 'marker-end'])
+                        own[kind] = declarations[name];
+                else if (name === 'font')
+                    Object.assign(own, fontShorthand(declarations[name]) ?? {});
+                else if (validProperty(name, declarations[name]))
+                    own[name] = declarations[name];
+            }
+        };
+        const presentation = {};
+        for (const name in node.attrs)
+            if (PROPERTIES.has(name) && !CSS_ONLY.has(name))
+                presentation[name] = node.attrs[name].trim();
+        apply(presentation);
+        const rules = this.rules.filter(rule => rule.match(node));
+        const inline = node.attrs.style ? parseDeclarations(node.attrs.style) : null;
+        for (const rule of rules)
+            apply(rule.declarations.normal);
+        if (inline)
+            apply(inline.normal);
+        for (const rule of rules)
+            apply(rule.declarations.important);
+        if (inline)
+            apply(inline.important);
+        const style = {};
+        for (const name of PROPERTIES) {
+            if (name === 'transform' || name === 'transform-origin')
+                continue;
+            let value = own[name];
+            if (value === 'inherit' || (value === undefined && INHERITED.has(name)))
+                value = parent ? parent[name] : DEFAULTS[name];
+            if (value === undefined || value === 'initial')
+                value = DEFAULTS[name];
+            style[name] = value === undefined ? undefined : String(value).trim();
+        }
+        const parentSize = parent ? parseFloat(parent['font-size']) : 16;
+        style['font-size'] = String(own['font-size'] !== undefined && own['font-size'] !== 'inherit' ? fontSize(own['font-size'], parentSize) : parentSize);
+        const parentWeight = parent ? Number(parent['font-weight']) : 400, weight = own['font-weight'];
+        style['font-weight'] = String(weight === undefined || weight === 'inherit' ? parentWeight : weight === 'normal' ? 400 : weight === 'bold' ? 700
+            : weight === 'bolder' ? Math.min(900, parentWeight + (parentWeight === 400 ? 300 : 100))
+                : weight === 'lighter' ? Math.max(100, parentWeight - (parentWeight === 400 ? 200 : 100))
+                    : /^[1-9]00$/.test(weight) ? Number(weight) : parentWeight);
+        style['mask-type'] = own['mask-type'] || node.attrs['mask-type'];
+        style['mix-blend-mode'] = own['mix-blend-mode'];
+        style.isolation = own.isolation;
+        style['background-color'] = own['background-color'];
+        style.transform = own.transform;
+        style['transform-origin'] = own['transform-origin'];
+        node.computed = style;
+        node.computedParent = parent;
+        return style;
+    }
+    styleOf(node) {
+        return this.computeStyle(node, node.parent && node.parent.name !== '#root' ? this.styleOf(node.parent) : null);
+    }
+    renderChildren(node, context) {
+        for (const child of node.children)
+            this.renderNode(child, context);
+    }
+    passesConditions(node) {
+        if (node.attrs.requiredExtensions !== undefined)
+            return false;
+        const languages = node.attrs.systemLanguage;
+        if (languages === undefined)
+            return true;
+        return languages.split(',').some(lang => {
+            lang = lang.trim().toLowerCase();
+            return lang === 'en' || lang.startsWith('en-');
+        });
+    }
+    renderNode(node, context, root = false) {
+        if (!node.svg || UNSUPPORTED.has(node.name) || context.depth > 32 || !this.passesConditions(node))
+            return;
+        if (context.instanced && ++this.budget.instances > MAX_INSTANCES)
+            throw new Error(`SVG: more than ${MAX_INSTANCES} elements rendered through <use> references or embedded SVGs`);
+        const style = this.computeStyle(node, context.style);
+        if (style.display === 'none')
+            return;
+        let matrix = context.matrix;
+        if (style.transform && !root)
+            matrix = multiply(matrix, transformOf(style, context.viewport));
+        const opacity = clamp01(parseNumber(style.opacity, 1));
+        if (opacity <= 0)
+            return;
+        const clip = this.reference(style['clip-path']);
+        const mask = this.reference(style.mask);
+        if ((clip && clip.name !== 'clipPath') || (mask && mask.name !== 'mask'))
+            return;
+        const clipping = clip && !this.active.has(clip);
+        const masking = mask && !this.active.has(mask);
+        const filters = style.filter && style.filter !== 'none' ? this.filtersOf(node, style, context.viewport) : null;
+        if (filters === 'invalid')
+            return;
+        const drawContent = (layer, contentMatrix = matrix) => {
+            const ctx = { ...context, matrix: contentMatrix, style, layer, depth: context.depth + 1 };
+            switch (node.name) {
+                case 'svg': return root ? this.renderChildren(node, ctx) : this.renderNestedSvg(node, ctx);
+                case 'g':
+                case 'a': return this.renderChildren(node, ctx);
+                case 'switch': {
+                    const first = node.children.find(child => child.svg && SWITCHABLE.has(child.name) && this.passesConditions(child));
+                    if (first)
+                        this.renderNode(first, ctx);
+                    return;
+                }
+                case 'use': return this.renderUse(node, ctx);
+                case 'image': return this.renderImage(node, ctx);
+                case 'text': return this.renderText(node, ctx);
+                default: {
+                    const path = shapePath(node, ctx.viewport, parseNumber(style['font-size'], 16));
+                    if (!path)
+                        return;
+                    this.paintPath(path, node, ctx);
+                }
+            }
+        };
+        const draw = filters && filters.length ? (layer) => this.filtered(filters, matrix, layer, drawContent) : (layer) => drawContent(layer);
+        const blend = style['mix-blend-mode'] && BLEND_MODES.has(style['mix-blend-mode']) ? style['mix-blend-mode'] : 'normal';
+        if (opacity >= 1 && !clipping && !masking && blend === 'normal' && style.isolation !== 'isolate')
+            return draw(context.layer);
+        const layer = new Layer(context.layer.width, context.layer.height);
+        draw(layer);
+        let alpha = null;
+        if (clipping)
+            alpha = this.clipMask(clip, node, matrix, context);
+        if (masking) {
+            const values = this.maskValues(mask, node, matrix, context);
+            if (alpha)
+                for (let i = 0; i < alpha.length; i++)
+                    alpha[i] *= values[i];
+            else
+                alpha = values;
+        }
+        context.layer.composite(layer, opacity, alpha, blend);
+    }
+    clipped(ctx, x, y, width, height, draw) {
+        const layer = new Layer(ctx.layer.width, ctx.layer.height);
+        draw(layer);
+        const { width: w } = ctx.layer;
+        const alpha = new Float32Array(w * ctx.layer.height);
+        const coverage = rasterize([transformPoints([x, y, x + width, y, x + width, y + height, x, y + height], ctx.matrix)], false, w, ctx.layer.height);
+        if (coverage)
+            for (let row = 0; row < coverage.h; row++)
+                for (let column = 0; column < coverage.w; column++)
+                    alpha[(coverage.y0 + row) * w + coverage.x0 + column] = coverage.data[row * coverage.w + column];
+        ctx.layer.composite(layer, 1, alpha);
+    }
+    renderNestedSvg(node, ctx) {
+        const { viewport } = ctx;
+        const x = parseLength(node.attrs.x, viewport, 16, 'x');
+        const y = parseLength(node.attrs.y, viewport, 16, 'y');
+        const width = node.attrs.width === undefined ? viewport.width : parseLength(node.attrs.width, viewport, 16, 'x');
+        const height = node.attrs.height === undefined ? viewport.height : parseLength(node.attrs.height, viewport, 16, 'y');
+        if (!(width > 0) || !(height > 0))
+            return;
+        const viewBox = parseViewBox(node.attrs.viewBox);
+        let matrix = multiply(ctx.matrix, [1, 0, 0, 1, x, y]);
+        if (viewBox)
+            matrix = multiply(matrix, viewBoxTransform(viewBox, width, height, node.attrs.preserveAspectRatio));
+        const inner = { ...ctx, matrix, viewport: viewBox ? { width: viewBox[2], height: viewBox[3] } : { width, height } };
+        if (overflowVisible(node))
+            return this.renderChildren(node, inner);
+        this.clipped(ctx, x, y, width, height, layer => this.renderChildren(node, { ...inner, layer }));
+    }
+    renderUse(node, ctx) {
+        const target = this.reference(this.href(node));
+        if (!target || ctx.depth > 24)
+            return;
+        for (let p = node; p; p = p.parent)
+            if (p === target)
+                return;
+        const x = parseLength(node.attrs.x, ctx.viewport, 16, 'x');
+        const y = parseLength(node.attrs.y, ctx.viewport, 16, 'y');
+        const matrix = multiply(ctx.matrix, [1, 0, 0, 1, x, y]);
+        let content = target.attrs.transform ? originTransform(target.attrs.transform, target.attrs['transform-origin'], ctx.viewport) : [1, 0, 0, 1, 0, 0];
+        const contextElement = { style: ctx.style, matrix, viewport: ctx.viewport, bbox: () => this.groupBoundingBox(target, ctx.viewport, content), outer: ctx.contextElement };
+        if (target.name === 'symbol' || target.name === 'svg') {
+            const style = this.computeStyle(target, ctx.style);
+            if (style.display === 'none')
+                return;
+            const width = node.attrs.width !== undefined ? parseLength(node.attrs.width, ctx.viewport, 16, 'x')
+                : target.attrs.width !== undefined ? parseLength(target.attrs.width, ctx.viewport, 16, 'x') : ctx.viewport.width;
+            const height = node.attrs.height !== undefined ? parseLength(node.attrs.height, ctx.viewport, 16, 'y')
+                : target.attrs.height !== undefined ? parseLength(target.attrs.height, ctx.viewport, 16, 'y') : ctx.viewport.height;
+            if (!(width > 0) || !(height > 0))
+                return;
+            const viewBox = parseViewBox(target.attrs.viewBox);
+            let outer = matrix;
+            if (target.name === 'svg')
+                outer = multiply(outer, [1, 0, 0, 1, parseLength(target.attrs.x, ctx.viewport, 16, 'x'), parseLength(target.attrs.y, ctx.viewport, 16, 'y')]);
+            const inner = viewBox ? multiply(outer, viewBoxTransform(viewBox, width, height, target.attrs.preserveAspectRatio)) : outer;
+            const inverse = invert(matrix);
+            if (inverse)
+                content = multiply(inverse, inner);
+            const opacity = clamp01(parseNumber(style.opacity, 1));
+            const innerContext = { ...ctx, matrix: inner, style, viewport: viewBox ? { width: viewBox[2], height: viewBox[3] } : { width, height }, instanced: true, contextElement };
+            const draw = (layer) => overflowVisible(target)
+                ? this.renderChildren(target, { ...innerContext, layer })
+                : this.clipped({ ...ctx, matrix: outer, layer }, 0, 0, width, height, inner => this.renderChildren(target, { ...innerContext, layer: inner }));
+            if (opacity >= 1)
+                return draw(ctx.layer);
+            const layer = new Layer(ctx.layer.width, ctx.layer.height);
+            draw(layer);
+            ctx.layer.composite(layer, opacity, null);
+            return;
+        }
+        const computed = target.computed, computedParent = target.computedParent;
+        target.computed = null;
+        this.renderNode(target, { ...ctx, matrix, instanced: true, contextElement });
+        target.computed = computed;
+        target.computedParent = computedParent;
+    }
+    get fonts() {
+        return this.embedded.length ? [...this.embedded, ...this.given] : this.given;
+    }
+    textOf(node, style, viewport, scale = 1) {
+        const cached = this.texts.get(node);
+        if (cached && cached.style === style && cached.width === viewport.width && cached.height === viewport.height && cached.scale === scale)
+            return cached.layout;
+        let layout = null;
+        const fonts = this.fonts;
+        if (fonts.length) {
+            try {
+                layout = layOutText(this.textInput(node, style, viewport, scale), fonts);
+            }
+            catch (err) {
+                if (!(err instanceof RangeError))
+                    throw err;
+            }
+        }
+        this.texts.set(node, { style, width: viewport.width, height: viewport.height, scale, layout });
+        return layout;
+    }
+    textInput(text, textStyle, viewport, scale) {
+        const leaves = [];
+        const preserveOf = (node, inherited) => node.attrs['xml:space'] === undefined ? inherited : node.attrs['xml:space'] === 'preserve';
+        const trim = (value, preserve) => {
+            value = value.replace(/[\r\n\t]/g, ' ');
+            return preserve ? value : value.replace(/ {2,}/g, ' ');
+        };
+        const allText = (node) => node.content ? node.content.map(c => typeof c === 'string' ? c : allText(c)).join('')
+            : node.text + node.children.map(allText).join('');
+        let preserve = false;
+        for (let p = text; p; p = p.parent)
+            if (p.attrs['xml:space'] !== undefined) {
+                preserve = p.attrs['xml:space'] === 'preserve';
+                break;
+            }
+        const build = (node, style, parent, preserve, depth) => {
+            const item = { node, style, parent, children: [] };
+            for (const child of node.content ?? []) {
+                if (typeof child === 'string') {
+                    const leaf = { text: trim(child, preserve), item, preserve, depth };
+                    item.children.push(leaf);
+                    leaves.push(leaf);
+                    continue;
+                }
+                const name = child.name === 'a' ? 'tspan' : child.name;
+                if (!child.svg || !['tspan', 'tref', 'textPath'].includes(name) || (name === 'textPath' && node !== text))
+                    continue;
+                const childPreserve = preserveOf(child, preserve);
+                const childItem = name === 'tref' ? { node: child, style: this.computeStyle(child, style), parent: item, children: [] }
+                    : build(child, this.computeStyle(child, style), item, childPreserve, depth + 1);
+                if (name === 'tref') {
+                    const target = this.reference(this.href(child));
+                    const value = target && target.svg && SVG_ELEMENTS.has(target.name) ? allText(target) : '';
+                    if (value) {
+                        const leaf = { text: trim(value, childPreserve), item: childItem, preserve: childPreserve, depth: depth + 1 };
+                        childItem.children.push(leaf);
+                        leaves.push(leaf);
+                    }
+                }
+                item.children.push(childItem);
+            }
+            return item;
+        };
+        const root = build(text, textStyle, null, preserve, 0);
+        const dropFirst = (leaf) => { if (leaf.text[0] === ' ')
+            leaf.text = leaf.text.slice(1); };
+        const dropLast = (leaf) => { if (leaf.text.endsWith(' '))
+            leaf.text = leaf.text.slice(0, -1); };
+        if (leaves.length === 1) {
+            const leaf = leaves[0];
+            if (!leaf.preserve) {
+                if (leaf.text === ' ')
+                    leaf.text = '';
+                else {
+                    dropFirst(leaf);
+                    dropLast(leaf);
+                }
+            }
+        }
+        else {
+            let lastNonEmpty = null;
+            for (let i = 0; i < leaves.length - 1; i++) {
+                let a = leaves[i];
+                const b = leaves[i + 1], depthA = leaves[i].depth, depthB = b.depth;
+                if (!a.text && lastNonEmpty)
+                    a = lastNonEmpty;
+                const c1 = a.text[0], c2 = a.text[a.text.length - 1], c3 = b.text[0], c4 = b.text[b.text.length - 1];
+                if (depthA < depthB) {
+                    if (c3 === ' ' && !b.preserve)
+                        dropFirst(b);
+                }
+                else if (c2 === ' ' && c2 === c3) {
+                    if (!a.preserve && !b.preserve)
+                        dropLast(a);
+                    else if (a.preserve && !b.preserve)
+                        dropFirst(b);
+                }
+                const first = i === 0, last = i === leaves.length - 2;
+                if (first && c1 === ' ' && !a.preserve && a.text)
+                    dropFirst(a);
+                else if (last && c4 === ' ' && b.text && !b.preserve)
+                    dropLast(b);
+                if (last && c2 === ' ' && a.text && !b.text)
+                    dropLast(a);
+                if (a.text.trim())
+                    lastNonEmpty = a;
+            }
+        }
+        const codepoints = new Map();
+        for (const leaf of leaves)
+            codepoints.set(leaf, Array.from(leaf.text, c => c.codePointAt(0)));
+        const count = (item) => item.children.reduce((n, c) => n + ('text' in c ? codepoints.get(c).length : count(c)), 0);
+        const total = count(root);
+        const fontSizeOf = (item) => parseFloat(item.style['font-size']);
+        const xs = new Array(total).fill(null), ys = new Array(total).fill(null);
+        const dx = new Array(total).fill(0), dy = new Array(total).fill(0), rotations = new Array(total).fill(0);
+        const lengths = (value, axis, item) => value === undefined ? null : value.split(/[\s,]+/).filter(Boolean).map(v => parseLength(v, viewport, fontSizeOf(item), axis));
+        let offset = 0, lastAngle = 0;
+        const positions = (item) => {
+            const chars = count(item), name = item.node.name;
+            if (name === 'text' || name === 'tspan' || name === 'tref' || name === 'a') {
+                for (const [list, value, axis] of [[xs, item.node.attrs.x, 'x'], [ys, item.node.attrs.y, 'y'], [dx, item.node.attrs.dx, 'x'], [dy, item.node.attrs.dy, 'y']]) {
+                    const parsed = lengths(value, axis, item);
+                    if (parsed)
+                        for (let i = 0; i < Math.min(parsed.length, chars); i++)
+                            list[offset + i] = parsed[i];
+                }
+            }
+            const rotate = item.node.attrs.rotate?.trim();
+            if (rotate !== undefined && rotate.split(/[\s,]+/).filter(Boolean).every(v => NUMBER_OR_PERCENTAGE.test(v) && !v.endsWith('%'))) {
+                const angles = parseNumberList(rotate);
+                for (let i = 0; i < chars; i++) {
+                    if (i < angles.length)
+                        lastAngle = angles[i];
+                    rotations[offset + i] = lastAngle;
+                }
+            }
+            for (const child of item.children) {
+                if ('text' in child)
+                    offset += codepoints.get(child).length;
+                else
+                    positions(child);
+            }
+        };
+        positions(root);
+        const chunks = [];
+        let chars = 0, split = false, flow = null;
+        const visible = (item) => item.style.display !== 'none' && this.passesConditions(item.node);
+        const decoration = (item, kind) => {
+            const has = (style) => (style['text-decoration'] ?? '').split(/\s+/).includes(kind);
+            let found = false;
+            for (let p = item; p; p = p.parent)
+                if (has(p.style))
+                    found = true;
+            for (let n = text.parent; !found && n && n.name !== '#root'; n = n.parent)
+                if (has(this.styleOf(n)))
+                    found = true;
+            if (!found)
+                return null;
+            for (let p = item; p; p = p.parent)
+                if (has(p.style) || p.node === text)
+                    return p.style;
+            return textStyle;
+        };
+        const span = (item, start, end) => {
+            const style = item.style, fontSize = fontSizeOf(item);
+            const shifts = [];
+            for (let p = item; p && p.node !== text; p = p.parent) {
+                const value = p.style['baseline-shift']?.trim();
+                if (value === undefined)
+                    continue;
+                if (value === 'sub' || value === 'super')
+                    shifts.push(value);
+                else if (/%$/.test(value))
+                    shifts.push(fontSizeOf(p) * parseFloat(value) / 100);
+                else if (LENGTH.test(value))
+                    shifts.push(parseLength(value, viewport, fontSizeOf(p), 'y'));
+                else
+                    shifts.push(0);
+            }
+            let dominant = style['dominant-baseline'];
+            if (dominant === 'no-change')
+                dominant = (item.parent ? item.parent.style['dominant-baseline'] : 'auto');
+            const textLength = item.node.attrs.textLength !== undefined && LENGTH.test(item.node.attrs.textLength.trim())
+                ? parseLength(item.node.attrs.textLength, viewport, fontSize, 'x') : null;
+            const spacing = (value) => !value || value === 'normal' ? 0 : parseLength(value, viewport, fontSize, 'x');
+            const stretch = { 'ultra-condensed': 1, 'extra-condensed': 2, condensed: 3, narrower: 3, 'semi-condensed': 4, 'semi-expanded': 6, expanded: 7,
+                wider: 7, 'extra-expanded': 8, 'ultra-expanded': 9 }[style['font-stretch']] ?? 5;
+            const fontStyle = style['font-style'] === 'italic' || style['font-style'] === 'oblique' ? style['font-style'] : 'normal';
+            return {
+                start, end, paint: style, visible: style.visibility === 'visible',
+                font: {
+                    families: parseFontFamilies(style['font-family'] ?? ''), weight: Number(style['font-weight']), style: fontStyle, stretch,
+                    variations: parseVariationSettings(style['font-variation-settings'] ?? ''), opticalSizing: style['font-optical-sizing'] !== 'none',
+                },
+                fontSize, smallCaps: style['font-variant'] === 'small-caps',
+                kerning: !(style.kerning !== undefined && style.kerning !== 'auto' && parseLength(style.kerning, viewport, fontSize, 'x') === 0) && style['font-kerning'] !== 'none',
+                letterSpacing: spacing(style['letter-spacing']), wordSpacing: spacing(style['word-spacing']),
+                textLength: textLength !== null && textLength >= 0 ? textLength : null, spacingAndGlyphs: item.node.attrs.lengthAdjust === 'spacingAndGlyphs',
+                dominantBaseline: dominant, alignmentBaseline: (style['alignment-baseline'] ?? 'auto'),
+                baselineShift: shifts.every(v => v === 0) ? [] : shifts,
+                underline: decoration(item, 'underline'), overline: decoration(item, 'overline'), lineThrough: decoration(item, 'line-through'),
+            };
+        };
+        const collect = (item) => {
+            for (const child of item.children) {
+                if (!('text' in child)) {
+                    if (child.node.name === 'textPath') {
+                        const resolved = this.textPathOf(child.node, viewport, fontSizeOf(child));
+                        if (!resolved) {
+                            chars += count(child);
+                            continue;
+                        }
+                        flow = resolved;
+                        split = true;
+                    }
+                    collect(child);
+                    flow = null;
+                    if (child.node.name === 'textPath')
+                        split = true;
+                    continue;
+                }
+                const cps = codepoints.get(child);
+                if (!visible(item) || !(fontSizeOf(item) > 0)) {
+                    chars += cps.length;
+                    continue;
+                }
+                let current = null;
+                for (const cp of cps) {
+                    let chunk = chunks[chunks.length - 1];
+                    if (xs[chars] !== null || ys[chars] !== null || split || !chunk) {
+                        chunk = { x: xs[chars], y: ys[chars], anchor: (item.style['text-anchor'] ?? 'start'), codepoints: [], offset: chars, spans: [], path: flow };
+                        chunks.push(chunk);
+                        current = null;
+                    }
+                    split = false;
+                    if (!current)
+                        chunk.spans.push(current = span(item, chunk.codepoints.length, chunk.codepoints.length));
+                    chunk.codepoints.push(cp);
+                    current.end++;
+                    chars++;
+                }
+            }
+        };
+        collect(root);
+        const mode = textStyle['writing-mode'];
+        return { chunks, dx, dy, rotate: rotations, vertical: mode === 'tb' || mode === 'tb-rl' || mode === 'vertical-rl' || mode === 'vertical-lr', scale };
+    }
+    textPathOf(node, viewport, fontSize) {
+        const target = this.reference(this.href(node));
+        const raw = target ? shapePath(target, viewport, fontSize) : null;
+        if (!target || !raw || !raw.length)
+            return null;
+        const m = target.attrs.transform ? originTransform(target.attrs.transform, target.attrs['transform-origin'], viewport) : null;
+        const path = m ? raw.map(c => [c[0], ...transformPoints(c.slice(1), m)]) : raw;
+        const offset = (node.attrs.startOffset ?? '').trim();
+        const startOffset = /%$/.test(offset) ? pathLength(path) * parseFloat(offset) / 100 : parseLength(offset || '0', viewport, fontSize, 'x');
+        return { path, startOffset: Number.isFinite(startOffset) ? startOffset : 0 };
+    }
+    renderText(node, ctx) {
+        const m = ctx.matrix, layout = this.textOf(node, ctx.style, ctx.viewport, Math.sqrt(Math.hypot(m[0], m[1]) * Math.hypot(m[2], m[3])) / this.outputScale);
+        if (!layout)
+            return;
+        const crisp = ctx.style['text-rendering'] === 'optimizeSpeed';
+        const paint = (path, style, order) => {
+            const textStyle = { ...style, 'fill-rule': 'nonzero', 'paint-order': order, 'marker-start': 'none', 'marker-mid': 'none', 'marker-end': 'none', 'shape-rendering': crisp ? 'crispEdges' : 'auto', visibility: 'visible' };
+            this.paintPath(path, node, { ...ctx, style: textStyle }, layout.bbox);
+        };
+        for (const span of layout.spans) {
+            if (!span.visible)
+                continue;
+            for (const d of span.before)
+                paint(d.path, d.paint, 'normal');
+            if (span.glyphs.length)
+                paint(span.glyphs, span.paint, span.paint['paint-order']);
+            for (const glyph of span.colors)
+                this.renderColorGlyph(glyph, span.paint, node, ctx, paint);
+            for (const d of span.after)
+                paint(d.path, d.paint, 'normal');
+        }
+    }
+    renderColorGlyph(g, style, node, ctx, paint) {
+        const font = g.face.font, tables = colorTablesOf(font);
+        const m = multiply(ctx.matrix, g.matrix);
+        const fill = parseColor(style.fill === 'currentColor' ? style.color : style.fill) ?? [0, 0, 0, 1];
+        const foreground = (Math.round(fill[0] * 255) << 24 | Math.round(fill[1] * 255) << 16 | Math.round(fill[2] * 255) << 8 | Math.round(fill[3] * 255)) >>> 0;
+        const hex = (color) => '#' + color.toString(16).padStart(8, '0');
+        const image = (raster, matrix) => drawRaster(ctx.layer, raster, matrix, 2);
+        if (g.kind === 'layers') {
+            for (const layer of tables.layers?.(g.glyph) ?? []) {
+                const path = [];
+                placeOutline(path, font.outline(layer.glyph), g.matrix);
+                paint(path, { ...style, fill: hex(layer.color ?? foreground), 'fill-opacity': '1', stroke: 'none' }, 'normal');
+            }
+        }
+        else if (g.kind === 'paint' && tables.paints) {
+            const s = Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
+            if (!(s > 0))
+                return;
+            const bitmap = renderPaintGlyph(font, tables.paints, g.glyph, s, 0, foreground, glyph => font.outline(glyph), (path, clip) => rasterizeGlyph(path, 1, 0, clip));
+            if (!bitmap)
+                return;
+            const premultiplied = new Float32Array(bitmap.data.length);
+            for (let i = 0; i < premultiplied.length; i++)
+                premultiplied[i] = bitmap.data[i] / 255;
+            image({ width: bitmap.width, height: bitmap.height, pixels: bitmap.data, premultiplied }, multiply(m, [1 / s, 0, 0, -1 / s, bitmap.left / s, bitmap.top / s]));
+        }
+        else if (g.kind === 'bitmap') {
+            const s = Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
+            const bitmap = tables.bitmaps(Math.round(s * font.unitsPerEm))?.(g.glyph) ?? tables.bitmaps(g.fontSize)?.(g.glyph);
+            if (!bitmap)
+                return;
+            let decoded;
+            try {
+                decoded = decodePNG(bitmap.png);
+            }
+            catch {
+                return;
+            }
+            const k = font.unitsPerEm / bitmap.ppem;
+            let left = bitmap.left * k, top = bitmap.top * k;
+            if (font.tables.sbix && !font.tables.CBDT) {
+                let xMin = Infinity, yMin = Infinity;
+                for (const c of font.outline(g.glyph))
+                    for (let i = 1; i + 1 < c.length; i += 2) {
+                        xMin = Math.min(xMin, c[i]);
+                        yMin = Math.min(yMin, c[i + 1]);
+                    }
+                if (!Number.isFinite(xMin))
+                    xMin = yMin = 0;
+                left -= xMin;
+                top += Math.abs(yMin) < 1e-3 ? -0.128 * font.unitsPerEm : yMin;
+            }
+            image(decoded, multiply(m, [k, 0, 0, -k, left, top]));
+        }
+        else if (g.kind === 'svg') {
+            const doc = this.glyphDocument(font, tables.svg?.(g.glyph) ?? null);
+            doc?.renderElement(`glyph${g.glyph}`, multiply(m, [1, 0, 0, -1, 0, 0]), ctx.layer, ctx.depth + 1, { style, matrix: ctx.matrix, viewport: ctx.viewport, bbox: () => this.textOf(node, ctx.style, ctx.viewport)?.bbox ?? null });
+        }
+    }
+    glyphDocument(font, data) {
+        if (!data)
+            return null;
+        let documents = glyphDocuments.get(font);
+        if (!documents)
+            glyphDocuments.set(font, documents = new Map());
+        if (!documents.has(data.byteOffset)) {
+            let doc = null;
+            try {
+                const root = parseXML(svgText(data)).children.find(n => n.name === 'svg' && n.svg);
+                if (root)
+                    doc = new Document(root);
+            }
+            catch {
+                doc = null;
+            }
+            documents.set(data.byteOffset, doc);
+        }
+        const doc = documents.get(data.byteOffset) ?? null;
+        if (doc) {
+            doc.images = this.images;
+            doc.budget = this.budget;
+        }
+        return doc;
+    }
+    renderElement(id, matrix, layer, depth, contextElement) {
+        const node = this.ids.get(id);
+        if (!node || depth > 32)
+            return;
+        const style = node.parent && node.parent.name !== '#root' ? this.styleOf(node.parent) : null;
+        const { width, height } = documentSize(this.root);
+        const ctx = { matrix, style, viewport: { width, height }, layer, depth, instanced: true, contextElement };
+        if (node.name === 'svg')
+            this.renderChildren(node, { ...ctx, style: this.computeStyle(node, style) });
+        else
+            this.renderNode(node, ctx);
+    }
+    textOutlines(node, style, viewport) {
+        const layout = this.textOf(node, style, viewport);
+        if (!layout)
+            return null;
+        const path = [];
+        for (const span of layout.spans)
+            if (span.visible)
+                for (const part of [...span.before, { path: span.glyphs }, ...span.after])
+                    path.push(...part.path);
+        return path.length ? path : null;
+    }
+    renderImage(node, ctx) {
+        const style = ctx.style;
+        const image = this.imageOf(node, ctx.viewport);
+        if (!image || style.visibility !== 'visible')
+            return;
+        const { raster, nested, intrinsic, x, y, width, height } = image;
+        const aspect = node.attrs.preserveAspectRatio || 'xMidYMid meet';
+        const matrix = multiply(ctx.matrix, multiply([1, 0, 0, 1, x, y], viewBoxTransform([0, 0, intrinsic.width, intrinsic.height], width, height, aspect)));
+        const draw = (layer) => {
+            if (nested) {
+                nested.document.images = this.images;
+                nested.document.budget = this.budget;
+                nested.document.given = this.given;
+                nested.document.renderRoot(matrix, layer, ctx.depth + 1, true);
+                return;
+            }
+            const rendering = style['image-rendering'];
+            drawRaster(layer, raster, matrix, /^(optimizeSpeed|crisp-edges|pixelated)$/i.test(rendering || '') ? 0 : rendering === 'smooth' ? 1 : 2);
+        };
+        if (/\bslice\s*$/.test(aspect))
+            this.clipped(ctx, x, y, width, height, draw);
+        else
+            draw(ctx.layer);
+    }
+    imageOf(node, viewport) {
+        const href = this.href(node)?.trim();
+        if (!href)
+            return null;
+        const raster = this.images.get(href);
+        let nested = null;
+        if (!raster) {
+            if (!this.nested.has(href))
+                this.nested.set(href, nestedSvg(href));
+            nested = this.nested.get(href);
+        }
+        if (!raster && !nested)
+            return null;
+        const intrinsic = raster || nested;
+        const given = (name) => node.attrs[name] !== undefined && node.attrs[name].trim() !== 'auto';
+        const x = parseLength(node.attrs.x, viewport, 16, 'x'), y = parseLength(node.attrs.y, viewport, 16, 'y');
+        let width = given('width') ? parseLength(node.attrs.width, viewport, 16, 'x') : intrinsic.width;
+        let height = given('height') ? parseLength(node.attrs.height, viewport, 16, 'y') : intrinsic.height;
+        if (given('width') && !given('height'))
+            height = intrinsic.height * width / intrinsic.width;
+        else if (given('height') && !given('width'))
+            width = intrinsic.width * height / intrinsic.height;
+        if (!(width > 0) || !(height > 0))
+            return null;
+        return { raster, nested, intrinsic, x, y, width, height };
+    }
+    renderRoot(matrix, layer, depth, instanced = false) {
+        const { root } = this;
+        this.outputScale = Math.sqrt(Math.hypot(matrix[0], matrix[1]) * Math.hypot(matrix[2], matrix[3])) || 1;
+        const viewBox = parseViewBox(root.attrs.viewBox);
+        const { width, height } = documentSize(root);
+        let matrix0 = matrix;
+        const rootStyle = this.computeStyle(root, null);
+        if (rootStyle.transform)
+            matrix0 = multiply(matrix0, transformOf(rootStyle, { width, height }, '50% 50%'));
+        if (viewBox)
+            matrix0 = multiply(matrix0, viewBoxTransform(viewBox, width, height, root.attrs.preserveAspectRatio));
+        const viewport = viewBox ? { width: viewBox[2], height: viewBox[3] } : { width, height };
+        const background = parseColor(rootStyle['background-color']);
+        if (background && background[3] > 0) {
+            const [x, y, w, h] = viewBox || [0, 0, width, height];
+            const coverage = rasterize([transformPoints([x, y, x + w, y, x + w, y + h, x, y + h], matrix0)], false, layer.width, layer.height);
+            if (coverage)
+                layer.fill(coverage, solidPaint(background));
+        }
+        this.renderNode(root, { matrix: matrix0, style: null, viewport, layer, depth, instanced }, true);
+    }
+    paintPath(path, node, ctx, box) {
+        const { matrix } = ctx;
+        const style = ctx.style;
+        if (style.visibility === 'hidden' || style.visibility === 'collapse')
+            return;
+        const scale = Math.sqrt(Math.abs(matrix[0] * matrix[3] - matrix[1] * matrix[2])) || 1e-9;
+        const tolerance = 0.1 / scale;
+        const subpaths = flatten(path, tolerance);
+        const bbox = box === undefined ? boundingBox(subpaths) : box;
+        for (const part of paintOrder(style['paint-order'])) {
+            if (part === 'fill')
+                this.paintFill(subpaths, bbox, node, ctx);
+            else if (part === 'stroke')
+                this.paintStroke(subpaths, bbox, tolerance, ctx);
+            else if (style.visibility === 'visible')
+                this.renderMarkers(path, bbox, node, ctx);
+        }
+    }
+    paintFill(subpaths, bbox, node, ctx) {
+        const { matrix, layer } = ctx;
+        const style = ctx.style;
+        const fill = node.name === 'line' ? null : this.paint(style.fill, style, bbox, matrix, style['fill-opacity'], ctx);
+        if (!fill)
+            return;
+        const polygons = subpaths.map(points => transformPoints(points.points, matrix));
+        const coverage = rasterize(polygons, style['fill-rule'] === 'evenodd', layer.width, layer.height);
+        if (coverage)
+            layer.fill(crisp(coverage, style), fill);
+    }
+    paintStroke(subpaths, bbox, tolerance, ctx) {
+        const { matrix, layer } = ctx;
+        const style = ctx.style;
+        const stroke = this.paint(style.stroke, style, bbox, matrix, style['stroke-opacity'], ctx);
+        const strokeWidth = parseLength(style['stroke-width'], ctx.viewport, 16, 'diagonal');
+        if (!stroke || !(strokeWidth > 0))
+            return;
+        let lines = subpaths;
+        const fontSize = parseNumber(style['font-size'], 16);
+        const dashes = parseDashArray(style['stroke-dasharray'], ctx.viewport, fontSize);
+        if (dashes)
+            lines = dash(subpaths, dashes, parseLength(style['stroke-dashoffset'], ctx.viewport, fontSize, 'diagonal'));
+        const polygons = strokePolygons(lines, strokeWidth / 2, style['stroke-linecap'], style['stroke-linejoin'], Math.max(1, parseNumber(style['stroke-miterlimit'], 4)), tolerance).map(points => transformPoints(points, matrix));
+        const coverage = rasterize(polygons, false, layer.width, layer.height);
+        if (coverage)
+            layer.fill(crisp(coverage, style), stroke);
+    }
+    renderMarkers(path, bbox, node, ctx) {
+        const style = ctx.style;
+        for (let p = node.parent; p; p = p.parent)
+            if (p.name === 'clipPath')
+                return;
+        const kinds = ['marker-start', 'marker-mid', 'marker-end'];
+        if (kinds.every(kind => !style[kind] || style[kind] === 'none'))
+            return;
+        const segments = markerSegments(path);
+        if (segments.length < 2)
+            return;
+        for (let k = 0; k < 3; k++) {
+            const marker = this.reference(style[kinds[k]]);
+            if (!marker || marker.name !== 'marker' || this.active.has(marker))
+                continue;
+            const units = marker.attrs.markerUnits === 'userSpaceOnUse' ? 1 : parseLength(style['stroke-width'], ctx.viewport, 16, 'diagonal');
+            if (!(units > 0))
+                continue;
+            const length = (name, axis, fallback) => marker.attrs[name] === undefined ? fallback : parseLength(marker.attrs[name], ctx.viewport, 16, axis);
+            const refX = length('refX', 'x', 0), refY = length('refY', 'y', 0);
+            const width = length('markerWidth', 'x', 3), height = length('markerHeight', 'y', 3);
+            if (!(width > 0) || !(height > 0))
+                continue;
+            const viewBox = parseViewBox(marker.attrs.viewBox);
+            const viewBoxMatrix = viewBox ? viewBoxTransform(viewBox, width, height, marker.attrs.preserveAspectRatio) : [1, 0, 0, 1, 0, 0];
+            const sx = Math.hypot(viewBoxMatrix[0], viewBoxMatrix[1]), sy = Math.hypot(viewBoxMatrix[2], viewBoxMatrix[3]);
+            const inverse = invert(viewBoxMatrix);
+            if (!inverse)
+                continue;
+            const clip = overflowVisible(marker) ? null
+                : transformPoints([0, 0, width, height], inverse);
+            const orient = (marker.attrs.orient || '').trim();
+            const fixed = orient === 'auto' || orient === 'auto-start-reverse' ? null : parseAngle(orient);
+            const markerStyle = this.styleOf(marker);
+            const contextElement = { style, matrix: ctx.matrix, viewport: ctx.viewport, bbox: () => bbox, outer: ctx.contextElement };
+            const draw = (x, y, index) => {
+                let angle = fixed ?? vertexAngle(segments, index);
+                if (orient === 'auto-start-reverse' && index === 0)
+                    angle = (angle + 180) % 360;
+                let matrix = multiply(ctx.matrix, [1, 0, 0, 1, x, y]);
+                if (angle) {
+                    const r = angle * Math.PI / 180, cos = Math.cos(r), sin = Math.sin(r);
+                    matrix = multiply(matrix, [cos, sin, -sin, cos, 0, 0]);
+                }
+                matrix = multiply(matrix, [sx * units, 0, 0, sy * units, -refX * sx * units, -refY * sy * units]);
+                const inner = { ...ctx, matrix, style: markerStyle, depth: ctx.depth + 1, viewport: viewBox ? { width: viewBox[2], height: viewBox[3] } : ctx.viewport, contextElement };
+                this.active.add(marker);
+                if (!clip)
+                    this.renderChildren(marker, inner);
+                else
+                    this.clipped(inner, Math.min(clip[0], clip[2]), Math.min(clip[1], clip[3]), Math.abs(clip[2] - clip[0]), Math.abs(clip[3] - clip[1]), layer => this.renderChildren(marker, { ...inner, layer }));
+                this.active.delete(marker);
+            };
+            if (k === 0) {
+                if (segments[0].type === 'M')
+                    draw(segments[0].x, segments[0].y, 0);
+            }
+            else if (k === 1) {
+                for (let i = 1; i < segments.length - 1; i++)
+                    if (segments[i].type !== 'Z')
+                        draw(segments[i].x, segments[i].y, i);
+            }
+            else {
+                const i = segments.length - 1, last = segments[i];
+                if (last.type === 'L' || last.type === 'C')
+                    draw(last.x, last.y, i);
+                else if (last.type === 'Z') {
+                    const start = subpathStart(segments, i);
+                    draw(start.x, start.y, i);
+                }
+            }
+        }
+    }
+    paint(value, style, bbox, matrix, opacityValue, ctx) {
+        if (!value || value === 'none')
+            return null;
+        if (value === 'context-fill' || value === 'context-stroke') {
+            const element = ctx.contextElement;
+            if (!element)
+                return null;
+            return this.paint(element.style[value === 'context-fill' ? 'fill' : 'stroke'], element.style, element.bbox(), element.matrix, opacityValue, { ...ctx, viewport: element.viewport, contextElement: element.outer });
+        }
+        const opacity = clamp01(parseNumber(opacityValue, 1));
+        let color = value;
+        if (/^url\(/.test(value)) {
+            const server = this.reference(value);
+            const fallback = value.replace(/^\s*url\([^)]*\)\s*/, '');
+            if (server && (server.name === 'linearGradient' || server.name === 'radialGradient')) {
+                const gradient = this.gradient(server, bbox, matrix, opacity, ctx);
+                if (gradient !== undefined || !fallback)
+                    return gradient || null;
+            }
+            if (server && server.name === 'pattern') {
+                const pattern = this.pattern(server, bbox, matrix, opacity, ctx);
+                if (pattern !== undefined || !fallback)
+                    return pattern || null;
+            }
+            color = fallback;
+            if (!color || color === 'none')
+                return null;
+        }
+        const parsed = parseColor(color === 'currentColor' ? style.color : color);
+        if (!parsed || parsed[3] * opacity <= 0)
+            return null;
+        return solidPaint([parsed[0], parsed[1], parsed[2], parsed[3] * opacity]);
+    }
+    gradientAttributes(node) {
+        const attrs = {};
+        let stops = null;
+        const geometry = node.name === 'linearGradient' ? ['x1', 'y1', 'x2', 'y2'] : ['cx', 'cy', 'r', 'fx', 'fy', 'fr'];
+        for (let current = node, depth = 0; current && depth < 16; current = this.reference(this.href(current)), depth++) {
+            if (current.name !== 'linearGradient' && current.name !== 'radialGradient')
+                break;
+            const names = current.name === node.name ? [...geometry, 'gradientUnits', 'gradientTransform', 'spreadMethod'] : ['gradientUnits', 'gradientTransform', 'spreadMethod'];
+            for (const name of names)
+                if (attrs[name] === undefined && current.attrs[name] !== undefined)
+                    attrs[name] = current.attrs[name];
+            if (attrs.gradientTransform === current.attrs.gradientTransform && attrs['transform-origin'] === undefined)
+                attrs['transform-origin'] = this.styleOf(current)['transform-origin'] ?? '';
+            if (!stops) {
+                const own = current.children.filter(child => child.name === 'stop');
+                if (own.length)
+                    stops = own.map(stop => {
+                        const style = this.styleOf(stop);
+                        const offset = clamp01(parseStrictNumber(stop.attrs.offset) || 0);
+                        const color = parseColor(style['stop-color'] === 'currentColor' ? style.color : style['stop-color']) || [0, 0, 0, 1];
+                        return { offset, color: [color[0], color[1], color[2], color[3] * clamp01(parseNumber(style['stop-opacity'], 1))] };
+                    });
+            }
+        }
+        return { attrs, stops: stops || [] };
+    }
+    gradient(node, bbox, matrix, opacity, ctx) {
+        const { attrs, stops } = this.gradientAttributes(node);
+        if (!stops.length)
+            return undefined;
+        for (let i = 1; i < stops.length; i++)
+            stops[i].offset = Math.max(stops[i].offset, stops[i - 1].offset);
+        if (stops.length === 1) {
+            const c = stops[0].color;
+            return c[3] * opacity > 0 ? solidPaint([c[0], c[1], c[2], c[3] * opacity]) : null;
+        }
+        const objectBox = attrs.gradientUnits !== 'userSpaceOnUse';
+        if (objectBox && noArea(bbox))
+            return undefined;
+        const coordinate = (value, fallback, axis) => {
+            if (value === undefined)
+                return fallback;
+            if (objectBox)
+                return /%\s*$/.test(value) ? parseFloat(value) / 100 : parseNumber(value, fallback);
+            return parseLength(value, ctx.viewport, 16, axis);
+        };
+        let gradientMatrix = matrix;
+        if (objectBox && bbox)
+            gradientMatrix = multiply(gradientMatrix, [bbox.width, 0, 0, bbox.height, bbox.x, bbox.y]);
+        if (attrs.gradientTransform)
+            gradientMatrix = multiply(gradientMatrix, originTransform(attrs.gradientTransform, attrs['transform-origin'], ctx.viewport));
+        const inverse = invert(gradientMatrix);
+        if (!inverse)
+            return null;
+        const spread = attrs.spreadMethod === 'reflect' ? 1 : attrs.spreadMethod === 'repeat' ? 2 : 0;
+        const lookup = gradientLookup(stops, opacity);
+        const color = (t) => {
+            if (spread === 2)
+                t -= Math.floor(t);
+            else if (spread === 1) {
+                t = Math.abs(t) % 2;
+                if (t > 1)
+                    t = 2 - t;
+            }
+            return lookup[Math.round(clamp01(t) * 1023)];
+        };
+        if (node.name === 'linearGradient') {
+            const x1 = coordinate(attrs.x1, 0, 'x'), y1 = coordinate(attrs.y1, 0, 'y');
+            const x2 = coordinate(attrs.x2, objectBox ? 1 : ctx.viewport.width, 'x'), y2 = coordinate(attrs.y2, 0, 'y');
+            const dx = x2 - x1, dy = y2 - y1;
+            const length = dx * dx + dy * dy;
+            if (length === 0)
+                return this.lastStopPaint(stops, opacity);
+            return (px, py) => {
+                const x = inverse[0] * px + inverse[2] * py + inverse[4];
+                const y = inverse[1] * px + inverse[3] * py + inverse[5];
+                return color(((x - x1) * dx + (y - y1) * dy) / length);
+            };
+        }
+        const cx = coordinate(attrs.cx, objectBox ? 0.5 : ctx.viewport.width / 2, 'x');
+        const cy = coordinate(attrs.cy, objectBox ? 0.5 : ctx.viewport.height / 2, 'y');
+        const r = coordinate(attrs.r, objectBox ? 0.5 : Math.hypot(ctx.viewport.width, ctx.viewport.height) / Math.SQRT2 / 2, 'diagonal');
+        let fx = coordinate(attrs.fx, cx, 'x'), fy = coordinate(attrs.fy, cy, 'y');
+        const fr = coordinate(attrs.fr, 0, 'diagonal');
+        if (!(r > 0))
+            return this.lastStopPaint(stops, opacity);
+        const fd = Math.hypot(fx - cx, fy - cy);
+        if (fd > r * 0.999) {
+            fx = cx + (fx - cx) * r * 0.999 / fd;
+            fy = cy + (fy - cy) * r * 0.999 / fd;
+        }
+        const cdx = cx - fx, cdy = cy - fy, dr = r - fr;
+        const a = cdx * cdx + cdy * cdy - dr * dr;
+        return (px, py) => {
+            const x = inverse[0] * px + inverse[2] * py + inverse[4] - fx;
+            const y = inverse[1] * px + inverse[3] * py + inverse[5] - fy;
+            const b = x * cdx + y * cdy + fr * dr;
+            const c = x * x + y * y - fr * fr;
+            let t;
+            if (Math.abs(a) < 1e-9)
+                t = c / (2 * b);
+            else {
+                const discriminant = b * b - a * c;
+                if (discriminant < 0)
+                    return TRANSPARENT;
+                const root = Math.sqrt(discriminant);
+                const t1 = (b + root) / a, t2 = (b - root) / a;
+                t = Math.max(t1, t2);
+                if (fr + t * dr < 0)
+                    t = Math.min(t1, t2);
+            }
+            if (!isFinite(t) || fr + t * dr < 0)
+                return TRANSPARENT;
+            return color(t);
+        };
+    }
+    lastStopPaint(stops, opacity) {
+        const c = stops[stops.length - 1].color;
+        return solidPaint([c[0], c[1], c[2], c[3] * opacity]);
+    }
+    patternAttributes(node) {
+        const attrs = {};
+        let content = null;
+        const names = ['x', 'y', 'width', 'height', 'patternUnits', 'patternContentUnits', 'patternTransform', 'viewBox', 'preserveAspectRatio'];
+        for (let current = node, depth = 0; current && depth < 16 && current.name === 'pattern'; current = this.reference(this.href(current)), depth++) {
+            for (const name of names)
+                if (attrs[name] === undefined && current.attrs[name] !== undefined)
+                    attrs[name] = current.attrs[name];
+            if (attrs.patternTransform === current.attrs.patternTransform && attrs['transform-origin'] === undefined)
+                attrs['transform-origin'] = this.styleOf(current)['transform-origin'] ?? '';
+            if (!content && current.children.some(child => child.svg))
+                content = current;
+        }
+        return { attrs, content };
+    }
+    pattern(node, bbox, matrix, opacity, ctx) {
+        if (this.active.has(node))
+            return null;
+        const { attrs, content } = this.patternAttributes(node);
+        const objectBox = attrs.patternUnits !== 'userSpaceOnUse';
+        const contentBox = attrs.patternContentUnits === 'objectBoundingBox';
+        const viewBox = parseViewBox(attrs.viewBox);
+        const noBox = noArea(bbox);
+        if (objectBox && noBox)
+            return undefined;
+        if (contentBox && !viewBox && noBox)
+            return null;
+        const box = bbox || { x: 0, y: 0, width: 0, height: 0 };
+        const coordinate = (name, axis) => {
+            const value = attrs[name];
+            if (!objectBox)
+                return value === undefined ? 0 : parseLength(value, ctx.viewport, 16, axis);
+            const fraction = value === undefined ? 0 : /%\s*$/.test(value) ? parseFloat(value) / 100 : parseNumber(value, 0);
+            return axis === 'x' ? box.x + fraction * box.width : box.y + fraction * box.height;
+        };
+        const tx = coordinate('x', 'x'), ty = coordinate('y', 'y');
+        const tw = coordinate('width', 'x') - (objectBox ? box.x : 0), th = coordinate('height', 'y') - (objectBox ? box.y : 0);
+        if (!(tw > 0) || !(th > 0) || !content)
+            return null;
+        let patternMatrix = matrix, rotated = matrix[1] !== 0 || matrix[2] !== 0;
+        if (attrs.patternTransform) {
+            const transform = originTransform(attrs.patternTransform, attrs['transform-origin'], ctx.viewport), transformed = multiply(patternMatrix, transform);
+            if (invert(transformed)) {
+                patternMatrix = transformed;
+                rotated ||= transform[1] !== 0 || transform[2] !== 0;
+            }
+        }
+        const inverse = invert(patternMatrix);
+        if (!inverse)
+            return null;
+        let sx = Math.hypot(patternMatrix[0], patternMatrix[1]), sy = Math.hypot(patternMatrix[2], patternMatrix[3]);
+        const reduce = Math.min(1, Math.sqrt(MAX_TILE / (tw * sx * th * sy)));
+        sx *= reduce;
+        sy *= reduce;
+        const width = Math.max(1, Math.round(tw * sx)), height = Math.max(1, Math.round(th * sy));
+        let contentMatrix = [sx, 0, 0, sy, 0, 0];
+        if (viewBox)
+            contentMatrix = multiply(contentMatrix, viewBoxTransform(viewBox, tw, th, attrs.preserveAspectRatio));
+        else if (contentBox)
+            contentMatrix = multiply(contentMatrix, [box.width, 0, 0, box.height, 0, 0]);
+        const tile = new Layer(width, height);
+        this.active.add(node);
+        this.renderChildren(content, { ...ctx, matrix: contentMatrix, style: this.styleOf(content), layer: tile, depth: ctx.depth + 1,
+            viewport: viewBox ? { width: viewBox[2], height: viewBox[3] } : ctx.viewport });
+        this.active.delete(node);
+        if (tile.x1 <= tile.x0)
+            return null;
+        const translated = !rotated && patternMatrix[0] > 0 && patternMatrix[3] > 0;
+        return sampler(tile.data, width, height, multiply([sx, 0, 0, sy, -tx * sx, -ty * sy], inverse), true, translated ? 0 : 2, opacity);
+    }
+    filtered(filters, matrix, target, draw) {
+        const sx = Math.hypot(matrix[0], matrix[1]), sy = Math.hypot(matrix[2], matrix[3]);
+        if (!(sx > 0) || !(sy > 0))
+            return;
+        const rest = [matrix[0] / sx, matrix[1] / sx, matrix[2] / sy, matrix[3] / sy, 0, 0];
+        const restInverse = invert(rest);
+        if (!restInverse)
+            return;
+        const scaled = multiply(restInverse, matrix);
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        for (const { rect } of filters) {
+            const p = transformPoints([rect.x, rect.y, rect.x + rect.width, rect.y, rect.x + rect.width, rect.y + rect.height, rect.x, rect.y + rect.height], scaled);
+            for (let i = 0; i < 8; i += 2) {
+                x0 = Math.min(x0, p[i]);
+                x1 = Math.max(x1, p[i]);
+                y0 = Math.min(y0, p[i + 1]);
+                y1 = Math.max(y1, p[i + 1]);
+            }
+        }
+        const canvas = transformPoints([0, 0, target.width, 0, target.width, target.height, 0, target.height], restInverse);
+        const cx0 = Math.min(canvas[0], canvas[2], canvas[4], canvas[6]) - 2 * target.width, cy0 = Math.min(canvas[1], canvas[3], canvas[5], canvas[7]) - 2 * target.height;
+        const cx1 = Math.max(canvas[0], canvas[2], canvas[4], canvas[6]) + 2 * target.width, cy1 = Math.max(canvas[1], canvas[3], canvas[5], canvas[7]) + 2 * target.height;
+        let lx = Math.floor(x0), ly = Math.floor(y0);
+        let lw = Math.max(1, Math.ceil(x1 - x0)), lh = Math.max(1, Math.ceil(y1 - y0));
+        const left = Math.max(lx, Math.floor(cx0)), top = Math.max(ly, Math.floor(cy0));
+        lw = Math.min(lx + lw, Math.ceil(cx1)) - left;
+        lh = Math.min(ly + lh, Math.ceil(cy1)) - top;
+        lx = left;
+        ly = top;
+        if (lw <= 0 || lh <= 0 || lw * lh > 1 << 26)
+            return;
+        const shifted = multiply([1, 0, 0, 1, -lx, -ly], scaled);
+        const layer = new Layer(lw, lh);
+        draw(layer, shifted);
+        const pixmap = layer.toPixmap();
+        for (const filter of filters)
+            applyFilter(filter, shifted, pixmap);
+        const result = Layer.fromPixmap(pixmap);
+        if (result.x1 <= result.x0)
+            return;
+        if (rest[0] === 1 && rest[1] === 0 && rest[2] === 0 && rest[3] === 1) {
+            target.blit(result, lx, ly);
+            return;
+        }
+        const place = multiply(rest, [1, 0, 0, 1, lx, ly]);
+        const inverse = invert(place);
+        const coverage = inverse && rasterize([transformPoints([0, 0, lw, 0, lw, lh, 0, lh], place)], false, target.width, target.height);
+        if (coverage)
+            target.fill(coverage, sampler(result.data, lw, lh, inverse, false, 1, 1));
+    }
+    filtersOf(node, style, viewport) {
+        const value = (style.filter || '').trim();
+        const items = [...value.matchAll(/url\([^)]*\)|[a-z-]+\([^)]*\)/gi)];
+        if (value.replace(/url\([^)]*\)|[a-z-]+\([^)]*\)/gi, '').trim())
+            return [];
+        const bbox = this.objectBoundingBox(node, viewport);
+        const filters = [];
+        let invalid = false;
+        for (const [item] of items) {
+            if (/^url\(/i.test(item)) {
+                const target = this.reference(item);
+                const filter = target && target.name === 'filter' ? this.filterOf(target, bbox, viewport) : 'invalid';
+                if (filter === 'invalid')
+                    invalid = true;
+                else if (filter === null)
+                    return null;
+                else
+                    filters.push(filter);
+                continue;
+            }
+            const filter = this.filterFunction(item, style, bbox, viewport);
+            if (filter === 'invalid')
+                return [];
+            if (filter)
+                filters.push(filter);
+        }
+        return !filters.length && invalid ? 'invalid' : filters;
+    }
+    objectBoundingBox(node, viewport) {
+        const path = shapePath(node, viewport, 16);
+        const box = path ? boundingBox(flatten(path, 0.1)) : this.groupBoundingBox(node, viewport);
+        return box && box.width > 0 && box.height > 0 ? box : null;
+    }
+    filterOf(node, bbox, viewport) {
+        const attribute = (name) => {
+            for (let current = node, depth = 0; current && current.name === 'filter' && depth < 16; current = this.reference(this.href(current)), depth++)
+                if (current.attrs[name] !== undefined)
+                    return current.attrs[name];
+            return undefined;
+        };
+        const objectBox = attribute('filterUnits') !== 'userSpaceOnUse';
+        const primitiveBox = attribute('primitiveUnits') === 'objectBoundingBox';
+        const length = (n, name, axis, box) => {
+            const v = n === node ? attribute(name) : n.attrs[name];
+            if (v === undefined)
+                return null;
+            if (box)
+                return /%\s*$/.test(v) ? parseFloat(v) / 100 : parseNumber(v, NaN);
+            return parseLength(v, viewport, 16, axis);
+        };
+        let rect = {
+            x: length(node, 'x', 'x', objectBox) ?? (objectBox ? -0.1 : -0.1 * viewport.width),
+            y: length(node, 'y', 'y', objectBox) ?? (objectBox ? -0.1 : -0.1 * viewport.height),
+            width: length(node, 'width', 'x', objectBox) ?? (objectBox ? 1.2 : 1.2 * viewport.width),
+            height: length(node, 'height', 'y', objectBox) ?? (objectBox ? 1.2 : 1.2 * viewport.height)
+        };
+        if (!(rect.width > 0) || !(rect.height > 0))
+            return 'invalid';
+        if (objectBox) {
+            if (!bbox)
+                return 'invalid';
+            rect = { x: bbox.x + rect.x * bbox.width, y: bbox.y + rect.y * bbox.height, width: rect.width * bbox.width, height: rect.height * bbox.height };
+        }
+        let holder = null;
+        for (let current = node, depth = 0; current && depth < 16; current = this.reference(this.href(current)), depth++) {
+            if (current.name !== 'filter')
+                return 'invalid';
+            if (current.children.some(child => child.svg)) {
+                holder = current;
+                break;
+            }
+        }
+        if (!holder)
+            return 'invalid';
+        if (primitiveBox && !bbox)
+            return 'invalid';
+        const scale = primitiveBox && bbox ? [bbox.width, bbox.height] : [1, 1];
+        const primitives = [];
+        const names = new Set();
+        let index = 1;
+        for (const child of holder.children) {
+            if (!child.svg)
+                continue;
+            const fx = length(child, 'x', 'x', primitiveBox), fy = length(child, 'y', 'y', primitiveBox);
+            const fw = length(child, 'width', 'x', primitiveBox), fh = length(child, 'height', 'y', primitiveBox);
+            let region;
+            if ((child.name === 'feFlood' || child.name === 'feImage') && primitiveBox && bbox) {
+                region = { x: bbox.x + (fx ?? 0) * bbox.width, y: bbox.y + (fy ?? 0) * bbox.height, width: (fw ?? 1) * bbox.width, height: (fh ?? 1) * bbox.height };
+            }
+            else if (primitiveBox) {
+                region = { x: rect.x + (fx ?? 0) * rect.width, y: rect.y + (fy ?? 0) * rect.height, width: (fw ?? 1) * rect.width, height: (fh ?? 1) * rect.height };
+            }
+            else
+                region = { x: fx ?? rect.x, y: fy ?? rect.y, width: fw ?? rect.width, height: fh ?? rect.height };
+            if (!(region.width > 0) || !(region.height > 0))
+                break;
+            const kind = this.primitiveKind(child, scale, primitives, region, viewport);
+            if (kind === undefined)
+                continue;
+            if (kind === null)
+                return null;
+            let result = child.attrs.result;
+            if (result !== undefined) {
+                names.add(result);
+                index++;
+            }
+            else {
+                do
+                    result = `result${index++}`;
+                while (names.has(result));
+            }
+            const interpolation = this.styleOf(child)['color-interpolation-filters'];
+            primitives.push({ rect: region, linear: interpolation !== 'sRGB', result, kind });
+        }
+        return primitives.length ? { rect, primitives } : 'invalid';
+    }
+    primitiveKind(node, scale, primitives, region, viewport) {
+        const input = (name) => {
+            const value = node.attrs[name]?.trim();
+            const previous = primitives.length ? { result: primitives[primitives.length - 1].result } : 'SourceGraphic';
+            if (value === undefined)
+                return previous;
+            if (value === 'SourceGraphic' || value === 'SourceAlpha')
+                return value;
+            if (/^(BackgroundImage|BackgroundAlpha|FillPaint|StrokePaint)$/.test(value))
+                return 'SourceGraphic';
+            return primitives.some(p => p.result === value) ? { result: value } : previous;
+        };
+        const number = (name, fallback) => parsePlainNumber(node.attrs[name]) ?? fallback;
+        const deviation = (fallback) => {
+            const list = parseNumberList(node.attrs.stdDeviation ?? fallback);
+            const [x, y] = list.length === 1 ? [list[0], list[0]] : list.length === 2 ? list : [0, 0];
+            return [Math.max(0, x * scale[0]) || 0, Math.max(0, y * scale[1]) || 0];
+        };
+        const flood = () => {
+            const style = this.styleOf(node);
+            const c = parseColor(style['flood-color'] === 'currentColor' ? style.color : style['flood-color']) || [0, 0, 0, 1];
+            return { color: [Math.round(c[0] * 255), Math.round(c[1] * 255), Math.round(c[2] * 255)], opacity: c[3] * clamp01(parseNumber(style['flood-opacity'], 1)) };
+        };
+        switch (node.name) {
+            case 'feGaussianBlur': {
+                const [sx, sy] = deviation('0 0');
+                return { type: 'blur', input: input('in'), sx, sy };
+            }
+            case 'feOffset':
+                return { type: 'offset', input: input('in'), dx: number('dx', 0) * scale[0], dy: number('dy', 0) * scale[1] };
+            case 'feFlood':
+                return { type: 'flood', ...flood() };
+            case 'feComposite': {
+                const operator = /^(in|out|atop|xor|lighter|arithmetic)$/.test(node.attrs.operator?.trim() || '') ? node.attrs.operator.trim() : 'over';
+                return { type: 'composite', operator, k: ['k1', 'k2', 'k3', 'k4'].map(k => number(k, 0)), input: input('in'), input2: input('in2') };
+            }
+            case 'feMerge':
+                return { type: 'merge', inputs: node.children.filter(child => child.svg).map(child => this.mergeInput(child, primitives)) };
+            case 'feDropShadow': {
+                const [sx, sy] = deviation('2 2');
+                return { type: 'dropShadow', input: input('in'), dx: number('dx', 2) * scale[0], dy: number('dy', 2) * scale[1], sx, sy, ...flood() };
+            }
+            case 'feColorMatrix':
+                return { type: 'colorMatrix', input: input('in'), matrix: colorMatrixOf(node) };
+            case 'feComponentTransfer': {
+                const functions = [null, null, null, null];
+                for (const child of node.children) {
+                    const k = ['feFuncR', 'feFuncG', 'feFuncB', 'feFuncA'].indexOf(child.name);
+                    if (k >= 0 && child.svg)
+                        functions[k] = transferOf(child, functions[k]);
+                }
+                return { type: 'componentTransfer', input: input('in'), functions };
+            }
+            case 'feTile':
+                return { type: 'tile', input: input('in') };
+            case 'feConvolveMatrix': {
+                const convolution = convolutionOf(node);
+                return convolution ? { type: 'convolve', input: input('in'), ...convolution } : { type: 'flood', color: [0, 0, 0], opacity: 0 };
+            }
+            case 'feBlend': {
+                const mode = node.attrs.mode?.trim() || 'normal';
+                return { type: 'blend', mode: BLEND_MODES.has(mode) && mode !== 'plus-lighter' ? mode : 'normal', input: input('in'), input2: input('in2') };
+            }
+            case 'feMorphology': {
+                let rx = scale[0], ry = scale[1];
+                const list = node.attrs.radius === undefined ? null : parseStrictNumberList(node.attrs.radius);
+                if (list) {
+                    let [x, y] = list.length === 2 ? list : list.length === 1 ? [list[0], list[0]] : [0, 0];
+                    if (x === 0 && y === 0)
+                        x = y = 1;
+                    if (x === 0)
+                        x = 1;
+                    if (y === 0)
+                        y = 1;
+                    if (x >= 0 && y >= 0) {
+                        rx = x * scale[0];
+                        ry = y * scale[1];
+                    }
+                }
+                return { type: 'morphology', dilate: node.attrs.operator?.trim() === 'dilate', rx, ry, input: input('in') };
+            }
+            case 'feTurbulence': {
+                const list = node.attrs.baseFrequency === undefined ? null : parseStrictNumberList(node.attrs.baseFrequency);
+                let [fx, fy] = list && list.length === 2 ? list : list && list.length === 1 ? [list[0], list[0]] : [0, 0];
+                if (!(fx >= 0 && fy >= 0))
+                    fx = fy = 0;
+                const octaves = Math.max(0, number('numOctaves', 1));
+                return { type: 'turbulence', fx, fy, octaves: Math.round(octaves), seed: Math.trunc(number('seed', 0)), stitch: node.attrs.stitchTiles?.trim() === 'stitch',
+                    fractal: node.attrs.type?.trim() === 'fractalNoise' };
+            }
+            case 'feDiffuseLighting':
+            case 'feSpecularLighting': {
+                const transparent = { type: 'flood', color: [0, 0, 0], opacity: 0 };
+                const source = node.children.find(child => child.svg && /^fe(Distant|Point|Spot)Light$/.test(child.name));
+                const specular = node.name === 'feSpecularLighting', exponent = number('specularExponent', 1);
+                if (!source || (specular && !(exponent >= 1 && exponent <= 128)))
+                    return transparent;
+                const at = (name) => parsePlainNumber(source.attrs[name]) ?? 0;
+                let light;
+                if (source.name === 'feDistantLight')
+                    light = { type: 'distant', azimuth: at('azimuth'), elevation: at('elevation') };
+                else if (source.name === 'fePointLight')
+                    light = { type: 'point', x: at('x'), y: at('y'), z: at('z') };
+                else {
+                    const e = parsePlainNumber(source.attrs.specularExponent);
+                    light = { type: 'spot', x: at('x'), y: at('y'), z: at('z'), atX: at('pointsAtX'), atY: at('pointsAtY'), atZ: at('pointsAtZ'),
+                        exponent: e !== null && e > 0 ? e : 1, cone: parsePlainNumber(source.attrs.limitingConeAngle) };
+                }
+                const style = this.styleOf(node), value = style['lighting-color'];
+                const c = (value === 'currentColor' ? parseColor(style.color) : parseColor(value)) || [1, 1, 1, 1];
+                return { type: 'lighting', specular, input: input('in'), surfaceScale: number('surfaceScale', 1),
+                    constant: number(specular ? 'specularConstant' : 'diffuseConstant', 1), exponent, color: [Math.round(c[0] * 255), Math.round(c[1] * 255), Math.round(c[2] * 255)], light };
+            }
+            case 'feImage':
+                return this.feImage(node, region, viewport);
+            case 'feDisplacementMap': {
+                const channel = (name) => {
+                    const index = ['R', 'G', 'B'].indexOf(node.attrs[name]?.trim() ?? '');
+                    return index < 0 ? 3 : index;
+                };
+                return { type: 'displacement', input: input('in'), input2: input('in2'), scale: number('scale', 0) * (scale[0] + scale[1]) / 2,
+                    xChannel: channel('xChannelSelector'), yChannel: channel('yChannelSelector') };
+            }
+            default:
+                return undefined;
+        }
+    }
+    feImage(node, region, viewport) {
+        const href = this.href(node)?.trim();
+        const target = href && href.startsWith('#') ? this.reference(href) : null;
+        const transparent = { type: 'flood', color: [0, 0, 0], opacity: 0 };
+        if (!href)
+            return transparent;
+        if (this.active.has(node))
+            return null;
+        if (href.startsWith('#') && (!target || !SWITCHABLE.has(target.name) && target.name !== 'g'))
+            return transparent;
+        const image = target ? null : { name: 'image', svg: true, text: '', children: [], parent: node.parent,
+            attrs: { href, x: '0', y: '0', width: String(region.width), height: String(region.height), preserveAspectRatio: node.attrs.preserveAspectRatio || 'xMidYMid meet' } };
+        if (image && !this.imageOf(image, viewport))
+            return transparent;
+        return {
+            type: 'image',
+            draw: (matrix, width, height) => {
+                const layer = new Layer(width, height);
+                this.active.add(node);
+                const parentStyle = (target || node).parent && (target || node).parent.name !== '#root' ? this.styleOf((target || node).parent) : null;
+                const ctx = { matrix, style: parentStyle, viewport, layer, depth: 16 };
+                if (target)
+                    this.renderNode(target, ctx);
+                else
+                    this.renderImage(image, { ...ctx, style: this.computeStyle(image, this.styleOf(node)) });
+                this.active.delete(node);
+                return layer.toPixmap();
+            }
+        };
+    }
+    mergeInput(node, primitives) {
+        const value = node.attrs.in?.trim();
+        const previous = primitives.length ? { result: primitives[primitives.length - 1].result } : 'SourceGraphic';
+        if (value === undefined)
+            return previous;
+        if (value === 'SourceGraphic' || value === 'SourceAlpha')
+            return value;
+        if (/^(BackgroundImage|BackgroundAlpha|FillPaint|StrokePaint)$/.test(value))
+            return 'SourceGraphic';
+        return primitives.some(p => p.result === value) ? { result: value } : previous;
+    }
+    filterFunction(item, style, bbox, viewport) {
+        const m = /^([a-z-]+)\(([^)]*)\)$/i.exec(item);
+        if (!m)
+            return 'invalid';
+        const name = m[1].toLowerCase(), args = m[2].trim();
+        const amount = (fallback) => {
+            if (!args)
+                return fallback;
+            const v = /%$/.test(args) ? parseStrictNumber(args.slice(0, -1)) : parseStrictNumber(args);
+            if (v === null || v < 0)
+                return null;
+            return /%$/.test(args) ? v / 100 : v;
+        };
+        const fontSize = parseNumber(style['font-size'], 16);
+        const length = (v) => /%$/.test(v) ? NaN : parseLength(v, viewport, fontSize, 'x');
+        let kind;
+        if (name === 'blur') {
+            const d = args ? length(args) : 0;
+            if (!(d >= 0))
+                return 'invalid';
+            kind = { type: 'blur', input: 'SourceGraphic', sx: d, sy: d };
+        }
+        else if (name === 'drop-shadow') {
+            if (args.includes(',') && !/\([^)]*,/.test(args))
+                return 'invalid';
+            const parts = args.match(/[a-z]+\([^)]*\)|#[0-9a-f]+|[^\s]+/gi) || [];
+            const lengths = [];
+            let color = null;
+            for (const part of parts) {
+                const c = part === 'currentColor' ? parseColor(style.color) : parseColor(part);
+                if (c && !/^[+-]?[\d.]/.test(part))
+                    color = c;
+                else
+                    lengths.push(length(part));
+            }
+            if (lengths.length < 2 || lengths.length > 3 || lengths.some(l => !isFinite(l)))
+                return 'invalid';
+            const c = color || parseColor(style.color) || [0, 0, 0, 1];
+            kind = { type: 'dropShadow', input: 'SourceGraphic', dx: lengths[0], dy: lengths[1], sx: Math.max(0, lengths[2] || 0), sy: Math.max(0, lengths[2] || 0),
+                color: [Math.round(c[0] * 255), Math.round(c[1] * 255), Math.round(c[2] * 255)], opacity: c[3] };
+        }
+        else if (name === 'hue-rotate') {
+            const angle = args ? parseAngleStrict(args) : 0;
+            if (angle === null)
+                return 'invalid';
+            kind = { type: 'colorMatrix', input: 'SourceGraphic', matrix: { type: 'hueRotate', angle } };
+        }
+        else {
+            const a = amount(1);
+            if (a === null)
+                return 'invalid';
+            const one = Math.min(a, 1), inv = 1 - one;
+            switch (name) {
+                case 'grayscale':
+                    kind = { type: 'colorMatrix', input: 'SourceGraphic', matrix: { type: 'matrix', values: [0.2126 + 0.7874 * inv, 0.7152 - 0.7152 * inv, 0.0722 - 0.0722 * inv, 0, 0,
+                                0.2126 - 0.2126 * inv, 0.7152 + 0.2848 * inv, 0.0722 - 0.0722 * inv, 0, 0, 0.2126 - 0.2126 * inv, 0.7152 - 0.7152 * inv, 0.0722 + 0.9278 * inv, 0, 0,
+                                0, 0, 0, 1, 0] } };
+                    break;
+                case 'sepia':
+                    kind = { type: 'colorMatrix', input: 'SourceGraphic', matrix: { type: 'matrix', values: [0.393 + 0.607 * inv, 0.769 - 0.769 * inv, 0.189 - 0.189 * inv, 0, 0,
+                                0.349 - 0.349 * inv, 0.686 + 0.314 * inv, 0.168 - 0.168 * inv, 0, 0, 0.272 - 0.272 * inv, 0.534 - 0.534 * inv, 0.131 + 0.869 * inv, 0, 0,
+                                0, 0, 0, 1, 0] } };
+                    break;
+                case 'saturate':
+                    kind = { type: 'colorMatrix', input: 'SourceGraphic', matrix: { type: 'saturate', value: a } };
+                    break;
+                case 'invert': {
+                    const table = { type: 'table', values: [one, 1 - one] };
+                    kind = { type: 'componentTransfer', input: 'SourceGraphic', functions: [table, table, table, null] };
+                    break;
+                }
+                case 'opacity':
+                    kind = { type: 'componentTransfer', input: 'SourceGraphic', functions: [null, null, null, { type: 'table', values: [0, one] }] };
+                    break;
+                case 'brightness': {
+                    const linear = { type: 'linear', slope: a, intercept: 0 };
+                    kind = { type: 'componentTransfer', input: 'SourceGraphic', functions: [linear, linear, linear, null] };
+                    break;
+                }
+                case 'contrast': {
+                    const linear = { type: 'linear', slope: a, intercept: -0.5 * a + 0.5 };
+                    kind = { type: 'componentTransfer', input: 'SourceGraphic', functions: [linear, linear, linear, null] };
+                    break;
+                }
+                default:
+                    return 'invalid';
+            }
+        }
+        if (!bbox)
+            return null;
+        const f = kind.type === 'dropShadow' || kind.type === 'blur' ? [-0.5, 2] : [-0.1, 1.2];
+        const rect = { x: bbox.x + f[0] * bbox.width, y: bbox.y + f[0] * bbox.height, width: f[1] * bbox.width, height: f[1] * bbox.height };
+        return { rect, primitives: [{ rect, linear: false, result: 'result', kind }] };
+    }
+    clipMask(clip, node, matrix, context) {
+        const { width, height } = context.layer;
+        const alpha = new Float32Array(width * height);
+        const style = this.styleOf(clip);
+        this.active.add(clip);
+        let clipMatrix = matrix;
+        if (style.transform)
+            clipMatrix = multiply(clipMatrix, transformOf(style, context.viewport));
+        if (clip.attrs.clipPathUnits === 'objectBoundingBox') {
+            const path = shapePath(node, context.viewport, 16);
+            const bbox = path ? boundingBox(flatten(path, 0.1)) : this.groupBoundingBox(node, context.viewport);
+            if (!bbox || noArea(bbox))
+                return alpha;
+            clipMatrix = multiply(clipMatrix, [bbox.width, 0, 0, bbox.height, bbox.x, bbox.y]);
+        }
+        for (const child of clip.children) {
+            if (UNSUPPORTED.has(child.name) && child.name !== 'text')
+                continue;
+            const childStyle = this.computeStyle(child, style);
+            if (childStyle.display === 'none' || childStyle.visibility === 'hidden')
+                continue;
+            let childMatrix = clipMatrix;
+            if (childStyle.transform)
+                childMatrix = multiply(childMatrix, transformOf(childStyle, context.viewport));
+            let shape = child;
+            if (child.name === 'use') {
+                const target = this.reference(this.href(child));
+                if (!target || !['path', 'rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon'].includes(target.name))
+                    continue;
+                childMatrix = multiply(childMatrix, [1, 0, 0, 1, parseLength(child.attrs.x, context.viewport, 16, 'x'), parseLength(child.attrs.y, context.viewport, 16, 'y')]);
+                const targetStyle = this.computeStyle(target, childStyle);
+                if (targetStyle.transform)
+                    childMatrix = multiply(childMatrix, transformOf(targetStyle, context.viewport));
+                shape = target;
+            }
+            const text = shape.name === 'text';
+            const path = text ? this.textOutlines(shape, childStyle, context.viewport) : shapePath(shape, context.viewport, 16);
+            if (!path)
+                continue;
+            const scale = Math.sqrt(Math.abs(childMatrix[0] * childMatrix[3] - childMatrix[1] * childMatrix[2])) || 1e-9;
+            const polygons = flatten(path, 0.1 / scale).map(points => transformPoints(points.points, childMatrix));
+            const coverage = rasterize(polygons, !text && this.computeStyle(shape, childStyle)['clip-rule'] === 'evenodd', width, height);
+            if (!coverage)
+                continue;
+            const own = this.reference(childStyle['clip-path']);
+            const ownMask = own && own.name === 'clipPath' && !this.active.has(own) ? this.clipMask(own, shape, childMatrix, context) : null;
+            const { x0, y0, w, h, data } = coverage;
+            for (let y = 0; y < h; y++)
+                for (let x = 0; x < w; x++) {
+                    let c = data[y * w + x];
+                    const i = (y0 + y) * width + x0 + x;
+                    if (ownMask)
+                        c *= ownMask[i];
+                    alpha[i] = alpha[i] + c - alpha[i] * c;
+                }
+        }
+        const nested = this.reference(style['clip-path']);
+        if (nested && nested.name === 'clipPath' && !this.active.has(nested)) {
+            const outer = this.clipMask(nested, node, matrix, context);
+            for (let i = 0; i < alpha.length; i++)
+                alpha[i] *= outer[i];
+        }
+        this.active.delete(clip);
+        return alpha;
+    }
+    textBox(node, viewport) {
+        const layout = this.textOf(node, this.styleOf(node), viewport);
+        if (!layout)
+            return null;
+        const { x, y, width, height } = layout.bbox;
+        return [['M', x, y], ['L', x + width, y], ['L', x + width, y + height], ['L', x, y + height], ['Z']];
+    }
+    groupBoundingBox(node, viewport, matrix = [1, 0, 0, 1, 0, 0]) {
+        let box = null;
+        const visit = (n, matrix) => {
+            const image = n.name === 'image' ? this.imageOf(n, viewport) : null;
+            const path = image ? [['M', image.x, image.y], ['L', image.x + image.width, image.y], ['L', image.x + image.width, image.y + image.height],
+                ['L', image.x, image.y + image.height], ['Z']] : n.name === 'text' ? this.textBox(n, viewport) : shapePath(n, viewport, 16);
+            if (path) {
+                const points = flatten(path, 0.1).map(p => transformPoints(p.points, matrix));
+                const b = boundingBox(points.map(p => ({ points: p })));
+                if (b)
+                    box = box ? union(box, b) : b;
+            }
+            for (const child of n.children)
+                if (child.svg && this.styleOf(child).display !== 'none')
+                    visit(child, child.attrs.transform ? multiply(matrix, originTransform(child.attrs.transform, child.attrs['transform-origin'], viewport)) : matrix);
+        };
+        visit(node, matrix);
+        return box;
+    }
+    maskValues(mask, node, matrix, context) {
+        const { width, height } = context.layer;
+        const values = new Float32Array(width * height);
+        const path = shapePath(node, context.viewport, 16);
+        const bbox = path ? boundingBox(flatten(path, 0.1)) : this.groupBoundingBox(node, context.viewport);
+        const userSpace = mask.attrs.maskUnits === 'userSpaceOnUse';
+        const contentBox = mask.attrs.maskContentUnits === 'objectBoundingBox';
+        if ((!userSpace || contentBox) && noArea(bbox))
+            return values;
+        const box = bbox || { x: 0, y: 0, width: 0, height: 0 };
+        const fraction = (name, fallback) => {
+            const value = mask.attrs[name];
+            if (value === undefined)
+                return fallback;
+            return /%\s*$/.test(value) ? parseFloat(value) / 100 : parseNumber(value, fallback);
+        };
+        let rx, ry, rw, rh;
+        if (userSpace) {
+            const { viewport } = context;
+            const length = (name, fallback, axis) => mask.attrs[name] === undefined ? fallback : parseLength(mask.attrs[name], viewport, 16, axis);
+            rx = length('x', -0.1 * viewport.width, 'x');
+            ry = length('y', -0.1 * viewport.height, 'y');
+            rw = length('width', 1.2 * viewport.width, 'x');
+            rh = length('height', 1.2 * viewport.height, 'y');
+        }
+        else {
+            rx = box.x + fraction('x', -0.1) * box.width;
+            ry = box.y + fraction('y', -0.1) * box.height;
+            rw = fraction('width', 1.2) * box.width;
+            rh = fraction('height', 1.2) * box.height;
+        }
+        const layer = new Layer(width, height);
+        let contentMatrix = matrix;
+        if (contentBox)
+            contentMatrix = multiply(contentMatrix, [box.width, 0, 0, box.height, box.x, box.y]);
+        const maskStyle = this.styleOf(mask);
+        this.active.add(mask);
+        this.renderChildren(mask, { ...context, matrix: contentMatrix, style: maskStyle, layer, depth: context.depth + 1 });
+        const alphaMask = maskStyle['mask-type'] === 'alpha';
+        const regionCoverage = rasterize([transformPoints([rx, ry, rx + rw, ry, rx + rw, ry + rh, rx, ry + rh], matrix)], false, width, height);
+        if (!regionCoverage) {
+            this.active.delete(mask);
+            return values;
+        }
+        const { x0, y0, w, h, data } = regionCoverage;
+        const d = layer.data;
+        for (let y = 0; y < h; y++)
+            for (let x = 0; x < w; x++) {
+                const i = (y0 + y) * width + x0 + x;
+                values[i] = data[y * w + x] * (alphaMask ? d[i * 4 + 3] : 0.2125 * d[i * 4] + 0.7154 * d[i * 4 + 1] + 0.0721 * d[i * 4 + 2]);
+            }
+        const nested = this.reference(maskStyle.mask);
+        if (nested && nested.name === 'mask' && !this.active.has(nested)) {
+            const outer = this.maskValues(nested, node, matrix, context);
+            for (let i = 0; i < values.length; i++)
+                values[i] *= outer[i];
+        }
+        else if (nested)
+            values.fill(0);
+        this.active.delete(mask);
+        return values;
+    }
+}
+function markerSegments(path) {
+    const segments = [];
+    let mx = 0, my = 0;
+    const push = (type, x, y, x1 = 0, y1 = 0, x2 = 0, y2 = 0) => {
+        segments.push({ type, x, y, x1, y1, x2, y2 });
+    };
+    for (const [command, ...v] of path) {
+        const last = segments[segments.length - 1];
+        if (command === 'M') {
+            if (last && last.type === 'M')
+                segments.pop();
+            push('M', mx = v[0], my = v[1]);
+        }
+        else if (command === 'Z') {
+            if (last && last.type !== 'Z' && last.type !== 'M')
+                push('Z', mx, my);
+        }
+        else {
+            if (!last || last.type === 'Z')
+                push('M', mx, my);
+            if (command === 'L')
+                push('L', v[0], v[1]);
+            else
+                push('C', v[4], v[5], v[0], v[1], v[2], v[3]);
+        }
+    }
+    if (segments.length && segments[segments.length - 1].type === 'M')
+        segments.pop();
+    return segments;
+}
+function subpathStart(segments, index) {
+    for (let i = index - 1; i >= 0; i--)
+        if (segments[i].type === 'M')
+            return segments[i];
+    return { type: 'M', x: 0, y: 0, x1: 0, y1: 0, x2: 0, y2: 0 };
+}
+function previousVertex(segments, index) {
+    const previous = segments[index - 1];
+    return previous.type === 'Z' ? subpathStart(segments, index) : previous;
+}
+function near(a, b) {
+    return Math.abs(a - b) <= 4 * 1.1920929e-7 * Math.max(Math.abs(a), Math.abs(b));
+}
+function normalizeAngle(rad) {
+    const v = rad % (Math.PI * 2);
+    return v < 0 ? v + Math.PI * 2 : v;
+}
+function bisector(x1, y1, x2, y2, x3, y3, x4, y4) {
+    const incoming = normalizeAngle(Math.atan2(y2 - y1, x2 - x1)), outgoing = normalizeAngle(Math.atan2(y4 - y3, x4 - x3));
+    const d = (outgoing - incoming) / 2;
+    let angle = incoming + d;
+    if (Math.abs(d) > Math.PI / 2)
+        angle -= Math.PI;
+    return normalizeAngle(angle) * 180 / Math.PI;
+}
+function lineAngle(x1, y1, x2, y2) {
+    return bisector(x1, y1, x2, y2, x1, y1, x2, y2);
+}
+function curvesAngle(px, py, cx1, cy1, x, y, cx2, cy2, nx, ny) {
+    if (near(cx1, x) && near(cy1, y))
+        return bisector(px, py, x, y, x, y, cx2, cy2);
+    if (near(x, cx2) && near(y, cy2))
+        return bisector(cx1, cy1, x, y, x, y, nx, ny);
+    return bisector(cx1, cy1, x, y, x, y, cx2, cy2);
+}
+function vertexAngle(segments, index) {
+    if (index === 0) {
+        const [m, s] = segments;
+        if (m.type !== 'M')
+            return 0;
+        if (s.type === 'L')
+            return lineAngle(m.x, m.y, s.x, s.y);
+        if (s.type === 'C')
+            return near(m.x, s.x1) && near(m.y, s.y1) ? lineAngle(m.x, m.y, s.x, s.y) : lineAngle(m.x, m.y, s.x1, s.y1);
+        return 0;
+    }
+    if (index === segments.length - 1) {
+        const a = segments[index - 1], b = segments[index];
+        if (b.type === 'L') {
+            const prev = previousVertex(segments, index);
+            return lineAngle(prev.x, prev.y, b.x, b.y);
+        }
+        if (b.type === 'C')
+            return near(b.x2, b.x) && near(b.y2, b.y) ? lineAngle(b.x1, b.y1, b.x, b.y) : lineAngle(b.x2, b.y2, b.x, b.y);
+        if (b.type === 'Z') {
+            const next = subpathStart(segments, index);
+            if (a.type === 'L')
+                return lineAngle(a.x, a.y, next.x, next.y);
+            if (a.type === 'C') {
+                const prev = previousVertex(segments, index);
+                return curvesAngle(prev.x, prev.y, a.x2, a.y2, a.x, a.y, next.x, next.y, next.x, next.y);
+            }
+        }
+        return 0;
+    }
+    const a = segments[index], b = segments[index + 1];
+    if (a.type === 'M') {
+        if (b.type === 'L')
+            return lineAngle(a.x, a.y, b.x, b.y);
+        if (b.type === 'C')
+            return lineAngle(a.x, a.y, b.x1, b.y1);
+        return 0;
+    }
+    if (a.type === 'Z')
+        return 0;
+    const prev = previousVertex(segments, index);
+    if (b.type === 'L') {
+        if (a.type === 'L')
+            return bisector(prev.x, prev.y, a.x, a.y, a.x, a.y, b.x, b.y);
+        return curvesAngle(prev.x, prev.y, a.x2, a.y2, a.x, a.y, b.x, b.y, b.x, b.y);
+    }
+    if (b.type === 'C') {
+        if (a.type === 'L')
+            return curvesAngle(prev.x, prev.y, prev.x, prev.y, a.x, a.y, b.x1, b.y1, b.x, b.y);
+        return curvesAngle(prev.x, prev.y, a.x2, a.y2, a.x, a.y, b.x1, b.y1, b.x, b.y);
+    }
+    if (b.type === 'M') {
+        if (a.type === 'L')
+            return lineAngle(prev.x, prev.y, a.x, a.y);
+        return near(a.x, a.x2) && near(a.y, a.y2) ? lineAngle(prev.x, prev.y, a.x, a.y) : lineAngle(a.x2, a.y2, a.x, a.y);
+    }
+    const next = subpathStart(segments, index);
+    if (a.type === 'L')
+        return bisector(prev.x, prev.y, a.x, a.y, a.x, a.y, next.x, next.y);
+    return lineAngle(prev.x, prev.y, next.x, next.y);
+}
+function parseAngle(value) {
+    const m = /^([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)(deg|grad|rad|turn)?$/i.exec(value);
+    if (!m)
+        return 0;
+    const n = parseFloat(m[1]), unit = (m[2] || 'deg').toLowerCase();
+    return unit === 'grad' ? n * 0.9 : unit === 'rad' ? n * 180 / Math.PI : unit === 'turn' ? n * 360 : n;
+}
+function colorMatrixOf(node) {
+    const type = node.attrs.type?.trim(), values = node.attrs.values;
+    const list = values === undefined ? null : parseStrictNumberList(values);
+    if (type === 'saturate' && list)
+        return { type: 'saturate', value: list.length ? clamp01(list[0]) : 1 };
+    if (type === 'hueRotate' && list)
+        return { type: 'hueRotate', angle: list.length ? list[0] : 0 };
+    if (type === 'luminanceToAlpha')
+        return { type: 'luminanceToAlpha' };
+    if (type !== 'saturate' && type !== 'hueRotate' && list && list.length === 20)
+        return { type: 'matrix', values: list };
+    return { type: 'matrix', values: [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0] };
+}
+function transferOf(node, current) {
+    const number = (name, fallback) => parsePlainNumber(node.attrs[name]) ?? fallback;
+    switch (node.attrs.type?.trim()) {
+        case 'identity': return null;
+        case 'table':
+        case 'discrete':
+            return { type: node.attrs.type.trim(), values: node.attrs.tableValues === undefined ? [] : parseStrictNumberList(node.attrs.tableValues) || [] };
+        case 'linear': return { type: 'linear', slope: number('slope', 1), intercept: number('intercept', 0) };
+        case 'gamma': return { type: 'gamma', amplitude: number('amplitude', 1), exponent: number('exponent', 1), offset: number('offset', 0) };
+        default: return current;
+    }
+}
+function convolutionOf(node) {
+    let columns = 3, rows = 3;
+    if (node.attrs.order !== undefined) {
+        const list = parseNumberList(node.attrs.order);
+        const x = list.length ? Math.trunc(list[0]) : 3, y = list.length > 1 ? Math.trunc(list[1]) : x;
+        if (x > 0 && y > 0) {
+            columns = x;
+            rows = y;
+        }
+    }
+    const list = node.attrs.kernelMatrix === undefined ? null : parseStrictNumberList(node.attrs.kernelMatrix);
+    const kernel = list && list.length === columns * rows ? list : [];
+    let sum = Math.round(kernel.reduce((a, b) => a + b, 0) * 1e6) / 1e6;
+    if (Math.abs(sum) < 1e-6)
+        sum = 1;
+    const divisor = parsePlainNumber(node.attrs.divisor) ?? sum;
+    if (Math.abs(divisor) < 1e-6)
+        return null;
+    const target = (name, order) => {
+        const v = parsePlainNumber(node.attrs[name]);
+        const t = Math.trunc(v === null ? Math.floor(order / 2) : v);
+        return t >= 0 && t < order ? t : null;
+    };
+    const targetX = target('targetX', columns), targetY = target('targetY', rows);
+    if (targetX === null || targetY === null || kernel.length !== columns * rows)
+        return null;
+    const edge = node.attrs.edgeMode?.trim();
+    return { columns, rows, targetX, targetY, kernel, divisor, bias: parsePlainNumber(node.attrs.bias) ?? 0, edge: edge === 'none' || edge === 'wrap' ? edge : 'duplicate',
+        preserveAlpha: node.attrs.preserveAlpha?.trim() === 'true' };
+}
+function parseAngleStrict(value) {
+    const m = /^([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)(deg|grad|rad|turn)?$/i.exec(value.trim());
+    return m && (m[2] || parseFloat(m[1]) === 0) ? parseAngle(value.trim()) : null;
+}
+function parsePlainNumber(value) {
+    return value !== undefined && /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(value.trim()) ? parseFloat(value) : null;
+}
+function parseStrictNumberList(value) {
+    const items = value.trim().split(/\s*,\s*|\s+/).filter(Boolean), list = items.map(item => parsePlainNumber(item));
+    return list.some(v => v === null) ? null : list;
+}
+const TRANSPARENT = [0, 0, 0, 0];
+function sampler(d, width, height, matrix, repeat, filter, opacity) {
+    const color = [0, 0, 0, 0];
+    const wx = new Float64Array(4), wy = new Float64Array(4), xs = new Int32Array(4), ys = new Int32Array(4);
+    const wrap = (v, n) => repeat ? v - Math.floor(v / n) * n : v < 0 ? 0 : v >= n ? n - 1 : v;
+    const weights = (t, w) => {
+        if (filter === 1) {
+            w[0] = w[3] = 0;
+            w[1] = 1 - t;
+            w[2] = t;
+            return;
+        }
+        const s = 1 - t;
+        w[0] = (7 / 18 * s - 6 / 18) * s * s;
+        w[1] = ((-21 / 18 * s + 27 / 18) * s + 9 / 18) * s + 1 / 18;
+        w[2] = ((-21 / 18 * t + 27 / 18) * t + 9 / 18) * t + 1 / 18;
+        w[3] = (7 / 18 * t - 6 / 18) * t * t;
+    };
+    const [m0, m1, m2, m3, m4, m5] = matrix;
+    return (px, py) => {
+        const u = m0 * px + m2 * py + m4 - 0.5, v = m1 * px + m3 * py + m5 - 0.5;
+        let r = 0, g = 0, b = 0, a = 0;
+        if (filter === 0) {
+            const i = (Math.floor(wrap(v + 0.5, height)) * width + Math.floor(wrap(u + 0.5, width))) * 4;
+            r = d[i];
+            g = d[i + 1];
+            b = d[i + 2];
+            a = d[i + 3];
+        }
+        else {
+            const x0 = Math.floor(u), y0 = Math.floor(v);
+            weights(u - x0, wx);
+            weights(v - y0, wy);
+            for (let k = 0; k < 4; k++) {
+                xs[k] = Math.floor(wrap(x0 - 1 + k, width));
+                ys[k] = Math.floor(wrap(y0 - 1 + k, height)) * width;
+            }
+            for (let j = 0; j < 4; j++)
+                for (let k = 0; k < 4; k++) {
+                    const f = wy[j] * wx[k];
+                    if (!f)
+                        continue;
+                    const i = (ys[j] + xs[k]) * 4;
+                    r += d[i] * f;
+                    g += d[i + 1] * f;
+                    b += d[i + 2] * f;
+                    a += d[i + 3] * f;
+                }
+            a = clamp01(a);
+        }
+        if (a <= 1e-6)
+            return TRANSPARENT;
+        color[0] = clamp01(r / a);
+        color[1] = clamp01(g / a);
+        color[2] = clamp01(b / a);
+        color[3] = a * opacity;
+        return color;
+    };
+}
+function solidPaint(color) {
+    const paint = () => color;
+    paint.solid = color;
+    return paint;
+}
+function gradientLookup(stops, opacity) {
+    const table = new Array(1024);
+    for (let i = 0; i < 1024; i++) {
+        const t = i / 1023;
+        let k = 0;
+        while (k < stops.length - 1 && stops[k + 1].offset < t)
+            k++;
+        let c;
+        if (t <= stops[0].offset)
+            c = stops[0].color;
+        else if (k >= stops.length - 1)
+            c = stops[stops.length - 1].color;
+        else {
+            const a = stops[k], b = stops[k + 1];
+            const span = b.offset - a.offset;
+            const f = span > 0 ? (t - a.offset) / span : 1;
+            c = [0, 1, 2, 3].map(j => a.color[j] + (b.color[j] - a.color[j]) * f);
+        }
+        table[i] = [c[0], c[1], c[2], c[3] * opacity];
+    }
+    return table;
+}
+class Layer {
+    width;
+    height;
+    data;
+    x0 = Infinity;
+    y0 = Infinity;
+    x1 = -Infinity;
+    y1 = -Infinity;
+    constructor(width, height) {
+        this.width = width;
+        this.height = height;
+        this.data = new Float32Array(width * height * 4);
+    }
+    extend(x0, y0, x1, y1) {
+        this.x0 = Math.min(this.x0, x0);
+        this.y0 = Math.min(this.y0, y0);
+        this.x1 = Math.max(this.x1, x1);
+        this.y1 = Math.max(this.y1, y1);
+    }
+    fill({ x0, y0, w, h, data }, paint) {
+        const d = this.data;
+        const solid = paint.solid;
+        this.extend(x0, y0, x0 + w, y0 + h);
+        for (let y = 0; y < h; y++) {
+            let i = ((y0 + y) * this.width + x0) * 4;
+            for (let x = 0, o = y * w; x < w; x++, o++, i += 4) {
+                const c = data[o];
+                if (c <= 0)
+                    continue;
+                const color = solid || paint(x0 + x + 0.5, y0 + y + 0.5);
+                const a = color[3] * c;
+                if (a <= 0)
+                    continue;
+                if (a >= 1) {
+                    d[i] = color[0];
+                    d[i + 1] = color[1];
+                    d[i + 2] = color[2];
+                    d[i + 3] = 1;
+                    if (solid) {
+                        let run = 1;
+                        while (x + run < w && data[o + run] >= 1)
+                            run++;
+                        if (run > 1) {
+                            for (let filled = 1; filled < run; filled *= 2)
+                                d.copyWithin(i + filled * 4, i, i + Math.min(filled, run - filled) * 4);
+                            x += run - 1;
+                            o += run - 1;
+                            i += (run - 1) * 4;
+                        }
+                    }
+                    continue;
+                }
+                const inv = 1 - a;
+                d[i] = color[0] * a + d[i] * inv;
+                d[i + 1] = color[1] * a + d[i + 1] * inv;
+                d[i + 2] = color[2] * a + d[i + 2] * inv;
+                d[i + 3] = a + d[i + 3] * inv;
+            }
+        }
+    }
+    toPixmap() {
+        const d = this.data, out = new Uint8Array(d.length);
+        for (let i = 0; i < d.length; i++)
+            out[i] = Math.round(clamp01(d[i]) * 255);
+        return { width: this.width, height: this.height, data: out };
+    }
+    static fromPixmap(p) {
+        const layer = new Layer(p.width, p.height), d = layer.data;
+        let painted = false;
+        for (let i = 0; i < d.length; i++) {
+            d[i] = p.data[i] / 255;
+            if (p.data[i])
+                painted = true;
+        }
+        if (painted)
+            layer.extend(0, 0, p.width, p.height);
+        return layer;
+    }
+    blit(layer, ox, oy) {
+        const s = layer.data, d = this.data;
+        const x0 = Math.max(0, ox), y0 = Math.max(0, oy), x1 = Math.min(this.width, ox + layer.width), y1 = Math.min(this.height, oy + layer.height);
+        if (x1 <= x0 || y1 <= y0)
+            return;
+        this.extend(x0, y0, x1, y1);
+        for (let y = y0; y < y1; y++)
+            for (let x = x0; x < x1; x++) {
+                const i = (y * this.width + x) * 4, j = ((y - oy) * layer.width + x - ox) * 4;
+                const a = s[j + 3];
+                if (a <= 0)
+                    continue;
+                const inv = 1 - a;
+                d[i] = s[j] + d[i] * inv;
+                d[i + 1] = s[j + 1] + d[i + 1] * inv;
+                d[i + 2] = s[j + 2] + d[i + 2] * inv;
+                d[i + 3] = a + d[i + 3] * inv;
+            }
+    }
+    composite(layer, opacity, mask, blend = 'normal') {
+        if (layer.x1 <= layer.x0)
+            return;
+        this.extend(layer.x0, layer.y0, layer.x1, layer.y1);
+        const s = layer.data, d = this.data;
+        if (blend !== 'normal') {
+            for (let y = layer.y0; y < layer.y1; y++) {
+                for (let p = y * this.width + layer.x0, end = y * this.width + layer.x1, i = p * 4; p < end; p++, i += 4) {
+                    const f = mask ? opacity * mask[p] : opacity;
+                    if (s[i + 3] <= 0 || f <= 0)
+                        continue;
+                    blendPixel(blend, s[i] * f, s[i + 1] * f, s[i + 2] * f, s[i + 3] * f, d, i);
+                    for (let k = i; k < i + 4; k++)
+                        d[k] = Math.min(Math.max(d[k], 0), 1);
+                }
+            }
+            return;
+        }
+        for (let y = layer.y0; y < layer.y1; y++) {
+            for (let p = y * this.width + layer.x0, end = y * this.width + layer.x1, i = p * 4; p < end; p++, i += 4) {
+                if (s[i + 3] <= 0)
+                    continue;
+                const f = mask ? opacity * mask[p] : opacity;
+                if (f <= 0)
+                    continue;
+                const a = s[i + 3] * f;
+                const inv = 1 - a;
+                d[i] = s[i] * f + d[i] * inv;
+                d[i + 1] = s[i + 1] * f + d[i + 1] * inv;
+                d[i + 2] = s[i + 2] * f + d[i + 2] * inv;
+                d[i + 3] = a + d[i + 3] * inv;
+            }
+        }
+    }
+    toRGBA() {
+        const out = new Uint8ClampedArray(this.width * this.height * 4);
+        const d = this.data;
+        for (let y = this.y0; y < this.y1; y++) {
+            for (let i = (y * this.width + this.x0) * 4, end = (y * this.width + this.x1) * 4; i < end; i += 4) {
+                const a = d[i + 3];
+                if (a <= 0)
+                    continue;
+                const f = a >= 1 ? 255 : 255 / a;
+                out[i] = d[i] * f;
+                out[i + 1] = d[i + 1] * f;
+                out[i + 2] = d[i + 2] * f;
+                out[i + 3] = a * 255;
+            }
+        }
+        return new Uint8Array(out.buffer);
+    }
+}
+const scratch = (() => {
+    const arrays = { f64: [], f32: [], i32: [] };
+    const get = (kind, Type) => (slot, n) => {
+        const list = arrays[kind];
+        if (!list[slot] || list[slot].length < n)
+            list[slot] = new Type(Math.max(n, 2 * (list[slot]?.length ?? 0), 64));
+        return list[slot];
+    };
+    return { f64: get('f64', Float64Array), f32: get('f32', Float32Array), i32: get('i32', Int32Array) };
+})();
+function crisp(coverage, style) {
+    if (style['shape-rendering'] !== 'crispEdges' && style['shape-rendering'] !== 'optimizeSpeed')
+        return coverage;
+    const { data } = coverage;
+    for (let i = 0; i < data.length; i++)
+        data[i] = data[i] >= 0.5 ? 1 : 0;
+    return coverage;
+}
+function rasterize(polygons, evenOdd, width, height) {
+    let numPoints = 0;
+    for (const points of polygons)
+        numPoints += points.length >> 1;
+    const tops = scratch.f64(0, numPoints), bottoms = scratch.f64(1, numPoints), xs = scratch.f64(2, numPoints), slopes = scratch.f64(3, numPoints), dirs = scratch.i32(0, numPoints);
+    let numEdges = 0, minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const points of polygons) {
+        const n = points.length >> 1;
+        if (n < 2)
+            continue;
+        for (let i = 0; i < n; i++) {
+            const ax = points[i * 2], ay = points[i * 2 + 1];
+            const j = (i + 1) % n;
+            const bx = points[j * 2], by = points[j * 2 + 1];
+            if (!isFinite(ax) || !isFinite(ay) || !isFinite(bx) || !isFinite(by) || ay === by)
+                continue;
+            const down = ay < by;
+            const top = down ? ay : by, bottom = down ? by : ay;
+            tops[numEdges] = top;
+            bottoms[numEdges] = bottom;
+            xs[numEdges] = down ? ax : bx;
+            slopes[numEdges] = (down ? bx - ax : ax - bx) / (bottom - top);
+            dirs[numEdges++] = down ? 1 : -1;
+            minY = Math.min(minY, top);
+            maxY = Math.max(maxY, bottom);
+            minX = Math.min(minX, ax, bx);
+            maxX = Math.max(maxX, ax, bx);
+        }
+    }
+    if (!numEdges)
+        return null;
+    const x0 = Math.max(0, Math.floor(minX)), x1 = Math.min(width, Math.ceil(maxX));
+    const y0 = Math.max(0, Math.floor(minY)), y1 = Math.min(height, Math.ceil(maxY));
+    if (x0 >= x1 || y0 >= y1)
+        return null;
+    const w = x1 - x0, h = y1 - y0;
+    const data = new Float32Array(w * h);
+    const row = scratch.f32(0, w + 2);
+    const steps = scratch.f32(1, w + 2);
+    const weight = 1 / SAMPLES;
+    const rowStarts = scratch.i32(1, h + 1).fill(0, 0, h + 1), order = scratch.i32(2, numEdges);
+    const startRow = (e) => Math.max(0, Math.floor(tops[e]) - y0);
+    for (let e = 0; e < numEdges; e++)
+        if (startRow(e) < h)
+            rowStarts[startRow(e) + 1]++;
+    for (let r = 0; r < h; r++)
+        rowStarts[r + 1] += rowStarts[r];
+    const placed = scratch.i32(3, h);
+    placed.set(rowStarts.subarray(0, h));
+    for (let e = 0; e < numEdges; e++)
+        if (startRow(e) < h)
+            order[placed[startRow(e)]++] = e;
+    let numActive = 0;
+    const active = scratch.i32(4, numEdges), keys = scratch.f64(4, numEdges), firsts = scratch.i32(5, numEdges), lasts = scratch.i32(6, numEdges);
+    const counts = new Int32Array(SAMPLES), starts = new Int32Array(SAMPLES), ends = new Int32Array(SAMPLES);
+    const span = (a, b) => {
+        a = Math.max(a, x0) - x0;
+        b = Math.min(b, x1) - x0;
+        if (b <= a)
+            return;
+        const ia = Math.floor(a), ib = Math.floor(b);
+        if (ia === ib)
+            row[ia] += (b - a) * weight;
+        else {
+            row[ia] += (ia + 1 - a) * weight;
+            steps[ia + 1] += weight;
+            steps[ib] -= weight;
+            row[ib] += (b - ib) * weight;
+        }
+    };
+    for (let py = y0; py < y1; py++) {
+        row.fill(0, 0, w + 2);
+        steps.fill(0, 0, w + 2);
+        let kept = 0;
+        for (let k = 0; k < numActive; k++)
+            if (bottoms[active[k]] > py)
+                active[kept++] = active[k];
+        numActive = kept;
+        for (let k = rowStarts[py - y0]; k < rowStarts[py - y0 + 1]; k++)
+            active[numActive++] = order[k];
+        const mid = py + 0.5;
+        for (let k = 0; k < numActive; k++) {
+            const e = active[k], key = xs[e] + (Math.min(Math.max(mid, tops[e]), bottoms[e]) - tops[e]) * slopes[e];
+            let j = k - 1;
+            for (; j >= 0 && keys[j] > key; j--) {
+                keys[j + 1] = keys[j];
+                active[j + 1] = active[j];
+            }
+            keys[j + 1] = key;
+            active[j + 1] = e;
+        }
+        counts.fill(0);
+        let total = 0;
+        for (let k = 0; k < numActive; k++) {
+            const e = active[k], top = tops[e], bottom = bottoms[e];
+            let s0 = Math.max(0, Math.ceil((top - py) * SAMPLES - 0.5)), s1 = Math.min(SAMPLES - 1, Math.ceil((bottom - py) * SAMPLES - 0.5) - 1);
+            while (s0 > 0 && py + OFFSETS[s0 - 1] >= top)
+                s0--;
+            while (s0 < SAMPLES && !(py + OFFSETS[s0] >= top))
+                s0++;
+            while (s1 < SAMPLES - 1 && py + OFFSETS[s1 + 1] < bottom)
+                s1++;
+            while (s1 >= 0 && !(py + OFFSETS[s1] < bottom))
+                s1--;
+            firsts[k] = s0;
+            lasts[k] = s1;
+            for (let s = s0; s <= s1; s++)
+                counts[s]++;
+            if (s1 >= s0)
+                total += s1 - s0 + 1;
+        }
+        const crossings = scratch.f64(5, 2 * total);
+        for (let s = 0, at = 0; s < SAMPLES; s++) {
+            starts[s] = at;
+            at += 2 * counts[s];
+        }
+        for (let s = 0; s < SAMPLES; s++)
+            ends[s] = starts[s];
+        for (let k = 0; k < numActive; k++) {
+            const e = active[k];
+            for (let s = firsts[k]; s <= lasts[k]; s++) {
+                const sy = py + OFFSETS[s];
+                crossings[ends[s]++] = xs[e] + (sy - tops[e]) * slopes[e];
+                crossings[ends[s]++] = dirs[e];
+            }
+        }
+        for (let s = 0; s < SAMPLES; s++) {
+            const base = starts[s], end = ends[s];
+            if (end - base < 4)
+                continue;
+            for (let i = base + 2; i < end; i += 2) {
+                const x = crossings[i], dir = crossings[i + 1];
+                let j = i - 2;
+                for (; j >= base && crossings[j] > x; j -= 2) {
+                    crossings[j + 2] = crossings[j];
+                    crossings[j + 3] = crossings[j + 1];
+                }
+                crossings[j + 2] = x;
+                crossings[j + 3] = dir;
+            }
+            let winding = 0;
+            for (let i = base; i < end - 2; i += 2) {
+                winding += crossings[i + 1];
+                if (evenOdd ? winding & 1 : winding !== 0)
+                    span(crossings[i], crossings[i + 2]);
+            }
+        }
+        let step = 0;
+        const o = (py - y0) * w;
+        for (let x = 0; x < w; x++) {
+            step += steps[x];
+            const v = row[x] + step;
+            data[o + x] = v > 1 ? 1 : v;
+        }
+    }
+    return { x0, y0, w, h, data };
+}
+function shapePath(node, viewport, fontSize) {
+    const length = (name, axis, fallback = 0) => node.attrs[name] === undefined ? fallback : parseLength(node.attrs[name], viewport, fontSize, axis);
+    switch (node.name) {
+        case 'path':
+            return parsePath(node.attrs.d || '');
+        case 'rect': {
+            const x = length('x', 'x'), y = length('y', 'y');
+            const w = length('width', 'x'), h = length('height', 'y');
+            if (!(w > 0) || !(h > 0))
+                return null;
+            let rx = node.attrs.rx === undefined || node.attrs.rx === 'auto' ? undefined : length('rx', 'x');
+            let ry = node.attrs.ry === undefined || node.attrs.ry === 'auto' ? undefined : length('ry', 'y');
+            if (rx === undefined || rx < 0)
+                rx = ry !== undefined && ry >= 0 ? ry : 0;
+            if (ry === undefined || ry < 0)
+                ry = rx;
+            rx = Math.min(rx, w / 2);
+            ry = Math.min(ry, h / 2);
+            if (!rx || !ry)
+                return [['M', x, y], ['L', x + w, y], ['L', x + w, y + h], ['L', x, y + h], ['Z']];
+            const k = 0.5522847498;
+            return [
+                ['M', x + rx, y], ['L', x + w - rx, y],
+                ['C', x + w - rx + k * rx, y, x + w, y + ry - k * ry, x + w, y + ry], ['L', x + w, y + h - ry],
+                ['C', x + w, y + h - ry + k * ry, x + w - rx + k * rx, y + h, x + w - rx, y + h], ['L', x + rx, y + h],
+                ['C', x + rx - k * rx, y + h, x, y + h - ry + k * ry, x, y + h - ry], ['L', x, y + ry],
+                ['C', x, y + ry - k * ry, x + rx - k * rx, y, x + rx, y], ['Z']
+            ];
+        }
+        case 'circle':
+        case 'ellipse': {
+            const cx = length('cx', 'x'), cy = length('cy', 'y');
+            let rx, ry;
+            if (node.name === 'circle')
+                rx = ry = length('r', 'diagonal');
+            else {
+                rx = node.attrs.rx === undefined || node.attrs.rx === 'auto' ? undefined : length('rx', 'x');
+                ry = node.attrs.ry === undefined || node.attrs.ry === 'auto' ? undefined : length('ry', 'y');
+                if (rx !== undefined && rx < 0)
+                    rx = undefined;
+                if (ry !== undefined && ry < 0)
+                    ry = undefined;
+                if (rx === undefined)
+                    rx = ry;
+                if (ry === undefined)
+                    ry = rx;
+            }
+            if (rx === undefined || ry === undefined || !(rx > 0) || !(ry > 0))
+                return null;
+            const k = 0.5522847498;
+            return [
+                ['M', cx + rx, cy],
+                ['C', cx + rx, cy + k * ry, cx + k * rx, cy + ry, cx, cy + ry],
+                ['C', cx - k * rx, cy + ry, cx - rx, cy + k * ry, cx - rx, cy],
+                ['C', cx - rx, cy - k * ry, cx - k * rx, cy - ry, cx, cy - ry],
+                ['C', cx + k * rx, cy - ry, cx + rx, cy - k * ry, cx + rx, cy],
+                ['Z']
+            ];
+        }
+        case 'line':
+            return [['M', length('x1', 'x'), length('y1', 'y')], ['L', length('x2', 'x'), length('y2', 'y')]];
+        case 'polyline':
+        case 'polygon': {
+            const numbers = parseNumberList(node.attrs.points || '');
+            if (numbers.length < 4)
+                return null;
+            const path = [['M', numbers[0], numbers[1]]];
+            for (let i = 2; i + 1 < numbers.length; i += 2)
+                path.push(['L', numbers[i], numbers[i + 1]]);
+            if (node.name === 'polygon')
+                path.push(['Z']);
+            return path;
+        }
+    }
+    return null;
+}
+function parsePath(d) {
+    const path = [];
+    const items = [];
+    let end = 0;
+    for (const m of d.matchAll(PATH_TOKENS)) {
+        if (m.index !== end && !/^[\s,]*$/.test(d.slice(end, m.index)))
+            break;
+        end = m.index + m[0].length;
+        items.push(m[1] ? { command: m[1] } : m[2]);
+    }
+    let i = 0;
+    let command = null;
+    let x = 0, y = 0, sx = 0, sy = 0;
+    let lastControlX = 0, lastControlY = 0, lastCommand = '';
+    const number = () => typeof items[i] === 'string' ? parseFloat(items[i++]) : NaN;
+    const flag = () => {
+        const v = items[i];
+        if (typeof v !== 'string' || (v[0] !== '0' && v[0] !== '1'))
+            return NaN;
+        if (v.length === 1)
+            i++;
+        else
+            items[i] = v.slice(1);
+        return +v[0];
+    };
+    while (i < items.length) {
+        if (typeof items[i] === 'object')
+            command = items[i++].command;
+        else if (command === null)
+            return path;
+        else if (command === 'M')
+            command = 'L';
+        else if (command === 'm')
+            command = 'l';
+        else if (command === 'Z' || command === 'z')
+            return path;
+        const relative = command === command.toLowerCase();
+        const ox = relative ? x : 0, oy = relative ? y : 0;
+        const upper = command.toUpperCase();
+        if (upper === 'Z') {
+            path.push(['Z']);
+            x = sx;
+            y = sy;
+            lastCommand = 'Z';
+            continue;
+        }
+        if (!path.length && upper !== 'M')
+            return path;
+        if (upper === 'M') {
+            const nx = number() + ox, ny = number() + oy;
+            if (isNaN(nx) || isNaN(ny))
+                return path;
+            x = sx = nx;
+            y = sy = ny;
+            path.push(['M', x, y]);
+        }
+        else if (upper === 'L') {
+            const nx = number() + ox, ny = number() + oy;
+            if (isNaN(nx) || isNaN(ny))
+                return path;
+            x = nx;
+            y = ny;
+            path.push(['L', x, y]);
+        }
+        else if (upper === 'H') {
+            const nx = number() + ox;
+            if (isNaN(nx))
+                return path;
+            x = nx;
+            path.push(['L', x, y]);
+        }
+        else if (upper === 'V') {
+            const ny = number() + oy;
+            if (isNaN(ny))
+                return path;
+            y = ny;
+            path.push(['L', x, y]);
+        }
+        else if (upper === 'C' || upper === 'S') {
+            let c1x, c1y;
+            if (upper === 'S') {
+                const smooth = lastCommand === 'C' || lastCommand === 'S';
+                c1x = smooth ? 2 * x - lastControlX : x;
+                c1y = smooth ? 2 * y - lastControlY : y;
+            }
+            else {
+                c1x = number() + ox;
+                c1y = number() + oy;
+            }
+            const c2x = number() + ox, c2y = number() + oy;
+            const nx = number() + ox, ny = number() + oy;
+            if ([c1x, c1y, c2x, c2y, nx, ny].some(isNaN))
+                return path;
+            path.push(['C', c1x, c1y, c2x, c2y, nx, ny]);
+            lastControlX = c2x;
+            lastControlY = c2y;
+            x = nx;
+            y = ny;
+        }
+        else if (upper === 'Q' || upper === 'T') {
+            let cx, cy;
+            if (upper === 'T') {
+                const smooth = lastCommand === 'Q' || lastCommand === 'T';
+                cx = smooth ? 2 * x - lastControlX : x;
+                cy = smooth ? 2 * y - lastControlY : y;
+            }
+            else {
+                cx = number() + ox;
+                cy = number() + oy;
+            }
+            const nx = number() + ox, ny = number() + oy;
+            if ([cx, cy, nx, ny].some(isNaN))
+                return path;
+            path.push(['C', x + 2 / 3 * (cx - x), y + 2 / 3 * (cy - y), nx + 2 / 3 * (cx - nx), ny + 2 / 3 * (cy - ny), nx, ny]);
+            lastControlX = cx;
+            lastControlY = cy;
+            x = nx;
+            y = ny;
+        }
+        else if (upper === 'A') {
+            const rx = number(), ry = number(), rotation = number();
+            const large = flag(), sweep = flag();
+            const nx = number() + ox, ny = number() + oy;
+            if ([rx, ry, rotation, large, sweep, nx, ny].some(isNaN))
+                return path;
+            arcToCubics(path, x, y, rx, ry, rotation, large, sweep, nx, ny);
+            x = nx;
+            y = ny;
+        }
+        else
+            return path;
+        lastCommand = upper;
+    }
+    return path;
+}
+function arcToCubics(path, x1, y1, rx, ry, rotation, large, sweep, x2, y2) {
+    if (x1 === x2 && y1 === y2)
+        return;
+    rx = Math.abs(rx);
+    ry = Math.abs(ry);
+    if (!rx || !ry) {
+        path.push(['L', x2, y2]);
+        return;
+    }
+    const phi = rotation * Math.PI / 180;
+    const cos = Math.cos(phi), sin = Math.sin(phi);
+    const dx = (x1 - x2) / 2, dy = (y1 - y2) / 2;
+    const x1p = cos * dx + sin * dy, y1p = -sin * dx + cos * dy;
+    const lambda = x1p * x1p / (rx * rx) + y1p * y1p / (ry * ry);
+    if (lambda > 1) {
+        rx *= Math.sqrt(lambda);
+        ry *= Math.sqrt(lambda);
+    }
+    const num = rx * rx * ry * ry - rx * rx * y1p * y1p - ry * ry * x1p * x1p;
+    const den = rx * rx * y1p * y1p + ry * ry * x1p * x1p;
+    let coefficient = Math.sqrt(Math.max(0, num / den));
+    if (large === sweep)
+        coefficient = -coefficient;
+    const cxp = coefficient * rx * y1p / ry, cyp = -coefficient * ry * x1p / rx;
+    const cx = cos * cxp - sin * cyp + (x1 + x2) / 2;
+    const cy = sin * cxp + cos * cyp + (y1 + y2) / 2;
+    const angle = (ux, uy, vx, vy) => {
+        const a = Math.atan2(ux * vy - uy * vx, ux * vx + uy * vy);
+        return a;
+    };
+    const theta1 = angle(1, 0, (x1p - cxp) / rx, (y1p - cyp) / ry);
+    let delta = angle((x1p - cxp) / rx, (y1p - cyp) / ry, (-x1p - cxp) / rx, (-y1p - cyp) / ry);
+    if (!sweep && delta > 0)
+        delta -= 2 * Math.PI;
+    else if (sweep && delta < 0)
+        delta += 2 * Math.PI;
+    const perTurn = Math.max(Math.pow(1.1163 * Math.max(rx, ry) / 0.1, 1 / 6), 3.999999);
+    const segments = Math.max(1, Math.ceil(perTurn * Math.abs(delta) / (2 * Math.PI)));
+    const step = delta / segments;
+    const k = 4 / 3 * Math.tan(step / 4);
+    const point = (t) => [cx + rx * Math.cos(t) * cos - ry * Math.sin(t) * sin, cy + rx * Math.cos(t) * sin + ry * Math.sin(t) * cos];
+    const derivative = (t) => [-rx * Math.sin(t) * cos - ry * Math.cos(t) * sin, -rx * Math.sin(t) * sin + ry * Math.cos(t) * cos];
+    let t = theta1;
+    for (let i = 0; i < segments; i++) {
+        const t2 = t + step;
+        const [px, py] = point(t), [qx, qy] = i === segments - 1 ? [x2, y2] : point(t2);
+        const [dpx, dpy] = derivative(t), [dqx, dqy] = derivative(t2);
+        path.push(['C', px + k * dpx, py + k * dpy, qx - k * dqx, qy - k * dqy, qx, qy]);
+        t = t2;
+    }
+}
+function flatten(path, tolerance) {
+    const subpaths = [];
+    let current = null;
+    let x = 0, y = 0, sx = 0, sy = 0;
+    const start = (px, py) => {
+        const subpath = { points: [px, py], closed: false };
+        subpaths.push(subpath);
+        return subpath;
+    };
+    for (const command of path) {
+        switch (command[0]) {
+            case 'M':
+                x = sx = command[1];
+                y = sy = command[2];
+                current = start(x, y);
+                break;
+            case 'L':
+                if (!current)
+                    current = start(x, y);
+                x = command[1];
+                y = command[2];
+                current.points.push(x, y);
+                break;
+            case 'C': {
+                if (!current)
+                    current = start(x, y);
+                const [, c1x, c1y, c2x, c2y, ex, ey] = command;
+                const ddx = Math.max(Math.abs(x - 2 * c1x + c2x), Math.abs(c1x - 2 * c2x + ex));
+                const ddy = Math.max(Math.abs(y - 2 * c1y + c2y), Math.abs(c1y - 2 * c2y + ey));
+                const n = Math.min(512, Math.max(1, Math.ceil(Math.sqrt(0.75 * Math.hypot(ddx, ddy) / tolerance))));
+                for (let i = 1; i <= n; i++) {
+                    const t = i / n, mt = 1 - t;
+                    current.points.push(mt * mt * mt * x + 3 * mt * mt * t * c1x + 3 * mt * t * t * c2x + t * t * t * ex, mt * mt * mt * y + 3 * mt * mt * t * c1y + 3 * mt * t * t * c2y + t * t * t * ey);
+                }
+                x = ex;
+                y = ey;
+                break;
+            }
+            case 'Z':
+                if (current) {
+                    current.closed = true;
+                    x = sx;
+                    y = sy;
+                    current = null;
+                }
+                break;
+        }
+    }
+    return subpaths;
+}
+function noArea(bbox) {
+    if (!bbox)
+        return true;
+    const epsilon = 1e-9 * Math.max(1, Math.abs(bbox.x), Math.abs(bbox.y));
+    return !(bbox.width > epsilon) || !(bbox.height > epsilon);
+}
+function boundingBox(subpaths) {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const { points } of subpaths)
+        for (let i = 0; i < points.length; i += 2) {
+            minX = Math.min(minX, points[i]);
+            maxX = Math.max(maxX, points[i]);
+            minY = Math.min(minY, points[i + 1]);
+            maxY = Math.max(maxY, points[i + 1]);
+        }
+    return minX === Infinity ? null : { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+function union(a, b) {
+    const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+    return { x, y, width: Math.max(a.x + a.width, b.x + b.width) - x, height: Math.max(a.y + a.height, b.y + b.height) - y };
+}
+function transformPoints(points, m) {
+    const out = new Array(points.length);
+    for (let i = 0; i < points.length; i += 2) {
+        const x = points[i], y = points[i + 1];
+        out[i] = m[0] * x + m[2] * y + m[4];
+        out[i + 1] = m[1] * x + m[3] * y + m[5];
+    }
+    return out;
+}
+function dash(subpaths, pattern, offset) {
+    const total = pattern.reduce((a, b) => a + b, 0);
+    const result = [];
+    let length = 0;
+    for (const { points, closed } of subpaths) {
+        const pts = closed ? [...points, points[0], points[1]] : points;
+        for (let i = 0; i + 3 < pts.length; i += 2)
+            length += Math.hypot(pts[i + 2] - pts[i], pts[i + 3] - pts[i + 1]);
+    }
+    if (!(length / total * pattern.length <= MAX_DASHES))
+        return subpaths;
+    for (const { points, closed } of subpaths) {
+        const pts = closed ? [...points, points[0], points[1]] : points;
+        let index = 0;
+        let remaining = ((offset % total) + total) % total;
+        while (remaining > pattern[index] || (remaining === pattern[index] && remaining > 0)) {
+            remaining -= pattern[index];
+            index = (index + 1) % pattern.length;
+        }
+        remaining = pattern[index] - remaining;
+        let on = index % 2 === 0;
+        let current = on ? [pts[0], pts[1]] : null;
+        for (let i = 0; i + 3 < pts.length; i += 2) {
+            let ax = pts[i], ay = pts[i + 1];
+            const bx = pts[i + 2], by = pts[i + 3];
+            let length = Math.hypot(bx - ax, by - ay);
+            while (length > 0) {
+                if (remaining >= length) {
+                    remaining -= length;
+                    if (on && current)
+                        current.push(bx, by);
+                    length = 0;
+                }
+                else {
+                    const t = remaining / length;
+                    const mx = ax + (bx - ax) * t, my = ay + (by - ay) * t;
+                    if (on) {
+                        if (current) {
+                            current.push(mx, my);
+                            result.push({ points: current, closed: false, direction: [(bx - ax) / length, (by - ay) / length] });
+                        }
+                        current = null;
+                    }
+                    else
+                        current = [mx, my];
+                    on = !on;
+                    length -= remaining;
+                    ax = mx;
+                    ay = my;
+                    index = (index + 1) % pattern.length;
+                    remaining = pattern[index];
+                }
+            }
+        }
+        if (on && current && current.length >= 4)
+            result.push({ points: current, closed: false });
+    }
+    return result;
+}
+function strokePolygons(subpaths, halfWidth, cap, join, miterLimit, tolerance) {
+    const polygons = [];
+    const add = (polygon) => {
+        let area = 0;
+        for (let i = 0, n = polygon.length; i < n; i += 2) {
+            const j = (i + 2) % n;
+            area += polygon[i] * polygon[j + 1] - polygon[j] * polygon[i + 1];
+        }
+        if (area < 0) {
+            const reversed = [];
+            for (let i = polygon.length - 2; i >= 0; i -= 2)
+                reversed.push(polygon[i], polygon[i + 1]);
+            polygon = reversed;
+        }
+        polygons.push(polygon);
+    };
+    const circleSegments = Math.max(8, Math.min(256, Math.ceil(Math.PI / Math.acos(Math.max(-1, 1 - tolerance / halfWidth)))));
+    const circle = (cx, cy) => {
+        const polygon = [];
+        for (let i = 0; i < circleSegments; i++) {
+            const a = i / circleSegments * 2 * Math.PI;
+            polygon.push(cx + Math.cos(a) * halfWidth, cy + Math.sin(a) * halfWidth);
+        }
+        add(polygon);
+    };
+    for (const { points: raw, closed, direction } of subpaths) {
+        const points = [raw[0], raw[1]];
+        for (let i = 2; i < raw.length; i += 2)
+            if (Math.abs(raw[i] - points[points.length - 2]) > 1e-9 || Math.abs(raw[i + 1] - points[points.length - 1]) > 1e-9)
+                points.push(raw[i], raw[i + 1]);
+        if (closed && points.length > 4 && Math.abs(points[0] - points[points.length - 2]) < 1e-9 && Math.abs(points[1] - points[points.length - 1]) < 1e-9)
+            points.length -= 2;
+        const n = points.length >> 1;
+        if (n === 1) {
+            const [x, y] = points;
+            const [dx, dy] = direction ? [direction[0] * halfWidth, direction[1] * halfWidth] : [halfWidth, 0];
+            if (cap === 'round')
+                circle(x, y);
+            else if (cap === 'square')
+                add([x - dx + dy, y - dy - dx, x + dx + dy, y + dy - dx, x + dx - dy, y + dy + dx, x - dx - dy, y - dy + dx]);
+            continue;
+        }
+        const segmentCount = closed ? n : n - 1;
+        const directions = [];
+        for (let i = 0; i < segmentCount; i++) {
+            const ax = points[i * 2], ay = points[i * 2 + 1];
+            const j = (i + 1) % n;
+            const dx = points[j * 2] - ax, dy = points[j * 2 + 1] - ay;
+            const length = Math.hypot(dx, dy);
+            directions.push([dx / length, dy / length]);
+            const nx = -dy / length * halfWidth, ny = dx / length * halfWidth;
+            const bx = points[j * 2], by = points[j * 2 + 1];
+            add([ax + nx, ay + ny, bx + nx, by + ny, bx - nx, by - ny, ax - nx, ay - ny]);
+        }
+        for (let i = closed ? 0 : 1; i < (closed ? segmentCount : n - 1); i++) {
+            const prev = directions[(i - 1 + segmentCount) % segmentCount], next = directions[i % segmentCount];
+            const vx = points[i * 2], vy = points[i * 2 + 1];
+            const cross = prev[0] * next[1] - prev[1] * next[0];
+            const dot = prev[0] * next[0] + prev[1] * next[1];
+            if (Math.abs(cross) < 1e-9 && dot > 0)
+                continue;
+            if (join === 'round') {
+                circle(vx, vy);
+                continue;
+            }
+            const side = cross > 0 ? -1 : 1;
+            const ax = vx + side * -prev[1] * halfWidth, ay = vy + side * prev[0] * halfWidth;
+            const bx = vx + side * -next[1] * halfWidth, by = vy + side * next[0] * halfWidth;
+            const theta = Math.acos(Math.max(-1, Math.min(1, dot)));
+            const ratio = 1 / Math.sin((Math.PI - theta) / 2);
+            if ((join === 'miter' || join === 'miter-clip' || join === 'arcs') && ratio <= miterLimit && Math.abs(cross) > 1e-9) {
+                const t = ((bx - ax) * next[1] - (by - ay) * next[0]) / (prev[0] * next[1] - prev[1] * next[0]);
+                add([vx, vy, ax, ay, ax + prev[0] * t, ay + prev[1] * t, bx, by]);
+            }
+            else
+                add([vx, vy, ax, ay, bx, by]);
+        }
+        if (!closed) {
+            for (const [index, direction, sign] of [[0, directions[0], -1], [n - 1, directions[segmentCount - 1], 1]]) {
+                const x = points[index * 2], y = points[index * 2 + 1];
+                if (cap === 'round')
+                    circle(x, y);
+                else if (cap === 'square') {
+                    const dx = direction[0] * halfWidth * sign, dy = direction[1] * halfWidth * sign;
+                    const nx = -direction[1] * halfWidth, ny = direction[0] * halfWidth;
+                    add([x + nx, y + ny, x + nx + dx, y + ny + dy, x - nx + dx, y - ny + dy, x - nx, y - ny]);
+                }
+            }
+        }
+    }
+    return polygons;
+}
+function parseTransform(value) {
+    let matrix = [1, 0, 0, 1, 0, 0];
+    const functions = /(matrix|translate|scale|rotate|skewX|skewY)\s*\(([^)]*)\)/g;
+    for (const [, name, args] of value.matchAll(functions)) {
+        const a = parseNumberList(args);
+        let m = [1, 0, 0, 1, 0, 0];
+        switch (name) {
+            case 'matrix':
+                if (a.length !== 6)
+                    return [1, 0, 0, 1, 0, 0];
+                m = a;
+                break;
+            case 'translate':
+                m = [1, 0, 0, 1, a[0] || 0, a[1] || 0];
+                break;
+            case 'scale':
+                m = [a[0], 0, 0, a.length > 1 ? a[1] : a[0], 0, 0];
+                break;
+            case 'rotate': {
+                const r = (a[0] || 0) * Math.PI / 180;
+                const cos = Math.cos(r), sin = Math.sin(r);
+                m = [cos, sin, -sin, cos, 0, 0];
+                if (a.length === 3)
+                    m = multiply(multiply([1, 0, 0, 1, a[1], a[2]], m), [1, 0, 0, 1, -a[1], -a[2]]);
+                break;
+            }
+            case 'skewX':
+                m = [1, 0, Math.tan((a[0] || 0) * Math.PI / 180), 1, 0, 0];
+                break;
+            case 'skewY':
+                m = [1, Math.tan((a[0] || 0) * Math.PI / 180), 0, 1, 0, 0];
+                break;
+        }
+        if (m.some(v => !isFinite(v)))
+            return [1, 0, 0, 1, 0, 0];
+        matrix = multiply(matrix, m);
+    }
+    return matrix;
+}
+function fontShorthand(value) {
+    const out = { 'font-style': 'normal', 'font-variant': 'normal', 'font-weight': 'normal', 'font-stretch': 'normal', 'font-kerning': 'auto' };
+    const tokens = value.trim().split(/\s+/);
+    let i = 0;
+    for (; i < tokens.length; i++) {
+        const t = tokens[i];
+        if (t === 'normal')
+            continue;
+        if (t === 'italic' || t === 'oblique')
+            out['font-style'] = t;
+        else if (t === 'small-caps')
+            out['font-variant'] = t;
+        else if (/^(bold|bolder|lighter|[1-9]00)$/.test(t))
+            out['font-weight'] = t;
+        else if (/^(ultra|extra|semi)?-?(condensed|expanded)$/.test(t))
+            out['font-stretch'] = t;
+        else
+            break;
+    }
+    const size = tokens[i]?.split('/')[0];
+    const family = tokens.slice(i + 1).join(' ');
+    if (!size || !family || !(LENGTH.test(size) || /^(xx-small|x-small|small|medium|large|x-large|xx-large|smaller|larger)$/.test(size)))
+        return null;
+    out['font-size'] = size;
+    out['font-family'] = family;
+    return out;
+}
+function fontSize(value, parent) {
+    const v = value.trim();
+    const steps = { 'xx-small': -3, 'x-small': -2, small: -1, medium: 0, large: 1, 'x-large': 2, 'xx-large': 3 };
+    if (v in steps)
+        return 16 * 1.2 ** steps[v];
+    if (v === 'smaller')
+        return parent / 1.2;
+    if (v === 'larger')
+        return parent * 1.2;
+    const match = LENGTH.exec(v);
+    if (!match)
+        return parent;
+    const n = parseFloat(match[1]);
+    return match[2] === '%' ? n * parent / 100 : match[2] === 'em' ? n * parent : match[2] === 'ex' ? n * parent / 2 : parseLength(v, null, parent);
+}
+function embeddedFonts(css) {
+    const faces = [];
+    css = stripComments(css);
+    for (let at = css.search(/@font-face\s*\{/i); at >= 0;) {
+        const open = css.indexOf('{', at), end = blockEnd(css, open);
+        const declarations = parseDeclarations(css.slice(open + 1, end));
+        const d = { ...declarations.normal, ...declarations.important };
+        const family = parseFontFamilies(d['font-family'] ?? '')[0];
+        const weight = d['font-weight'] === 'bold' ? 700 : /^\d+$/.test(d['font-weight'] ?? '') ? Number(d['font-weight']) : 400;
+        const style = d['font-style'] === 'italic' || d['font-style'] === 'oblique' ? d['font-style'] : 'normal';
+        if (family)
+            for (const [, , url] of (d.src ?? '').matchAll(/url\(\s*(['"]?)([^'")]*)\1\s*\)/g)) {
+                const uri = dataURI(url);
+                if (!uri)
+                    continue;
+                const face = fontFace(uri.data, { family, weight, style });
+                if (face) {
+                    faces.push(face);
+                    break;
+                }
+            }
+        const next = css.slice(end + 1).search(/@font-face\s*\{/i);
+        at = next < 0 ? -1 : end + 1 + next;
+    }
+    return faces;
+}
+function transformOf(style, viewport, fallback) {
+    return originTransform(style.transform, style['transform-origin'] ?? fallback, viewport, parseNumber(style['font-size'], 16));
+}
+function originTransform(transform, origin, viewport, fontSize = 16) {
+    const matrix = parseTransform(transform);
+    const at = origin ? parseOrigin(origin, viewport, fontSize) : null;
+    return at ? multiply(multiply([1, 0, 0, 1, at[0], at[1]], matrix), [1, 0, 0, 1, -at[0], -at[1]]) : matrix;
+}
+const ORIGIN_KEYWORDS = { left: ['x', '0%'], right: ['x', '100%'], top: ['y', '0%'], bottom: ['y', '100%'], center: [null, '50%'] };
+function parseOrigin(value, viewport, fontSize) {
+    const parts = value.trim().split(/\s+/);
+    if (parts.length > 3 || (parts.length === 3 && !LENGTH.test(parts[2])))
+        return null;
+    const terms = parts.slice(0, 2).map(part => {
+        const keyword = ORIGIN_KEYWORDS[part];
+        return keyword ? { axis: keyword[0], value: keyword[1] } : LENGTH.test(part) ? { axis: null, value: part } : null;
+    });
+    if (terms.some(term => !term))
+        return null;
+    const center = { axis: null, value: '50%' };
+    let [x, y] = terms;
+    if (!y)
+        [x, y] = x.axis === 'y' ? [center, x] : [x, center];
+    else if (x.axis === 'y' || y.axis === 'x')
+        [x, y] = [y, x];
+    if (x.axis === 'y' || y.axis === 'x')
+        return null;
+    return [parseLength(x.value, viewport, fontSize, 'x'), parseLength(y.value, viewport, fontSize, 'y')];
+}
+function paintOrder(value) {
+    const normal = ['fill', 'stroke', 'markers'];
+    const given = value && value !== 'normal' ? value.trim().split(/\s+/) : [];
+    if (given.some((part, i) => !normal.includes(part) || given.indexOf(part) !== i))
+        return [...normal];
+    return [...given, ...normal.filter(part => !given.includes(part))];
+}
+function overflowVisible(node) {
+    let value = node.attrs.overflow?.trim();
+    for (let p = node.parent; value === 'inherit'; p = p.parent) {
+        if (!p || p.name === '#root')
+            return true;
+        value = p.attrs.overflow?.trim() ?? (/^(svg|symbol|marker|pattern)$/.test(p.name) && p.parent && p.parent.name !== '#root' ? 'hidden' : 'visible');
+    }
+    return value === 'visible' || value === 'auto';
+}
+function parseViewBox(value) {
+    if (!value)
+        return null;
+    const v = parseNumberList(value);
+    return v.length === 4 && v[2] > 0 && v[3] > 0 ? v : null;
+}
+function viewBoxTransform([vx, vy, vw, vh], width, height, preserve = 'xMidYMid meet') {
+    const parts = preserve.trim().split(/\s+/);
+    const align = parts[0] === 'defer' ? parts[1] : parts[0];
+    const slice = parts[parts.length - 1] === 'slice';
+    let sx = width / vw, sy = height / vh;
+    if (align === 'none')
+        return [sx, 0, 0, sy, -vx * sx, -vy * sy];
+    sx = sy = slice ? Math.max(sx, sy) : Math.min(sx, sy);
+    let tx = -vx * sx, ty = -vy * sy;
+    const extraX = width - vw * sx, extraY = height - vh * sy;
+    if (/xMid/.test(align))
+        tx += extraX / 2;
+    else if (/xMax/.test(align))
+        tx += extraX;
+    if (/YMid/.test(align))
+        ty += extraY / 2;
+    else if (/YMax/.test(align))
+        ty += extraY;
+    if (!/^x(Min|Mid|Max)Y(Min|Mid|Max)$/.test(align)) {
+        tx = -vx * sx + extraX / 2;
+        ty = -vy * sy + extraY / 2;
+    }
+    return [sx, 0, 0, sy, tx, ty];
+}
+const UNITS = { px: 1, pt: 4 / 3, pc: 16, mm: 96 / 25.4, cm: 96 / 2.54, in: 96 };
+const NUMBER = String.raw `[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?`;
+const LENGTH = new RegExp(`^(${NUMBER})\\s*(px|pt|pc|mm|cm|in|em|ex|%)?$`);
+const NUMBER_OR_PERCENTAGE = new RegExp(`^(${NUMBER})\\s*(%?)$`);
+const NUMBERS = new RegExp(NUMBER, 'g');
+const PATH_TOKENS = new RegExp(`([MmZzLlHhVvCcSsQqTtAa])|(${NUMBER})`, 'g');
+function parseLength(value, viewport, fontSize = 16, axis = 'x') {
+    if (value === undefined || value === null)
+        return 0;
+    const match = LENGTH.exec(String(value).trim());
+    if (!match)
+        return 0;
+    const number = parseFloat(match[1]);
+    const unit = match[2];
+    if (!unit)
+        return number;
+    if (unit === 'em')
+        return number * fontSize;
+    if (unit === 'ex')
+        return number * fontSize / 2;
+    if (unit === '%') {
+        if (!viewport)
+            return 0;
+        const reference = axis === 'x' ? viewport.width : axis === 'y' ? viewport.height
+            : Math.hypot(viewport.width, viewport.height) / Math.SQRT2;
+        return number / 100 * reference;
+    }
+    return number * UNITS[unit];
+}
+function parseNumber(value, fallback) {
+    const v = parseStrictNumber(value);
+    return v === null ? fallback : v;
+}
+function parseStrictNumber(value) {
+    if (value === undefined || value === null)
+        return null;
+    const match = NUMBER_OR_PERCENTAGE.exec(String(value).trim());
+    if (!match)
+        return null;
+    return match[2] ? parseFloat(match[1]) / 100 : parseFloat(match[1]);
+}
+function parseNumberList(value) {
+    return [...String(value).matchAll(NUMBERS)].map(m => parseFloat(m[0]));
+}
+function parseDashArray(value, viewport, fontSize) {
+    if (!value || value === 'none')
+        return null;
+    let dashes = value.split(/[\s,]+/).filter(Boolean).map(v => parseLength(v, viewport, fontSize, 'diagonal'));
+    if (!dashes.length || dashes.some(d => d < 0 || isNaN(d)))
+        return null;
+    if (dashes.length % 2)
+        dashes = [...dashes, ...dashes];
+    return dashes.reduce((a, b) => a + b, 0) > 0 ? dashes : null;
+}
+function clamp01(v) {
+    return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+function parseColor(value) {
+    if (!value)
+        return null;
+    value = value.trim().toLowerCase();
+    if (value === 'transparent')
+        return [0, 0, 0, 0];
+    let match = /^#([0-9a-f]{3,8})$/.exec(value);
+    if (match) {
+        const hex = match[1];
+        if (hex.length === 3 || hex.length === 4)
+            return [...hex].map(c => parseInt(c + c, 16) / 255).concat(hex.length === 3 ? [1] : []);
+        if (hex.length === 6 || hex.length === 8)
+            return [0, 2, 4, 6].slice(0, hex.length / 2).map(i => parseInt(hex.slice(i, i + 2), 16) / 255).concat(hex.length === 6 ? [1] : []);
+        return null;
+    }
+    match = /^(rgba?|hsla?)\(([^)]*)\)$/.exec(value);
+    if (match) {
+        const parts = match[2].split(/\s*[,/]\s*|\s+/).filter(Boolean);
+        if (parts.length < 3)
+            return null;
+        const alpha = parts.length > 3 ? clamp01(parseNumber(parts[3], 1)) : 1;
+        if (match[1].startsWith('rgb')) {
+            const channel = (p) => clamp01(/%$/.test(p) ? parseFloat(p) / 100 : parseFloat(p) / 255);
+            return [channel(parts[0]), channel(parts[1]), channel(parts[2]), alpha];
+        }
+        const h = (((parseFloat(parts[0]) % 360) + 360) % 360) / 360;
+        const s = clamp01(parseFloat(parts[1]) / 100), l = clamp01(parseFloat(parts[2]) / 100);
+        const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+        const hue = (t) => {
+            t = (t + 1) % 1;
+            return t < 1 / 6 ? p + (q - p) * 6 * t : t < 1 / 2 ? q : t < 2 / 3 ? p + (q - p) * (2 / 3 - t) * 6 : p;
+        };
+        return [hue(h + 1 / 3), hue(h), hue(h - 1 / 3), alpha];
+    }
+    const named = NAMED_COLORS[value];
+    return named === undefined ? null : [(named >> 16 & 255) / 255, (named >> 8 & 255) / 255, (named & 255) / 255, 1];
+}
+const NAMED_COLORS = {
+    aliceblue: 0xf0f8ff, antiquewhite: 0xfaebd7, aqua: 0x00ffff, aquamarine: 0x7fffd4, azure: 0xf0ffff, beige: 0xf5f5dc, bisque: 0xffe4c4,
+    black: 0x000000, blanchedalmond: 0xffebcd, blue: 0x0000ff, blueviolet: 0x8a2be2, brown: 0xa52a2a, burlywood: 0xdeb887, cadetblue: 0x5f9ea0,
+    chartreuse: 0x7fff00, chocolate: 0xd2691e, coral: 0xff7f50, cornflowerblue: 0x6495ed, cornsilk: 0xfff8dc, crimson: 0xdc143c, cyan: 0x00ffff,
+    darkblue: 0x00008b, darkcyan: 0x008b8b, darkgoldenrod: 0xb8860b, darkgray: 0xa9a9a9, darkgreen: 0x006400, darkgrey: 0xa9a9a9, darkkhaki: 0xbdb76b,
+    darkmagenta: 0x8b008b, darkolivegreen: 0x556b2f, darkorange: 0xff8c00, darkorchid: 0x9932cc, darkred: 0x8b0000, darksalmon: 0xe9967a,
+    darkseagreen: 0x8fbc8f, darkslateblue: 0x483d8b, darkslategray: 0x2f4f4f, darkslategrey: 0x2f4f4f, darkturquoise: 0x00ced1, darkviolet: 0x9400d3,
+    deeppink: 0xff1493, deepskyblue: 0x00bfff, dimgray: 0x696969, dimgrey: 0x696969, dodgerblue: 0x1e90ff, firebrick: 0xb22222, floralwhite: 0xfffaf0,
+    forestgreen: 0x228b22, fuchsia: 0xff00ff, gainsboro: 0xdcdcdc, ghostwhite: 0xf8f8ff, gold: 0xffd700, goldenrod: 0xdaa520, gray: 0x808080,
+    grey: 0x808080, green: 0x008000, greenyellow: 0xadff2f, honeydew: 0xf0fff0, hotpink: 0xff69b4, indianred: 0xcd5c5c, indigo: 0x4b0082,
+    ivory: 0xfffff0, khaki: 0xf0e68c, lavender: 0xe6e6fa, lavenderblush: 0xfff0f5, lawngreen: 0x7cfc00, lemonchiffon: 0xfffacd, lightblue: 0xadd8e6,
+    lightcoral: 0xf08080, lightcyan: 0xe0ffff, lightgoldenrodyellow: 0xfafad2, lightgray: 0xd3d3d3, lightgreen: 0x90ee90, lightgrey: 0xd3d3d3,
+    lightpink: 0xffb6c1, lightsalmon: 0xffa07a, lightseagreen: 0x20b2aa, lightskyblue: 0x87cefa, lightslategray: 0x778899, lightslategrey: 0x778899,
+    lightsteelblue: 0xb0c4de, lightyellow: 0xffffe0, lime: 0x00ff00, limegreen: 0x32cd32, linen: 0xfaf0e6, magenta: 0xff00ff, maroon: 0x800000,
+    mediumaquamarine: 0x66cdaa, mediumblue: 0x0000cd, mediumorchid: 0xba55d3, mediumpurple: 0x9370db, mediumseagreen: 0x3cb371,
+    mediumslateblue: 0x7b68ee, mediumspringgreen: 0x00fa9a, mediumturquoise: 0x48d1cc, mediumvioletred: 0xc71585, midnightblue: 0x191970,
+    mintcream: 0xf5fffa, mistyrose: 0xffe4e1, moccasin: 0xffe4b5, navajowhite: 0xffdead, navy: 0x000080, oldlace: 0xfdf5e6, olive: 0x808000,
+    olivedrab: 0x6b8e23, orange: 0xffa500, orangered: 0xff4500, orchid: 0xda70d6, palegoldenrod: 0xeee8aa, palegreen: 0x98fb98,
+    paleturquoise: 0xafeeee, palevioletred: 0xdb7093, papayawhip: 0xffefd5, peachpuff: 0xffdab9, peru: 0xcd853f, pink: 0xffc0cb, plum: 0xdda0dd,
+    powderblue: 0xb0e0e6, purple: 0x800080, rebeccapurple: 0x663399, red: 0xff0000, rosybrown: 0xbc8f8f, royalblue: 0x4169e1, saddlebrown: 0x8b4513,
+    salmon: 0xfa8072, sandybrown: 0xf4a460, seagreen: 0x2e8b57, seashell: 0xfff5ee, sienna: 0xa0522d, silver: 0xc0c0c0, skyblue: 0x87ceeb,
+    slateblue: 0x6a5acd, slategray: 0x708090, slategrey: 0x708090, snow: 0xfffafa, springgreen: 0x00ff7f, steelblue: 0x4682b4, tan: 0xd2b48c,
+    teal: 0x008080, thistle: 0xd8bfd8, tomato: 0xff6347, turquoise: 0x40e0d0, violet: 0xee82ee, wheat: 0xf5deb3, white: 0xffffff,
+    whitesmoke: 0xf5f5f5, yellow: 0xffff00, yellowgreen: 0x9acd32
+};

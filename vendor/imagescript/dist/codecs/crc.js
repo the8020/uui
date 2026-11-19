@@ -1,0 +1,34 @@
+/*!
+ * Slice-by-16 CRC-32, derived from "Fast CRC32 in JavaScript" (https://gist.github.com/101arrowz/e58695f7ccfdf74f60ba22018093edea)
+ * Copyright (c) 2021 Arjun Barrett, MIT License (see THIRD_PARTY_NOTICES.md)
+ */
+import { nodeZlib } from "./zlib.js";
+const TABLE = new Int32Array(16 * 256);
+for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++)
+        c = c & 1 ? 0xedb88320 ^ c >>> 1 : c >>> 1;
+    TABLE[n] = c;
+}
+for (let n = 0; n < 256; n++) {
+    let c = TABLE[n];
+    for (let k = 256; k < TABLE.length; k += 256)
+        c = TABLE[k + n] = TABLE[c & 0xff] ^ c >>> 8;
+}
+const native = nodeZlib && nodeZlib.crc32 ? nodeZlib.crc32.bind(nodeZlib) : null;
+const NATIVE_MIN = 64;
+export function crc32(buffer) {
+    if (native && buffer.length >= NATIVE_MIN)
+        return native(buffer) >>> 0;
+    let crc = -1, i = 0;
+    for (const end = buffer.length - 16; i <= end; i += 16) {
+        crc = TABLE[3840 + ((buffer[i] ^ crc) & 0xff)] ^ TABLE[3584 + ((buffer[i + 1] ^ crc >> 8) & 0xff)]
+            ^ TABLE[3328 + ((buffer[i + 2] ^ crc >> 16) & 0xff)] ^ TABLE[3072 + (buffer[i + 3] ^ crc >>> 24)]
+            ^ TABLE[2816 + buffer[i + 4]] ^ TABLE[2560 + buffer[i + 5]] ^ TABLE[2304 + buffer[i + 6]] ^ TABLE[2048 + buffer[i + 7]]
+            ^ TABLE[1792 + buffer[i + 8]] ^ TABLE[1536 + buffer[i + 9]] ^ TABLE[1280 + buffer[i + 10]] ^ TABLE[1024 + buffer[i + 11]]
+            ^ TABLE[768 + buffer[i + 12]] ^ TABLE[512 + buffer[i + 13]] ^ TABLE[256 + buffer[i + 14]] ^ TABLE[buffer[i + 15]];
+    }
+    for (; i < buffer.length; i++)
+        crc = TABLE[(crc ^ buffer[i]) & 0xff] ^ crc >>> 8;
+    return (crc ^ -1) >>> 0;
+}

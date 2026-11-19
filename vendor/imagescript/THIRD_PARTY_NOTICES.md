@@ -1,0 +1,649 @@
+# Third party notices
+
+ImageScript is licensed under AGPL-3.0-or-later OR MIT (see [LICENSE](LICENSE)). Parts of it are derived from the
+following projects, under their own licenses. Each derived file says so in its header.
+
+| Project | Used in | License |
+|---|---|---|
+| [fflate](https://github.com/101arrowz/fflate) by Arjun Barrett | `src/codecs/zlib.ts` (deflate/inflate) | MIT |
+| [Fast CRC32 in JavaScript](https://gist.github.com/101arrowz/e58695f7ccfdf74f60ba22018093edea) by Arjun Barrett | `src/codecs/crc.ts` (slice-by-16 CRC-32) | MIT |
+| [libjpeg](https://ijg.org/) / [libjpeg-turbo](https://libjpeg-turbo.org/) by the Independent JPEG Group | `src/codecs/jpeg.ts` (IDCT, FDCT, upsampling, color conversion, progressive refinement, optimal Huffman tables) | IJG |
+| [pdf.js](https://github.com/mozilla/pdf.js) (forked from [jpgjs](https://github.com/notmasteryet/jpgjs) by notmasteryet) | `src/codecs/jpeg.ts` (structure of the scan decoder) | Apache-2.0 |
+| [font-rs](https://github.com/raphlinus/font-rs) by Raph Levien | `src/render/text.ts` (the `Rasterizer` class, also used for SVGs) | Apache-2.0 |
+| [RFC 9649](https://www.rfc-editor.org/rfc/rfc9649) (WebP Image Format) | `src/codecs/vp8l.ts` (lossless bitstream, short distance code table), `src/codecs/webp.ts` (container) | BSD-3-Clause (Revised BSD) |
+| [RFC 6386](https://www.rfc-editor.org/rfc/rfc6386) (VP8 Data Format and Decoding Guide, with the libvpx reference decoder) | `src/codecs/vp8-tables.ts` (probability and quantizer tables), `src/codecs/vp8.ts` (decoding procedures) | BSD-3-Clause |
+| [libwebp](https://chromium.googlesource.com/webm/libwebp) | `src/codecs/vp8.ts` (YUV to RGB conversion, "fancy" chroma upsampling), `src/codecs/webp.ts` (animation frame blending), `src/codecs/vp8-enc.ts`, `src/codecs/vp8-enc-dsp.ts` (the lossy encoder: RGB to YUV conversion, analysis, segments, rate-distortion optimized mode decisions, quantization, token probabilities, bitstream, alpha filtering), `src/codecs/vp8-enc-tables.ts` (its tables, generated from libwebp by `scripts/vp8-enc-tables.py`), `src/codecs/sharpyuv.ts` (the sharp RGB to YUV conversion, libsharpyuv), `src/codecs/vp8l.ts` (the lossless encoder's entropy analysis and color transform search) | BSD-3-Clause |
+| [dav1d](https://code.videolan.org/videolan/dav1d) by VideoLAN, the dav1d authors and Two Orioles | `src/codecs/av1/*` (the AV1 decoder, and the encoder's syntax, contexts and reconstruction mirrored from it: bitstream parsing, symbol decoding, prediction, inverse transforms, loop filters, film grain; the tables in `src/codecs/av1/data.ts`, generated from dav1d by `scripts/av1-tables.c`) | BSD-2-Clause |
+| [libaom](https://aomedia.googlesource.com/aom/) by the Alliance for Open Media | `src/codecs/av1/msac-enc.ts` (the symbol encoder), `src/codecs/av1/fdct.ts` (the forward Walsh-Hadamard transform), `src/codecs/av1/encode.ts` (the loop filter level from the quantizer), `src/codecs/avif-enc.ts` (the quantizer to qindex table) | BSD-2-Clause |
+| [libavif](https://github.com/AOMediaCodec/libavif) by Joe Drago | `src/codecs/avif.ts` (YUV to RGB conversion with bilinear chroma upsampling, alpha range expansion and unpremultiplication) | BSD-2-Clause |
+| [jxl-oxide](https://github.com/tirr-c/jxl-oxide) by Wonwoo Choi | `src/codecs/jxl/*` (the JPEG XL decoder: bit reader, header and frame header fields, entropy decoding, VarDCT, dequantization matrices, transforms, restoration filters, upsampling, the parsing of patches, splines and noise, the ICC profile stream) | MIT (or Apache-2.0) |
+| [libjxl](https://github.com/libjxl/libjxl) by the JPEG XL Project Authors | `src/codecs/jxl/modular.ts` (Modular decoding: MA trees, predictors, the self-correcting predictor, transforms), `src/codecs/jxl/frame.ts` (the sections of frames, the order of the rendering stages, reference frames), `src/codecs/jxl/blend.ts`, `src/codecs/jxl/color.ts` (XYB to RGB), `src/codecs/jxl/features.ts` (rendering patches, splines and noise), `src/codecs/jxl/fast-lossless.ts` (the lossless encoder: palette detection, YCoCg, the gradient predictor, prefix codes, runs as LZ77, the headers), `src/codecs/jxl/patches-enc.ts` (finding text-like patches, packing them into a reference frame, quantizing it like Modular XYB, the patch dictionary) | BSD-3-Clause |
+| [JPEG XL conformance](https://github.com/libjxl/conformance) by the JPEG XL Project Authors | `tests/jxl/alpha-*.jxl`, `animation-spline.jxl`, `blendmodes.jxl`, `mul-no-extra-channels.jxl` (test files) | BSD-3-Clause |
+| [Various smartphones - Android, Blackberry, Windows Phone, and iOS.jpg](https://commons.wikimedia.org/wiki/File:Various_smartphones_-_Android,_Blackberry,_Windows_Phone,_and_iOS.jpg) by Carlos Varela | `tests/targets/external.png` and `external.jpg` (a square of it, scaled to 638x638), the test files made from them (`tests/avif`, `tests/jxl`, `tests/ico`, `tests/hdr`, `tests/qoi`, `tests/tiffs`) and the test targets showing them; `bench/inputs/photo.jpg` (unmodified) | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) |
+| [FreeType](https://freetype.org) | `src/render/hinting.ts` (behavior and parts of the logic of the TrueType interpreter) | FreeType License |
+| [QOI](https://github.com/phoboslab/qoi) by Dominic Szablewski | `src/codecs/qoi.ts` (the reference encoder's choices of operations) | MIT |
+| [Pillow](https://github.com/python-pillow/Pillow) | `src/util/resample.ts` (filter coefficients, box, bilinear and bicubic filters) | MIT-CMU |
+| [HarfBuzz](https://github.com/harfbuzz/harfbuzz) | `src/render/buffer.ts`, `src/render/layout.ts`, `src/render/shape.ts`, `src/render/shapers/*` (OpenType shaping: buffer, GSUB/GPOS, normalization, fallback positioning, the script shapers and syllable grammars), `scripts/unicode.js` (shaping category tables) | Old MIT |
+| [Universal Shaping Engine data](https://github.com/harfbuzz/harfbuzz/tree/main/src/ms-use) by Microsoft | `scripts/ms-use` (category overrides, invalid vowel sequences), the tables generated from them in `src/render/unicode-data.ts` | MIT |
+| [resvg](https://github.com/linebender/resvg) by the Resvg Authors | `src/render/filter.ts` (the filter effects: regions, inputs, color spaces, box blur (based on [fastblur](https://github.com/fschutt/fastblur)), IIR blur, offset, flood, composite, merge, drop shadow, color matrix, component transfer, tile, morphology, convolution), `src/render/svg.ts` (the filters' attributes like usvg; how patterns are rendered and their reference cycles broken, following resvg and usvg; the markers' placement and orientation, ported from usvg; as many cubics per arc as kurbo makes for usvg; how images are fitted, clipped and sampled; transform-origin, paint-order, context-fill and context-stroke, mix-blend-mode and isolation, following usvg; how text elements are read: whitespace, positions, chunks, spans, decorations, baseline shifts, text paths, as in usvg), `src/render/svg-text.ts` (text layout ported from usvg: shaping across spans, spacing, text length, anchors, positions along paths, baselines, decorations, vertical text, color glyphs' placement), `tests/svgs/resvg` (test cases with resvg's renderings) | MIT (or Apache-2.0) |
+| resvg's test fonts: [Noto](https://notofonts.github.io) fonts by Google, [Amiri](https://github.com/aliftype/amiri) by Khaled Hosny, [M+](https://mplusfonts.github.io) by the M+ Fonts Project, [Sedgwick Ave Display](https://github.com/googlefonts/sedgwickave) by Kevin Burke, [Source Sans Pro](https://github.com/adobe-fonts/source-sans) by Adobe, [Yellowtail](https://fonts.google.com/specimen/Yellowtail) by Astigmatic, [Twemoji](https://github.com/twitter/twemoji) by Twitter, a CFF and sbix test font of resvg | `tests/fonts/resvg` (subsets, see `scripts/resvg-test-fonts.py`; their licenses are next to them) | OFL-1.1, Apache-2.0, MIT, CC-BY 4.0 (Twemoji's graphics) |
+| [fontdb](https://github.com/RazrFalcon/fontdb) by Yevhenii Reizner | `src/render/svg-text.ts` (font matching: CSS Fonts' algorithm as fontdb's queries do it, the fallback's style check) | MIT |
+| [kurbo](https://github.com/linebender/kurbo) by Raph Levien | `src/render/svg-text.ts` (arc lengths of cubics: adaptive Legendre-Gauss quadrature; parameters at arc lengths: the ITP method) | MIT (or Apache-2.0) |
+| [tiny-skia](https://github.com/linebender/tiny-skia) by Yevhenii Reizner (from [Skia](https://skia.org) by Google) | `src/render/blend.ts` (the blend modes of feBlend and mix-blend-mode) | BSD-3-Clause |
+| [gaussianiir](http://www.getreuer.info/home/gaussianiir) by Pascal Getreuer | `src/render/filter.ts` (the IIR blur for small deviations, through resvg) | BSD-2-Clause (Simplified BSD) |
+| [Unicode Character Database](https://www.unicode.org/ucd/) | `src/render/unicode-data.ts` (character properties, generated by `scripts/unicode.js`) | Unicode License v3 |
+
+## fflate, Fast CRC32 in JavaScript
+
+```
+MIT License
+
+Copyright (c) 2020 Arjun Barrett (fflate)
+Copyright (c) 2021 Arjun Barrett (Fast CRC32 in JavaScript)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## libjpeg / libjpeg-turbo
+
+This software is based in part on the work of the Independent JPEG Group.
+
+The JPEG codec translates parts of libjpeg (as shipped by libjpeg-turbo) to TypeScript: the integer inverse DCT
+(`jidctint.c`), the floating point forward DCT (`jfdctflt.c`), fancy upsampling (`jdsample.c`), the YCbCr to RGB
+tables (`jdcolor.c`), the progressive AC refinement (`jdphuff.c`) and the optimal Huffman table generation
+(`jcphuff.c`/`jchuff.c`). The translations were rewritten for TypeScript's numbers and typed arrays; the rest of the
+codec is ImageScript's own. libjpeg's README with its copyright and terms is included unaltered as
+[licenses/README.ijg](licenses/README.ijg).
+
+## pdf.js, font-rs
+
+```
+pdf.js: Copyright 2014 Mozilla Foundation
+font-rs: Copyright 2015 Google Inc. All rights reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```
+
+The scan decoder of `src/codecs/jpeg.ts` follows the structure of pdf.js' `src/core/jpg.js` (block and MCU layout,
+one decode function per scan type). The `Rasterizer` class in `src/render/text.ts` is a translation of font-rs'
+`Raster` from Rust to TypeScript (`draw_line`, `draw_quad`, `accumulate`); its `cubic` method is adapted from
+`draw_quad`. The full license text is in [licenses/Apache-2.0.txt](licenses/Apache-2.0.txt).
+
+## RFC 6386, libwebp
+
+The VP8 decoder follows the procedures of RFC 6386 and its reference decoder, its constant tables are extracted from
+the RFC. To decode exactly like libwebp, the YUV to RGB conversion, the chroma upsampling and the blending of animation
+frames reproduce libwebp's integer arithmetic. The lossy encoder is ported from libwebp's (version 1.6.0, its default
+settings) and writes the same VP8 bitstreams as cwebp.
+
+```
+RFC 6386 reference decoder: Copyright (c) 2010, 2011, Google Inc. All rights reserved.
+libwebp: Copyright (c) 2010, Google Inc. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+  * Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+
+  * Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in
+    the documentation and/or other materials provided with the
+    distribution.
+
+  * Neither the name of Google nor the names of its contributors may
+    be used to endorse or promote products derived from this software
+    without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+The RFC's reference decoder additionally comes with Google's patent grant for VP8 (RFC 6386 section 20.27).
+
+## RFC 9649
+
+The WebP container and the lossless (VP8L) codec follow RFC 9649, the short distance code table is taken from it.
+
+```
+Copyright (c) 2024 IETF Trust and the persons identified as authors of the code. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the
+following conditions are met:
+
+- Redistributions of source code must retain the above copyright notice, this list of conditions and the following
+  disclaimer.
+- Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the
+  following disclaimer in the documentation and/or other materials provided with the distribution.
+- Neither the name of Internet Society, IETF or IETF Trust, nor the names of specific contributors, may be used to
+  endorse or promote products derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
+INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+## dav1d
+
+The AV1 decoder is ported from dav1d 1.5.1 and decodes exactly like it (the frames of its intra coding tools, with
+every post filter and film grain); its tables are generated from dav1d's. The ported files are Copyright © 2018-2021,
+VideoLAN and dav1d authors, and Copyright © 2018, Two Orioles, LLC, under dav1d's license. AV1 is covered by the
+[Alliance for Open Media Patent License 1.0](https://aomedia.org/license/patent-license/).
+
+```
+Copyright © 2018-2019, VideoLAN and dav1d authors
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+## libaom
+
+The AV1 encoder's symbol encoder and forward Walsh-Hadamard transform are ported from libaom, the AV1 reference
+implementation, as are its guess of the loop filter level and the quantizer table of the quality. AV1 is covered by the
+[Alliance for Open Media Patent License 1.0](https://aomedia.org/license/patent-license/).
+
+```
+Copyright (c) 2016, Alliance for Open Media. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in
+   the documentation and/or other materials provided with the
+   distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+```
+
+## libavif
+
+The conversion of decoded AVIFs to RGB reproduces libavif's reference conversion (in floating point, with bilinear
+chroma upsampling), so the pixels are the ones libavif gives.
+
+```
+Copyright 2019 Joe Drago. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+this list of conditions and the following disclaimer in the documentation
+and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+## jxl-oxide
+
+The structure of the JPEG XL decoder and most of its parts are ported from jxl-oxide (which may be used under the MIT
+or the Apache-2.0 license; the MIT license applies here).
+
+```
+Copyright (c) Wonwoo Choi
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+```
+
+## libjxl, JPEG XL conformance
+
+The Modular decoding, the rendering pipeline, blending, the XYB conversion and the rendering of patches, splines and
+noise follow libjxl, the JPEG XL reference implementation, the lossless encoder is ported from its fast lossless
+encoder, the lossy encoder follows its heuristics (the varblock search with its adaptive quantization field,
+chroma from luma, quantization, the ANS histograms, fixed trees and clustering, the forward transforms); tests/jxl includes files of its conformance suite. JPEG XL
+is covered by Google's patent grant for libjxl (the "Additional IP Rights Grant" in libjxl's PATENTS file).
+
+```
+Copyright (c) the JPEG XL Project Authors.
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+## FreeType
+
+Portions of this software are copyright © 2026 The FreeType Project (https://freetype.org). All rights reserved.
+
+The TrueType hinting interpreter in `src/render/hinting.ts` is written after the TrueType instruction specification.
+Where the specification leaves details open, its behavior and parts of its logic follow FreeType's interpreter
+(`src/truetype/ttinterp.c`): the fixed point rounding, measuring original distances on the unscaled outline, the
+interpolation of untouched points (IUP), the handling of near-perpendicular freedom and projection vectors, and the
+tolerance of invalid references. FreeType is used under the FreeType License, included as
+[licenses/FTL.txt](licenses/FTL.txt).
+
+## QOI
+
+```
+MIT License
+
+Copyright (c) 2021, 2022 Dominic Szablewski
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## Pillow
+
+```
+The Python Imaging Library (PIL) is
+
+    Copyright © 1997-2011 by Secret Labs AB
+    Copyright © 1995-2011 by Fredrik Lundh and contributors
+
+Pillow is the friendly PIL fork. It is
+
+    Copyright © 2010 by Jeffrey 'Alex' Clark and contributors
+
+Like PIL, Pillow is licensed under the open source MIT-CMU License:
+
+By obtaining, using, and/or copying this software and/or its associated
+documentation, you agree that you have read, understood, and will comply
+with the following terms and conditions:
+
+Permission to use, copy, modify and distribute this software and its
+documentation for any purpose and without fee is hereby granted,
+provided that the above copyright notice appears in all copies, and that
+both that copyright notice and this permission notice appear in supporting
+documentation, and that the name of Secret Labs AB or the author not be
+used in advertising or publicity pertaining to distribution of the software
+without specific, written prior permission.
+
+SECRET LABS AB AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS
+SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS.
+IN NO EVENT SHALL SECRET LABS AB OR THE AUTHOR BE LIABLE FOR ANY SPECIAL,
+INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE
+OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS SOFTWARE.
+```
+
+The resampling in `src/util/resample.ts` computes its filter coefficients as Pillow's `precompute_coeffs` does (the
+filter stretched by the downscaling factor, the source range rounded around each output pixel's center, the weights
+normalized) and uses Pillow's box, bilinear and bicubic (a = -0.5) filter functions. The integer passes, the fast
+paths and the premultiplied alpha handling are ImageScript's own.
+
+## Unicode Character Database
+
+Copyright © 1991-2026 Unicode, Inc.
+
+`src/render/unicode-data.ts` is generated by `scripts/unicode.js` from data files of the Unicode Character Database
+(character properties for the bidirectional algorithm, line breaking, text segmentation and shaping). They are used
+under the Unicode License v3, included as [licenses/Unicode-3.0.txt](licenses/Unicode-3.0.txt). The bidirectional
+algorithm (`src/render/bidi.ts`) and the line breaking (`src/render/linebreak.ts`) are written after UAX #9 and
+UAX #14.
+
+## HarfBuzz
+
+The shaping engine is ported from HarfBuzz 14.6.0; its license is included as
+[licenses/HarfBuzz.txt](licenses/HarfBuzz.txt). The copyright holders of the ported files are listed in the headers
+of the files derived from them.
+
+```
+HarfBuzz is licensed under the so-called "Old MIT" license.  Details follow.
+For parts of HarfBuzz that are licensed under different licenses see individual
+files names COPYING in subdirectories where applicable.
+
+Copyright © 2010-2022  Google, Inc.
+Copyright © 2015-2020  Ebrahim Byagowi
+Copyright © 2019,2020  Facebook, Inc.
+Copyright © 2012,2015  Mozilla Foundation
+Copyright © 2011  Codethink Limited
+Copyright © 2008,2010  Nokia Corporation and/or its subsidiary(-ies)
+Copyright © 2009  Keith Stribley
+Copyright © 2011  Martin Hosken and SIL International
+Copyright © 2007  Chris Wilson
+Copyright © 2005,2006,2020,2021,2022,2023  Behdad Esfahbod
+Copyright © 2004,2007,2008,2009,2010,2013,2021,2022,2023  Red Hat, Inc.
+Copyright © 1998-2005  David Turner and Werner Lemberg
+Copyright © 2016  Igalia S.L.
+Copyright © 2022  Matthias Clasen
+Copyright © 2018,2021  Khaled Hosny
+Copyright © 2018,2019,2020  Adobe, Inc
+Copyright © 2013-2015  Alexei Podtelezhnikov
+
+For full copyright notices consult the individual files in the package.
+
+
+Permission is hereby granted, without written agreement and without
+license or royalty fees, to use, copy, modify, and distribute this
+software and its documentation for any purpose, provided that the
+above copyright notice and the following two paragraphs appear in
+all copies of this software.
+
+IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE TO ANY PARTY FOR
+DIRECT, INDIRECT, SPECIAL, INCIDENTAL, OR CONSEQUENTIAL DAMAGES
+ARISING OUT OF THE USE OF THIS SOFTWARE AND ITS DOCUMENTATION, EVEN
+IF THE COPYRIGHT HOLDER HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH
+DAMAGE.
+
+THE COPYRIGHT HOLDER SPECIFICALLY DISCLAIMS ANY WARRANTIES, INCLUDING,
+BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS FOR A PARTICULAR PURPOSE.  THE SOFTWARE PROVIDED HEREUNDER IS
+ON AN "AS IS" BASIS, AND THE COPYRIGHT HOLDER HAS NO OBLIGATION TO
+PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
+```
+
+## Universal Shaping Engine data
+
+```
+MIT License
+
+Copyright (c) Microsoft Corporation.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE
+```
+
+## resvg
+
+```
+Copyright 2017 the Resvg Authors
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+```
+
+## fontdb
+
+```
+The MIT License (MIT)
+
+Copyright (c) 2020 Yevhenii Reizner
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## kurbo
+
+```
+Copyright (c) 2018 Raph Levien
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+```
+
+## tiny-skia
+
+```
+Copyright (c) 2011 Google Inc. All rights reserved.
+Copyright (c) 2020 Yevhenii Reizner All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+  * Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+
+  * Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in
+    the documentation and/or other materials provided with the
+    distribution.
+
+  * Neither the name of the copyright holder nor the names of its
+    contributors may be used to endorse or promote products derived
+    from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+## gaussianiir
+
+The IIR blur follows Pascal Getreuer's gaussianiir (through resvg), under the Simplified BSD License:
+
+```
+Copyright (c) 2009, Pascal Getreuer
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+    * Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+    * Redistributions in binary form must reproduce the above copyright
+      notice, this list of conditions and the following disclaimer in
+      the documentation and/or other materials provided with the distribution
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+```

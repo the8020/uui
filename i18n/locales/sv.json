@@ -418,6 +418,9 @@
     "shortcuts.duplicate": "Genvägen används redan.",
     "shortcuts.not_found": "Inget program matchar denna genväg.",
     "shortcuts.ambiguous": "Flera program använder denna genväg. Välj en personlig koppling i Anpassning.",
-    "shortcuts.customize": "Anpassa"
+    "shortcuts.customize": "Anpassa",
+    "program.system_logo": "Systemlogotyp",
+    "program.use_default_logo": "Använd standardlogotyp",
+    "program.logo_help": "1:1–3:1 · PNG ≤384×128 px · ≤10 MiB. Övriga proportioner beskärs från mitten längs den längsta sidan."
   }
 }

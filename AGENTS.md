@@ -107,11 +107,12 @@ Default section order:
   identity/version fields, expandable technical details, and Copy diagnostics.
   Opening it must preserve even an invalid unsaved draft.
 
-- Administration provides System customization for the server title, favicon,
-  and social preview. Defaults are `80|20`, the square yellow `80` icon, and the
-  branded social image. Center-crop uploads with minimal removal and convert to
-  optimized output formats; custom images live in the database, defaults in the
-  shell package. Browser titles combine the saved server title and screen title.
+- Administration provides System customization for the server title, navbar
+  logo, favicon, and social preview. Defaults are `80|20`, the square yellow
+  `80` icon, and the branded social image. Center-crop uploads with minimal
+  removal and convert to optimized output formats; custom images live in the
+  database, defaults in the shell package. Browser titles combine the saved
+  server title and screen title.
 
 - The List tools toggle is a small gear over the visible right edge of the
   column-header row. It stays fixed during horizontal table scrolling, masks
@@ -190,6 +191,7 @@ relevant child AGENTS.md
 This root retains repository-wide contracts and files outside the child scopes
 below.
 
+- [vendor/AGENTS.md](vendor/AGENTS.md): Pinned backend image codec and licenses.
 - [i18n/AGENTS.md](i18n/AGENTS.md): Package-owned UI catalogs.
 - [frontend/AGENTS.md](frontend/AGENTS.md): Provide shared browser Markdown
   rendering outside service-owned source trees.
@@ -748,7 +750,10 @@ below.
   Administration tile separate from personal Customization. The shell serves
   fixed PNG/JPEG files from the database or disk defaults, also exposed through
   public login routes so Open Graph and Twitter previews work before
-  authentication.
+  authentication. Custom navbar logos replace the wordmark while retaining its
+  Status action. Preserve ratios from 1:1 through 3:1; crop only the longer side
+  of images outside that range, centered. Backend conversion writes PNG within
+  384×128 pixels; the navbar displays it at 32px high with 4px corner rounding.
 - Sending any `screen.event` or structured request enters one shell-owned
   in-flight interaction state for the top surface. It immediately makes
   presentation and applicable header controls inert, disables Back, rejects
@@ -956,20 +961,21 @@ below.
   horizontally; fractional sizing and invisible heading measurements must not
   create scrollbars. Header popovers expose full headings, shared field
   descriptions, typed filters, sort, and clear actions; icons use the vendored
-  `[[icon=...]]` registry. The gear List tools button at the end of the list's
-  toolbar row opens the search toolbar. Drafts, focus/caret, expansion, and
-  horizontal scroll survive updates. The pagination footer is hidden for
-  single-page and empty results without selection; sources that fit on one page
-  reserve no footer space. Clearing controls appear only for active queries. The
-  [browser contract](services/shell/frontend/AGENTS.md) owns list control layout
-  and confirmation behavior. Encapsulate browser lists and their data tools in
-  `services/shell/frontend/components/list/`. The expanded toolbar includes
-  icon-only Table processor, Export, Copy page, and Copy all actions with
-  tooltips. A read-only spreadsheet dialog has a free positive integer page-size
-  input, default 1000, followed by `(N total)` when known. Larger viewer pages
-  accumulate bounded reads independently of UUI pagination. Export offers CSV,
-  JSON, XML, YAML, XLSX, and ODS with an inclusive range. Copy writes
-  spreadsheet-compatible text and HTML using displayed columns.
+  `[[icon=...]]` registry. The gear List tools button overlays the visible right
+  edge of the column-header row and opens the search toolbar. Drafts,
+  focus/caret, expansion, and horizontal scroll survive updates. The pagination
+  footer is hidden for single-page and empty results without selection; sources
+  that fit on one page reserve no footer space. Clearing controls appear only
+  for active queries. The [browser contract](services/shell/frontend/AGENTS.md)
+  owns list control layout and confirmation behavior. Encapsulate browser lists
+  and their data tools in `services/shell/frontend/components/list/`. The
+  expanded toolbar includes icon-only Table processor, Export, Copy page, and
+  Copy all actions with tooltips. A read-only spreadsheet dialog has a free
+  positive integer page-size input, default 1000, followed by `(N total)` when
+  known. Larger viewer pages accumulate bounded reads independently of UUI
+  pagination. Export offers CSV, JSON, XML, YAML, XLSX, and ODS with an
+  inclusive range. Copy writes spreadsheet-compatible text and HTML using
+  displayed columns.
 - Root-page overscroll containment must not be inherited by nested horizontal
   overflow regions. Paginated lists retain horizontal overflow for narrow
   viewports while vertical wheel and touch movement chains to the page scroller.

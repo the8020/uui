@@ -1,0 +1,201 @@
+import { MAX_PIXELS, checkPixels } from "../util/limits.js";
+function linearToSRGB(v) {
+    if (!(v > 0))
+        return 0;
+    if (v >= 1)
+        return 255;
+    return Math.round(255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055));
+}
+export function toSRGB(rgb, toneMapping) {
+    const count = rgb.length / 3;
+    const luminance = (i) => 0.2126 * rgb[i] + 0.7152 * rgb[i + 1] + 0.0722 * rgb[i + 2];
+    let white = 1;
+    if (toneMapping === 'reinhard')
+        for (let i = 0; i < rgb.length; i += 3)
+            white = Math.max(white, luminance(i));
+    const white2 = white * white;
+    const pixels = new Uint8Array(count * 4);
+    for (let i = 0, p = 0; i < rgb.length; i += 3, p += 4) {
+        let scale = 1;
+        if (white > 1) {
+            const l = Math.max(0, luminance(i));
+            scale = (1 + l / white2) / (1 + l);
+        }
+        pixels[p] = linearToSRGB(rgb[i] * scale);
+        pixels[p + 1] = linearToSRGB(rgb[i + 1] * scale);
+        pixels[p + 2] = linearToSRGB(rgb[i + 2] * scale);
+        pixels[p + 3] = 255;
+    }
+    return pixels;
+}
+const PRIMARIES_BT2020 = 9, PRIMARIES_P3 = 12;
+export const REFERENCE_WHITE = 203;
+export function hdrToLinear(rgb, transfer, primaries) {
+    const m1 = 2610 / 16384, m2 = 2523 / 4096 * 128, c1 = 3424 / 4096, c2 = 2413 / 4096 * 32, c3 = 2392 / 4096 * 32;
+    const pq = (v) => {
+        const e = (v <= 0 ? 0 : v >= 1 ? 1 : v) ** (1 / m2);
+        return 10000 / REFERENCE_WHITE * (Math.max(e - c1, 0) / (c2 - c3 * e)) ** (1 / m1);
+    };
+    const a = 0.17883277, b = 1 - 4 * a, c = 0.5 - a * Math.log(4 * a);
+    const hlg = (v) => {
+        const e = v <= 0 ? 0 : v >= 1 ? 1 : v;
+        return e <= 0.5 ? e * e / 3 : (Math.exp((e - c) / a) + b) / 12;
+    };
+    const matrix = primaries === PRIMARIES_BT2020 ? [1.660491, -0.587641, -0.072850, -0.124550, 1.132900, -0.008349, -0.018151, -0.100579, 1.118730] :
+        primaries === PRIMARIES_P3 ? [1.224940, -0.224940, 0, -0.042057, 1.042057, 0, -0.019638, -0.078636, 1.098274] : null;
+    for (let i = 0; i < rgb.length; i += 3) {
+        let r, g, bl;
+        if (transfer === 16) {
+            r = pq(rgb[i]);
+            g = pq(rgb[i + 1]);
+            bl = pq(rgb[i + 2]);
+        }
+        else {
+            r = hlg(rgb[i]);
+            g = hlg(rgb[i + 1]);
+            bl = hlg(rgb[i + 2]);
+            const ys = 0.2627 * r + 0.6780 * g + 0.0593 * bl;
+            const gain = ys > 0 ? 1000 / REFERENCE_WHITE * ys ** 0.2 : 0;
+            r *= gain;
+            g *= gain;
+            bl *= gain;
+        }
+        if (matrix) {
+            rgb[i] = matrix[0] * r + matrix[1] * g + matrix[2] * bl;
+            rgb[i + 1] = matrix[3] * r + matrix[4] * g + matrix[5] * bl;
+            rgb[i + 2] = matrix[6] * r + matrix[7] * g + matrix[8] * bl;
+        }
+        else {
+            rgb[i] = r;
+            rgb[i + 1] = g;
+            rgb[i + 2] = bl;
+        }
+    }
+    return rgb;
+}
+const ascii = (d, start, end) => String.fromCharCode(...d.subarray(start, end));
+export function isHDR(d) {
+    const start = ascii(d, 0, 10);
+    return start === '#?RADIANCE' || start.startsWith('#?RGBE');
+}
+const XYZ_TO_RGB = (() => {
+    const inverse = ([a, b, c, d, e, f, g, h, i]) => {
+        const det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+        return [e * i - f * h, c * h - b * i, b * f - c * e, f * g - d * i, a * i - c * g, c * d - a * f, d * h - e * g, b * g - a * h, a * e - b * d].map(v => v / det);
+    };
+    const [r, g, b] = [[0.640, 0.330], [0.290, 0.600], [0.150, 0.060]].map(([x, y]) => [x / y, 1, (1 - x - y) / y]);
+    const primaries = [r[0], g[0], b[0], r[1], g[1], b[1], r[2], g[2], b[2]];
+    const inv = inverse(primaries);
+    const scale = [0, 1, 2].map(row => inv[row * 3] + inv[row * 3 + 1] + inv[row * 3 + 2]);
+    return inverse(primaries.map((v, i) => v * scale[i % 3]));
+})();
+export function decode(d, maxPixels = MAX_PIXELS, toneMapping = 'reinhard') {
+    if (!isHDR(d))
+        throw new Error('HDR: invalid header');
+    let o = 0, xyz = false;
+    for (;;) {
+        let end = o;
+        while (end < d.length && d[end] !== 0x0a)
+            end++;
+        if (end >= d.length)
+            throw new Error('HDR: truncated header');
+        const line = ascii(d, o, end);
+        o = end + 1;
+        if (!line)
+            break;
+        if (line.startsWith('FORMAT=')) {
+            const format = line.slice(7).trim();
+            if (format !== '32-bit_rle_rgbe' && format !== '32-bit_rle_xyze')
+                throw new Error(`HDR: unsupported format ${format}`);
+            xyz = format === '32-bit_rle_xyze';
+        }
+    }
+    let end = o;
+    while (end < d.length && d[end] !== 0x0a)
+        end++;
+    const resolution = /^([-+])([XY]) (\d+) ([-+])([XY]) (\d+)$/.exec(ascii(d, o, Math.min(end, o + 64)).trim());
+    if (!resolution || resolution[2] === resolution[5])
+        throw new Error('HDR: invalid resolution');
+    o = end + 1;
+    const [, sign1, axis1, n1, sign2, , n2] = resolution;
+    const lines = +n1, length = +n2;
+    const columns = axis1 === 'X';
+    const width = columns ? lines : length, height = columns ? length : lines;
+    if (!width || !height)
+        throw new Error(`HDR: invalid dimensions ${width}x${height}`);
+    checkPixels(width, height, maxPixels);
+    const rgb = new Float32Array(width * height * 3);
+    const line = new Uint8Array(length * 4);
+    for (let s = 0; s < lines; s++) {
+        o = readLine(d, o, line, length);
+        for (let i = 0; i < length; i++) {
+            const x = columns ? (sign1 === '+' ? s : width - 1 - s) : sign2 === '+' ? i : width - 1 - i;
+            const y = columns ? (sign2 === '-' ? i : height - 1 - i) : sign1 === '-' ? s : height - 1 - s;
+            const p = (y * width + x) * 3, e = line[i * 4 + 3];
+            if (e) {
+                const f = 2 ** (e - 136);
+                let r = line[i * 4] * f, g = line[i * 4 + 1] * f, b = line[i * 4 + 2] * f;
+                if (xyz) {
+                    const m = XYZ_TO_RGB;
+                    [r, g, b] = [m[0] * r + m[1] * g + m[2] * b, m[3] * r + m[4] * g + m[5] * b, m[6] * r + m[7] * g + m[8] * b];
+                }
+                rgb[p] = r;
+                rgb[p + 1] = g;
+                rgb[p + 2] = b;
+            }
+        }
+    }
+    return { width, height, pixels: toSRGB(rgb, toneMapping) };
+}
+function readLine(d, o, line, length) {
+    if (o + 4 > d.length)
+        throw new Error('HDR: truncated image data');
+    if (length >= 8 && length < 0x8000 && d[o] === 2 && d[o + 1] === 2 && !(d[o + 2] & 0x80)) {
+        if ((d[o + 2] << 8 | d[o + 3]) !== length)
+            throw new Error('HDR: scan line of the wrong length');
+        o += 4;
+        for (let c = 0; c < 4; c++) {
+            for (let i = 0; i < length;) {
+                if (o >= d.length)
+                    throw new Error('HDR: truncated image data');
+                let n = d[o++];
+                if (n > 128) {
+                    n -= 128;
+                    if (i + n > length || o >= d.length)
+                        throw new Error('HDR: invalid run');
+                    const v = d[o++];
+                    for (; n; n--)
+                        line[i++ * 4 + c] = v;
+                }
+                else {
+                    if (!n || i + n > length || o + n > d.length)
+                        throw new Error('HDR: invalid run');
+                    for (; n; n--)
+                        line[i++ * 4 + c] = d[o++];
+                }
+            }
+        }
+        return o;
+    }
+    for (let i = 0, shift = 0; i < length;) {
+        if (o + 4 > d.length)
+            throw new Error('HDR: truncated image data');
+        if (d[o] === 1 && d[o + 1] === 1 && d[o + 2] === 1) {
+            if (!i)
+                throw new Error('HDR: repetition without a pixel');
+            const n = d[o + 3] * 2 ** shift;
+            if (i + n > length)
+                throw new Error('HDR: invalid run');
+            for (let k = 0; k < n; k++, i++)
+                line.copyWithin(i * 4, i * 4 - 4, i * 4);
+            shift += 8;
+        }
+        else {
+            line.set(d.subarray(o, o + 4), i * 4);
+            i++;
+            shift = 0;
+        }
+        o += 4;
+    }
+    return o;
+}

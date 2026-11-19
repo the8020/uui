@@ -313,3 +313,11 @@ required by applicable law or agreed to in writing, software distributed under
 the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS
 OF ANY KIND, either express or implied. See the License for the specific
 language governing permissions and limitations under the License.
+
+## Backend image conversion
+
+[ImageScript 3.20.4](https://github.com/imagescript/ImageScript) is used under
+its MIT license option. Its original runtime modules and Deno-adjusted type
+import specifiers are in `vendor/imagescript/`. The distribution's licenses and
+[third-party notices](vendor/imagescript/THIRD_PARTY_NOTICES.md) are retained
+there. It loads only for backend branding image conversion.

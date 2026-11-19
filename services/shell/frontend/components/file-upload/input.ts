@@ -10,6 +10,8 @@ export default function mount(
 ): CustomElementInstance {
   const input = document.createElement("input");
   input.type = "file";
+  input.style.border = "0";
+  input.style.boxShadow = "none";
   input.accept = String(context.config.accept ?? "");
   input.setAttribute("aria-label", context.control?.label ?? t("input.file"));
   input.style.width = "100%";

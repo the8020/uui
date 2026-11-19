@@ -111,6 +111,7 @@ interface PresentationLayer {
 interface BootData {
   localization?: import("/p/the8020/i18n/messages.ts").Bundle;
   serverTitle?: string;
+  systemLogo?: string | null;
   entryUrl?: string;
   preferencesUrl?: string;
   username?: string;
@@ -501,6 +502,7 @@ for (const button of [sessionStatus, brandStatus]) {
   });
 }
 installSessionControls(brandStatus, requiredElement<HTMLElement>("brand-slot"));
+applySystemLogo(boot.systemLogo);
 sessionAccount.addEventListener("click", () => {
   sessionMenu.open = false;
   dispatch(ACCOUNT_EVENT, "action");
@@ -982,6 +984,7 @@ async function refreshPreferences(): Promise<void> {
     applyAccent(document.documentElement, accentColor);
     if (typeof preferences.branding?.title === "string") {
       boot.serverTitle = preferences.branding.title;
+      applySystemLogo(preferences.branding.logo);
       synchronizeWindowTitle();
       const favicon = document.querySelector<HTMLLinkElement>(
         "#system-favicon",
@@ -1001,6 +1004,19 @@ async function refreshPreferences(): Promise<void> {
       );
     }
   }
+}
+
+function applySystemLogo(url: string | null | undefined): void {
+  const logo = requiredElement<HTMLImageElement>("system-logo");
+  const wordmark = requiredElement<HTMLElement>("system-wordmark");
+  logo.hidden = !url;
+  wordmark.hidden = Boolean(url);
+  if (url) {
+    if (logo.getAttribute("src") !== url) logo.src = url;
+  } else {
+    logo.removeAttribute("src");
+  }
+  brandStatus.setAttribute("aria-label", boot.serverTitle ?? "80|20");
 }
 
 function applyTheme(theme: Theme): void {

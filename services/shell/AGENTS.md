@@ -29,10 +29,12 @@ Parent DOX: [uui/services DOX](../AGENTS.md).
   branding metadata on `/preferences`. The frontend reapplies it on presentation
   changes.
 - `branding.ts` shares escaped page/Open Graph/Twitter metadata and fixed
-  `/branding/favicon.png` and `/branding/social.jpg` responses with public
-  login. Custom bytes come from UUI's database; defaults are frontend files.
-  Responses use fixed MIME types, `nosniff`, revalidation, ETags, and bodyless
-  HEAD/304.
+  `/branding/logo.png`, `/branding/favicon.png` and `/branding/social.jpg`
+  responses with public login. Custom bytes come from UUI's database; defaults
+  are frontend files. An unset logo returns 404; shell HTML and boot metadata
+  use the wordmark. Logo presence is queried without loading its binary value on
+  each preference refresh. Responses use fixed MIME types, `nosniff`,
+  revalidation, ETags, and bodyless HEAD/304.
 - `build.sh` builds System customization separately; its previews use temporary
   browser blob URLs authorized by the shell image CSP.
 - The same build emits `public/status-brand.js` and copies its scoped CSS from

@@ -18,7 +18,8 @@
       "services/shell/frontend/components/list/vendor",
       "services/shell/frontend/components/code-editor/vendor",
       "public/home-navigator.js",
-      "public/status-brand.js"
+      "public/status-brand.js",
+      "vendor/imagescript"
     ]
   },
   "lint": {
@@ -28,7 +29,8 @@
       "services/shell/frontend/components/list/vendor",
       "services/shell/frontend/components/code-editor/vendor",
       "public/home-navigator.js",
-      "public/status-brand.js"
+      "public/status-brand.js",
+      "vendor/imagescript"
     ]
   },
   "imports": {

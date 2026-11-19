@@ -97,7 +97,7 @@ test("UUI preferences inherit per field, save only personal overrides, and clean
     assertEquals(response.headers.get("cache-control"), "no-store");
     assertEquals(await response.json(), {
       accentColor: "#ff8800",
-      branding: { title: "80|20", revision: "default" },
+      branding: { title: "80|20", revision: "default", logo: null },
     });
     await saveUserPreferences({ accentColor: "#AB1234" });
     assertEquals(await fetchUserPreferences(), { accentColor: "#ab1234" });

@@ -418,6 +418,9 @@
     "shortcuts.duplicate": "Genvejen er allerede i brug.",
     "shortcuts.not_found": "Intet program matcher denne genvej.",
     "shortcuts.ambiguous": "Flere programmer bruger denne genvej. Vælg en personlig tilknytning i Tilpasning.",
-    "shortcuts.customize": "Tilpas"
+    "shortcuts.customize": "Tilpas",
+    "program.system_logo": "Systemlogo",
+    "program.use_default_logo": "Brug standardlogo",
+    "program.logo_help": "1:1–3:1 · PNG ≤384×128 px · ≤10 MiB. Andre forhold beskæres fra midten langs den længste side."
   }
 }

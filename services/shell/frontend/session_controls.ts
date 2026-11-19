@@ -38,6 +38,9 @@ export function installSessionControls(
   }, true);
   controls.showPopover();
   position();
-  new ResizeObserver(position).observe(controls);
+  const resize = new ResizeObserver(position);
+  resize.observe(controls);
+  if (slot.parentElement) resize.observe(slot.parentElement);
+  controls.addEventListener("load", position, true);
   addEventListener("resize", position);
 }

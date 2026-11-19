@@ -9,10 +9,14 @@ export const PUBLIC_BRANDING_PATH = "/the8020/uui/login/branding/";
 export async function fetchBranding() {
   const { default: Branding } = await import("./tables/branding.ts");
   const row = await Branding.select([Branding.title, Branding.revision])
+    .select((eb) => eb(Branding.logo, "is not", null).as("hasLogo"))
     .where(Branding.id, "=", 1).executeTakeFirst();
   return {
     title: row?.title ?? DEFAULT_SERVER_TITLE,
     revision: row?.revision ?? "default",
+    logo: row?.hasLogo
+      ? `${PUBLIC_BRANDING_PATH}logo.png?v=${row.revision}`
+      : null,
   };
 }
 
@@ -38,7 +42,7 @@ export function validateBrandingImage(
     );
   }
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  if (kind === "favicon") {
+  if (expected.type === "image/png") {
     if (
       bytes.length >= 45 && view.getUint32(0) === 0x89504e47 &&
       view.getUint32(4) === 0x0d0a1a0a && view.getUint32(8) === 13 &&
@@ -65,7 +69,13 @@ export function validateBrandingImage(
       offset += length + 2;
     }
   }
-  if (width !== expected.width || height !== expected.height) {
+  const validSize = kind === "logo"
+    ? width > 0 && height > 0 && width <= expected.width &&
+      height <= expected.height &&
+      width / height >= brandingImage.logo.minimumRatio &&
+      width / height <= brandingImage.logo.maximumRatio
+    : width === expected.width && height === expected.height;
+  if (!validSize) {
     throw new Error(
       formatMessage(
         messageSymbol("errors.select_a_valid_image", {
@@ -80,13 +90,14 @@ export function validateBrandingImage(
 
 export async function saveBranding(input: {
   title: string;
+  logo?: Uint8Array | null;
   favicon?: Uint8Array | null;
   social?: Uint8Array | null;
 }): Promise<void> {
   const { requirePermission } = await import("/p/the8020/auth/mod.ts");
   await requirePermission(BRANDING_PERMISSION, "");
   const title = serverTitle.parse(input.title);
-  for (const kind of ["favicon", "social"] as const) {
+  for (const kind of ["logo", "favicon", "social"] as const) {
     if (input[kind] != null) validateBrandingImage(kind, input[kind]);
   }
   const { db } = await import("/p/the8020/db/mod.ts");
@@ -94,11 +105,13 @@ export async function saveBranding(input: {
   const changes = {
     title,
     revision: crypto.randomUUID(),
+    ...(input.logo !== undefined ? { logo: input.logo } : {}),
     ...(input.favicon !== undefined ? { favicon: input.favicon } : {}),
     ...(input.social !== undefined ? { social: input.social } : {}),
   };
   await db.insertInto(Branding.table).values({
     id: 1,
+    logo: null,
     favicon: null,
     social: null,
     ...changes,

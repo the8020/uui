@@ -1,4 +1,3 @@
-import { t } from "/p/the8020/uui/services/shell/frontend/i18n.ts";
 import type { CustomElementContext } from "../../custom_element.ts";
 import mountFile from "../../services/shell/frontend/components/file-upload/input.ts";
 import {
@@ -6,71 +5,38 @@ import {
   brandingImage,
 } from "../../src/branding_images.ts";
 
-export async function convertImage(
-  file: Blob,
-  kind: BrandingImage,
-): Promise<Blob> {
-  if (file.size > 10 * 1024 * 1024) {
-    throw new Error(t("frontend.choose_an_image_no_larger_than_10"));
-  }
-  let bitmap: ImageBitmap;
-  try {
-    bitmap = await createImageBitmap(file);
-  } catch {
-    throw new Error(t("frontend.choose_an_image_your_browser_can_open"));
-  }
-  try {
-    if (bitmap.width * bitmap.height > 40_000_000) {
-      throw new Error(t("frontend.choose_an_image_with_at_most_40"));
-    }
-    const { width, height, type, maximumBytes } = brandingImage[kind];
-    const canvas = new OffscreenCanvas(width, height);
-    const context = canvas.getContext("2d")!;
-    if (kind === "social") {
-      context.fillStyle = "#10121d";
-      context.fillRect(0, 0, width, height);
-    }
-    const scale = Math.max(width / bitmap.width, height / bitmap.height);
-    const cropWidth = width / scale, cropHeight = height / scale;
-    context.imageSmoothingQuality = "high";
-    context.drawImage(
-      bitmap,
-      (bitmap.width - cropWidth) / 2,
-      (bitmap.height - cropHeight) / 2,
-      cropWidth,
-      cropHeight,
-      0,
-      0,
-      width,
-      height,
-    );
-    const result = await canvas.convertToBlob({ type, quality: 0.85 });
-    if (result.size > maximumBytes) {
-      throw new Error(t("frontend.converted_image_is_too_large_choose_a"));
-    }
-    return result;
-  } finally {
-    bitmap.close();
-  }
-}
-
 export default function mount(context: CustomElementContext) {
   const kind = context.config.kind as BrandingImage;
   const preview = document.createElement("img");
-  preview.alt = kind === "favicon"
-    ? t("frontend.favicon_preview")
-    : t("program.social_preview");
-  preview.style.cssText = `display:block;max-width:100%;height:${
-    kind === "favicon" ? "48px" : "150px"
-  };object-fit:contain;object-position:left;margin-bottom:8px`;
+  const chooser = document.createElement("button");
+  chooser.type = "button";
+  chooser.className = "branding-preview";
+  chooser.setAttribute("aria-label", context.control?.label ?? kind);
+  const wordmark = document.createElement("span");
+  wordmark.textContent = "80|20";
+  wordmark.className = "brand";
+  chooser.append(preview, wordmark);
+  context.host.classList.add("branding-image-picker");
+  preview.alt = "";
+  preview.style.maxHeight = kind === "social" ? "150px" : "48px";
   let objectURL: string | undefined;
   const show = (blob: Blob) => {
     if (objectURL) URL.revokeObjectURL(objectURL);
+    preview.hidden = false;
+    wordmark.hidden = true;
     preview.src = objectURL = URL.createObjectURL(blob);
   };
-  preview.src = context.config.useDefault
-    ? `/the8020/uui/shell/default-${brandingImage[kind].file}`
-    : String(context.config.preview);
+  const refresh = () => {
+    const source = kind === "logo"
+      ? context.config.useDefault ? null : context.config.preview
+      : context.config.useDefault
+      ? `/the8020/uui/shell/default-${brandingImage[kind].file}`
+      : context.config.preview;
+    preview.hidden = !source;
+    wordmark.hidden = Boolean(source);
+    if (source) preview.src = String(source);
+  };
+  refresh();
   const channel = context.channel;
   const subscription = channel.subscribe("preview", async (_id, source) => {
     if (!(source instanceof ReadableStream)) return;
@@ -80,27 +46,21 @@ export default function mount(context: CustomElementContext) {
     }
   });
   void channel.send("preview", null);
-  const input = mountFile(context, async (file) => {
-    try {
-      const result = await convertImage(file, kind);
-      context.signal.throwIfAborted();
-      show(result);
-      return result;
-    } catch (error) {
-      if (!context.signal.aborted) {
-        channel.send(
-          "image-error",
-          error instanceof Error
-            ? error.message
-            : t("frontend.image_conversion_failed"),
-        );
-      }
-      throw error;
-    }
+  const input = mountFile(context, (file) => {
+    show(file);
+    return Promise.resolve(file);
   });
-  context.host.prepend(preview);
+  context.host.prepend(chooser);
+  chooser.addEventListener("click", () => {
+    context.host.querySelector<HTMLInputElement>('input[type="file"]')?.click();
+  });
   return {
     ...input,
+    update(config: Record<string, unknown>) {
+      input.update?.(config);
+      refresh();
+      void context.channel.send("preview", null);
+    },
     dispose() {
       subscription.unsubscribe();
       if (objectURL) URL.revokeObjectURL(objectURL);

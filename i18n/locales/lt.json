@@ -418,6 +418,9 @@
     "shortcuts.duplicate": "Šis kodas jau naudojamas.",
     "shortcuts.not_found": "Šio kodo neatitinka jokia programa.",
     "shortcuts.ambiguous": "Šį kodą naudoja kelios programos. Tinkinimo lange nustatykite asmeninį priskyrimą.",
-    "shortcuts.customize": "Tinkinti"
+    "shortcuts.customize": "Tinkinti",
+    "program.system_logo": "Sistemos logotipas",
+    "program.use_default_logo": "Naudoti numatytąjį logotipą",
+    "program.logo_help": "1:1–3:1 · PNG ≤384×128 px · ≤10 MiB. Kiti santykiai apkerpami nuo centro išilgai ilgesnės kraštinės."
   }
 }

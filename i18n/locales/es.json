@@ -418,6 +418,9 @@
     "shortcuts.duplicate": "El atajo ya está en uso.",
     "shortcuts.not_found": "Ningún programa coincide con este atajo.",
     "shortcuts.ambiguous": "Varios programas usan este atajo. Defina una asignación personal en Personalización.",
-    "shortcuts.customize": "Personalizar"
+    "shortcuts.customize": "Personalizar",
+    "program.system_logo": "Logotipo del sistema",
+    "program.use_default_logo": "Usar logotipo predeterminado",
+    "program.logo_help": "1:1–3:1 · PNG ≤384×128 px · ≤10 MiB. Las demás proporciones se recortan desde el centro por el lado más largo."
   }
 }

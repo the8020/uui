@@ -90,7 +90,7 @@ export default async function fixture() {
       };
       const ready = () =>
         wait(
-          `document.querySelector('.screen-title')?.textContent === 'System customization' && document.querySelectorAll('input[type=file]').length === 2 && !document.querySelector('#screen-back').disabled`,
+          `document.querySelector('.screen-title')?.textContent === 'System customization' && document.querySelectorAll('input[type=file]').length === 3 && !document.querySelector('#screen-back').disabled`,
         );
       const click = async (id: string) => {
         await page.evaluate(
@@ -105,7 +105,7 @@ export default async function fixture() {
           }; input.dispatchEvent(new Event('input', { bubbles: true })); })()`,
         );
       };
-      const upload = async (index: number, invalid = false) => {
+      const upload = async (kind: string, invalid = false) => {
         await page.evaluate(`(async () => {
           const canvas = new OffscreenCanvas(300, 100);
           const context = canvas.getContext('2d');
@@ -118,21 +118,22 @@ export default async function fixture() {
             : "await canvas.convertToBlob({type:'image/png'})"
         };
           const files = new DataTransfer(); files.items.add(new File([blob], 'landscape.png', {type:'image/png'}));
-          const input = document.querySelectorAll('input[type=file]')[${index}];
+          const input = document.querySelector('[data-element-id=${kind}] input[type=file]');
           input.files = files.files; input.dispatchEvent(new Event('change', {bubbles:true}));
         })()`);
         await wait(
-          `!document.querySelectorAll('input[type=file]')[${index}]?.disabled`,
+          `!document.querySelector('[data-element-id=${kind}] input[type=file]')?.disabled`,
         );
       };
       await ready();
       await wait(`document.title === '80|20 System customization'`);
       await wait(
-        `Array.from(document.querySelectorAll('img')).every(img => img.complete && img.naturalWidth > 0)`,
+        `Array.from(document.querySelectorAll('img')).filter(img => !img.hidden).every(img => img.complete && img.naturalWidth > 0)`,
       );
       await title("My server");
-      await upload(0);
-      await upload(1);
+      await upload("favicon");
+      await upload("logo");
+      await upload("social");
       await click("save");
       await wait(`document.title === 'My server System customization'`);
       assertEquals((await fetchBranding()).title, "My server");
@@ -162,9 +163,69 @@ export default async function fixture() {
         true,
       );
       assertEquals(loginHTML.includes('property="og:image"'), true);
-      await upload(0, true);
       await wait(
-        `document.body.textContent.includes('Choose an image your browser can open.')`,
+        `!document.querySelector('#system-logo').hidden && document.querySelector('#system-logo').naturalWidth > 0`,
+      );
+      assertEquals(
+        await page.evaluate(`(() => {
+        const logo = document.querySelector('#system-logo');
+        return logo.getBoundingClientRect().height === 32 && getComputedStyle(logo).borderRadius === '4px' && document.querySelector('#system-wordmark').hidden;
+      })()`),
+        true,
+      );
+      assertEquals(
+        await page.evaluate(
+          `Array.from(document.querySelectorAll('.branding-image-picker')).every(host => {
+        const input = host.querySelector('input');
+        const preview = host.querySelector('.branding-preview');
+        return getComputedStyle(input).borderBottomWidth === '0px' && getComputedStyle(host).borderBottomWidth === '1px' && preview.getBoundingClientRect().bottom <= input.getBoundingClientRect().top && input.getBoundingClientRect().bottom <= host.getBoundingClientRect().bottom;
+      })`,
+        ),
+        true,
+      );
+      const capture = async (name: string) => {
+        await wait(`!document.querySelector('[data-interaction-pending]')`);
+        const shot = await page.command("Page.captureScreenshot", {
+          format: "png",
+        }) as { data: string };
+        await Deno.writeFile(
+          `/tmp/uui-${name}.png`,
+          Uint8Array.fromBase64(shot.data),
+        );
+      };
+      await wait(
+        `document.querySelector('#brand-status').getBoundingClientRect().right < document.querySelector('.session-navigation').getBoundingClientRect().left`,
+      );
+      await capture("branding-desktop");
+      await page.evaluate(`document.querySelector('#brand-status').click()`);
+      await wait(`!!document.querySelector('dialog[open]')`);
+      await page.evaluate(
+        `document.querySelector('dialog[open] .uui-dialog-close').click()`,
+      );
+      await ready();
+      await page.command("Page.reload");
+      await ready();
+      await wait(
+        `!document.querySelector('#system-logo').hidden && document.querySelector('#system-logo').naturalWidth > 0`,
+      );
+      await page.command("Emulation.setDeviceMetricsOverride", {
+        width: 390,
+        height: 844,
+        deviceScaleFactor: 1,
+        mobile: true,
+      });
+      await wait(`document.documentElement.scrollWidth <= innerWidth`);
+      await capture("branding-mobile");
+      await page.command("Emulation.setDeviceMetricsOverride", {
+        width: 1280,
+        height: 900,
+        deviceScaleFactor: 1,
+        mobile: false,
+      });
+      await upload("favicon", true);
+      await click("save");
+      await wait(
+        `document.body.textContent.includes('Image conversion failed.')`,
       );
       await title("Cancelled");
       await page.evaluate(`document.querySelector('#screen-back').click()`);
@@ -175,13 +236,16 @@ export default async function fixture() {
       await click("open");
       await ready();
       // Returning from one default action retains an upload for the other image.
-      await upload(0);
+      await upload("favicon");
       await click("default-social");
       await ready();
       await click("save");
       await ready();
       assertEquals(await fetchBrandingImage("social"), null);
       assertEquals(await fetchBrandingImage("favicon") !== null, true);
+      await click("default-logo");
+      await ready();
+      assertEquals(await fetchBrandingImage("logo") !== null, true);
       await click("default-title");
       await ready();
       await click("default-favicon");
@@ -190,6 +254,10 @@ export default async function fixture() {
       await ready();
       await wait(`document.title === '80|20 System customization'`);
       assertEquals(await fetchBrandingImage("favicon"), null);
+      assertEquals(await fetchBrandingImage("logo"), null);
+      await wait(
+        `document.querySelector('#system-logo').hidden && !document.querySelector('#system-wordmark').hidden`,
+      );
       await page.command("Emulation.setDeviceMetricsOverride", {
         width: 390,
         height: 844,

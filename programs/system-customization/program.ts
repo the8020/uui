@@ -25,10 +25,17 @@ import {
 import {
   type BrandingImage,
   brandingImage,
+  MAX_IMAGE_UPLOAD,
 } from "../../src/branding_images.ts";
 
 const schema = z.object({
-  title: serverTitle,
+  title: field(serverTitle, { length: "full" }),
+  logo: field(z.string(), {
+    label: msg("program.system_logo"),
+    description: msg("program.logo_help"),
+    fieldHelp: false,
+    rowSpan: 2,
+  }),
   favicon: field(z.string(), {
     label: msg("program.favicon"),
     description: msg("program.square_png_cropped_and_resized_to_64"),
@@ -52,18 +59,18 @@ export default async function systemCustomization(): Promise<void> {
     return;
   }
   let saved = await fetchBranding();
-  const model = new Model({ title: saved.title, favicon: "", social: "" });
+  const model = new Model({
+    title: saved.title,
+    logo: "",
+    favicon: "",
+    social: "",
+  });
   const draft: Partial<Record<BrandingImage, Uint8Array | null>> = {};
   while (true) {
-    const controls = (["favicon", "social"] as const).map((kind) => {
+    const controls = (["favicon", "logo", "social"] as const).map((kind) => {
       const upload = fileUpload({
-        maximumBytes: brandingImage[kind].maximumBytes,
+        maximumBytes: MAX_IMAGE_UPLOAD,
         accept: "image/*",
-      });
-      upload.custom.channel!.subscribe("image-error", (_id, message) => {
-        if (typeof message === "string") {
-          sendMessage(message.slice(0, 200), "error");
-        }
       });
       upload.custom.channel!.subscribe("preview", async () => {
         const bytes = draft[kind];
@@ -83,12 +90,15 @@ export default async function systemCustomization(): Promise<void> {
           custom: {
             ...upload.custom,
             module: "/the8020/uui/shell/system-customization.js",
+            styles: ["/the8020/uui/shell/system-customization.css"],
             config: {
               kind,
               accept: "image/*",
-              preview: `${PUBLIC_BRANDING_PATH}${
-                brandingImage[kind].file
-              }?v=${saved.revision}`,
+              preview: kind === "logo"
+                ? saved.logo
+                : `${PUBLIC_BRANDING_PATH}${
+                  brandingImage[kind].file
+                }?v=${saved.revision}`,
               useDefault: draft[kind] === null,
             },
           },
@@ -113,6 +123,9 @@ export default async function systemCustomization(): Promise<void> {
       }, {
         id: "default-social",
         label: msg("program.use_default_preview"),
+      }, {
+        id: "default-logo",
+        label: msg("program.use_default_logo"),
       }, { id: "default-title", label: msg("program.use_default_title") }],
       layout: {
         schema: 1,
@@ -123,8 +136,8 @@ export default async function systemCustomization(): Promise<void> {
             {
               type: "field-group",
               title: msg("program.browser"),
-              controls: ["title", "favicon"],
-              actions: ["default-title", "default-favicon"],
+              controls: ["title", "logo", "favicon"],
+              actions: ["default-title", "default-logo", "default-favicon"],
             },
             {
               type: "field-group",
@@ -140,7 +153,10 @@ export default async function systemCustomization(): Promise<void> {
     try {
       for (const { kind, upload } of controls) {
         if (model.data[kind]) {
-          const bytes = upload.take();
+          const { convertBrandingImage } = await import(
+            "../../src/branding_conversion.ts"
+          );
+          const bytes = await convertBrandingImage(kind, upload.take());
           validateBrandingImage(kind, bytes);
           draft[kind] = bytes;
         }
@@ -148,11 +164,13 @@ export default async function systemCustomization(): Promise<void> {
       if (event.action === "default-title") {
         model.data.title = DEFAULT_SERVER_TITLE;
       }
+      if (event.action === "default-logo") draft.logo = null;
       if (event.action === "default-favicon") draft.favicon = null;
       if (event.action === "default-social") draft.social = null;
       if (event.action === "save") {
         await saveBranding({ title: model.data.title, ...draft });
         saved = await fetchBranding();
+        delete draft.logo;
         delete draft.favicon;
         delete draft.social;
         sendMessage(
@@ -163,6 +181,7 @@ export default async function systemCustomization(): Promise<void> {
     } catch (error) {
       sendMessage(describeError(error), "error");
     }
+    model.data.logo = "";
     model.data.favicon = "";
     model.data.social = "";
   }

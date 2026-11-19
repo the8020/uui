@@ -136,6 +136,13 @@ async function shellResponse(meta: RequestMetadata): Promise<Response> {
     "<title>80|20</title>",
     brandingHead(branding, meta.originalUrl),
   );
+  if (branding.logo) {
+    source = source.replace(
+      'id="system-logo" alt="" hidden',
+      `id="system-logo" alt="" src="${escapeHTML(branding.logo)}"`,
+    )
+      .replace('id="system-wordmark"', 'id="system-wordmark" hidden');
+  }
   const versions = await Promise.all([
     assets.version(generated, "main.js"),
     assets.version(frontend, "styles.css"),
@@ -152,6 +159,7 @@ async function shellResponse(meta: RequestMetadata): Promise<Response> {
   const boot = {
     localization: await currentLocalization()!.bundle("the8020/uui"),
     serverTitle: branding.title,
+    systemLogo: branding.logo,
     username: meta.user.username,
     entryUrl: uiConfig.postLoginUrl,
     preferencesUrl: `${meta.canonicalBasePath}/preferences`,

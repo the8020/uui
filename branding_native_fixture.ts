@@ -40,7 +40,7 @@ export default async function verify(context: NativeBrowserFixtureContext) {
   await context.setValue(page, '[data-bind="title"]', "Native branding");
   await waitForPage(
     page,
-    `document.querySelectorAll('input[type=file]').length === 2`,
+    `document.querySelectorAll('input[type=file]').length === 3`,
     "image upload controls",
   );
   await page.evaluate(`(async () => {
@@ -63,12 +63,15 @@ export default async function verify(context: NativeBrowserFixtureContext) {
     `document.title === 'Native branding System customization'`,
     "custom server title",
   );
+  const customLogo = await publicAsset(baseURL, "logo.png");
+  assertEquals(customLogo.slice(0, 4), new Uint8Array([137, 80, 78, 71]));
   const customIcon = await publicAsset(baseURL, "favicon.png");
   const customSocial = await publicAsset(baseURL, "social.jpg");
   assertNotEquals(customIcon, defaultIcon);
   assertNotEquals(customSocial, defaultSocial);
   assertEquals(customIcon.slice(0, 4), new Uint8Array([137, 80, 78, 71]));
   assertEquals(customSocial.slice(0, 2), new Uint8Array([255, 216]));
+  assertEquals(await publicAsset(otherNodeURL, "logo.png"), customLogo);
   assertEquals(await publicAsset(otherNodeURL, "favicon.png"), customIcon);
   assertEquals(await publicAsset(otherNodeURL, "social.jpg"), customSocial);
   const login = await fetch(`${otherNodeURL}/the8020/uui/login/`);
@@ -85,6 +88,7 @@ export default async function verify(context: NativeBrowserFixtureContext) {
   for (
     const label of [
       "Use default title",
+      "Use default logo",
       "Use default favicon",
       "Use default preview",
     ]
@@ -97,6 +101,10 @@ export default async function verify(context: NativeBrowserFixtureContext) {
     page,
     `document.title === '80|20 System customization'`,
     "default title restored",
+  );
+  assertEquals(
+    (await fetch(`${baseURL}/the8020/uui/login/branding/logo.png`)).status,
+    404,
   );
   assertEquals(await publicAsset(baseURL, "favicon.png"), defaultIcon);
   assertEquals(await publicAsset(baseURL, "social.jpg"), defaultSocial);
