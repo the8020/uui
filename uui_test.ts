@@ -4753,7 +4753,7 @@ Deno.test("separate concurrent Workers own independent current and next screen c
       const timeout = setTimeout(
         () => reject(new Error("Worker channel verification timed out")),
         // Deno also type-checks the cold module graph in each Worker.
-        30000,
+        60000,
       );
       worker.onmessage = (event) => {
         clearTimeout(timeout);

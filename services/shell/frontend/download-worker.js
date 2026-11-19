@@ -46,7 +46,10 @@ self.addEventListener("message", (event) => {
     typeof data.contentType !== "string" || data.contentType.length > 200 ||
     /[\r\n]/.test(data.contentType)
   ) {
-    event.ports[0].postMessage({ error: "Invalid or unavailable download" });
+    event.ports[0].postMessage({
+      error: "Invalid or unavailable download",
+      textKey: "frontend.errors.invalid_or_unavailable_download",
+    });
     if (data.stream instanceof ReadableStream) {
       void data.stream.cancel().catch(() => {});
     }

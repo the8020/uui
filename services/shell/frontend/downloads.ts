@@ -139,6 +139,7 @@ export async function openBrowserDownload(
           {
             url?: string;
             error?: string;
+            textKey?: string;
             complete?: boolean;
             cancelled?: boolean;
           }
@@ -156,12 +157,16 @@ export async function openBrowserDownload(
           return;
         }
         if (event.data.error !== undefined) {
-          finish(new Error(event.data.error));
+          finish(
+            new Error(
+              event.data.textKey ? t(event.data.textKey) : event.data.error,
+            ),
+          );
           return;
         }
         const expected = new URL(`./__downloads/${token}`, workerURL).href;
         if (event.data.url !== expected) {
-          finish(new Error("Invalid download destination"));
+          finish(new Error(t("frontend.errors.invalid_download_destination")));
           return;
         }
         // Navigation is intentional: an anchor's download attribute can bypass
