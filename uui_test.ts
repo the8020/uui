@@ -548,6 +548,16 @@ Deno.test("custom screen elements stay bounded and declarative", () => {
       validateCustomElements([{
         id: "console",
         module: "/component.js",
+        config: { texts: { title: "x".repeat(32_768) } },
+      }]),
+    TypeError,
+    "custom element console configuration is too large",
+  );
+  assertThrows(
+    () =>
+      validateCustomElements([{
+        id: "console",
+        module: "/component.js",
         config: {},
         source: "javascript:alert(1)",
       } as never]),
@@ -574,12 +584,16 @@ Deno.test("custom screen elements stay bounded and declarative", () => {
 });
 
 Deno.test({
-  name: "callScreen publishes a custom element descriptor with its layout",
+  name:
+    "callScreen publishes a custom element with a wide translation dictionary",
   sanitizeOps: false,
   sanitizeResources: false,
   fn: async () => {
     const test = new TestChannel();
     const unbind = bindSession(test);
+    const texts = Object.fromEntries(
+      Array.from({ length: 256 }, (_, index) => [`label.${index}`, "Label"]),
+    );
     try {
       const pending = callScreen({
         id: "custom-screen",
@@ -589,7 +603,7 @@ Deno.test({
           id: "console",
           module: "/component.js",
           preserve: true,
-          config: { enabled: true },
+          config: { texts },
         }],
         layout: {
           schema: 1,
@@ -605,6 +619,7 @@ Deno.test({
       const sent = presentation(test.sent[0]);
       const screen = sent.presentation.surfaces[0]!.screen;
       assertEquals(screen.customElements.length, 1);
+      assertEquals(screen.customElements[0]!.config, { texts });
       assertEquals(
         (screen.layout as { root: { customElement: string } }).root
           .customElement,

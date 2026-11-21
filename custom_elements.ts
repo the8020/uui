@@ -198,11 +198,9 @@ export function validateJSON(
         "custom element configuration must use plain objects",
       );
     }
-    const entries = Object.entries(value);
-    if (entries.length > 128) {
-      throw new TypeError("custom element configuration object is too large");
+    for (const item of Object.values(value)) {
+      validateJSON(item, depth + 1, seen);
     }
-    for (const [, item] of entries) validateJSON(item, depth + 1, seen);
   }
   seen.delete(value);
 }

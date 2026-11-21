@@ -1178,10 +1178,13 @@ below.
   implementation in the shell bundle or a framework initializer registry.
 - Descriptors contain same-origin `module` URLs, optional `styles`, bounded JSON
   `config`, optional `preserve`, and optional component-owned `fallback`
-  capabilities. Modules default-export the browser-only `custom_element.ts`
-  mount contract. Styles finish loading before mount; asynchronous removal
-  aborts the signal and disposes late instances. Preserved elements receive
-  updates and presentation activity without DOM replacement.
+  capabilities. The serialized configuration has a 32,768-character budget. JSON
+  validation bounds depth and array length and accepts plain objects within the
+  serialized budget regardless of key count. Modules default-export the
+  browser-only `custom_element.ts` mount contract. Styles finish loading before
+  mount; asynchronous removal aborts the signal and disposes late instances.
+  Preserved elements receive updates and presentation activity without DOM
+  replacement.
 - The prebuilt `codeEditor()` descriptor lives in the shell's standalone code
   editor folder and uses this same host as a model-bound field. Its CodeMirror
   dependencies and language chunks are vendored and loaded on demand. Local
