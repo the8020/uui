@@ -1505,7 +1505,7 @@ function renderLayer(layer: PresentationLayer): void {
     `${layer.surfaceId}-${layer.viewState.instanceId}`,
     {
       elements: (elements) => renderElements(elements, layer.model, callbacks),
-      request: (updates) => requestLists(layer, updates),
+      request: (updates, onFailure) => requestLists(layer, updates, onFailure),
       select: (selection, activate) =>
         selectListRow(layer, selection, activate),
       layout: (id, layout) =>
@@ -1640,6 +1640,7 @@ function synchronizeWindowTitle(): void {
 function requestLists(
   layer: PresentationLayer,
   updates: ListRequest[],
+  onFailure?: () => void,
 ): boolean {
   if (!layerIsActive(layer)) return false;
   if (updates.length === 0) return false;
@@ -1663,6 +1664,7 @@ function requestLists(
   void listRequest(layer, "update", request, updates[0]!.id).then(() =>
     layer.dirty.acknowledge(dirty)
   ).catch((error) => {
+    onFailure?.();
     if (error instanceof DOMException && error.name === "AbortError") return;
     console.error(
       error instanceof Error

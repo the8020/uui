@@ -853,6 +853,43 @@ export async function verifyListsFlow(
     ),
     "compact heading uses short variant",
   );
+  await click(page, `${primary} th:nth-child(3) button`);
+  await page.evaluate(`(() => {
+    const list = document.querySelector('${primary}');
+    const wideHeading = () => list.querySelector('th:nth-child(2)');
+    const width = wideHeading().getBoundingClientRect().width;
+    window.filterHeadingFlashed = false;
+    window.filterHeadingObserver = new MutationObserver(() => {
+      const short = list.querySelector('th:nth-child(3) .data-list-short-heading');
+      if (short?.hidden || wideHeading()?.getBoundingClientRect().width !== width) {
+        window.filterHeadingFlashed = true;
+      }
+    });
+    window.filterHeadingObserver.observe(list, {
+      subtree: true, childList: true, attributes: true, attributeFilter: ['hidden'],
+    });
+  })()`);
+  await input(page, `${primary} .data-list-popover input`, ">= 11");
+  await enter(page);
+  await until(
+    () => state().query.filters.amount === ">= 11",
+    "adjusted filter",
+  );
+  await idle();
+  assert(
+    await page.evaluate<boolean>(
+      `window.filterHeadingObserver.disconnect(); !window.filterHeadingFlashed`,
+    ),
+    "heading widths and the compact label stay stable through a filter redraw",
+  );
+  await click(page, `${primary} th:nth-child(3) button`);
+  await input(page, `${primary} .data-list-popover input`, ">= 10");
+  await enter(page);
+  await until(
+    () => state().query.filters.amount === ">= 10",
+    "restored filter",
+  );
+  await idle();
   await page.evaluate(
     `document.querySelector('${primary} .data-list-scroll').scrollLeft = 120`,
   );

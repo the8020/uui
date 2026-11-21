@@ -62,11 +62,12 @@ Parent DOX: [shell frontend](../../AGENTS.md).
   columns, queries, copy, and exports. The header checkbox exposes all/none and
   an indeterminate state across the complete source. Selection-cell click or
   Space toggles its row; Shift ranges follow displayed order across pages.
-  Pointer drag previews a range and commits once on release; cancellation
-  restores the published state. Row-value clicks retain navigation. Checked rows
-  reuse the theme's `is-selected` styling and `aria-selected`. Toolbar actions
-  with `requiresSelection` disable when the checked count is zero, including
-  inside the responsive overflow menu.
+  Pointer drag previews a range and commits once on release. Keep the preview
+  until the server redraws. Cancellation or rejection restores the published
+  state. Row-value clicks retain navigation. Checked rows reuse the theme's
+  `is-selected` styling and `aria-selected`. Toolbar actions with
+  `requiresSelection` disable when the checked count is zero, including inside
+  the responsive overflow menu.
 - Selection footers remain visible on single/empty pages, display
   selected/source counts, and reserve their chrome during capacity measurement.
   Lists without selection keep the existing hidden-footer behavior.
@@ -163,6 +164,8 @@ Parent DOX: [shell frontend](../../AGENTS.md).
   of the same Model; saved list layouts do not store them. Columns without a
   dragged width share the remaining space by semantic length, and the table
   scrolls horizontally when fixed widths exceed the list.
+- Redraws keep measured widths for the same column layout and retain each
+  unchanged heading's full or short variant until the next measurement.
 - The List tools toggle is a 16px gear (`settings`) in a 28px-wide overlay at
   the visible inline-end edge of the column-header row. It stays outside the
   horizontal scroll container; headers scroll behind its opaque background. Only

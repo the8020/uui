@@ -28,7 +28,7 @@ const MIN_COLUMN_WIDTH = 48;
 
 export interface ListCallbacks extends ListToolCallbacks {
   elements(elements: ScreenElement[]): HTMLElement[];
-  request(updates: ListRequest[]): boolean;
+  request(updates: ListRequest[], onFailure?: () => void): boolean;
   /** `activate` chooses the row decisively (double-click or Enter). */
   select(selection: ListSelection, activate?: boolean): void;
 }
@@ -190,6 +190,7 @@ class ListController {
   ): HTMLElement {
     this.capture();
     this.#drag?.abort();
+    this.#drag = undefined;
     clearTimeout(this.#pendingSelect);
     // A single-value selection highlights its row instead of checkboxes.
     this.#highlight = snapshot.selection?.mode === "single"
@@ -198,11 +199,12 @@ class ListController {
     if (this.#highlight !== undefined) {
       snapshot = { ...snapshot, selection: undefined };
     }
+    const previous = this.#snapshot;
     if (
-      this.#snapshot &&
-      (JSON.stringify(this.#snapshot.state.query) !==
+      previous &&
+      (JSON.stringify(previous.state.query) !==
           JSON.stringify(snapshot.state.query) ||
-        this.#snapshot.totalSourceItems !== snapshot.totalSourceItems)
+        previous.totalSourceItems !== snapshot.totalSourceItems)
     ) this.#selectionAnchor = undefined;
     if (
       !this.#draftPending ||
@@ -234,6 +236,9 @@ class ListController {
     this.host.dataset.listId = snapshot.id;
     this.reserveRows(snapshot.state.pageSize);
     this.host.id = this.#prefix;
+    const previousHeadings = new Map(
+      this.#measures.map((item) => [item.column.key, item]),
+    );
     this.#measures = [];
     this.#toolbar?.dispose();
     const customToolbar = document.createElement("div");
@@ -325,17 +330,32 @@ class ListController {
     this.#scroll = document.createElement("div");
     this.#scroll.className = "data-list-scroll";
     this.#restoreScroll = true;
+    const previousTable = this.#table;
+    const previousColumns = previousTable?.querySelector("colgroup");
     this.#table = document.createElement("table");
     this.#table.className = "data-list";
-    const colgroup = document.createElement("colgroup");
-    for (
-      let index = 0;
-      index < snapshot.columns.length + (snapshot.selection ? 1 : 0);
-      index++
+    if (
+      previousColumns && previous &&
+      Boolean(previous.selection) === Boolean(snapshot.selection) &&
+      previous.columns.length === snapshot.columns.length &&
+      previous.columns.every((item, index) => {
+        const column = snapshot.columns[index]!;
+        return item.key === column.key && item.length === column.length;
+      })
     ) {
-      colgroup.append(document.createElement("col"));
+      this.#table.style.width = previousTable.style.width;
+      this.#table.append(previousColumns);
+    } else {
+      const colgroup = document.createElement("colgroup");
+      for (
+        let index = 0;
+        index < snapshot.columns.length + (snapshot.selection ? 1 : 0);
+        index++
+      ) {
+        colgroup.append(document.createElement("col"));
+      }
+      this.#table.append(colgroup);
     }
-    this.#table.append(colgroup);
     const head = this.#table.createTHead().insertRow();
     if (snapshot.selection) {
       const cell = document.createElement("th");
@@ -390,7 +410,11 @@ class ListController {
       );
       const short = document.createElement("span");
       short.className = "data-list-heading data-list-short-heading";
-      short.hidden = true;
+      const previousHeading = previousHeadings.get(column.key);
+      full.hidden = previousHeading?.column.heading === column.heading &&
+        previousHeading.column.shortHeading === column.shortHeading &&
+        previousHeading.full.hidden;
+      short.hidden = !full.hidden;
       renderIconText(short, column.shortHeading ?? column.heading);
       const measure = document.createElement("span");
       measure.className = "data-list-heading-measure";
@@ -856,15 +880,16 @@ class ListController {
     const commit = (
       selected: boolean,
       selectedRange: { from: number; to: number },
-    ) => {
-      if (
-        this.#callbacks.request([{
-          id: snapshot.id,
-          operation: "selection",
-          selected,
-          range: selectedRange,
-        }])
-      ) this.#selectionAnchor = selectedRange.from;
+      onFailure?: () => void,
+    ): boolean => {
+      const accepted = this.#callbacks.request([{
+        id: snapshot.id,
+        operation: "selection",
+        selected,
+        range: selectedRange,
+      }], onFailure);
+      if (accepted) this.#selectionAnchor = selectedRange.from;
+      return accepted;
     };
     cell.addEventListener("click", (event) => {
       event.preventDefault();
@@ -882,9 +907,10 @@ class ListController {
       checkbox.focus({ preventScroll: true });
       this.#drag?.abort();
       const drag = this.#drag = new AbortController();
+      const anchor = this.#selectionAnchor;
       const selected = getPath(item, snapshot.selection!.bind) !== true;
       const selectedRange = range(event.shiftKey);
-      const paint = () => {
+      const paint = (preview: boolean) => {
         for (const visible of this.#table.tBodies[0]!.rows) {
           const rowIndex = Number(visible.dataset.rowIndex);
           const input = visible.querySelector<HTMLInputElement>(
@@ -893,17 +919,17 @@ class ListController {
           if (!input) continue;
           const absolute = (snapshot.state.page - 1) * snapshot.state.pageSize +
             rowIndex;
-          input.checked =
-            absolute >= Math.min(selectedRange.from, selectedRange.to) &&
+          input.checked = preview &&
+              absolute >= Math.min(selectedRange.from, selectedRange.to) &&
               absolute <= Math.max(selectedRange.from, selectedRange.to)
-              ? selected
-              : getPath(snapshot.rows[rowIndex], snapshot.selection!.bind) ===
-                true;
+            ? selected
+            : getPath(snapshot.rows[rowIndex], snapshot.selection!.bind) ===
+              true;
           visible.classList.toggle("is-selected", input.checked);
           visible.setAttribute("aria-selected", String(input.checked));
         }
       };
-      paint();
+      paint(true);
       const options = { signal: drag.signal };
       globalThis.addEventListener("pointermove", (move) => {
         if (move.pointerId !== event.pointerId) return;
@@ -913,32 +939,25 @@ class ListController {
           selectedRange.to =
             (snapshot.state.page - 1) * snapshot.state.pageSize +
             Number(target.dataset.rowIndex);
-          paint();
+          paint(true);
         }
       }, options);
-      const cancel = () => {
+      const restore = () => {
+        if (this.#drag !== drag) return;
         drag.abort();
-        for (const visible of this.#table.tBodies[0]!.rows) {
-          const input = visible.querySelector<HTMLInputElement>(
-            ".data-list-selection input",
-          );
-          if (input) {
-            input.checked = getPath(
-              snapshot.rows[Number(visible.dataset.rowIndex)],
-              snapshot.selection!.bind,
-            ) === true;
-            visible.classList.toggle("is-selected", input.checked);
-            visible.setAttribute("aria-selected", String(input.checked));
-          }
-        }
+        this.#drag = undefined;
+        this.#selectionAnchor = anchor;
+        paint(false);
       };
       globalThis.addEventListener("pointerup", (up) => {
         if (up.pointerId !== event.pointerId) return;
-        cancel();
-        commit(selected, selectedRange);
+        drag.abort();
+        if (!commit(selected, selectedRange, restore)) restore();
       }, options);
-      globalThis.addEventListener("pointercancel", cancel, options);
-      globalThis.addEventListener("blur", cancel, options);
+      globalThis.addEventListener("pointercancel", (cancel) => {
+        if (cancel.pointerId === event.pointerId) restore();
+      }, options);
+      globalThis.addEventListener("blur", restore, options);
     });
   }
 
@@ -1151,6 +1170,7 @@ class ListController {
   }
   dispose(): void {
     this.#drag?.abort();
+    this.#drag = undefined;
     this.#toolbar?.dispose();
     this.tools.close(true);
     if (this.#timer !== undefined) clearTimeout(this.#timer);

@@ -253,6 +253,14 @@ export default function fixture() {
         `document.querySelector('tbody tr[data-row-index="1"]').scrollIntoView({block:'center'})`,
       );
       const from = await point(1), to = await point(5);
+      await page.evaluate(`(() => {
+        const row = document.querySelector('tbody tr[data-row-index="1"]');
+        window.selectionBeforeChanges = [];
+        const observer = new MutationObserver((changes) => {
+          window.selectionBeforeChanges.push(...changes.map(change => change.oldValue));
+        });
+        observer.observe(row, { attributes: true, attributeFilter: ['class'], attributeOldValue: true });
+      })()`);
       await page.command("Input.dispatchMouseEvent", {
         type: "mouseMoved",
         ...from,
@@ -276,6 +284,13 @@ export default function fixture() {
         clickCount: 1,
       });
       await selected(5);
+      assert(
+        await page.evaluate<boolean>(
+          `window.selectionBeforeChanges.length > 0 &&
+          window.selectionBeforeChanges.every(value => !value?.includes('is-selected'))`,
+        ),
+        "pointer release preserves the selected highlight until confirmation",
+      );
       await click("thead input");
       await click("thead input");
       await selected(0);
