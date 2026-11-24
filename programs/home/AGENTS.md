@@ -84,9 +84,11 @@ Parent DOX: [uui programs DOX](../AGENTS.md).
   customization modal above help. Folder tiles have no shortcuts.
 - Discovery includes hidden UUI programs for shortcuts while default tile rules
   stay unchanged. Personal mappings are read at lookup/launch. The navigator
-  asks for `shortcuts` on activation or update; Home answers with effective
-  codes by tile ID, so returning from Customization refreshes footers. Ambiguous
-  default codes are omitted from footers and report an error on launch.
+  asks for `shortcuts` on activation or active update. Covered redraws may
+  update the tree but defer shortcut and live tile requests until active again.
+  Home answers with effective codes by tile ID, so returning from Customization
+  refreshes footers. Ambiguous default codes are omitted from footers and report
+  an error on launch.
 
 # Work Guidance
 
@@ -99,6 +101,15 @@ Parent DOX: [uui programs DOX](../AGENTS.md).
   `limiter_test.ts` covers bounded concurrency, and `tree_test.ts` covers folder
   ordering.
 - Run `deno task test:programs-browser` for the shared interactive launch path.
+- `navigation_fixture.html` checks repeated three-level Back returns with the
+  real custom element renderer and published Home module, using an in-memory
+  channel peer. To run without a deployment, serve a temporary directory on
+  localhost containing the fixture as `index.html`, `public/home-navigator.js`
+  as `home.js`, and the output of
+  `deno bundle --platform browser --output
+  <directory>/renderer.js services/shell/frontend/custom_elements.ts`.
+  Open the page in Chromium; the output must read `PASS` (also works with
+  headless `--virtual-time-budget=8000 --dump-dom`).
 - `deno task test:shortcuts-browser` exercises Home input/geometry, F4 and
   nested value help, personal override save, duplicate rejection and mobile
   sizing through the real shell and SQLite. `shortcuts_test.ts` covers

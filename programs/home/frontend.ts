@@ -32,6 +32,7 @@ export default function mount(
   context: CustomElementContext,
 ): CustomElementInstance {
   const { host } = context;
+  let active = false;
   let root = context.config.tree as HomeNode;
   const saved = context.state.data as Partial<NavigatorState> | undefined;
   let selected = typeof saved?.selected === "string" ? saved.selected : root.id;
@@ -244,6 +245,7 @@ export default function mount(
 
   /** Ask for visible live tiles that are missing, stale, or due to refresh. */
   const loadVisible = (refreshing: boolean) => {
+    if (!active) return;
     const now = Date.now();
     const due = (lookup.get(selected)?.node.children ?? []).filter((node) => {
       if (node.tile === undefined || node.data === undefined) return false;
@@ -439,10 +441,14 @@ export default function mount(
       for (const value of values.values()) value.at = 0;
       pending.clear();
       render();
-      context.channel.send("shortcuts", {});
-    },
-    setActive(active) {
       if (active) context.channel.send("shortcuts", {});
+    },
+    setActive(next) {
+      active = next;
+      if (active) {
+        loadVisible(true);
+        context.channel.send("shortcuts", {});
+      }
     },
     captureState: persist,
     dispose() {

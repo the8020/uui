@@ -1,0 +1,118 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Retained Home navigation regression</title>
+<main></main>
+<output>Running</output>
+<script type="module">
+import { CustomElementRenderer } from "./renderer.js";
+
+const renderer = new CustomElementRenderer();
+const replies = new Map();
+const errors = [];
+const report = console.error.bind(console);
+console.error = (...args) => {
+  errors.push(args.join(" "));
+  report(...args);
+};
+let revision = 0;
+const endpoint = {
+  capture() {
+    return this;
+  },
+  bind(sub) {
+    replies.set(sub.id, sub.handler);
+    return () => replies.delete(sub.id);
+  },
+  send(id) {
+    const [reply, data] = id === "load"
+      ? ["data", { tile: "first", value: `Live ${revision}` }]
+      : ["shortcuts", { first: [`Key ${revision}`] }];
+    queueMicrotask(() => replies.get(reply)?.(reply, data));
+  },
+};
+const main = document.querySelector("main");
+const state = {};
+function deeper() {
+  renderer.setActive(false);
+  history.pushState((history.state ?? 0) + 1, "");
+  const button = document.createElement("button");
+  button.textContent = "Open next screen";
+  button.onclick = deeper;
+  main.replaceChildren(button);
+}
+function home() {
+  renderer.begin({
+    channel: () => endpoint,
+    programChannel: () => undefined,
+    state: () => state,
+    send: deeper,
+  });
+  main.replaceChildren(
+    renderer.render({
+      id: "home",
+      preserve: true,
+      module: "/home.js",
+      channelNamespace: "home",
+      config: {
+        tree: {
+          id: "",
+          label: "Home",
+          children: [
+            { id: "first", tile: "first", label: "First", data: {} },
+            { id: "second", tile: "second", label: "Second" },
+          ],
+        },
+      },
+    }),
+  );
+  renderer.end();
+  renderer.setActive(true);
+}
+async function verify() {
+  home();
+  while (true) {
+    for (
+      let tick = 0;
+      tick < 100 && document.querySelector("[aria-busy=true]");
+      tick++
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    await Promise.resolve();
+    if (
+      !main.querySelector("[role=tree]") ||
+      main.querySelectorAll(".home-tile").length !== 2 ||
+      main.querySelector(".home-tile-value")?.textContent !==
+        `Live ${revision}` ||
+      !main.querySelector(".home-tile-shortcut")?.textContent.includes(
+        `Key ${revision}`,
+      )
+    ) {
+      throw Error(`Home render ${revision}: ${main.textContent}`);
+    }
+    if (revision === 2) break;
+    main.querySelector(".home-tile").click();
+    main.querySelector("button").click();
+    main.querySelector("button").click();
+    do {
+      const back = new Promise((resolve) =>
+        addEventListener("popstate", resolve, { once: true })
+      );
+      history.back();
+      await back;
+    } while (history.state);
+    revision++;
+    home();
+  }
+}
+try {
+  await verify();
+  if (errors.length) throw Error(errors.join("; "));
+  document.querySelector("output").value = "PASS";
+} catch (error) {
+  document.querySelector("output").value = error.message;
+  console.error(error);
+} finally {
+  renderer.dispose();
+}
+</script>
