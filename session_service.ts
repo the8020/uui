@@ -4,6 +4,7 @@ import { browserLocalization } from "./localization.ts";
 import {
   currentLocalization,
   type Localization,
+  text as localizedText,
   withLocalization,
 } from "/p/the8020/i18n/mod.ts";
 import {
@@ -19,6 +20,7 @@ import { MessageHistory } from "./messages.ts";
 import { context } from "@the8020/context";
 import { kernel, newId } from "@the8020/kernel";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { buildShortDump, shortDumpHeading } from "./src/short_dump.ts";
 import uiConfig from "./ui-config.json" with { type: "json" };
 import {
   invokeProgram,
@@ -1252,7 +1254,24 @@ async function runConfiguredSession(context: UUISessionContext): Promise<void> {
     } catch (error) {
       if (context.signal.aborted) return;
       const failure = terminationInput(error, programs.home, programs);
-      const action = await invokeProgram(programs.terminated, [failure]);
+      const dump = await buildShortDump(failure);
+      try {
+        const { recordProgramDump } = await import(
+          "/p/the8020/admin-core/src/record-program-dump.ts"
+        );
+        await recordProgramDump(
+          context.auth.username ?? "",
+          localizedText(shortDumpHeading(dump)),
+          dump,
+        );
+      } catch (recordError) {
+        console.error(
+          "Program dump could not be recorded",
+          dump.programId,
+          recordError,
+        );
+      }
+      const action = await invokeProgram(programs.terminated, [failure, dump]);
       if (action !== "home") return;
     }
   }

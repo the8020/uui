@@ -18,7 +18,9 @@ import {
 import {
   buildShortDump,
   copyStatus,
+  type ShortDump,
   shortDumpFields,
+  shortDumpHeading,
 } from "../../src/short_dump.ts";
 import layout from "./layouts/main.json" with { type: "json" };
 
@@ -73,9 +75,10 @@ const TerminationScreen = z.object({
 
 export default async function programTerminated(
   input: TerminatedProgramInput,
+  prepared?: ShortDump,
 ): Promise<"home" | "end"> {
   assertInput(input);
-  const { sourceDocument, ...dump } = await buildShortDump(input);
+  const { sourceDocument, ...dump } = prepared ?? await buildShortDump(input);
   const model = {
     ...dump,
     source: sourceDocument?.text ?? dump.source,
@@ -103,10 +106,7 @@ export default async function programTerminated(
     const event = await callScreen({
       id: "program-terminated",
       title: msg("program.program_terminated"),
-      description: msg("program.uncaught_exception_of_type_value1_was_raised", {
-        value1: model.exceptionType,
-        value2: model.location,
-      }),
+      description: shortDumpHeading(model),
       schema: TerminationScreen,
       model: screenModel,
       layout,

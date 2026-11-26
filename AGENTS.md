@@ -319,7 +319,10 @@ below.
   between ordinary program returns and rebuilds it on Refresh or soft Exit,
   batching fresh permission checks on each render; Program terminated
   defensively presents bounded exception, stack, source context, and copyable
-  dump data.
+  dump data. The session builds the dump at the recovery boundary, passes it to
+  the recovery program, and asks Admin Core to archive the authenticated user,
+  heading, and formatted text. Archive write failures are logged and recovery
+  continues.
 - `program.toml` declares `uui` as an optional boolean defaulting to false. Home
   includes only programs with `uui = true` and `discoverable = true`, and
   returns silently after invocation. Discovery logs and skips an invalid

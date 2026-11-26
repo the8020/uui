@@ -62,6 +62,13 @@ export const copyStatus = field(z.string(), {
   description: msg("short_dump.the_time_at_which_copy_short_dump"),
 });
 
+export function shortDumpHeading(dump: ShortDump) {
+  return msg("program.uncaught_exception_of_type_value1_was_raised", {
+    value1: dump.exceptionType,
+    value2: dump.location,
+  });
+}
+
 interface SourceLocation {
   path: string;
   line: number;

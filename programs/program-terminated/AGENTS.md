@@ -19,6 +19,7 @@ Parent DOX: [uui/programs DOX](../AGENTS.md).
 - When the development Code browser is installed and package source is known,
   Browse source opens that ordinary program with the original line/column and
   captured excerpt. Back restores recovery; lookup failures stay visible here.
+- Reuse the dump prepared by the session's exception handler when supplied.
 - Use package configuration for Home and termination identities.
 - Use the prebuilt read-only code field for stack, raw source, and complete
   dump. Source excerpts retain original line numbers and mark the exception
