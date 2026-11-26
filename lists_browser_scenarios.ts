@@ -635,6 +635,16 @@ export async function verifyListsFlow(
     "filter input remains focused and open",
   );
   await popoverControls(page, primary, false, true);
+  const beforeConfirm = interactions();
+  await enter(page);
+  await popoverClosed(page, primary);
+  await idle();
+  await delay(60);
+  assert(
+    interactions() === beforeConfirm,
+    "confirming an already applied filter sends no update",
+  );
+  await click(page, `${primary} th:nth-child(3) button`);
   await button(page, "Sort descending", `${primary} .data-list-popover`);
   await until(
     () => state().query.sort?.direction === "desc",

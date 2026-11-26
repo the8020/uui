@@ -150,8 +150,10 @@ Parent DOX: [shell frontend](../../AGENTS.md).
   typed `Filter` placeholder, with a trailing in-field `X` only for nonempty
   values. Sort selection/clearing, filter clearing, and filter Enter confirm
   immediately and close the popover; debounced typing retains focus/caret.
-  Search Enter also confirms immediately. Blur keeps the debounce pending so
-  clear buttons can commit one complete query without an intervening request.
+  Search Enter also confirms immediately. Confirming the published query closes
+  the column popover without sending another update. Blur keeps the debounce
+  pending so clear buttons can commit one complete query without an intervening
+  request.
 - The expanded list toolbar matches the column-header height, with zero search
   input block padding. Its left side starts with icon-only, tooltip-labeled List
   layouts, Table processor, Export, Copy page, and Copy all actions, followed by

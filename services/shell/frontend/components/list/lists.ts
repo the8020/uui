@@ -1162,6 +1162,12 @@ class ListController {
       !this.#draftPending || this.#timer !== undefined ||
       !this.host.isConnected || this.host.closest("[hidden]")
     ) return false;
+    if (
+      JSON.stringify(this.#draft) === JSON.stringify(this.#snapshot.state.query)
+    ) {
+      this.#draftPending = false;
+      return false;
+    }
     return this.#callbacks.request([{
       id: this.#snapshot.id,
       operation: "query",
